@@ -33,7 +33,6 @@ website/node_modules/
 .vscode/*
 !.vscode/launch.json
 !.vscode/tasks.json
-.idea/
 
 # Environment
 .env.local
