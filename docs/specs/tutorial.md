@@ -1,0 +1,145 @@
+# Playground Tutorial
+
+At the `/playground` route on the website. **Status: Implemented** (Epics 14, 15, 16).
+
+## Layout
+
+- `SiteHeader` at top (with Playground as active nav item).
+- `PlaygroundToolbar` below the header: a dedicated toolbar with a **theme picker** dead center (mouse-based, not keyboard). Visually distinct from the site nav — belongs to the sandbox, not the website.
+- Below the toolbar: MouseTerm `Pond` embedded fullscreen using `FakePtyAdapter`.
+
+### Implementation
+
+- `website/src/pages/Playground.tsx` — Page component. Dynamically imports Pond (SSR-safe). Initializes `FakePtyAdapter`, `TutorialShell`, and `TutorialDetector`. Passes `onApiReady` to set up the 3-pane layout and `onEvent` for step detection.
+- `website/src/components/PlaygroundToolbar.tsx` — Toolbar shell with centered slot.
+- `website/src/components/ThemePicker.tsx` — Color dot swatches for 5 themes.
+- `website/vite.config.ts` — Vite alias `mouseterm-lib` → `../lib/src` for workspace imports.
+
+## Initial State
+
+The sandbox starts pre-populated — not empty. Scenarios assigned via `FakePtyAdapter.setScenario()` before Pond mounts:
+
+- **Pane 1** (`tut-main`, left, ~60%): `SCENARIO_TUTORIAL_MOTD` — MOTD welcome message + shell prompt. `TutorialShell` handles all input via `FakePtyAdapter.setInputHandler()`.
+- **Pane 2** (`tut-npm`, right-top, ~40%): `SCENARIO_LONG_RUNNING` — `npm install` with progress dots.
+- **Pane 3** (`tut-ls`, right-bottom): `SCENARIO_LS_OUTPUT` — `ls -la` output with a prompt.
+
+The two right-side panes are added in `onApiReady` with `position: { referencePanel, direction }` after Pond creates the initial main pane.
+
+## The `tut` Command
+
+Implemented in `website/src/lib/tutorial-shell.ts` (`TutorialShell` class).
+
+The fake terminal accepts these inputs:
+
+- **`tut`** — Shows the current tutorial step (or the next incomplete one). Does NOT show the full checklist upfront.
+- **`tut status`** — Shows all 6 steps with `[x]`/`[ ]` completion markers, grouped by phase.
+- **`tut reset`** — Clears localStorage progress and confirms.
+- **Anything else** — `Unknown command. Type tut to start the tutorial.`
+
+`TutorialShell` provides full line editing (character echo, backspace) and parses commands on Enter. Output goes through `FakePtyAdapter.sendOutput()`.
+
+### Cold Start
+
+`SCENARIO_TUTORIAL_MOTD` (in `lib/src/lib/platform/fake-scenarios.ts`) shows a styled MOTD above the prompt:
+
+```
+  Welcome to MouseTerm.
+  Type tut to start the interactive tutorial.
+```
+
+## Tutorial Steps
+
+Steps are revealed **one at a time** — completing one reveals the next. Each step has a brief contextual prompt explaining *why* you'd do this, not just the mechanic.
+
+Progress is stored in localStorage so the user can leave and return. Show progress as `Step N/6` when displaying each step.
+
+### Detection
+
+Implemented in `website/src/lib/tutorial-detection.ts` (`TutorialDetector` class). Two event sources:
+
+1. **DockviewApi events** — `onDidAddPanel`, `onDidLayoutChange`, `onDidActivePanelChange`. Subscribed in `TutorialDetector.attach(api)`.
+2. **PondEvent callbacks** — `modeChange`, `zoomChange`, `detachChange`, `split`. Routed via `Pond`'s `onEvent` prop (added in `lib/src/components/Pond.tsx`).
+
+### Phase 1: See Everything at Once
+
+**Step 1 — Split a pane**
+> You're juggling multiple tasks. Split this terminal so you can watch two things side by side.
+>
+> *Drag the split button in the tab header, or drag the tab itself to a drop zone.*
+
+Detection: `onDidAddPanel` fires on DockviewApi (panel count increases beyond initial count).
+
+**Step 2 — Resize your panes**
+> One task needs more room. Drag the divider between panes to give it space.
+>
+> *Drag the gap between two panes.*
+
+Detection: Captures a `ResizeSnapshot` (serialized grid structure with branch ratios from `api.toJSON()`). On `onDidLayoutChange`, compares current ratios against baseline — triggers when any branch ratio shifts by >= `RESIZE_RATIO_DELTA` (0.08). Baseline resets after splits to avoid false positives.
+
+### Phase 2: Focus and Background
+
+**Step 3 — Zoom in, then zoom back out**
+> One terminal needs your full attention. Zoom in to focus, then zoom back out when you're done.
+>
+> *Double-click a tab header to zoom. Double-click again to unzoom.*
+
+Detection: Watches `PondEvent.zoomChange` — requires both a `zoomed: true` then `zoomed: false` event (unzoom after zoom).
+
+**Step 4 — Detach a pane, then bring it back**
+> That task is running in the background — you don't need to watch it. Send it to the baseboard, then click its door when you want it back.
+>
+> *Click the detach button in the tab header. Click the door in the baseboard to reattach.*
+
+Detection: Watches `PondEvent.detachChange` — requires `count > 0` (detach) then `count === 0` (reattach back to zero).
+
+### Phase 3: Keyboard Power
+
+**Step 5 — Enter command mode and navigate**
+> Navigate between panes without touching the mouse.
+>
+> *Press Escape to enter command mode. Use arrow keys to move between panes.*
+
+Detection: Watches `PondEvent.modeChange` for transition to `'command'`, then tracks `onDidActivePanelChange` — requires focus on >= 2 different panels while in command mode.
+
+**Step 6 — Split using keyboard shortcuts**
+> Split a pane without leaving the keyboard.
+>
+> *In command mode, press " to split horizontally or % to split vertically.*
+
+Detection: Watches `PondEvent.split` with `source: 'keyboard'` while in command mode.
+
+## Completion
+
+When all 6 steps are done, `TutorialShell.announceCompletion()` prints the completion message:
+
+```
+You've got it. MouseTerm keeps everything visible and nothing in your way.
+
+Ready to try the real thing?
+  → Download MouseTerm: mouseterm.com/#download
+
+Or keep exploring — this sandbox is yours.
+```
+
+The sandbox stays fully functional after completion. Running `tut` shows "Tutorial complete" instead of a step. `tut reset` restarts from step 1.
+
+## Theme Picker
+
+Implemented in `website/src/lib/playground-themes.ts` and `website/src/components/ThemePicker.tsx`.
+
+5 themes available: **Dark** (default), **Monokai**, **Solarized**, **Nord**, **Dracula**.
+
+Each theme is defined as a map of `--vscode-*` CSS variable overrides. `applyTheme()` sets these on `document.body`, which:
+1. Cascades into `--mt-*` variables (via `var(--vscode-*, fallback)` in `theme.css`)
+2. Triggers the `MutationObserver` in `terminal-registry.ts` to re-read `getTerminalTheme()` for all xterm.js terminals
+3. Updates Dockview/Tailwind token colors
+
+The Dark theme uses an empty vars map (relies on the existing CSS fallback values).
+
+## Technical Notes
+
+- All progress keyed as `mouseterm-tutorial-step-N` in localStorage (values: `'true'`).
+- `FakePtyAdapter` extensions: `setInputHandler(id, fn)` routes `writePty` calls to a custom handler; `sendOutput(id, data)` writes to a terminal's output stream.
+- `Pond` extensions: `initialPaneIds` prop seeds the first pane(s); `onApiReady` callback prop exposes `DockviewApi`; `onEvent` callback prop fires `PondEvent` for mode/zoom/detach/selection/split changes (types: `modeChange`, `zoomChange`, `detachChange`, `split`, `selectionChange`).
+- `SCENARIO_TUTORIAL_MOTD` scenario added to `lib/src/lib/platform/fake-scenarios.ts`.
+

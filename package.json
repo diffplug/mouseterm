@@ -1,0 +1,24 @@
+{
+  "name": "mouseterm-root",
+  "private": true,
+  "license": "FSL-1.1-MIT",
+  "scripts": {
+    "build": "pnpm run build:vscode && pnpm --filter mouseterm-website build",
+    "test": "pnpm -r run test",
+    "dev:lib": "pnpm --filter mouseterm-lib dev",
+    "dev:standalone": "pnpm --filter mouseterm-standalone tauri dev",
+    "dev:website": "pnpm --filter mouseterm-website dev",
+    "build:vscode": "pnpm --filter mouseterm-lib build && pnpm --filter mouseterm build:frontend && pnpm --filter mouseterm build",
+    "build:standalone": "pnpm --filter mouseterm-standalone tauri build",
+    "build:website": "pnpm --filter mouseterm-website build",
+    "dogfood:vscode": "pnpm run build:vscode && pnpm --filter mouseterm dogfood",
+    "storybook": "pnpm --filter mouseterm-lib storybook"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@swc/core",
+      "esbuild",
+      "node-pty"
+    ]
+  }
+}

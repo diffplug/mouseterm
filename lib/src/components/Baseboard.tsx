@@ -1,0 +1,197 @@
+import { useRef, useState, useMemo, useLayoutEffect, useContext, useSyncExternalStore } from 'react';
+import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
+import { Door } from './Door';
+import { DoorElementsContext, type DetachedItem } from './Pond';
+import { DEFAULT_SESSION_UI_STATE, getSessionStateSnapshot, subscribeToSessionStateChanges } from '../lib/terminal-registry';
+
+export interface BaseboardProps {
+  items: DetachedItem[];
+  activeId: string | null;
+  onReattach: (item: DetachedItem) => void;
+}
+
+export function Baseboard({ items, activeId, onReattach }: BaseboardProps) {
+  const { elements: doorElements, bumpVersion } = useContext(DoorElementsContext);
+  const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [startIndex, setStartIndex] = useState(0);
+  const doorWidthsRef = useRef<number[]>([]);
+  const arrowMeasureEl = useRef<HTMLButtonElement>(null);
+  const layoutMetrics = useRef({ doorGap: 0, arrowWidth: 0 });
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setContainerWidth(entry.contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Measure door widths from hidden elements — re-measures when items change
+  const measureEl = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = measureEl.current;
+    if (!el) return;
+    const widths: number[] = [];
+    for (let i = 0; i < el.children.length; i++) {
+      widths.push((el.children[i] as HTMLElement).offsetWidth);
+    }
+    doorWidthsRef.current = widths;
+
+    // Measure layout metrics from DOM to stay in sync with CSS classes
+    const container = containerRef.current;
+    if (container) {
+      layoutMetrics.current.doorGap = parseFloat(getComputedStyle(container).gap) || 0;
+    }
+    if (arrowMeasureEl.current) {
+      layoutMetrics.current.arrowWidth = arrowMeasureEl.current.offsetWidth;
+    }
+  }, [items, sessionStates]);
+
+  // Reset startIndex when the set of door items changes (not just count)
+  const itemKey = useMemo(() => items.map(i => i.id).join('\0'), [items]);
+  useLayoutEffect(() => {
+    setStartIndex(0);
+  }, [itemKey]);
+
+  // Keyboard shortcut hint — only show when there's enough space and no doors
+  const shortcutHint = 'LCmd → RCmd to enter command mode';
+  const showHint = items.length === 0 && containerWidth > 350;
+
+  // Calculate which doors fit
+  // contentRect.width already excludes container padding
+  const availableWidth = containerWidth;
+  let visibleCount = 0;
+  let usedWidth = 0;
+
+  if (items.length > 0) {
+    const widths = doorWidthsRef.current;
+    const { doorGap, arrowWidth } = layoutMetrics.current;
+    const hasLeftOverflow = startIndex > 0;
+    let budget = availableWidth - (hasLeftOverflow ? arrowWidth : 0);
+
+    for (let i = startIndex; i < items.length; i++) {
+      const doorW = (widths[i] || 100) + (visibleCount > 0 ? doorGap : 0);
+      // Reserve space for right arrow if there are more items after this one
+      const needsRightArrow = i + 1 < items.length;
+      const rightReserve = needsRightArrow ? arrowWidth : 0;
+
+      if (usedWidth + doorW + rightReserve > budget) break;
+      usedWidth += doorW;
+      visibleCount++;
+    }
+
+    // Ensure at least one door is visible
+    if (visibleCount === 0 && items.length > 0) visibleCount = 1;
+  }
+
+  const endIndex = startIndex + visibleCount;
+  const hiddenLeft = startIndex;
+  const hiddenRight = items.length - endIndex;
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const visibleDoors = new Map<string, HTMLElement>();
+    for (const item of items.slice(startIndex, endIndex)) {
+      const el = container.querySelector<HTMLElement>(`[data-door-id="${item.id}"]`);
+      if (el) visibleDoors.set(item.id, el);
+    }
+
+    let changed = false;
+    if (doorElements.size !== visibleDoors.size) {
+      changed = true;
+    } else {
+      for (const [id, el] of visibleDoors) {
+        if (doorElements.get(id) !== el) {
+          changed = true;
+          break;
+        }
+      }
+    }
+
+    if (!changed) return;
+
+    doorElements.clear();
+    for (const [id, el] of visibleDoors) {
+      doorElements.set(id, el);
+    }
+    bumpVersion();
+  }, [items, startIndex, endIndex, doorElements, bumpVersion]);
+
+  const scrollLeft = () => setStartIndex(Math.max(0, startIndex - 1));
+  const scrollRight = () => setStartIndex(Math.min(items.length - 1, startIndex + 1));
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex h-8 shrink-0 items-end gap-1.5 border-t border-border bg-surface-alt px-2.5 pt-1"
+    >
+      {/* Hidden measurement pass — doors + overflow arrow */}
+      <div ref={measureEl} className="absolute -left-[9999px] flex gap-1.5" aria-hidden>
+        {items.map(item => {
+          const sessionState = sessionStates.get(item.id) ?? DEFAULT_SESSION_UI_STATE;
+          return (
+            <Door
+              key={item.id}
+              title={item.title}
+              status={sessionState.status}
+  
+              todo={sessionState.todo}
+            />
+          );
+        })}
+      </div>
+      <button ref={arrowMeasureEl} className="absolute -left-[9999px] flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-[9px] font-medium font-mono tracking-[0.06em] text-muted" aria-hidden tabIndex={-1}>
+        9 more <CaretRightIcon size={10} weight="bold" />
+      </button>
+
+      {items.length === 0 && showHint && (
+        <span className="truncate pb-1 text-[9px] font-mono tracking-[0.06em] text-muted">
+          {shortcutHint}
+        </span>
+      )}
+
+      {hiddenLeft > 0 && (
+        <button
+          className="flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-[9px] font-medium font-mono tracking-[0.06em] text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          onClick={scrollLeft}
+        >
+          <CaretLeftIcon size={10} weight="bold" />
+          {hiddenLeft} more
+        </button>
+      )}
+
+      {items.slice(startIndex, endIndex).map(item => {
+        const sessionState = sessionStates.get(item.id) ?? DEFAULT_SESSION_UI_STATE;
+        return (
+          <Door
+            key={item.id}
+            doorId={item.id}
+            title={item.title}
+            isActive={activeId === item.id}
+            status={sessionState.status}
+
+            todo={sessionState.todo}
+            onClick={() => onReattach(item)}
+          />
+        );
+      })}
+
+      {hiddenRight > 0 && (
+        <button
+          className="ml-auto flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-[9px] font-medium font-mono tracking-[0.06em] text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          onClick={scrollRight}
+        >
+          {hiddenRight} more
+          <CaretRightIcon size={10} weight="bold" />
+        </button>
+      )}
+    </div>
+  );
+}

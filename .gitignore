@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+lib/dist/
+*.tsbuildinfo
+
+# Vite cache
+lib/.vite/
+
+# VSCode extension
+vscode-ext/dist/
+vscode-ext/media/
+vscode-ext/node_modules/
+vscode-ext/*.vsix
+
+# Tauri / Standalone
+standalone/src-tauri/target/
+standalone/src-tauri/binaries/
+standalone/dist/
+standalone/sidecar/node_modules/
+standalone/node_modules/
+
+# Website
+website/dist/
+website/node_modules/
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+
+# Environment
+.env.local
+
+# Storybook / Chromatic
+storybook-static/
+build-storybook.log
+chromatic.log
+chromatic-build-*.xml
+chromatic-diagnostics.json
+
+# symlinked skill files
+.agents/skills/

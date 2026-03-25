@@ -1,0 +1,94 @@
+{
+  "name": "mouseterm",
+  "displayName": "MouseTerm",
+  "description": "Multitasking terminal with tmux keybindings, mouse support, and a built-in alarm system for completed tasks and prompts.",
+  "version": "0.1.0",
+  "publisher": "mouseterm",
+  "license": "FSL-1.1-MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/diffplug/mouseterm"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "tmux",
+    "terminal",
+    "multiplexer",
+    "mouse",
+    "ai",
+    "agent",
+    "alarm",
+    "split",
+    "panes",
+    "completion"
+  ],
+  "activationEvents": [
+    "onView:mouseterm.view",
+    "onWebviewPanel:mouseterm"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "mouseterm.focus",
+        "title": "MouseTerm: Focus",
+        "icon": {
+          "light": "icon-tiny-light.png",
+          "dark": "icon-tiny-dark.png"
+        }
+      },
+      {
+        "command": "mouseterm.open",
+        "title": "MouseTerm: Open in Editor"
+      }
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "mouseterm-panel",
+          "title": "MouseTerm",
+          "icon": "$(terminal)"
+        }
+      ]
+    },
+    "views": {
+      "mouseterm-panel": [
+        {
+          "id": "mouseterm.view",
+          "name": "MouseTerm",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
+    "build:frontend": "vite build --config vite.config.ts",
+    "build": "esbuild src/extension.ts --bundle --outdir=dist --external:vscode --external:node-pty --format=cjs --platform=node && esbuild src/pty-host.js --bundle --outfile=dist/pty-host.js --external:node-pty --format=cjs --platform=node && cp -RL node_modules/node-pty dist/node-pty",
+    "watch": "pnpm build --watch",
+    "package": "vsce package --no-dependencies --out mouseterm.vsix",
+    "dogfood": "pnpm package && code --install-extension mouseterm.vsix --force && rm -f mouseterm.vsix && echo '\\n✦ Reload VSCode window (Cmd+Shift+P → Reload Window) to pick up the new extension.'",
+    "publish:marketplace": "vsce publish --no-dependencies",
+    "publish:openvsx": "ovsx publish --no-dependencies"
+  },
+  "dependencies": {
+    "node-pty": "1.2.0-beta.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vitejs/plugin-react-swc": "^4.2.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.25.0",
+    "ovsx": "^0.10.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.3.0"
+  }
+}

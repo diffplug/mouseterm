@@ -1,0 +1,857 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@xterm/addon-fit', () => {
+  class FitAddon {
+    fit(): void {}
+
+    proposeDimensions(): { cols: number; rows: number } {
+      return { cols: 80, rows: 24 };
+    }
+  }
+
+  return { FitAddon };
+});
+
+vi.mock('@xterm/xterm', () => {
+  class MockTerminal {
+    writes: string[] = [];
+    private dataListeners = new Set<(data: string) => void>();
+    private resizeListeners = new Set<(size: { cols: number; rows: number }) => void>();
+
+    loadAddon(): void {}
+
+    open(): void {}
+
+    write(data: string): void {
+      this.writes.push(data);
+    }
+
+    onData(listener: (data: string) => void): { dispose: () => void } {
+      this.dataListeners.add(listener);
+      return {
+        dispose: () => {
+          this.dataListeners.delete(listener);
+        },
+      };
+    }
+
+    onResize(listener: (size: { cols: number; rows: number }) => void): { dispose: () => void } {
+      this.resizeListeners.add(listener);
+      return {
+        dispose: () => {
+          this.resizeListeners.delete(listener);
+        },
+      };
+    }
+
+    focus(): void {}
+
+    blur(): void {}
+
+    dispose(): void {}
+
+    emitInput(data: string): void {
+      this.dataListeners.forEach((listener) => listener(data));
+    }
+
+    emitResize(cols: number, rows: number): void {
+      this.resizeListeners.forEach((listener) => listener({ cols, rows }));
+    }
+  }
+
+  return { Terminal: MockTerminal };
+});
+
+vi.mock('./platform', async () => {
+  const actual = await vi.importActual<typeof import('./platform')>('./platform');
+  const fakePlatform = new actual.FakePtyAdapter();
+  return {
+    ...actual,
+    getPlatform: () => fakePlatform,
+    __fakePlatform: fakePlatform,
+  };
+});
+
+import * as platformModule from './platform';
+import { makeAlarmScenario, type FakePtyAdapter, type FakeScenario } from './platform';
+import {
+  DEFAULT_SESSION_UI_STATE,
+  attachTerminal,
+  clearSessionAttention,
+  clearSessionTodo,
+  destroyAllTerminals,
+  destroyTerminal,
+  detachTerminal,
+  disableSessionAlarm,
+  dismissOrToggleAlarm,
+  dismissSessionAlarm,
+  focusTerminal,
+  getOrCreateTerminal,
+  getSessionState,
+  initAlarmStateReceiver,
+  markSessionAttention,
+  markSessionTodo,
+  swapTerminals,
+  toggleSessionAlarm,
+  toggleSessionTodo,
+} from './terminal-registry';
+
+interface MockTerminalInstance {
+  writes: string[];
+  emitInput(data: string): void;
+  emitResize(cols: number, rows: number): void;
+}
+
+class MockElement {
+  style: Record<string, string> = {};
+  parentElement: MockElement | null = null;
+  children: MockElement[] = [];
+
+  appendChild(child: MockElement): MockElement {
+    child.remove();
+    child.parentElement = this;
+    this.children.push(child);
+    return child;
+  }
+
+  remove(): void {
+    if (!this.parentElement) return;
+    const index = this.parentElement.children.indexOf(this);
+    if (index >= 0) {
+      this.parentElement.children.splice(index, 1);
+    }
+    this.parentElement = null;
+  }
+}
+
+type PlatformModuleWithMock = typeof platformModule & { __fakePlatform: FakePtyAdapter };
+type TestTerminalEntry = ReturnType<typeof getOrCreateTerminal> & {
+  terminal: MockTerminalInstance;
+  element: MockElement;
+};
+
+const fakePlatform = (platformModule as PlatformModuleWithMock).__fakePlatform;
+
+function createContainer(): MockElement {
+  return new MockElement();
+}
+
+function createSession(id: string, scenario?: FakeScenario): TestTerminalEntry {
+  fakePlatform.clearScenario(id);
+  if (scenario) {
+    fakePlatform.setScenario(id, scenario);
+  }
+  return getOrCreateTerminal(id) as TestTerminalEntry;
+}
+
+function advance(ms: number): void {
+  vi.advanceTimersByTime(ms);
+}
+
+function emitOutput(id: string, data = 'output'): void {
+  fakePlatform.writePty(id, data);
+}
+
+function attendSession(id: string): void {
+  markSessionAttention(id);
+}
+
+function expireAttention(id?: string): void {
+  clearSessionAttention(id);
+}
+
+function detachSession(id: string): void {
+  detachTerminal(id);
+  clearSessionAttention(id);
+}
+
+function reattachDoorViaEnter(id: string): void {
+  attachTerminal(id, createContainer() as unknown as HTMLElement);
+  markSessionAttention(id);
+}
+
+function reattachDoorViaD(id: string): void {
+  attachTerminal(id, createContainer() as unknown as HTMLElement);
+}
+
+// Timing helpers based on cfg.alarm values:
+// busyCandidateGap=1500, busyConfirmGap=500, mightNeedAttention=2000, needsAttentionConfirm=3000
+
+function driveToBusy(id: string): void {
+  emitOutput(id, 'prompt> ');
+  advance(1_600);
+  emitOutput(id, 'working...');
+  emitOutput(id, 'more work');
+  expect(getSessionState(id).status).toBe('BUSY');
+}
+
+function driveToRingingNeedsAttention(id: string): void {
+  driveToBusy(id);
+  expireAttention(id);
+  advance(2_000);
+  expect(getSessionState(id).status).toBe('MIGHT_NEED_ATTENTION');
+  advance(3_000);
+  expect(getSessionState(id).status).toBe('ALARM_RINGING');
+}
+
+describe('terminal-registry alarm behavior', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fakePlatform.reset();
+    initAlarmStateReceiver();
+
+    const documentElement = new MockElement();
+    vi.stubGlobal('document', {
+      createElement: () => new MockElement(),
+      documentElement,
+    });
+    vi.stubGlobal('getComputedStyle', () => ({
+      getPropertyValue: () => '#000000',
+    }));
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    vi.stubGlobal('MutationObserver', class { observe() {} disconnect() {} });
+  });
+
+  afterEach(() => {
+    destroyAllTerminals();
+    fakePlatform.reset();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('Story 1: quick response never becomes busy', () => {
+    const id = 'story-1';
+    createSession(
+      id,
+      makeAlarmScenario([{ at: 0, data: 'prompt> quick result\r\nprompt> ' }], {
+        name: 'quick-response',
+      }),
+    );
+    toggleSessionAlarm(id);
+    attendSession(id);
+
+    advance(12_000);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+
+      todo: false,
+    });
+  });
+
+  it('Story 2: long-running work becomes busy, then completes unattended', () => {
+    const id = 'story-2';
+    createSession(
+      id,
+      makeAlarmScenario([
+        { at: 0, data: 'prompt> ' },
+        { at: 1_600, data: 'working...' },
+        { at: 1_800, data: 'more work' },
+      ], { name: 'long-running' }),
+    );
+    toggleSessionAlarm(id);
+    attendSession(id);
+
+    advance(1_800);
+    expect(getSessionState(id)).toMatchObject({
+      status: 'BUSY',
+
+    });
+
+    expireAttention(id);
+    advance(2_000);
+    expect(getSessionState(id).status).toBe('MIGHT_NEED_ATTENTION');
+
+    advance(3_000);
+    expect(getSessionState(id)).toMatchObject({
+      status: 'ALARM_RINGING',
+
+      todo: false,
+    });
+  });
+
+  it('Story 3: busy session pauses, then resumes', () => {
+    const id = 'story-3';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToBusy(id);
+    advance(2_000);
+    expect(getSessionState(id).status).toBe('MIGHT_NEED_ATTENTION');
+
+    emitOutput(id, 'still running');
+
+    expect(getSessionState(id)).toMatchObject({
+      status: 'BUSY',
+
+    });
+  });
+
+  it('Story 4: completion while still attended does not ring', () => {
+    const id = 'story-4';
+    createSession(id);
+    toggleSessionAlarm(id);
+    attendSession(id);
+
+    driveToBusy(id);
+    advance(2_000);
+    advance(3_000);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+
+      todo: false,
+    });
+  });
+
+  it('Story 5: user attends to a ringing pane — creates soft TODO', () => {
+    const id = 'story-5';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    attendSession(id);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'soft',
+    });
+  });
+
+  it('Story 6: dismiss resets to NOTHING_TO_SHOW, can ring again later', () => {
+    const id = 'story-6';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    dismissSessionAlarm(id);
+
+    expect(getSessionState(id)).toMatchObject({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'soft',
+    });
+
+    // New output starts a fresh cycle that can ring again
+    driveToBusy(id);
+    expireAttention(id);
+    advance(2_000);
+    advance(3_000);
+
+    expect(getSessionState(id)).toMatchObject({
+      status: 'ALARM_RINGING',
+      todo: 'soft',
+    });
+  });
+
+  it('Story 7: TODO clears ring and resets status, leaves alarms enabled', () => {
+    const id = 'story-7';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    markSessionTodo(id);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'hard',
+    });
+  });
+
+  it('Story 8: disable alarms clears ring and stops tracking', () => {
+    const id = 'story-8';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    disableSessionAlarm(id);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'ALARM_DISABLED',
+      todo: false,
+    });
+
+    // No monitor means output doesn't drive state changes
+    emitOutput(id, 'new cycle');
+    emitOutput(id, 'more work');
+    advance(12_000);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'ALARM_DISABLED',
+      todo: false,
+    });
+  });
+
+  it('Story 9: new output while ringing latches until user attends', () => {
+    const id = 'story-9';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    // Shell prompt output should NOT silently dismiss the alarm
+    emitOutput(id, 'shell prompt');
+    expect(getSessionState(id).status).toBe('ALARM_RINGING');
+
+    // User attends (focuses the pane) — this resets the monitor via attend()
+    attendSession(id);
+    expect(getSessionState(id).status).toBe('NOTHING_TO_SHOW');
+
+    // Now new output starts a fresh cycle
+    emitOutput(id, 'next task');
+    advance(1_600);
+    emitOutput(id, 'still going');
+    emitOutput(id, 'more work');
+    expect(getSessionState(id).status).toBe('BUSY');
+  });
+
+  it('Story 10: detach preserves state, click restore clears ring', () => {
+    const id = 'story-10';
+    createSession(id);
+    toggleSessionAlarm(id);
+    attendSession(id);
+
+    detachSession(id);
+    driveToRingingNeedsAttention(id);
+
+    expect(getSessionState(id)).toMatchObject({
+      status: 'ALARM_RINGING',
+
+    });
+
+    reattachDoorViaEnter(id);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'soft',
+    });
+  });
+
+  it('Story 11: detach preserves state, d restore does not clear ring', () => {
+    const id = 'story-11';
+    createSession(id);
+    toggleSessionAlarm(id);
+    attendSession(id);
+
+    detachSession(id);
+    driveToRingingNeedsAttention(id);
+    reattachDoorViaD(id);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'ALARM_RINGING',
+
+      todo: false,
+    });
+  });
+
+  it('Story 12: resize noise never creates a false alarm', () => {
+    const id = 'story-12';
+    const entry = createSession(id);
+    toggleSessionAlarm(id);
+
+    entry.terminal.emitResize(120, 40);
+    emitOutput(id, 'redraw noise');
+    advance(12_000);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+
+      todo: false,
+    });
+  });
+
+  it('Story 13: multiple sessions ring independently', () => {
+    const alpha = 'story-13-a';
+    const beta = 'story-13-b';
+    createSession(alpha);
+    createSession(beta);
+    toggleSessionAlarm(alpha);
+    toggleSessionAlarm(beta);
+
+    driveToRingingNeedsAttention(alpha);
+    driveToRingingNeedsAttention(beta);
+
+    dismissSessionAlarm(alpha);
+    attendSession(beta);
+
+    expect(getSessionState(alpha)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'soft',
+    });
+    expect(getSessionState(beta)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'soft',
+    });
+  });
+
+  it('Story 14: destroying a session clears alarm, TODO, and attention state', () => {
+    const id = 'story-14';
+    createSession(id);
+    toggleSessionAlarm(id);
+    driveToRingingNeedsAttention(id);
+    toggleSessionTodo(id);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'hard',
+    });
+
+    destroyTerminal(id);
+    expect(getSessionState(id)).toEqual(DEFAULT_SESSION_UI_STATE);
+
+    createSession(id);
+    toggleSessionAlarm(id);
+    driveToBusy(id);
+    expireAttention(id);
+    advance(2_000);
+    advance(3_000);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'ALARM_RINGING',
+
+      todo: false,
+    });
+  });
+
+  it('marks attention from terminal input and clears ringing immediately', () => {
+    const id = 'input-attention';
+    const entry = createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    entry.terminal.emitInput('x');
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+
+      todo: false,
+    });
+  });
+
+  it('no monitor is created until alarm is enabled', () => {
+    const id = 'no-monitor';
+    createSession(id);
+
+    emitOutput(id, 'prompt> ');
+    advance(1_200);
+    emitOutput(id, 'working...');
+    emitOutput(id, 'more work');
+    advance(12_000);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'ALARM_DISABLED',
+
+      todo: false,
+    });
+  });
+
+  it('enabling alarm starts tracking fresh from that moment', () => {
+    const id = 'fresh-start';
+    createSession(id);
+
+    // Output before alarm is enabled — ignored
+    emitOutput(id, 'old output');
+    advance(5_000);
+
+    toggleSessionAlarm(id);
+
+    // Status starts at NOTHING_TO_SHOW, not retroactively computed
+    expect(getSessionState(id).status).toBe('NOTHING_TO_SHOW');
+
+    // New output after enabling drives state normally
+    emitOutput(id, 'prompt> ');
+    advance(1_600);
+    emitOutput(id, 'working...');
+    emitOutput(id, 'more work');
+    expect(getSessionState(id).status).toBe('BUSY');
+  });
+
+  it('phantom dismiss creates soft TODO, typing clears it', () => {
+    const id = 'soft-todo-clear';
+    const entry = createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    attendSession(id);
+
+    expect(getSessionState(id).todo).toBe('soft');
+
+    // Typing clears the soft TODO
+    entry.terminal.emitInput('ls');
+
+    expect(getSessionState(id).todo).toBe(false);
+  });
+
+  it('focus-report control sequences do not clear a soft TODO', () => {
+    const id = 'soft-todo-focus-report';
+    const entry = createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    attendSession(id);
+
+    expect(getSessionState(id).todo).toBe('soft');
+
+    entry.terminal.emitInput('\x1b[I');
+
+    expect(getSessionState(id).todo).toBe('soft');
+  });
+
+  it('typing does not clear a hard TODO', () => {
+    const id = 'hard-todo-persist';
+    const entry = createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    toggleSessionTodo(id); // ringing → hard TODO + attend
+
+    expect(getSessionState(id).todo).toBe('hard');
+
+    entry.terminal.emitInput('ls');
+
+    expect(getSessionState(id).todo).toBe('hard');
+  });
+
+  it('toggleSessionTodo promotes soft to hard', () => {
+    const id = 'promote-soft';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    attendSession(id);
+
+    expect(getSessionState(id).todo).toBe('soft');
+
+    toggleSessionTodo(id);
+
+    expect(getSessionState(id).todo).toBe('hard');
+  });
+
+  it('toggleSessionTodo cycles: false → hard → false', () => {
+    const id = 'toggle-cycle';
+    createSession(id);
+
+    expect(getSessionState(id).todo).toBe(false);
+
+    toggleSessionTodo(id);
+    expect(getSessionState(id).todo).toBe('hard');
+
+    toggleSessionTodo(id);
+    expect(getSessionState(id).todo).toBe(false);
+  });
+
+  it('dismiss does not downgrade hard TODO to soft', () => {
+    const id = 'hard-survives-dismiss';
+    createSession(id);
+    toggleSessionAlarm(id);
+    toggleSessionTodo(id); // set hard TODO before ringing
+
+    driveToBusy(id);
+    expireAttention(id);
+    advance(2_000);
+    advance(3_000);
+    expect(getSessionState(id).status).toBe('ALARM_RINGING');
+
+    dismissSessionAlarm(id);
+
+    // Hard TODO should survive — soft TODO only set when todo === false
+    expect(getSessionState(id).todo).toBe('hard');
+  });
+
+  it('new output while ringing without attention does not create a soft TODO', () => {
+    const id = 'ringing-output-no-soft-todo';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    // New output without attention — alarm latches, no soft TODO created
+    emitOutput(id, 'next task');
+
+    expect(getSessionState(id)).toEqual({
+      status: 'ALARM_RINGING',
+      todo: false,
+    });
+  });
+
+  it('disabling alarms while ringing does not create a soft TODO', () => {
+    const id = 'disable-no-soft-todo';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    disableSessionAlarm(id);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'ALARM_DISABLED',
+      todo: false,
+    });
+  });
+
+  it('alarm button enables alarms from ALARM_DISABLED', () => {
+    const id = 'alarm-button-enable';
+    createSession(id);
+
+    dismissOrToggleAlarm(id, 'ALARM_DISABLED');
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: false,
+    });
+  });
+
+  it('alarm button disables alarms from enabled non-ringing states', () => {
+    const id = 'alarm-button-disable';
+    createSession(id);
+    toggleSessionAlarm(id);
+    driveToBusy(id);
+
+    dismissOrToggleAlarm(id, 'BUSY');
+
+    expect(getSessionState(id)).toEqual({
+      status: 'ALARM_DISABLED',
+      todo: false,
+    });
+  });
+
+  it('alarm button dismisses ringing alarms to soft TODO', () => {
+    const id = 'alarm-button-dismiss';
+    createSession(id);
+    toggleSessionAlarm(id);
+    driveToRingingNeedsAttention(id);
+
+    dismissOrToggleAlarm(id, 'ALARM_RINGING');
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'soft',
+    });
+  });
+
+  it('clicking a bell rendered as ringing does not disable alarms after attention already reset it', () => {
+    const id = 'displayed-ringing-dismiss';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    markSessionAttention(id);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'soft',
+    });
+
+    dismissOrToggleAlarm(id, 'ALARM_RINGING');
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'soft',
+    });
+  });
+
+  it('a bell click immediately after attention clears ringing is treated as a dismiss, not disable', () => {
+    const id = 'recent-ringing-dismiss';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    markSessionAttention(id);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'soft',
+    });
+
+    expect(dismissOrToggleAlarm(id, 'NOTHING_TO_SHOW')).toBe('dismissed');
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: 'soft',
+    });
+  });
+
+  it('programmatic terminal focus does not count as attention', () => {
+    const id = 'focus-without-attention';
+    createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    focusTerminal(id, true);
+
+    expect(getSessionState(id)).toEqual({
+      status: 'ALARM_RINGING',
+      todo: false,
+    });
+  });
+
+  it('ignores prompt redraw output immediately after a resize', () => {
+    const id = 'resize-debounce';
+    const session = createSession(id);
+    toggleSessionAlarm(id);
+    markSessionAttention(id);
+
+    session.terminal.emitResize(120, 30);
+    emitOutput(id, 'prompt redraw');
+    advance(1_600);
+    emitOutput(id, 'working...');
+
+    expect(getSessionState(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: false,
+    });
+  });
+
+  it('routes alarm state updates to the swapped-in pane entry', () => {
+    const alpha = 'swap-alpha';
+    const beta = 'swap-beta';
+    createSession(alpha);
+    createSession(beta);
+
+    toggleSessionAlarm(alpha);
+    markSessionAttention(alpha);
+    swapTerminals(alpha, beta);
+
+    emitOutput(alpha, 'prompt> ');
+    advance(1_600);
+    emitOutput(alpha, 'working...');
+    emitOutput(alpha, 'more work');
+
+    expect(getSessionState(alpha)).toEqual({
+      status: 'ALARM_DISABLED',
+      todo: false,
+    });
+    expect(getSessionState(beta)).toEqual({
+      status: 'BUSY',
+      todo: false,
+    });
+  });
+
+  it('routes alarm actions to the swapped-in pane entry', () => {
+    const alpha = 'swap-action-alpha';
+    const beta = 'swap-action-beta';
+    createSession(alpha);
+    createSession(beta);
+
+    markSessionTodo(alpha);
+    swapTerminals(alpha, beta);
+
+    expect(getSessionState(alpha)).toEqual({
+      status: 'ALARM_DISABLED',
+      todo: false,
+    });
+    expect(getSessionState(beta)).toEqual({
+      status: 'ALARM_DISABLED',
+      todo: 'hard',
+    });
+
+    clearSessionTodo(beta);
+
+    expect(getSessionState(alpha)).toEqual({
+      status: 'ALARM_DISABLED',
+      todo: false,
+    });
+    expect(getSessionState(beta)).toEqual({
+      status: 'ALARM_DISABLED',
+      todo: false,
+    });
+  });
+});

@@ -1,0 +1,15 @@
+src/
+node_modules/
+.gitignore
+tsconfig.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+icon.svg
+*.vsix
+*.ts
+!dist/**
+!media/**
+!icon.png
+!README.md
+!CHANGELOG.md
+!LICENSE

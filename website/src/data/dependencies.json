@@ -1,0 +1,142 @@
+[
+  {
+    "name": "@phosphor-icons/react",
+    "version": "2.1.10",
+    "license": "MIT",
+    "author": "Tobias Fried",
+    "homepage": "https://phosphoricons.com"
+  },
+  {
+    "name": "@remix-run/router",
+    "version": "1.23.2",
+    "license": "MIT",
+    "author": "Remix Software",
+    "homepage": "https://github.com/remix-run/react-router#readme"
+  },
+  {
+    "name": "@tauri-apps/api",
+    "version": "2.10.1",
+    "license": "Apache-2.0 OR MIT",
+    "author": null,
+    "homepage": "https://github.com/tauri-apps/tauri#readme"
+  },
+  {
+    "name": "@tauri-apps/plugin-shell",
+    "version": "2.3.5",
+    "license": "MIT OR Apache-2.0",
+    "author": null,
+    "homepage": "https://github.com/tauri-apps/plugins-workspace#readme"
+  },
+  {
+    "name": "@xterm/addon-fit",
+    "version": "0.11.0",
+    "license": "MIT",
+    "author": "The xterm.js authors",
+    "homepage": "https://github.com/xtermjs/xterm.js/tree/master#readme"
+  },
+  {
+    "name": "@xterm/xterm",
+    "version": "6.0.0",
+    "license": "MIT",
+    "author": null,
+    "homepage": "https://github.com/xtermjs/xterm.js#readme"
+  },
+  {
+    "name": "clsx",
+    "version": "2.1.1",
+    "license": "MIT",
+    "author": "Luke Edwards",
+    "homepage": "https://github.com/lukeed/clsx#readme"
+  },
+  {
+    "name": "dockview",
+    "version": "5.1.0",
+    "license": "MIT",
+    "author": "https://github.com/mathuo",
+    "homepage": "https://github.com/mathuo/dockview"
+  },
+  {
+    "name": "dockview-core",
+    "version": "5.1.0",
+    "license": "MIT",
+    "author": "https://github.com/mathuo",
+    "homepage": "https://github.com/mathuo/dockview"
+  },
+  {
+    "name": "dockview-react",
+    "version": "5.1.0",
+    "license": "MIT",
+    "author": "https://github.com/mathuo",
+    "homepage": "https://github.com/mathuo/dockview"
+  },
+  {
+    "name": "node-addon-api",
+    "version": "7.1.1",
+    "license": "MIT",
+    "author": null,
+    "homepage": "https://github.com/nodejs/node-addon-api"
+  },
+  {
+    "name": "node-pty",
+    "version": "1.2.0-beta.12",
+    "license": "MIT",
+    "author": "Microsoft Corporation",
+    "homepage": "https://github.com/microsoft/node-pty"
+  },
+  {
+    "name": "react",
+    "version": "19.2.4",
+    "license": "MIT",
+    "author": null,
+    "homepage": "https://react.dev/"
+  },
+  {
+    "name": "react-dom",
+    "version": "19.2.4",
+    "license": "MIT",
+    "author": null,
+    "homepage": "https://react.dev/"
+  },
+  {
+    "name": "react-router",
+    "version": "6.30.3",
+    "license": "MIT",
+    "author": "Remix Software",
+    "homepage": "https://github.com/remix-run/react-router#readme"
+  },
+  {
+    "name": "react-router-dom",
+    "version": "6.30.3",
+    "license": "MIT",
+    "author": "Remix Software",
+    "homepage": "https://github.com/remix-run/react-router#readme"
+  },
+  {
+    "name": "scheduler",
+    "version": "0.27.0",
+    "license": "MIT",
+    "author": null,
+    "homepage": "https://react.dev/"
+  },
+  {
+    "name": "tailwind-merge",
+    "version": "3.5.0",
+    "license": "MIT",
+    "author": "Dany Castillo",
+    "homepage": "https://github.com/dcastil/tailwind-merge"
+  },
+  {
+    "name": "tailwind-variants",
+    "version": "3.2.2",
+    "license": "MIT",
+    "author": "Junior Garcia",
+    "homepage": "https://github.com/heroui-inc/tailwind-variants#readme"
+  },
+  {
+    "name": "tailwindcss",
+    "version": "4.2.2",
+    "license": "MIT",
+    "author": null,
+    "homepage": "https://tailwindcss.com"
+  }
+]

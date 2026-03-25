@@ -1,0 +1,29 @@
+{
+  "name": "mouseterm-website",
+  "private": true,
+  "version": "0.1.0",
+  "license": "FSL-1.1-MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite-react-ssg dev",
+    "prebuild": "node scripts/generate-deps.js",
+    "build": "vite-react-ssg build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "mouseterm-lib": "workspace:*",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^6.14.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "vite-react-ssg": "^0.8.9",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react-swc": "^4.2.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.3.0"
+  }
+}

@@ -1,0 +1,6 @@
+packages:
+  - lib
+  - standalone
+  - standalone/sidecar
+  - vscode-ext
+  - website

@@ -1,0 +1,56 @@
+import deps from "../data/dependencies.json";
+import SiteHeader from "../components/SiteHeader";
+
+const HEADER_BG = "rgba(10, 10, 10, 0.85)";
+const HEADER_STYLE = { background: HEADER_BG, backdropFilter: "blur(12px)" };
+
+export function Component() {
+  return (
+    <>
+      <SiteHeader activePath="/dependencies" style={HEADER_STYLE} />
+
+      <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)] pt-24 pb-16">
+        <div className="mx-auto max-w-3xl px-4 md:px-6">
+          <h1 className="font-display text-[clamp(1.75rem,3vw+0.5rem,2.5rem)] font-semibold tracking-tight mb-2">
+            Dependencies
+          </h1>
+          <p className="text-base opacity-50 mb-10">
+            MouseTerm is built on {deps.length} open-source packages. Thank you to every author and contributor.
+          </p>
+
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left border-b border-[var(--color-text)]/10">
+                <th className="pb-2 font-medium opacity-70">Package</th>
+                <th className="pb-2 font-medium opacity-70">Version</th>
+                <th className="pb-2 font-medium opacity-70">License</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deps.map((dep) => (
+                <tr key={`${dep.name}@${dep.version}`} className="border-b border-[var(--color-text)]/5">
+                  <td className="py-1.5 pr-4">
+                    {dep.homepage ? (
+                      <a
+                        href={dep.homepage}
+                        className="text-[var(--color-caramel)] hover:underline"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {dep.name}
+                      </a>
+                    ) : (
+                      dep.name
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-4 opacity-50 font-mono">{dep.version}</td>
+                  <td className="py-1.5 opacity-50">{dep.license}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}

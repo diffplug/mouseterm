@@ -1,0 +1,9 @@
+{
+  "name": "mouseterm-sidecar",
+  "private": true,
+  "version": "0.1.0",
+  "main": "main.js",
+  "dependencies": {
+    "node-pty": "1.2.0-beta.12"
+  }
+}
