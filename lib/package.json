@@ -1,8 +1,8 @@
 {
   "name": "mouseterm-lib",
-  "private": true,
   "version": "0.1.0",
   "license": "FSL-1.1-MIT",
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
