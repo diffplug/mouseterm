@@ -446,6 +446,12 @@ sign_updates() {
 EOF
 
     log "Update manifest written to $release_dir/$FNAME_MANIFEST"
+
+    # Copy manifest to website for serving via mouseterm.com
+    local website_manifest="$REPO_ROOT/website/public/standalone-latest.json"
+    cp "$release_dir/$FNAME_MANIFEST" "$website_manifest"
+    log "Manifest copied to $website_manifest — commit and deploy website to make it live"
+
     log "Update bundle signing complete"
 }
 
