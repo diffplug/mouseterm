@@ -27,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "externalBin": [
       "binaries/node"
     ],
@@ -40,5 +41,13 @@
     "resources": [
       "../sidecar/**/*"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/diffplug/mouseterm/releases/latest/download/latest.json"
+      ]
+    }
   }
 }
