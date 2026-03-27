@@ -25,9 +25,13 @@ interface SiteHeaderProps {
 const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
   function SiteHeader({ activePath, brandRef, brandVisible = true, style }, ref) {
     return (
+      <>
+      <div className="fixed top-0 left-0 right-0 z-30 bg-[var(--color-caramel)] text-[var(--color-bg)] text-center text-sm font-display font-semibold py-1.5">
+        🚧 Under construction — check back soon! 🚧
+      </div>
       <header
         ref={ref}
-        className="fixed top-0 left-0 right-0 z-20 flex items-center justify-between px-4 md:px-8 py-4 md:py-6 font-display text-lg font-medium"
+        className="fixed top-8 left-0 right-0 z-20 flex items-center justify-between px-4 md:px-8 py-4 md:py-6 font-display text-lg font-medium"
         style={{ color: "color-mix(in oklab, var(--color-text) 80%, transparent)", ...style }}
       >
         <a
@@ -64,6 +68,7 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
           })}
         </nav>
       </header>
+      </>
     );
   },
 );
