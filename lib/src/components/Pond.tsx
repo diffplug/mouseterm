@@ -87,10 +87,10 @@ export type PondEvent =
 // --- Variants ---
 
 const tabVariant = tv({
-  base: 'flex h-full w-full cursor-grab items-center gap-2 rounded-t-md px-3 leading-none font-mono tracking-normal select-none active:cursor-grabbing',
+  base: 'flex h-full w-full cursor-grab items-center gap-2 rounded-t-md px-3 leading-none font-mono tracking-normal select-none active:cursor-grabbing border-b-2 border-transparent',
   variants: {
     state: {
-      selected: 'bg-tab-selected-bg text-tab-selected-fg',
+      selected: 'bg-tab-selected-bg text-tab-selected-fg border-b-accent',
       inactive: 'bg-tab-inactive-bg text-tab-inactive-fg',
     },
   },
