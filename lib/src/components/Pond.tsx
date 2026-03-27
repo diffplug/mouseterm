@@ -88,7 +88,7 @@ export type PondEvent =
 // --- Variants ---
 
 const tabVariant = tv({
-  base: 'flex h-full w-full cursor-grab items-center gap-2 rounded-t-md px-3 leading-none font-mono tracking-normal select-none active:cursor-grabbing',
+  base: 'flex h-full w-full cursor-grab items-center gap-1.5 rounded-t pl-2 pr-[5px] text-[12px] leading-none font-mono tracking-normal select-none active:cursor-grabbing',
   variants: {
     state: {
       selected: 'bg-tab-selected-bg text-tab-selected-fg',
@@ -568,7 +568,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         )}
         <HeaderActionButton
           className={[
-            'flex h-6 min-w-6 items-center justify-center rounded transition-colors shrink-0',
+            'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0',
             sessionState.status === 'ALARM_RINGING'
               ? 'bg-warning/15 text-warning hover:bg-warning/20 motion-safe:animate-pulse motion-reduce:animate-none'
               : 'text-muted hover:bg-foreground/10 hover:text-foreground',
@@ -595,9 +595,9 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         >
           <span className="relative flex items-center justify-center">
             {sessionState.status === 'ALARM_DISABLED' ? (
-              <BellSlashIcon size={15} />
+              <BellSlashIcon size={14} />
             ) : (
-              <BellIcon size={15} weight="fill" />
+              <BellIcon size={14} weight="fill" />
             )}
             {(sessionState.status === 'MIGHT_BE_BUSY' || sessionState.status === 'BUSY' || sessionState.status === 'MIGHT_NEED_ATTENTION') && (
               <span className={[
@@ -633,41 +633,41 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         <>
           {/* Split/Zoom controls — hidden at compact and minimal tiers */}
           {tier === 'full' && (
-            <div className="ml-1 flex shrink-0 items-center gap-1">
+            <div className="ml-1 flex shrink-0 items-center gap-0.5">
               <HeaderActionButton
-                className="flex h-6 min-w-6 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitH(api.id); }}
                 ariaLabel="Split horizontal"
                 tooltip='Split horizontal ["]'
-              ><SplitHorizontalIcon size={15} /></HeaderActionButton>
+              ><SplitHorizontalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
-                className="flex h-6 min-w-6 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitV(api.id); }}
                 ariaLabel="Split vertical"
                 tooltip="Split vertical [%]"
-              ><SplitVerticalIcon size={15} /></HeaderActionButton>
+              ><SplitVerticalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
-                className="flex h-6 min-w-6 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onZoom(api.id); }}
                 ariaLabel={zoomed ? 'Unzoom' : 'Zoom'}
                 tooltip={zoomed ? 'Unzoom [z]' : 'Zoom [z]'}
-              >{zoomed ? <ArrowsInIcon size={15} /> : <ArrowsOutIcon size={15} />}</HeaderActionButton>
+              >{zoomed ? <ArrowsInIcon size={14} /> : <ArrowsOutIcon size={14} />}</HeaderActionButton>
             </div>
           )}
           {/* Detach / Kill controls — always visible */}
-          <div className="ml-1 flex shrink-0 items-center gap-1">
+          <div className="ml-1 flex shrink-0 items-center gap-0.5">
             <HeaderActionButton
-              className="flex h-6 min-w-6 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+              className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
               onClick={(e) => { e.stopPropagation(); actions.onDetach(api.id); }}
               ariaLabel="Detach"
               tooltip="Detach [d]"
-            ><ArrowLineDownIcon size={15} /></HeaderActionButton>
+            ><ArrowLineDownIcon size={14} /></HeaderActionButton>
             <HeaderActionButton
-              className="flex h-6 min-w-6 items-center justify-center rounded text-muted transition-colors hover:bg-error/10 hover:text-error"
+              className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-error/10 hover:text-error"
               onClick={(e) => { e.stopPropagation(); actions.onKill(api.id); }}
               ariaLabel="Kill"
               tooltip="Kill [x]"
-            ><XIcon size={15} /></HeaderActionButton>
+            ><XIcon size={14} /></HeaderActionButton>
           </div>
         </>
       )}

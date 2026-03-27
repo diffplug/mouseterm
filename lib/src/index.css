@@ -18,7 +18,7 @@ body {
    PaneHeader / PaneContent layout. */
 
 .dockview-theme-abyss {
-  --dv-tabs-and-actions-container-height: 35px !important;
+  --dv-tabs-and-actions-container-height: 30px !important;
   --dv-tabs-and-actions-container-font-size: var(--mt-font-size) !important;
   --dv-group-view-background-color: var(--mt-surface) !important;
   --dv-tabs-and-actions-container-background-color: var(--mt-surface-alt) !important;

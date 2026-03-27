@@ -68,7 +68,7 @@ The content area is a tiling layout of panes, powered by dockview. Each pane occ
 
 ### Pane header
 
-Each pane has a 35px header that doubles as a drag handle. The header uses `cursor-grab` / `active:cursor-grabbing` and `select-none`. Background uses `--mt-tab-*` theme tokens (adapts to VSCode host theme). Dockview's default close button and right-actions container are hidden via CSS.
+Each pane has a 30px header that doubles as a drag handle. The header uses `cursor-grab` / `active:cursor-grabbing` and `select-none`. Background uses `--mt-tab-*` theme tokens (adapts to VSCode host theme). Dockview's default close button and right-actions container are hidden via CSS.
 
 Elements from left to right:
 
@@ -276,7 +276,7 @@ Each session carries `SessionUiState` with `status: SessionStatus` and `todo: To
 Custom `mousetermTheme` extends dockview's `themeAbyss`:
 - `gap: 6` — 6px between groups in both directions
 - `dndOverlayMounting: 'absolute'`, `dndPanelOverlay: 'group'`
-- Pane header height: `--dv-tabs-and-actions-container-height: 35px`
+- Pane header height: `--dv-tabs-and-actions-container-height: 30px`
 - 6px padding around the dockview area (`p-1.5` on wrapper, `inset-1.5` on container)
 
 Colors use a two-layer CSS variable strategy: `--mt-*` semantic tokens → `var(--vscode-*, <fallback>)`. In VSCode, host theme variables take precedence. In standalone mode, fallback values apply (Dark+ defaults with `prefers-color-scheme: light` overrides). Tailwind v4 `@theme` block registers `--mt-*` tokens as Tailwind colors (e.g., `bg-surface`, `text-foreground`, `border-border`). See `theme.css` for the full token map.
