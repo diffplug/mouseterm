@@ -19,7 +19,7 @@ test('resolveSpawnConfig uses POSIX shell and home defaults', () => {
   assert.equal(config.cols, 80);
   assert.equal(config.rows, 30);
   assert.equal(config.env.TERM_PROGRAM, 'MouseTerm');
-  assert.deepEqual(config.loginArg, ['-sh']);
+  assert.deepEqual(config.loginArg, ['-l']);
 });
 
 test('resolveSpawnConfig uses Windows shell and profile defaults', () => {
@@ -60,7 +60,7 @@ test('resolveSpawnConfig preserves explicit cwd', () => {
   assert.equal(config.cwdWarning, null);
   assert.equal(config.cols, 120);
   assert.equal(config.rows, 40);
-  assert.deepEqual(config.loginArg, ['-bash']);
+  assert.deepEqual(config.loginArg, ['-l']);
 });
 
 test('resolveSpawnConfig falls back to the default directory when explicit cwd is missing', () => {

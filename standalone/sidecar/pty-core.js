@@ -59,7 +59,7 @@ function resolveSpawnConfig(options, runtime = {}) {
     cwdWarning: missingExplicitCwd ? `unable to restore because directory ${cwd} was removed` : null,
     env: { ...env, TERM_PROGRAM: 'MouseTerm' },
     shell: resolveDefaultShell(platform, env),
-    loginArg: platform === 'win32' ? [] : [`-${path.basename(resolveDefaultShell(platform, env))}`],
+    loginArg: platform === 'win32' ? [] : ['-l'],
   };
 }
 
