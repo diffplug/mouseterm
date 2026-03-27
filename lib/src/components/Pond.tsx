@@ -87,10 +87,10 @@ export type PondEvent =
 // --- Variants ---
 
 const tabVariant = tv({
-  base: 'flex h-full w-full cursor-grab items-center gap-2 rounded-t-md px-3 leading-none font-mono tracking-normal select-none active:cursor-grabbing border-b-2 border-transparent',
+  base: 'flex h-full w-full cursor-grab items-center gap-2 rounded-t-md px-3 leading-none font-mono tracking-normal select-none active:cursor-grabbing',
   variants: {
     state: {
-      selected: 'bg-tab-selected-bg text-tab-selected-fg border-b-accent',
+      selected: 'bg-tab-selected-bg text-tab-selected-fg',
       inactive: 'bg-tab-inactive-bg text-tab-inactive-fg',
     },
   },
@@ -711,6 +711,21 @@ const tabComponents = { terminal: TerminalPaneHeader };
 
 // --- Selection overlay ---
 
+function useWindowFocused(): boolean {
+  const [focused, setFocused] = useState(() => document.hasFocus());
+  useEffect(() => {
+    const onFocus = () => setFocused(true);
+    const onBlur = () => setFocused(false);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+  return focused;
+}
+
 function readSelectionColor() {
   return getComputedStyle(document.documentElement).getPropertyValue('--mt-selection-terminal').trim();
 }
@@ -755,11 +770,12 @@ export function roundedRectPath(
 }
 
 /** SVG marching-ants border that adapts its dash pattern to tile evenly. */
-export function MarchingAntsRect({ width, height, isDoor, color }: {
+export function MarchingAntsRect({ width, height, isDoor, color, paused }: {
   width: number;
   height: number;
   isDoor: boolean;
   color: string;
+  paused?: boolean;
 }) {
   const svgRef = useRef<SVGPathElement>(null);
   const [dashStyle, setDashStyle] = useState<{ dasharray: string; offset: number } | null>(null);
@@ -801,7 +817,7 @@ export function MarchingAntsRect({ width, height, isDoor, color }: {
         strokeDasharray={dashStyle?.dasharray}
         style={dashStyle ? {
           animation: `marching-ants ${ma.cycleDuration}s linear infinite`,
-          animationPlayState: ma.paused ? 'paused' : 'running',
+          animationPlayState: (ma.paused || paused) ? 'paused' : 'running',
           ['--march-offset' as string]: `-${dashStyle.offset}px`,
         } : undefined}
       />
@@ -818,6 +834,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
   const { elements: panelElements, version: panelVersion } = useContext(PanelElementsContext);
   const { elements: doorElements, version: doorVersion } = useContext(DoorElementsContext);
   const selectionColor = useSelectionColor();
+  const windowFocused = useWindowFocused();
   const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const isDoor = selectedType === 'door';
 
@@ -868,13 +885,13 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
     width: rect.width,
     height: rect.height,
     zIndex: 50,
-    transition: 'top 150ms, left 150ms, width 150ms, height 150ms',
+    transition: 'top 150ms, left 150ms, width 150ms, height 150ms, filter 200ms',
+    filter: windowFocused ? undefined : 'saturate(0.3)',
   };
 
   if (mode === 'passthrough') {
     style.borderRadius = isDoor ? '0.375rem 0.375rem 0 0' : '0.5rem';
-    style.border = `2px solid ${selectionColor}`;
-    style.boxShadow = `0 0 15px color-mix(in srgb, ${selectionColor} 30%, transparent)`;
+    style.border = `1px solid ${selectionColor}`;
     return <div style={style} />;
   }
 
@@ -885,6 +902,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
         height={rect.height}
         isDoor={isDoor}
         color={selectionColor}
+        paused={!windowFocused}
       />
     </div>
   );
@@ -933,7 +951,7 @@ function KillConfirmOverlay({ confirmKill, panelElements }: {
     return (
       <div
         style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width, height: rect.height, zIndex: 100 }}
-        className="flex items-center justify-center bg-black/50 rounded"
+        className="flex items-center justify-center bg-surface/50 rounded"
       >
         <KillConfirmCard char={confirmKill.char} />
       </div>
@@ -942,7 +960,7 @@ function KillConfirmOverlay({ confirmKill, panelElements }: {
 
   // Fallback: centered in viewport
   return (
-    <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center">
+    <div className="fixed inset-0 bg-surface/50 z-[100] flex items-center justify-center">
       <KillConfirmCard char={confirmKill.char} />
     </div>
   );
