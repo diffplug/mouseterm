@@ -202,6 +202,10 @@ export class VSCodeAdapter implements PlatformAdapter {
     this.vscode.postMessage({ type: 'alarm:clearTodo', id });
   }
 
+  alarmSoftTodo(id: string): void {
+    this.vscode.postMessage({ type: 'alarm:softTodo', id });
+  }
+
   onAlarmState(handler: (detail: AlarmStateDetail) => void): void {
     this.alarmStateHandlers.add(handler);
   }

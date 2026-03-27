@@ -27,8 +27,9 @@ import {
   getSessionStateSnapshot,
   markSessionAttention,
   markSessionTodo,
-  promoteSessionTodo,
+  softSessionTodo,
   subscribeToSessionStateChanges,
+  toggleSessionAlarm,
   toggleSessionTodo,
   destroyTerminal,
   swapTerminals,
@@ -267,7 +268,7 @@ function usePopoverFocusTrap(
   }, [ref, onClose, restoreFocusSelector]);
 }
 
-function AlarmContextMenu({
+function TodoAlarmDialog({
   position,
   sessionId,
   onClose,
@@ -279,106 +280,93 @@ function AlarmContextMenu({
   const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
   const sessionState = sessionStates.get(sessionId) ?? DEFAULT_SESSION_UI_STATE;
   const alarmEnabled = sessionState.status !== 'ALARM_DISABLED';
-  const hasHardTodo = sessionState.todo === 'hard';
-  const menuRef = useRef<HTMLDivElement>(null);
-  const firstActionRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  usePopoverFocusTrap(menuRef, onClose, `[data-alarm-button-for="${sessionId}"]`);
+  usePopoverFocusTrap(dialogRef, onClose, `[data-alarm-button-for="${sessionId}"]`);
 
   useEffect(() => {
-    firstActionRef.current?.focus();
+    dialogRef.current?.querySelector<HTMLElement>('button')?.focus();
   }, []);
+
+  // Keyboard shortcuts within dialog
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    const handler = (e: KeyboardEvent) => {
+      if (!el.contains(document.activeElement)) return;
+      if (e.key === 't') {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSessionTodo(sessionId);
+      }
+      if (e.key === 'a') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (alarmEnabled) disableSessionAlarm(sessionId);
+        else toggleSessionAlarm(sessionId);
+      }
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [sessionId, alarmEnabled]);
+
+  const toggleBtn = (active: boolean) => [
+    'rounded px-2 py-1 text-[11px] font-medium transition-colors',
+    active
+      ? 'bg-accent/20 text-accent border border-accent/40'
+      : 'text-muted border border-border hover:bg-foreground/10 hover:text-foreground',
+  ].join(' ');
 
   return createPortal(
     <div
-      ref={menuRef}
-      className="z-[9999] w-[220px] rounded-lg border border-border bg-surface-raised p-2 shadow-lg"
-      style={clampOverlayPosition({ left: position.x, top: position.y, width: 220, height: 156 })}
-      role="menu"
-      aria-label="Alarm options"
-    >
-      <button
-        ref={firstActionRef}
-        type="button"
-        className="flex w-full items-center rounded px-2.5 py-1.5 text-left text-[11px] text-foreground transition-colors hover:bg-foreground/10"
-        onClick={() => { hasHardTodo ? clearSessionTodo(sessionId) : markSessionTodo(sessionId); onClose(); }}
-      >
-        {hasHardTodo ? 'Clear TODO' : 'Mark as TODO'}
-        <span className="ml-auto text-[10px] font-mono text-muted">[t]</span>
-      </button>
-      {alarmEnabled && (
-        <button
-          type="button"
-          className="flex w-full items-center rounded px-2.5 py-1.5 text-left text-[11px] text-foreground transition-colors hover:bg-foreground/10"
-          onClick={() => { disableSessionAlarm(sessionId); onClose(); }}
-        >
-          Disable alarms
-        </button>
-      )}
-      <div className="mt-2 border-t border-border pt-2 px-2.5 text-[9px] leading-relaxed text-muted">
-        <span className="font-semibold">Soft TODO</span> — auto-created when an alarm is dismissed. Clears when you type in the terminal.
-        <br />
-        <span className="font-semibold">Hard TODO</span> — set with <span className="font-mono">[t]</span>. Only clears manually.
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-function TodoPillPrompt({
-  position,
-  sessionId,
-  onClose,
-}: {
-  position: { x: number; y: number };
-  sessionId: string;
-  onClose: () => void;
-}) {
-  const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
-  const sessionState = sessionStates.get(sessionId) ?? DEFAULT_SESSION_UI_STATE;
-  const promptRef = useRef<HTMLDivElement>(null);
-  const clearButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (sessionState.todo !== 'soft') {
-      onClose();
-    }
-  }, [onClose, sessionState.todo]);
-
-  usePopoverFocusTrap(promptRef, onClose, `[data-session-todo-for="${sessionId}"]`);
-
-  useEffect(() => {
-    clearButtonRef.current?.focus();
-  }, []);
-
-  return createPortal(
-    <div
-      ref={promptRef}
-      className="z-[9999] w-[220px] rounded-lg border border-border bg-surface-raised p-2 shadow-lg"
-      style={clampOverlayPosition({ left: position.x - 110, top: position.y, width: 220, height: 128 })}
+      ref={dialogRef}
+      className="z-[9999] w-[280px] rounded-lg border border-border bg-surface-raised p-3 shadow-lg"
+      style={clampOverlayPosition({ left: position.x, top: position.y, width: 280, height: 160 })}
       role="dialog"
       aria-modal="true"
-      aria-label="Soft TODO options"
+      aria-label="TODO and alarm settings"
     >
-      <div className="px-2.5 pb-2 text-[10px] leading-relaxed text-muted">
-        Keep this as a manual reminder, or clear it now.
+      {/* TODO row */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[10px] font-mono text-muted">[t]</span>
+        <span className="text-[11px] text-foreground font-medium w-10">TODO</span>
+        <div className="flex gap-1 ml-auto">
+          <button type="button" className={toggleBtn(sessionState.todo === 'hard')}
+            onClick={() => { if (sessionState.todo !== 'hard') markSessionTodo(sessionId); }}>
+            hard
+          </button>
+          <button type="button" className={toggleBtn(sessionState.todo === 'soft')}
+            onClick={() => { if (sessionState.todo !== 'soft') softSessionTodo(sessionId); }}>
+            soft
+          </button>
+          <button type="button" className={toggleBtn(sessionState.todo === false)}
+            onClick={() => { if (sessionState.todo !== false) clearSessionTodo(sessionId); }}>
+            off
+          </button>
+        </div>
       </div>
-      <div className="flex gap-2 px-2.5">
-        <button
-          ref={clearButtonRef}
-          type="button"
-          className="flex-1 rounded border border-border px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-foreground/10"
-          onClick={() => { clearSessionTodo(sessionId); onClose(); }}
-        >
-          Clear
-        </button>
-        <button
-          type="button"
-          className="flex-1 rounded border border-border px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-foreground/10"
-          onClick={() => { promoteSessionTodo(sessionId); onClose(); }}
-        >
-          Keep
-        </button>
+
+      {/* Alarm row */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[10px] font-mono text-muted">[a]</span>
+        <span className="text-[11px] text-foreground font-medium w-10">alarm</span>
+        <div className="flex gap-1 ml-auto">
+          <button type="button" className={toggleBtn(alarmEnabled)}
+            onClick={() => { if (!alarmEnabled) toggleSessionAlarm(sessionId); }}>
+            enabled
+          </button>
+          <button type="button" className={toggleBtn(!alarmEnabled)}
+            onClick={() => { if (alarmEnabled) disableSessionAlarm(sessionId); }}>
+            disabled
+          </button>
+        </div>
+      </div>
+
+      {/* Help text */}
+      <div className="border-t border-border pt-2 text-[9px] leading-relaxed text-muted">
+        When an alarming tab is selected,<br />
+        the alarm is cleared and the tab gets a soft TODO.<br />
+        Typing characters into the tab will automatically clear a soft TODO.
       </div>
     </div>,
     document.body,
@@ -506,8 +494,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const tabRef = useRef<HTMLDivElement>(null);
   const suppressAlarmClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const [todoPrompt, setTodoPrompt] = useState<{ x: number; y: number } | null>(null);
+  const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number } | null>(null);
   const showTodoPill = sessionState.todo !== false && tier !== 'minimal';
   const alarmButtonAriaLabel = sessionState.status === 'ALARM_RINGING'
     ? 'Alarm ringing'
@@ -520,10 +507,10 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
       ? 'Enable alarm [a] - Right-click for options'
       : 'Disable alarm [a] - Right-click for options';
 
-  const openAlarmMenuFromButton = useCallback((button: HTMLButtonElement) => {
+  const openDialogFromButton = useCallback((button: HTMLButtonElement) => {
     const rect = button.getBoundingClientRect();
-    setContextMenu({
-      x: rect.left + rect.width / 2 - 110,
+    setDialogPosition({
+      x: rect.left + rect.width / 2 - 140,
       y: rect.bottom + 6,
     });
   }, []);
@@ -531,9 +518,9 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const triggerAlarmButtonAction = useCallback((displayedStatus: SessionStatus, button: HTMLButtonElement) => {
     const result = actions.onAlarmButton(api.id, displayedStatus);
     if (result === 'dismissed') {
-      openAlarmMenuFromButton(button);
+      openDialogFromButton(button);
     }
-  }, [actions, api.id, openAlarmMenuFromButton]);
+  }, [actions, api.id, openDialogFromButton]);
 
   useEffect(() => {
     const el = tabRef.current;
@@ -601,7 +588,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             }
             triggerAlarmButtonAction(sessionState.status, e.currentTarget);
           }}
-          onContextMenu={(e) => setContextMenu({ x: e.clientX, y: e.clientY })}
+          onContextMenu={(e) => { e.preventDefault(); setDialogPosition({ x: e.clientX, y: e.clientY }); }}
           ariaLabel={alarmButtonAriaLabel}
           tooltip={alarmButtonTooltip}
           dataAlarmButtonFor={api.id}
@@ -630,16 +617,12 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
               'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10',
               sessionState.todo === 'soft' ? 'border border-dashed border-muted' : 'border border-muted',
             ].join(' ')}
-            aria-label={sessionState.todo === 'soft' ? 'Soft TODO options' : 'Clear TODO'}
+            aria-label="TODO settings"
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              if (sessionState.todo === 'soft') {
-                const rect = e.currentTarget.getBoundingClientRect();
-                setTodoPrompt({ x: rect.left + rect.width / 2, y: rect.bottom + 6 });
-                return;
-              }
-              clearSessionTodo(api.id);
+              const rect = e.currentTarget.getBoundingClientRect();
+              setDialogPosition({ x: rect.left + rect.width / 2 - 140, y: rect.bottom + 6 });
             }}
           >
             TODO
@@ -688,18 +671,11 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           </div>
         </>
       )}
-      {contextMenu && (
-        <AlarmContextMenu
-          position={contextMenu}
+      {dialogPosition && (
+        <TodoAlarmDialog
+          position={dialogPosition}
           sessionId={api.id}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
-      {todoPrompt && (
-        <TodoPillPrompt
-          position={todoPrompt}
-          sessionId={api.id}
-          onClose={() => setTodoPrompt(null)}
+          onClose={() => setDialogPosition(null)}
         />
       )}
     </div>
