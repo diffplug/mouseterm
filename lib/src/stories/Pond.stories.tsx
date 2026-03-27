@@ -7,7 +7,7 @@ import {
   SCENARIO_ANSI_COLORS,
   SCENARIO_LONG_RUNNING,
 } from '../lib/platform';
-import { getSessionStateSnapshot, primeSessionState, type SessionUiState } from '../lib/terminal-registry';
+import { getSessionStateSnapshot, primeSessionState, type SessionUiState, TODO_OFF, TODO_HARD } from '../lib/terminal-registry';
 
 const meta: Meta<typeof Pond> = {
   title: 'App/Pond',
@@ -109,7 +109,7 @@ export const AlarmEnabledIdlePane: Story = {
         {
           status: 'NOTHING_TO_SHOW',
 
-          todo: false,
+          todo: TODO_OFF,
         },
       ],
     },
@@ -124,7 +124,7 @@ export const AlarmRingingPane: Story = {
         {
           status: 'ALARM_RINGING',
 
-          todo: false,
+          todo: TODO_OFF,
         },
       ],
     },
@@ -139,7 +139,7 @@ export const AlarmRingingDoor: Story = {
       {
         status: 'ALARM_RINGING',
 
-        todo: false,
+        todo: TODO_OFF,
       },
     ]);
     await wait(100);
@@ -154,7 +154,7 @@ export const AlarmModalOpen: Story = {
         {
           status: 'ALARM_RINGING',
 
-          todo: false,
+          todo: TODO_OFF,
         },
       ],
     },
@@ -170,7 +170,7 @@ export const TodoAfterDismiss: Story = {
         {
           status: 'ALARM_RINGING',
 
-          todo: 'hard',
+          todo: TODO_HARD,
         },
       ],
     },
@@ -185,12 +185,12 @@ export const DetachedRingingSession: Story = {
       {
         status: 'ALARM_RINGING',
 
-        todo: 'hard',
+        todo: TODO_HARD,
       },
       {
         status: 'NOTHING_TO_SHOW',
 
-        todo: false,
+        todo: TODO_OFF,
       },
     ]);
     await wait(100);
@@ -205,17 +205,17 @@ export const MultipleRingingSessions: Story = {
       {
         status: 'ALARM_RINGING',
 
-        todo: false,
+        todo: TODO_OFF,
       },
       {
         status: 'ALARM_RINGING',
 
-        todo: 'hard',
+        todo: TODO_HARD,
       },
       {
         status: 'NOTHING_TO_SHOW',
 
-        todo: false,
+        todo: TODO_OFF,
       },
     ]);
     await wait(100);

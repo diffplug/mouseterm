@@ -27,4 +27,10 @@ export const cfg = {
     /** ms — attention idle expiry. How long before "looking at this pane" wears off. */
     userAttention: 15_000,
   },
+  todoBucket: {
+    /** Seconds for a fully-drained soft-TODO bucket to refill to full when idle. */
+    timeToFullSeconds: 3,
+    /** Number of printable keypresses to drain a full bucket to zero. */
+    keypressesToEmpty: 5,
+  },
 };

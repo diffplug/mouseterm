@@ -33,6 +33,9 @@ import {
   destroyTerminal,
   swapTerminals,
   type SessionStatus,
+  isSoftTodo,
+  isHardTodo,
+  hasTodo,
 } from '../lib/terminal-registry';
 import { resolvePanelElement, findPanelInDirection, findRestoreNeighbor, type DetachDirection } from '../lib/spatial-nav';
 import { cloneLayout, getLayoutStructureSignature } from '../lib/layout-snapshot';
@@ -279,7 +282,7 @@ function AlarmContextMenu({
   const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
   const sessionState = sessionStates.get(sessionId) ?? DEFAULT_SESSION_UI_STATE;
   const alarmEnabled = sessionState.status !== 'ALARM_DISABLED';
-  const hasHardTodo = sessionState.todo === 'hard';
+  const hasHardTodo = isHardTodo(sessionState.todo);
   const menuRef = useRef<HTMLDivElement>(null);
   const firstActionRef = useRef<HTMLButtonElement>(null);
 
@@ -340,7 +343,7 @@ function TodoPillPrompt({
   const clearButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (sessionState.todo !== 'soft') {
+    if (!isSoftTodo(sessionState.todo)) {
       onClose();
     }
   }, [onClose, sessionState.todo]);
@@ -508,7 +511,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const [tier, setTier] = useState<HeaderTier>('full');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [todoPrompt, setTodoPrompt] = useState<{ x: number; y: number } | null>(null);
-  const showTodoPill = sessionState.todo !== false && tier !== 'minimal';
+  const showTodoPill = hasTodo(sessionState.todo) && tier !== 'minimal';
   const alarmButtonAriaLabel = sessionState.status === 'ALARM_RINGING'
     ? 'Alarm ringing'
     : sessionState.status === 'ALARM_DISABLED'
@@ -628,13 +631,18 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             data-session-todo-for={api.id}
             className={[
               'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10',
-              sessionState.todo === 'soft' ? 'border border-dashed border-muted' : 'border border-muted',
+              isSoftTodo(sessionState.todo) ? 'border border-dashed border-muted' : 'border border-muted',
             ].join(' ')}
-            aria-label={sessionState.todo === 'soft' ? 'Soft TODO options' : 'Clear TODO'}
+            style={isSoftTodo(sessionState.todo) ? {
+              opacity: 0.3 + 0.7 * sessionState.todo,
+              transform: `scale(${0.7 + 0.3 * sessionState.todo})`,
+              transition: 'opacity 0.15s ease, transform 0.15s ease',
+            } : undefined}
+            aria-label={isSoftTodo(sessionState.todo) ? 'Soft TODO options' : 'Clear TODO'}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              if (sessionState.todo === 'soft') {
+              if (isSoftTodo(sessionState.todo)) {
                 const rect = e.currentTarget.getBoundingClientRect();
                 setTodoPrompt({ x: rect.left + rect.width / 2, y: rect.bottom + 6 });
                 return;

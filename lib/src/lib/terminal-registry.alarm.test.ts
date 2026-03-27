@@ -94,6 +94,10 @@ import {
   swapTerminals,
   toggleSessionAlarm,
   toggleSessionTodo,
+  TODO_OFF,
+  TODO_SOFT_FULL,
+  TODO_HARD,
+  isSoftTodo,
 } from './terminal-registry';
 
 interface MockTerminalInstance {
@@ -238,7 +242,7 @@ describe('terminal-registry alarm behavior', () => {
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
 
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -269,7 +273,7 @@ describe('terminal-registry alarm behavior', () => {
     expect(getSessionState(id)).toMatchObject({
       status: 'ALARM_RINGING',
 
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -303,7 +307,7 @@ describe('terminal-registry alarm behavior', () => {
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
 
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -317,7 +321,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: 'soft',
+      todo: TODO_SOFT_FULL,
     });
   });
 
@@ -331,7 +335,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toMatchObject({
       status: 'NOTHING_TO_SHOW',
-      todo: 'soft',
+      todo: TODO_SOFT_FULL,
     });
 
     // New output starts a fresh cycle that can ring again
@@ -342,7 +346,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toMatchObject({
       status: 'ALARM_RINGING',
-      todo: 'soft',
+      todo: TODO_SOFT_FULL,
     });
   });
 
@@ -356,7 +360,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: 'hard',
+      todo: TODO_HARD,
     });
   });
 
@@ -370,7 +374,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'ALARM_DISABLED',
-      todo: false,
+      todo: TODO_OFF,
     });
 
     // No monitor means output doesn't drive state changes
@@ -380,7 +384,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'ALARM_DISABLED',
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -424,7 +428,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: 'soft',
+      todo: TODO_SOFT_FULL,
     });
   });
 
@@ -441,7 +445,7 @@ describe('terminal-registry alarm behavior', () => {
     expect(getSessionState(id)).toEqual({
       status: 'ALARM_RINGING',
 
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -457,7 +461,7 @@ describe('terminal-registry alarm behavior', () => {
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
 
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -477,11 +481,11 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(alpha)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: 'soft',
+      todo: TODO_SOFT_FULL,
     });
     expect(getSessionState(beta)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: 'soft',
+      todo: TODO_SOFT_FULL,
     });
   });
 
@@ -494,7 +498,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: 'hard',
+      todo: TODO_HARD,
     });
 
     destroyTerminal(id);
@@ -510,7 +514,7 @@ describe('terminal-registry alarm behavior', () => {
     expect(getSessionState(id)).toEqual({
       status: 'ALARM_RINGING',
 
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -522,11 +526,10 @@ describe('terminal-registry alarm behavior', () => {
     driveToRingingNeedsAttention(id);
     entry.terminal.emitInput('x');
 
-    expect(getSessionState(id)).toEqual({
-      status: 'NOTHING_TO_SHOW',
-
-      todo: false,
-    });
+    // Typing while ringing: attend creates soft TODO, then the keypress drains the bucket by 1/5
+    expect(getSessionState(id).status).toBe('NOTHING_TO_SHOW');
+    expect(isSoftTodo(getSessionState(id).todo)).toBe(true);
+    expect(getSessionState(id).todo).toBeCloseTo(0.8);
   });
 
   it('no monitor is created until alarm is enabled', () => {
@@ -542,7 +545,7 @@ describe('terminal-registry alarm behavior', () => {
     expect(getSessionState(id)).toEqual({
       status: 'ALARM_DISABLED',
 
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -567,7 +570,7 @@ describe('terminal-registry alarm behavior', () => {
     expect(getSessionState(id).status).toBe('BUSY');
   });
 
-  it('phantom dismiss creates soft TODO, typing clears it', () => {
+  it('phantom dismiss creates soft TODO, typing 5 chars clears it', () => {
     const id = 'soft-todo-clear';
     const entry = createSession(id);
     toggleSessionAlarm(id);
@@ -575,12 +578,47 @@ describe('terminal-registry alarm behavior', () => {
     driveToRingingNeedsAttention(id);
     attendSession(id);
 
-    expect(getSessionState(id).todo).toBe('soft');
+    expect(getSessionState(id).todo).toBe(TODO_SOFT_FULL);
 
-    // Typing clears the soft TODO
-    entry.terminal.emitInput('ls');
+    // 4 keypresses drain but don't clear
+    for (let i = 0; i < 4; i++) {
+      entry.terminal.emitInput('a');
+    }
+    expect(isSoftTodo(getSessionState(id).todo)).toBe(true);
 
-    expect(getSessionState(id).todo).toBe(false);
+    // 5th keypress clears it
+    entry.terminal.emitInput('a');
+    expect(getSessionState(id).todo).toBe(TODO_OFF);
+  });
+
+  it('soft TODO bucket refills after idle and requires fresh keypresses', () => {
+    const id = 'soft-todo-refill';
+    const entry = createSession(id);
+    toggleSessionAlarm(id);
+
+    driveToRingingNeedsAttention(id);
+    attendSession(id);
+
+    expect(getSessionState(id).todo).toBe(TODO_SOFT_FULL);
+
+    // 3 keypresses
+    for (let i = 0; i < 3; i++) {
+      entry.terminal.emitInput('a');
+    }
+    expect(isSoftTodo(getSessionState(id).todo)).toBe(true);
+
+    // Wait for full refill (3 seconds)
+    vi.advanceTimersByTime(3_000);
+    expect(getSessionState(id).todo).toBe(TODO_SOFT_FULL);
+
+    // Need 5 fresh keypresses to clear
+    for (let i = 0; i < 4; i++) {
+      entry.terminal.emitInput('a');
+    }
+    expect(isSoftTodo(getSessionState(id).todo)).toBe(true);
+
+    entry.terminal.emitInput('a');
+    expect(getSessionState(id).todo).toBe(TODO_OFF);
   });
 
   it('focus-report control sequences do not clear a soft TODO', () => {
@@ -591,11 +629,11 @@ describe('terminal-registry alarm behavior', () => {
     driveToRingingNeedsAttention(id);
     attendSession(id);
 
-    expect(getSessionState(id).todo).toBe('soft');
+    expect(getSessionState(id).todo).toBe(TODO_SOFT_FULL);
 
     entry.terminal.emitInput('\x1b[I');
 
-    expect(getSessionState(id).todo).toBe('soft');
+    expect(getSessionState(id).todo).toBe(TODO_SOFT_FULL);
   });
 
   it('typing does not clear a hard TODO', () => {
@@ -606,11 +644,11 @@ describe('terminal-registry alarm behavior', () => {
     driveToRingingNeedsAttention(id);
     toggleSessionTodo(id); // ringing → hard TODO + attend
 
-    expect(getSessionState(id).todo).toBe('hard');
+    expect(getSessionState(id).todo).toBe(TODO_HARD);
 
     entry.terminal.emitInput('ls');
 
-    expect(getSessionState(id).todo).toBe('hard');
+    expect(getSessionState(id).todo).toBe(TODO_HARD);
   });
 
   it('toggleSessionTodo promotes soft to hard', () => {
@@ -621,24 +659,24 @@ describe('terminal-registry alarm behavior', () => {
     driveToRingingNeedsAttention(id);
     attendSession(id);
 
-    expect(getSessionState(id).todo).toBe('soft');
+    expect(getSessionState(id).todo).toBe(TODO_SOFT_FULL);
 
     toggleSessionTodo(id);
 
-    expect(getSessionState(id).todo).toBe('hard');
+    expect(getSessionState(id).todo).toBe(TODO_HARD);
   });
 
   it('toggleSessionTodo cycles: false → hard → false', () => {
     const id = 'toggle-cycle';
     createSession(id);
 
-    expect(getSessionState(id).todo).toBe(false);
+    expect(getSessionState(id).todo).toBe(TODO_OFF);
 
     toggleSessionTodo(id);
-    expect(getSessionState(id).todo).toBe('hard');
+    expect(getSessionState(id).todo).toBe(TODO_HARD);
 
     toggleSessionTodo(id);
-    expect(getSessionState(id).todo).toBe(false);
+    expect(getSessionState(id).todo).toBe(TODO_OFF);
   });
 
   it('dismiss does not downgrade hard TODO to soft', () => {
@@ -656,7 +694,7 @@ describe('terminal-registry alarm behavior', () => {
     dismissSessionAlarm(id);
 
     // Hard TODO should survive — soft TODO only set when todo === false
-    expect(getSessionState(id).todo).toBe('hard');
+    expect(getSessionState(id).todo).toBe(TODO_HARD);
   });
 
   it('new output while ringing without attention does not create a soft TODO', () => {
@@ -670,7 +708,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'ALARM_RINGING',
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -684,7 +722,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'ALARM_DISABLED',
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -696,7 +734,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -710,7 +748,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'ALARM_DISABLED',
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -724,7 +762,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: 'soft',
+      todo: TODO_SOFT_FULL,
     });
   });
 
@@ -738,14 +776,14 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: 'soft',
+      todo: TODO_SOFT_FULL,
     });
 
     dismissOrToggleAlarm(id, 'ALARM_RINGING');
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: 'soft',
+      todo: TODO_SOFT_FULL,
     });
   });
 
@@ -759,13 +797,13 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: 'soft',
+      todo: TODO_SOFT_FULL,
     });
 
     expect(dismissOrToggleAlarm(id, 'NOTHING_TO_SHOW')).toBe('dismissed');
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: 'soft',
+      todo: TODO_SOFT_FULL,
     });
   });
 
@@ -779,7 +817,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'ALARM_RINGING',
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -796,7 +834,7 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -817,11 +855,11 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(alpha)).toEqual({
       status: 'ALARM_DISABLED',
-      todo: false,
+      todo: TODO_OFF,
     });
     expect(getSessionState(beta)).toEqual({
       status: 'BUSY',
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 
@@ -836,22 +874,22 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(alpha)).toEqual({
       status: 'ALARM_DISABLED',
-      todo: false,
+      todo: TODO_OFF,
     });
     expect(getSessionState(beta)).toEqual({
       status: 'ALARM_DISABLED',
-      todo: 'hard',
+      todo: TODO_HARD,
     });
 
     clearSessionTodo(beta);
 
     expect(getSessionState(alpha)).toEqual({
       status: 'ALARM_DISABLED',
-      todo: false,
+      todo: TODO_OFF,
     });
     expect(getSessionState(beta)).toEqual({
       status: 'ALARM_DISABLED',
-      todo: false,
+      todo: TODO_OFF,
     });
   });
 });

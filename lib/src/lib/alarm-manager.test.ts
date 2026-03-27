@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AlarmManager } from './alarm-manager';
+import { AlarmManager, TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo } from './alarm-manager';
 
 describe('AlarmManager in isolation', () => {
   let manager: AlarmManager;
@@ -152,5 +152,112 @@ describe('AlarmManager in isolation', () => {
     expect(states).toContain('BUSY');
     expect(states).toContain('MIGHT_NEED_ATTENTION');
     expect(states).toContain('ALARM_RINGING');
+  });
+
+  // --- Soft-TODO bucket tests ---
+
+  function createSoftTodo(id: string): void {
+    manager.toggleAlarm(id);
+    manager.clearAttention(id);
+    // Drive to BUSY → silence → ALARM_RINGING
+    manager.onData(id);
+    vi.advanceTimersByTime(1_600);
+    manager.onData(id);
+    manager.onData(id);
+    vi.advanceTimersByTime(2_000);
+    vi.advanceTimersByTime(3_000);
+    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+    // Attend creates soft TODO
+    manager.attend(id);
+    expect(isSoftTodo(manager.getState(id).todo)).toBe(true);
+  }
+
+  it('soft-TODO bucket starts full', () => {
+    const id = 'bucket-full';
+    createSoftTodo(id);
+    expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
+  });
+
+  it('5 rapid keypresses drain bucket to 0 and clear soft-TODO', () => {
+    const id = 'bucket-drain';
+    createSoftTodo(id);
+
+    for (let i = 0; i < 5; i++) {
+      manager.drainTodoBucket(id);
+    }
+
+    expect(manager.getState(id).todo).toBe(TODO_OFF);
+  });
+
+  it('4 keypresses drain but do not clear soft-TODO', () => {
+    const id = 'bucket-partial';
+    createSoftTodo(id);
+
+    for (let i = 0; i < 4; i++) {
+      manager.drainTodoBucket(id);
+    }
+
+    expect(isSoftTodo(manager.getState(id).todo)).toBe(true);
+    expect(manager.getState(id).todo).toBeCloseTo(0.2);
+  });
+
+  it('bucket refills to full after timeToFull seconds of idle', () => {
+    const id = 'bucket-refill';
+    createSoftTodo(id);
+
+    manager.drainTodoBucket(id);
+    manager.drainTodoBucket(id);
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.4);
+
+    // Wait for full refill (3 seconds for full, but only need 0.6 * 3 = 1.8s)
+    vi.advanceTimersByTime(1_800);
+
+    expect(isSoftTodo(manager.getState(id).todo)).toBe(true);
+    expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
+  });
+
+  it('partial refill + more keypresses — correct math', () => {
+    const id = 'bucket-partial-refill';
+    createSoftTodo(id);
+
+    // Drain 3 times → level = 0.4
+    for (let i = 0; i < 3; i++) {
+      manager.drainTodoBucket(id);
+    }
+    expect(manager.getState(id).todo).toBeCloseTo(0.4);
+
+    // Wait 1.5s → refill = 1.5/3 = 0.5, so level = min(1, 0.4 + 0.5) = 0.9
+    vi.advanceTimersByTime(1_500);
+
+    // Drain once more → refill applied first, then drain: 0.9 - 0.2 = 0.7
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.7);
+    expect(isSoftTodo(manager.getState(id).todo)).toBe(true);
+  });
+
+  it('promoting a partially-drained soft-TODO resets to hard', () => {
+    const id = 'bucket-promote';
+    createSoftTodo(id);
+
+    manager.drainTodoBucket(id);
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.6);
+
+    manager.promoteTodo(id);
+    expect(manager.getState(id).todo).toBe(TODO_HARD);
+  });
+
+  it('hard TODO uses TODO_HARD constant', () => {
+    const id = 'bucket-hard';
+    manager.toggleTodo(id); // off → hard
+    expect(manager.getState(id).todo).toBe(TODO_HARD);
+  });
+
+  it('drainTodoBucket is a no-op for hard TODOs', () => {
+    const id = 'bucket-hard-noop';
+    manager.toggleTodo(id);
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBe(TODO_HARD);
   });
 });

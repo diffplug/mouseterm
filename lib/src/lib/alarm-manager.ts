@@ -3,7 +3,24 @@ import { cfg } from '../cfg';
 
 export { type SessionStatus } from './activity-monitor';
 
-export type TodoState = false | 'soft' | 'hard';
+/**
+ * Unified todo state as a single number.
+ *
+ *   TODO_OFF  (-1)  — no TODO
+ *   [0, 1]         — soft TODO; value is bucket fill level (1 = full, 0 = about to clear)
+ *   TODO_HARD (2)   — hard TODO (manually set, never auto-clears)
+ *
+ * Helpers: isSoftTodo(), isHardTodo(), hasTodo()
+ */
+export type TodoState = number;
+export const TODO_OFF = -1;
+export const TODO_SOFT_FULL = 1;
+export const TODO_HARD = 2;
+
+export function isSoftTodo(todo: TodoState): boolean { return todo >= 0 && todo <= 1; }
+export function isHardTodo(todo: TodoState): boolean { return todo === TODO_HARD; }
+export function hasTodo(todo: TodoState): boolean { return todo !== TODO_OFF; }
+
 export type AlarmButtonActionResult = 'enabled' | 'disabled' | 'dismissed' | 'noop';
 
 export interface AlarmState {
@@ -15,7 +32,7 @@ export interface AlarmState {
 
 export const DEFAULT_ALARM_STATE: AlarmState = {
   status: 'ALARM_DISABLED',
-  todo: false,
+  todo: TODO_OFF,
   attentionDismissedRing: false,
 };
 
@@ -23,9 +40,13 @@ interface AlarmEntry {
   monitor: ActivityMonitor | null;
   todo: TodoState;
   attentionDismissedRing: boolean;
+  bucketLastDrainAt: number;
+  bucketRefillTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const T_USER_ATTENTION = cfg.alarm.userAttention;
+const BUCKET_TIME_TO_FULL_MS = cfg.todoBucket.timeToFullSeconds * 1_000;
+const BUCKET_KEYPRESSES_TO_EMPTY = cfg.todoBucket.keypressesToEmpty;
 
 /**
  * Manages ActivityMonitors, attention tracking, and todo state for PTY sessions.
@@ -100,8 +121,8 @@ export class AlarmManager {
 
     if (previousStatus === 'ALARM_RINGING') {
       entry.attentionDismissedRing = true;
-      if (entry.todo === false) {
-        entry.todo = 'soft';
+      if (entry.todo === TODO_OFF) {
+        entry.todo = TODO_SOFT_FULL;
       }
     }
     entry.monitor?.attend();
@@ -161,8 +182,8 @@ export class AlarmManager {
     const entry = this.entries.get(id);
     if (!entry?.monitor) return;
     if (entry.monitor.getStatus() !== 'ALARM_RINGING') return;
-    if (entry.todo === false) {
-      entry.todo = 'soft';
+    if (entry.todo === TODO_OFF) {
+      entry.todo = TODO_SOFT_FULL;
     }
     entry.monitor.attend();
     // onChange fires → notify
@@ -204,14 +225,16 @@ export class AlarmManager {
 
   // --- Todo controls ---
 
-  /** Toggle: false → hard, soft → hard, hard → false */
+  /** Toggle: off → hard, soft → hard, hard → off */
   toggleTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
-    if (entry.todo === 'hard') {
-      entry.todo = false;
+    if (entry.todo === TODO_HARD) {
+      this.clearBucketRefillTimer(entry);
+      entry.todo = TODO_OFF;
       this.notify(id);
     } else {
-      entry.todo = 'hard';
+      this.clearBucketRefillTimer(entry);
+      entry.todo = TODO_HARD;
       if (entry.monitor?.getStatus() === 'ALARM_RINGING') {
         entry.monitor.attend();
         return; // onChange fires → notify
@@ -224,8 +247,9 @@ export class AlarmManager {
   markTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
     const isRinging = entry.monitor?.getStatus() === 'ALARM_RINGING';
-    if (entry.todo === 'hard' && !isRinging) return;
-    entry.todo = 'hard';
+    if (entry.todo === TODO_HARD && !isRinging) return;
+    this.clearBucketRefillTimer(entry);
+    entry.todo = TODO_HARD;
     if (isRinging) {
       entry.monitor!.attend();
       return; // onChange fires → notify
@@ -236,16 +260,56 @@ export class AlarmManager {
   /** Promote soft TODO to hard */
   promoteTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
-    if (entry.todo !== 'soft') return;
-    entry.todo = 'hard';
+    if (!isSoftTodo(entry.todo)) return;
+    this.clearBucketRefillTimer(entry);
+    entry.todo = TODO_HARD;
     this.notify(id);
   }
 
   /** Clear any TODO state */
   clearTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
-    if (entry.todo === false) return;
-    entry.todo = false;
+    if (entry.todo === TODO_OFF) return;
+    this.clearBucketRefillTimer(entry);
+    entry.todo = TODO_OFF;
+    this.notify(id);
+  }
+
+  /** Drain the soft-TODO bucket by one keypress. Clears the TODO if bucket empties. */
+  drainTodoBucket(id: string): void {
+    const entry = this.entries.get(id);
+    if (!entry || !isSoftTodo(entry.todo)) return;
+
+    const now = Date.now();
+
+    // Apply refill based on time since last drain
+    if (entry.bucketLastDrainAt > 0) {
+      const elapsed = now - entry.bucketLastDrainAt;
+      entry.todo = Math.min(TODO_SOFT_FULL, entry.todo + elapsed / BUCKET_TIME_TO_FULL_MS);
+    }
+
+    // Drain by one keypress
+    entry.todo = entry.todo - 1 / BUCKET_KEYPRESSES_TO_EMPTY;
+    entry.bucketLastDrainAt = now;
+
+    if (entry.todo < 1e-9) {
+      entry.todo = TODO_OFF;
+      this.clearBucketRefillTimer(entry);
+      this.notify(id);
+      return;
+    }
+
+    // Schedule refill timer
+    this.clearBucketRefillTimer(entry);
+    entry.bucketRefillTimer = setTimeout(() => {
+      entry.bucketRefillTimer = null;
+      if (isSoftTodo(entry.todo)) {
+        entry.todo = TODO_SOFT_FULL;
+        entry.bucketLastDrainAt = 0;
+        this.notify(id);
+      }
+    }, (TODO_SOFT_FULL - entry.todo) * BUCKET_TIME_TO_FULL_MS);
+
     this.notify(id);
   }
 
@@ -273,6 +337,7 @@ export class AlarmManager {
   remove(id: string): void {
     const entry = this.entries.get(id);
     if (!entry) return;
+    this.clearBucketRefillTimer(entry);
     entry.monitor?.dispose();
     this.entries.delete(id);
     if (this.attentionId === id) {
@@ -302,6 +367,7 @@ export class AlarmManager {
 
   dispose(): void {
     for (const entry of this.entries.values()) {
+      this.clearBucketRefillTimer(entry);
       entry.monitor?.dispose();
     }
     this.entries.clear();
@@ -314,10 +380,17 @@ export class AlarmManager {
   private getOrCreateEntry(id: string): AlarmEntry {
     let entry = this.entries.get(id);
     if (!entry) {
-      entry = { monitor: null, todo: false, attentionDismissedRing: false };
+      entry = { monitor: null, todo: TODO_OFF, attentionDismissedRing: false, bucketLastDrainAt: 0, bucketRefillTimer: null };
       this.entries.set(id, entry);
     }
     return entry;
+  }
+
+  private clearBucketRefillTimer(entry: AlarmEntry): void {
+    if (entry.bucketRefillTimer !== null) {
+      clearTimeout(entry.bucketRefillTimer);
+      entry.bucketRefillTimer = null;
+    }
   }
 
   private notify(id: string): void {

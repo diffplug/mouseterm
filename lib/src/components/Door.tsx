@@ -1,5 +1,5 @@
 import { BellIcon } from '@phosphor-icons/react';
-import type { SessionStatus, TodoState } from '../lib/terminal-registry';
+import { TODO_OFF, isSoftTodo, hasTodo, type SessionStatus, type TodoState } from '../lib/terminal-registry';
 
 export interface DoorProps {
   doorId?: string;
@@ -15,7 +15,7 @@ export function Door({
   title,
   isActive = false,
   status = 'ALARM_DISABLED',
-  todo = false,
+  todo = TODO_OFF,
   onClick,
 }: DoorProps) {
   // Doors can only be active in command mode (navigated to via arrow keys).
@@ -49,13 +49,20 @@ export function Door({
       <span className={['min-w-0 flex-1 truncate', isActive ? 'text-foreground' : 'text-muted'].join(' ')}>
         {title}
       </span>
-      {(todo || alarmEnabled) && (
+      {(hasTodo(todo) || alarmEnabled) && (
         <span className="flex shrink-0 items-center gap-1.5">
-          {todo && (
-            <span className={[
-              'rounded bg-surface-raised px-1 py-px text-[8px] font-semibold tracking-[0.08em] text-foreground',
-              todo === 'soft' ? 'border border-dashed border-border' : 'border border-border',
-            ].join(' ')}>
+          {hasTodo(todo) && (
+            <span
+              className={[
+                'rounded bg-surface-raised px-1 py-px text-[8px] font-semibold tracking-[0.08em] text-foreground',
+                isSoftTodo(todo) ? 'border border-dashed border-border' : 'border border-border',
+              ].join(' ')}
+              style={isSoftTodo(todo) ? {
+                opacity: 0.3 + 0.7 * todo,
+                transform: `scale(${0.7 + 0.3 * todo})`,
+                transition: 'opacity 0.15s ease, transform 0.15s ease',
+              } : undefined}
+            >
               TODO
             </span>
           )}
