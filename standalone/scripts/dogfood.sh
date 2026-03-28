@@ -1,4 +1,20 @@
 #!/usr/bin/env bash
+#
+# Builds the standalone app and either launches or installs it.
+#
+# Usage:
+#   pnpm dogfood:standalone              Build and launch from the build directory.
+#   pnpm dogfood:standalone --install    Build and copy into the system install location.
+#
+# Launch mode (default):
+#   Runs the built binary directly from target/release. Works on Windows, macOS,
+#   and Linux with no prior setup. This is the fastest way to test changes.
+#
+# Install mode (--install):
+#   Copies the built files over the system-installed copy, bypassing the slow
+#   bundling/installer step. Requires a one-time install via the NSIS installer
+#   so that registry entries, shortcuts, etc. are in place. Currently Windows only.
+#
 set -euo pipefail
 
 RELEASE_DIR="standalone/src-tauri/target/release"
