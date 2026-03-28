@@ -63,6 +63,20 @@ test('resolveSpawnConfig preserves explicit cwd', () => {
   assert.deepEqual(config.loginArg, ['-l']);
 });
 
+test('resolveSpawnConfig skips -l for csh-style shells that reject it', () => {
+  const config = resolveSpawnConfig(undefined, {
+    platform: 'linux',
+    env: { SHELL: '/bin/tcsh' },
+    osModule: {
+      homedir: () => '/home/tester',
+      tmpdir: () => '/tmp/fallback',
+    },
+  });
+
+  assert.equal(config.shell, '/bin/tcsh');
+  assert.deepEqual(config.loginArg, []);
+});
+
 test('resolveSpawnConfig falls back to the default directory when explicit cwd is missing', () => {
   const config = resolveSpawnConfig(
     { cwd: '/gone', cols: 120, rows: 40 },
@@ -84,6 +98,20 @@ test('resolveSpawnConfig falls back to the default directory when explicit cwd i
   assert.equal(config.cwdWarning, 'unable to restore because directory /gone was removed');
   assert.equal(config.cols, 120);
   assert.equal(config.rows, 40);
+});
+
+test('resolveSpawnConfig skips -l for csh', () => {
+  const config = resolveSpawnConfig(undefined, {
+    platform: 'darwin',
+    env: { SHELL: '/bin/csh' },
+    osModule: {
+      homedir: () => '/Users/tester',
+      tmpdir: () => '/tmp/fallback',
+    },
+  });
+
+  assert.equal(config.shell, '/bin/csh');
+  assert.deepEqual(config.loginArg, []);
 });
 
 test('create buffers scrollback for getScrollback requests', () => {

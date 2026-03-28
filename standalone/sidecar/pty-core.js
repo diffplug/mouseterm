@@ -23,6 +23,17 @@ function resolveDefaultShell(platform = process.platform, env = process.env) {
   return env.SHELL || '/bin/sh';
 }
 
+const LOGIN_ARG_UNSUPPORTED_SHELLS = new Set(['csh', 'tcsh']);
+
+function resolveLoginArg(shell, platform = process.platform) {
+  if (platform === 'win32') {
+    return [];
+  }
+
+  const shellName = path.posix.basename(shell || '').toLowerCase();
+  return LOGIN_ARG_UNSUPPORTED_SHELLS.has(shellName) ? [] : ['-l'];
+}
+
 function resolveDefaultCwd(platform = process.platform, env = process.env, osModule = os) {
   const homedir = safeResolve(() => osModule.homedir());
   const tmpdir = safeResolve(() => osModule.tmpdir());
@@ -51,6 +62,7 @@ function resolveSpawnConfig(options, runtime = {}) {
   const fsModule = runtime.fsModule || fs;
   const defaultCwd = resolveDefaultCwd(platform, env, osModule);
   const missingExplicitCwd = Boolean(cwd) && !directoryExists(cwd, fsModule);
+  const shell = resolveDefaultShell(platform, env);
 
   return {
     cols,
@@ -58,8 +70,8 @@ function resolveSpawnConfig(options, runtime = {}) {
     cwd: missingExplicitCwd ? defaultCwd : (cwd || defaultCwd),
     cwdWarning: missingExplicitCwd ? `unable to restore because directory ${cwd} was removed` : null,
     env: { ...env, TERM_PROGRAM: 'MouseTerm' },
-    shell: resolveDefaultShell(platform, env),
-    loginArg: platform === 'win32' ? [] : ['-l'],
+    shell,
+    loginArg: resolveLoginArg(shell, platform),
   };
 }
 

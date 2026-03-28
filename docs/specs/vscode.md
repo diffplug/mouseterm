@@ -55,6 +55,7 @@ Frontend Library (lib/src/)
 - **Save before kill.** Deactivate must save session state *before* killing PTYs. CWD and scrollback queries need live processes. See ordering in `extension.ts:deactivate()`.
 - **Alarm state is global.** A single `AlarmManager` instance in `message-router.ts` is shared across all routers and survives router disposal. PTY data feeds into it at module level, regardless of webview visibility.
 - **PTY ownership.** Each router tracks its PTYs in `ownedPtyIds`. A module-level `globalOwnedPtyIds` set prevents a reconnecting router from stealing PTYs owned by another webview.
+- **Shell login args are shell-specific.** The shared `pty-core.js` launches POSIX shells with `-l` only for shells that accept it. `csh`/`tcsh` must be spawned without `-l` so both the standalone app and VS Code extension can open a usable terminal for users whose login shell is C shell-derived.
 - **mergeAlarmStates on every save path.** Both the frontend periodic save (`onSaveState` callback) and the backend deactivate refresh (`refreshSavedSessionStateFromPtys`) must merge current alarm states. Missing this causes alarm state to revert on restore.
 - **Scrollback trailing newline.** Restored scrollback must end with `\n` to avoid zsh printing a `%` artifact at the top of the terminal.
 - **retainContextWhenHidden.** Set on `WebviewPanel` (editor tabs) but NOT on `WebviewView` (bottom panel). The view relies on reconnect/replay when it becomes visible again; the panel keeps its DOM alive.
