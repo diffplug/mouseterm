@@ -12,6 +12,7 @@
     "build:standalone": "pnpm --filter mouseterm-standalone tauri build",
     "build:website": "pnpm --filter mouseterm-website build",
     "dogfood:vscode": "pnpm run build:vscode && pnpm --filter mouseterm dogfood",
+    "dogfood:standalone": "bash standalone/scripts/dogfood.sh",
     "storybook": "pnpm --filter mouseterm-lib storybook"
   },
   "pnpm": {
