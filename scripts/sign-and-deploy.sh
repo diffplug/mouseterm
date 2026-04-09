@@ -76,8 +76,6 @@ check_git_clean() {
         error "Untracked files detected. Commit or remove them before deploying."
     fi
 
-    local branch
-    branch=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)
     local upstream
     upstream=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null) || true
 
@@ -497,7 +495,8 @@ create_release() {
     local notes_file="$WORK_DIR/release-notes.md"
     if [[ -f "$REPO_ROOT/CHANGELOG.md" ]]; then
         # Extract section between [X.Y.Z] and the next ## heading
-        sed -n "/^## \[$version\]/,/^## \[/p" "$REPO_ROOT/CHANGELOG.md" | head -n -1 > "$notes_file"
+        # Use sed to drop the trailing heading line (macOS BSD head lacks -n -1)
+        sed -n "/^## \[$version\]/,/^## \[/p" "$REPO_ROOT/CHANGELOG.md" | sed '$d' > "$notes_file"
     fi
 
     if [[ ! -s "$notes_file" ]]; then

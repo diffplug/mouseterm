@@ -52,13 +52,13 @@ strategy:
   matrix:
     include:
       - platform: ubuntu-22.04
-        rust-targets: x86_64-unknown-linux-gnu
+        target: x86_64-unknown-linux-gnu
       - platform: macos-latest
-        rust-targets: aarch64-apple-darwin
+        target: aarch64-apple-darwin
       - platform: macos-latest
-        rust-targets: x86_64-apple-darwin
+        target: x86_64-apple-darwin
       - platform: windows-latest
-        rust-targets: x86_64-pc-windows-msvc
+        target: x86_64-pc-windows-msvc
 ```
 
 Each matrix leg:
