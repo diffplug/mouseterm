@@ -203,10 +203,6 @@ export class TauriAdapter implements PlatformAdapter {
     this.alarmManager.clearTodo(id);
   }
 
-  alarmSoftTodo(id: string): void {
-    this.alarmManager.softTodo(id);
-  }
-
   onAlarmState(handler: (detail: AlarmStateDetail) => void): void {
     this.alarmStateHandlers.add(handler);
   }

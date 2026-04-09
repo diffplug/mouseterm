@@ -242,10 +242,6 @@ export function clearSessionTodo(id: string): void {
   getPlatform().alarmClearTodo(resolveTerminalSessionId(id));
 }
 
-export function softSessionTodo(id: string): void {
-  getPlatform().alarmSoftTodo(resolveTerminalSessionId(id));
-}
-
 // --- Terminal theme ---
 
 function getTerminalTheme(): Record<string, string> {

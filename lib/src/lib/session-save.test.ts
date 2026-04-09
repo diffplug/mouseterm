@@ -49,7 +49,6 @@ function createPlatform(savedState: PersistedSession | null): PlatformAdapter {
     alarmToggleTodo: () => {},
     alarmMarkTodo: () => {},
     alarmClearTodo: () => {},
-    alarmSoftTodo: () => {},
     onAlarmState: () => {},
     offAlarmState: () => {},
     saveState: vi.fn((state: unknown) => {

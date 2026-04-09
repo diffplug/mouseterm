@@ -294,9 +294,6 @@ export function attachRouter(
       case 'alarm:clearTodo':
         alarmManager.clearTodo(msg.id);
         break;
-      case 'alarm:softTodo':
-        alarmManager.softTodo(msg.id);
-        break;
     }
   });
 
