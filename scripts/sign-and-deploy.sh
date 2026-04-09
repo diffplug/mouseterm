@@ -34,10 +34,8 @@ GITHUB_REPO="diffplug/mouseterm"
 # Stable filenames for release assets
 FNAME_WIN_EXE="MouseTerm-windows-x64.exe"
 FNAME_WIN_UPDATE="MouseTerm-windows-x64.nsis.zip"
-FNAME_MAC_ARM_DMG="MouseTerm-macos-aarch64.dmg"
-FNAME_MAC_ARM_UPDATE="MouseTerm-macos-aarch64.tar.gz"
-FNAME_MAC_INTEL_DMG="MouseTerm-macos-x86_64.dmg"
-FNAME_MAC_INTEL_UPDATE="MouseTerm-macos-x86_64.tar.gz"
+FNAME_MAC_DMG="MouseTerm-macos-aarch64.dmg"
+FNAME_MAC_UPDATE="MouseTerm-macos-aarch64.tar.gz"
 FNAME_LINUX_APPIMAGE="MouseTerm-linux-x86_64.AppImage"
 FNAME_LINUX_UPDATE="MouseTerm-linux-x86_64.AppImage.tar.gz"
 FNAME_LINUX_DEB="MouseTerm-linux-x86_64.deb"
@@ -306,14 +304,10 @@ sign_macos_app() {
 sign_macos() {
     log "Starting macOS code signing..."
 
-    # Find and sign both arch builds
-    local aarch64_app
-    aarch64_app=$(find "$WORK_DIR/standalone-mac-aarch64" -name "*.app" -type d | head -1)
-    local x86_64_app
-    x86_64_app=$(find "$WORK_DIR/standalone-mac-x86_64" -name "*.app" -type d | head -1)
+    local app
+    app=$(find "$WORK_DIR/standalone-mac-aarch64" -name "*.app" -type d | head -1)
 
-    [[ -n "$aarch64_app" ]] && sign_macos_app "$aarch64_app" "aarch64"
-    [[ -n "$x86_64_app" ]] && sign_macos_app "$x86_64_app" "x86_64"
+    [[ -n "$app" ]] && sign_macos_app "$app" "aarch64"
 
     log "All macOS signing complete"
 }
@@ -354,38 +348,23 @@ notarize_macos() {
     check_command xcrun "xcode-select --install"
     prompt_secret APPLE_SIGN_PASS "Enter Apple ID password (or app-specific password)"
 
-    local aarch64_app
-    aarch64_app=$(find "$WORK_DIR/standalone-mac-aarch64" -name "*.app" -type d | head -1)
-    local x86_64_app
-    x86_64_app=$(find "$WORK_DIR/standalone-mac-x86_64" -name "*.app" -type d | head -1)
+    local app
+    app=$(find "$WORK_DIR/standalone-mac-aarch64" -name "*.app" -type d | head -1)
 
-    [[ -n "$aarch64_app" ]] && notarize_macos_app "$aarch64_app" "aarch64"
-    [[ -n "$x86_64_app" ]] && notarize_macos_app "$x86_64_app" "x86_64"
+    [[ -n "$app" ]] && notarize_macos_app "$app" "aarch64"
 
-    # Re-package signed+notarized apps into .dmg and .tar.gz
-    for arch in aarch64 x86_64; do
-        local app
-        app=$(find "$WORK_DIR/standalone-mac-${arch}" -name "*.app" -type d | head -1)
-        [[ -z "$app" ]] && continue
-
+    # Re-package signed+notarized app into .dmg and .tar.gz
+    if [[ -n "$app" ]]; then
         local app_name
         app_name=$(basename "$app")
 
-        if [[ "$arch" == "aarch64" ]]; then
-            local dmg_name="$FNAME_MAC_ARM_DMG"
-            local tar_name="$FNAME_MAC_ARM_UPDATE"
-        else
-            local dmg_name="$FNAME_MAC_INTEL_DMG"
-            local tar_name="$FNAME_MAC_INTEL_UPDATE"
-        fi
-
-        log "Creating $dmg_name..."
+        log "Creating $FNAME_MAC_DMG..."
         hdiutil create -volname "MouseTerm" -srcfolder "$app" \
-            -ov -format UDZO "$WORK_DIR/$dmg_name"
+            -ov -format UDZO "$WORK_DIR/$FNAME_MAC_DMG"
 
-        log "Creating $tar_name..."
-        tar -czf "$WORK_DIR/$tar_name" -C "$(dirname "$app")" "$app_name"
-    done
+        log "Creating $FNAME_MAC_UPDATE..."
+        tar -czf "$WORK_DIR/$FNAME_MAC_UPDATE" -C "$(dirname "$app")" "$app_name"
+    fi
 
     log "All macOS notarization and packaging complete"
 }
@@ -452,10 +431,8 @@ sign_updates() {
 
     # Collect and rename update bundles with stable filenames
     # macOS .tar.gz (already created by notarize step)
-    [[ -f "$WORK_DIR/$FNAME_MAC_ARM_UPDATE" ]] && cp "$WORK_DIR/$FNAME_MAC_ARM_UPDATE" "$release_dir/"
-    [[ -f "$WORK_DIR/$FNAME_MAC_INTEL_UPDATE" ]] && cp "$WORK_DIR/$FNAME_MAC_INTEL_UPDATE" "$release_dir/"
-    [[ -f "$WORK_DIR/$FNAME_MAC_ARM_DMG" ]] && cp "$WORK_DIR/$FNAME_MAC_ARM_DMG" "$release_dir/"
-    [[ -f "$WORK_DIR/$FNAME_MAC_INTEL_DMG" ]] && cp "$WORK_DIR/$FNAME_MAC_INTEL_DMG" "$release_dir/"
+    [[ -f "$WORK_DIR/$FNAME_MAC_UPDATE" ]] && cp "$WORK_DIR/$FNAME_MAC_UPDATE" "$release_dir/"
+    [[ -f "$WORK_DIR/$FNAME_MAC_DMG" ]] && cp "$WORK_DIR/$FNAME_MAC_DMG" "$release_dir/"
 
     # Windows NSIS zip — rebuild with signed exe so Tauri auto-update gets the signed binary
     local win_nsis
@@ -502,8 +479,7 @@ sign_updates() {
     [[ -n "$linux_deb" ]] && cp "$linux_deb" "$release_dir/$FNAME_LINUX_DEB"
 
     # Generate .sig files for update bundles using Tauri CLI
-    for bundle in "$release_dir/$FNAME_MAC_ARM_UPDATE" \
-                  "$release_dir/$FNAME_MAC_INTEL_UPDATE" \
+    for bundle in "$release_dir/$FNAME_MAC_UPDATE" \
                   "$release_dir/$FNAME_WIN_UPDATE" \
                   "$release_dir/$FNAME_LINUX_UPDATE"; do
         if [[ -f "$bundle" ]]; then
@@ -523,9 +499,8 @@ sign_updates() {
     pub_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
     # Read .sig file contents
-    local sig_mac_arm="" sig_mac_intel="" sig_win="" sig_linux=""
-    [[ -f "$release_dir/$FNAME_MAC_ARM_UPDATE.sig" ]] && sig_mac_arm=$(cat "$release_dir/$FNAME_MAC_ARM_UPDATE.sig")
-    [[ -f "$release_dir/$FNAME_MAC_INTEL_UPDATE.sig" ]] && sig_mac_intel=$(cat "$release_dir/$FNAME_MAC_INTEL_UPDATE.sig")
+    local sig_mac="" sig_win="" sig_linux=""
+    [[ -f "$release_dir/$FNAME_MAC_UPDATE.sig" ]] && sig_mac=$(cat "$release_dir/$FNAME_MAC_UPDATE.sig")
     [[ -f "$release_dir/$FNAME_WIN_UPDATE.sig" ]] && sig_win=$(cat "$release_dir/$FNAME_WIN_UPDATE.sig")
     [[ -f "$release_dir/$FNAME_LINUX_UPDATE.sig" ]] && sig_linux=$(cat "$release_dir/$FNAME_LINUX_UPDATE.sig")
 
@@ -536,12 +511,8 @@ sign_updates() {
   "pub_date": "$pub_date",
   "platforms": {
     "darwin-aarch64": {
-      "url": "$base_url/$FNAME_MAC_ARM_UPDATE",
-      "signature": "$sig_mac_arm"
-    },
-    "darwin-x86_64": {
-      "url": "$base_url/$FNAME_MAC_INTEL_UPDATE",
-      "signature": "$sig_mac_intel"
+      "url": "$base_url/$FNAME_MAC_UPDATE",
+      "signature": "$sig_mac"
     },
     "windows-x86_64": {
       "url": "$base_url/$FNAME_WIN_UPDATE",
