@@ -46,3 +46,4 @@ chromatic-diagnostics.json
 
 # symlinked skill files
 .agents/skills/
+.codex
