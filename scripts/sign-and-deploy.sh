@@ -92,6 +92,32 @@ check_git_clean() {
     log "Git status clean."
 }
 
+resolve_tag_sha() {
+    local tag="$1"
+    local tag_sha
+
+    tag_sha=$(git -C "$REPO_ROOT" rev-list -n 1 "$tag^{commit}" 2>/dev/null) \
+        || error "Tag $tag not found locally. Fetch tags or create it first."
+
+    [[ -n "$tag_sha" ]] || error "Could not resolve commit for tag $tag"
+    printf '%s\n' "$tag_sha"
+}
+
+find_release_run_id() {
+    local tag="$1"
+    local tag_sha="$2"
+
+    gh run list \
+        --repo "$GITHUB_REPO" \
+        --workflow release.yml \
+        --event push \
+        --commit "$tag_sha" \
+        --limit 5 \
+        --json databaseId,displayTitle,headSha \
+        --jq ".[] | select(.displayTitle == \"$tag\" or .headSha == \"$tag_sha\") | .databaseId" \
+        | head -1
+}
+
 # =============================================================================
 # Download CI Artifacts
 # =============================================================================
@@ -99,8 +125,10 @@ check_git_clean() {
 download_artifacts() {
     local version="$1"
     local tag="v$version"
+    local tag_sha
+    tag_sha=$(resolve_tag_sha "$tag")
 
-    log "Finding workflow run for tag $tag..."
+    log "Finding workflow run for tag $tag ($tag_sha)..."
 
     check_command gh "brew install gh && gh auth login"
 
@@ -109,13 +137,7 @@ download_artifacts() {
     local max_attempts=60  # 5 minutes of retries
 
     while [[ -z "$run_id" ]] && [[ $attempts -lt $max_attempts ]]; do
-        run_id=$(gh run list \
-            --repo "$GITHUB_REPO" \
-            --workflow release.yml \
-            --branch "$tag" \
-            --limit 5 \
-            --json databaseId \
-            --jq ".[0].databaseId // empty")
+        run_id=$(find_release_run_id "$tag" "$tag_sha")
 
         if [[ -z "$run_id" ]]; then
             attempts=$((attempts + 1))
@@ -149,19 +171,15 @@ download_artifacts() {
 resume_download() {
     local version="$1"
     local tag="v$version"
+    local tag_sha
+    tag_sha=$(resolve_tag_sha "$tag")
 
-    log "Finding completed workflow run for tag $tag..."
+    log "Finding completed workflow run for tag $tag ($tag_sha)..."
 
     check_command gh "brew install gh && gh auth login"
 
     local run_id=""
-    run_id=$(gh run list \
-        --repo "$GITHUB_REPO" \
-        --workflow release.yml \
-        --branch "$tag" \
-        --limit 5 \
-        --json databaseId \
-        --jq ".[0].databaseId // empty")
+    run_id=$(find_release_run_id "$tag" "$tag_sha")
 
     [[ -z "$run_id" ]] && error "Could not find workflow run for tag $tag"
 

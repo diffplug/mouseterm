@@ -35,6 +35,9 @@ jobs:
         with:
           version: 10
 
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -49,10 +52,6 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: Install frontend dependencies
-        run: pnpm install
-        working-directory: standalone
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -95,17 +94,17 @@ jobs:
         with:
           version: 10
 
-      - name: Install and test lib
-        run: cd lib && pnpm install && pnpm test
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test lib
+        run: pnpm --filter mouseterm-lib test
 
       - name: Build frontend for VSCode
-        run: cd vscode-ext && pnpm build:frontend
-
-      - name: Install extension dependencies
-        run: cd vscode-ext && pnpm install
+        run: pnpm --filter mouseterm build:frontend
 
       - name: Build extension
-        run: cd vscode-ext && pnpm build
+        run: pnpm --filter mouseterm build
 
       - name: Package extension
         run: cd vscode-ext && npx vsce package --no-dependencies
@@ -131,8 +130,8 @@ jobs:
         with:
           version: 10
 
-      - name: Install vsce and ovsx
-        run: cd vscode-ext && pnpm install
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Download .vsix
         uses: actions/download-artifact@v4
