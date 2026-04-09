@@ -46,11 +46,14 @@ Each Session owns:
   - Transitional states: `MIGHT_BE_BUSY`, `MIGHT_NEED_ATTENTION`.
   - When the user enables the alarm, status transitions from `ALARM_DISABLED` to `NOTHING_TO_SHOW` and activity tracking begins fresh from that moment.
   - When the user disables the alarm, activity tracking stops and status returns to `ALARM_DISABLED`.
-- `todo: false | 'soft' | 'hard'`
-  - Reminder state for the Session. Default `false`.
-  - `'soft'`: auto-created when a ringing alarm is phantom-dismissed (any attention path). Dashed-outline pill. Auto-clears when the user types printable text into the terminal (synthetic terminal reports like focus events and cursor-position responses are excluded).
-  - `'hard'`: explicitly set by the user via `t` key or context menu. Solid-outline pill. Only clears via explicit toggle.
-  - Dismissing a ringing alarm when `todo` is already `'soft'` or `'hard'` does not downgrade it.
+- `todo: TodoState` (numeric)
+  - Reminder state for the Session. Default `TODO_OFF` (`-1`).
+  - `TODO_OFF` (`-1`): no TODO.
+  - `[0, 1]` (soft TODO): auto-created when a ringing alarm is phantom-dismissed (any attention path). Value is the leaky-bucket fill level (`1` = full, `0` = about to clear). Dashed-outline pill. Uses a leaky-bucket mechanism: each printable keypress drains the bucket by `1/keypressesToEmpty` (default 5 keypresses to fully drain). When typing stops, the bucket refills to full over `timeToFullSeconds` (default 3 seconds). If the bucket empties completely, the soft TODO clears. Synthetic terminal reports (focus events, cursor-position responses) do not drain the bucket.
+  - `TODO_HARD` (`2`): explicitly set by the user via `t` key or context menu. Solid-outline pill. Only clears via explicit toggle.
+  - Dismissing a ringing alarm when `todo` is already soft or hard does not downgrade it.
+  - Helper functions: `isSoftTodo(todo)`, `isHardTodo(todo)`, `hasTodo(todo)`.
+  - Leaky-bucket tuning parameters are in `cfg.todoBucket`.
 
 Each Session also owns:
 
@@ -203,7 +206,7 @@ The Session leaves `ALARM_RINGING` and returns to `NOTHING_TO_SHOW` when any of 
 - the user marks the Session as hard TODO (`t` key or context menu)
 - new output arrives while the Session has attention (starts a new `MIGHT_BE_BUSY` cycle; without attention the alarm stays ringing — see latch in transition rules)
 
-All attention-based dismissals (the first three above) create a soft TODO if `todo` is currently `false`. This prevents phantom dismissals where the alarm vanishes without a trace. Typing printable text into the terminal auto-clears soft TODOs, so users who engage with the output don't accumulate breadcrumbs. Synthetic terminal reports (focus events, cursor-position responses) do not count as typing.
+All attention-based dismissals (the first three above) create a soft TODO if `todo` is currently `TODO_OFF`. This prevents phantom dismissals where the alarm vanishes without a trace. Printable keypresses drain the soft TODO's leaky bucket, and if the bucket empties completely the soft TODO clears — so users who engage with the output don't accumulate breadcrumbs. If the user stops typing, the bucket refills over `cfg.todoBucket.timeToFullSeconds` (default 3 s). Synthetic terminal reports (focus events, cursor-position responses) do not drain the bucket.
 
 The Session leaves `ALARM_RINGING` and returns to `ALARM_DISABLED` when:
 
@@ -215,7 +218,7 @@ The Session's alarm state is cleared entirely when:
 
 If more output arrives later and the Session makes a fresh transition back into `ALARM_RINGING`, the alarm rings again.
 
-Marking a Session as hard TODO resets the alarm to `NOTHING_TO_SHOW` and sets `todo = 'hard'`, but it does **not** disable future alarms. `todo` and the alarm toggle are separate concerns.
+Marking a Session as hard TODO resets the alarm to `NOTHING_TO_SHOW` and sets `todo = TODO_HARD`, but it does **not** disable future alarms. `todo` and the alarm toggle are separate concerns.
 
 Disabling alarms disposes the activity monitor and returns `status` to `ALARM_DISABLED`.
 
@@ -230,10 +233,10 @@ The Pane header exposes two independent concepts:
 
 TODO pill:
 
-- toggled in command mode with `t` (cycles: `false` → `'hard'`, `'soft'` → `'hard'`, `'hard'` → `false`)
-- shown when `todo` is `'soft'` or `'hard'`
-- `'soft'`: dashed-outline pill — auto-created on alarm dismiss, auto-clears on user input
-- `'hard'`: solid-outline pill — explicitly set, only clears manually
+- toggled in command mode with `t` (cycles: `TODO_OFF` → `TODO_HARD`, soft → `TODO_HARD`, `TODO_HARD` → `TODO_OFF`)
+- shown when `hasTodo(todo)` is true (i.e. `todo !== TODO_OFF`)
+- soft (`isSoftTodo(todo)`): dashed-outline pill — auto-created on alarm dismiss, drains via leaky bucket on typing
+- `TODO_HARD` (`isHardTodo(todo)`): solid-outline pill — explicitly set, only clears manually
 - clicking a soft pill shows a prompt: "Clear" / "Keep" (keep promotes to hard)
 - clicking a hard pill clears it
 - no empty placeholder when off
@@ -276,7 +279,7 @@ A Door is display-only for alarm state in v1. It must not replace the existing D
 Door indicators:
 
 - show bell indicator only when `status !== 'ALARM_DISABLED'`
-- show TODO pill when `todo !== false` (`'soft'` or `'hard'`)
+- show TODO pill when `hasTodo(todo)` (soft or hard)
 - if `status === 'ALARM_RINGING'`, the Door itself gets the ringing treatment, not just a tiny icon
 - the Door bell icon shows the same dot badge as the Pane header for `MIGHT_BE_BUSY`, `BUSY`, and `MIGHT_NEED_ATTENTION` states, but smaller (4px vs 6px) to match the smaller bell icon
 
@@ -366,7 +369,7 @@ Consequences:
 - A Session rings.
 - User clicks into the pane to read the output.
 - The alarm clears, a soft TODO appears (dashed pill).
-- User types a command → soft TODO auto-clears (they engaged).
+- User types a command → printable keypresses drain the soft TODO's leaky bucket; if enough keypresses occur without long pauses, the soft TODO clears (they engaged).
 - The Session later emits new output, progresses through `BUSY`, and eventually reaches `ALARM_RINGING` again.
 
 ### User dismisses but doesn't engage

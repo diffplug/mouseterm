@@ -36,6 +36,7 @@ import {
   isSoftTodo,
   isHardTodo,
   hasTodo,
+  TODO_OFF,
 } from '../lib/terminal-registry';
 import { resolvePanelElement, findPanelInDirection, findRestoreNeighbor, type DetachDirection } from '../lib/spatial-nav';
 import { cloneLayout, getLayoutStructureSignature } from '../lib/layout-snapshot';
@@ -338,12 +339,12 @@ function TodoAlarmDialog({
         <span className="text-[10px] font-mono text-muted">[t]</span>
         <span className="text-[11px] text-foreground font-medium w-10">TODO</span>
         <div className="flex gap-1 ml-auto">
-          <button type="button" className={toggleBtn(sessionState.todo === 'hard')}
-            onClick={() => { if (sessionState.todo !== 'hard') markSessionTodo(sessionId); }}>
+          <button type="button" className={toggleBtn(isHardTodo(sessionState.todo))}
+            onClick={() => { if (!isHardTodo(sessionState.todo)) markSessionTodo(sessionId); }}>
             hard
           </button>
-          <button type="button" className={toggleBtn(sessionState.todo === false)}
-            onClick={() => { if (sessionState.todo !== false) clearSessionTodo(sessionId); }}>
+          <button type="button" className={toggleBtn(sessionState.todo === TODO_OFF)}
+            onClick={() => { if (sessionState.todo !== TODO_OFF) clearSessionTodo(sessionId); }}>
             off
           </button>
         </div>
@@ -369,7 +370,7 @@ function TodoAlarmDialog({
       <div className="border-t border-border pt-2 text-[9px] leading-relaxed text-muted">
         When an alarming tab is selected,<br />
         the alarm is cleared and the tab gets a soft TODO.<br />
-        Typing characters into the tab will automatically clear a soft TODO.
+        Typing drains the soft TODO; stop typing and it refills.
       </div>
     </div>,
     document.body,

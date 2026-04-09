@@ -21,6 +21,14 @@ export function isSoftTodo(todo: TodoState): boolean { return todo >= 0 && todo 
 export function isHardTodo(todo: TodoState): boolean { return todo === TODO_HARD; }
 export function hasTodo(todo: TodoState): boolean { return todo !== TODO_OFF; }
 
+/** Migrate legacy persisted TodoState values (false/'soft'/'hard') to numeric. */
+export function migrateTodoState(todo: unknown): TodoState {
+  if (typeof todo === 'number') return todo;
+  if (todo === 'hard') return TODO_HARD;
+  if (todo === 'soft') return TODO_SOFT_FULL;
+  return TODO_OFF; // false, null, undefined, or any other unexpected value
+}
+
 export type AlarmButtonActionResult = 'enabled' | 'disabled' | 'dismissed' | 'noop';
 
 export interface AlarmState {
@@ -355,7 +363,7 @@ export class AlarmManager {
    */
   restore(id: string, state: { status: string; todo: TodoState }): void {
     const entry = this.getOrCreateEntry(id);
-    entry.todo = state.todo;
+    entry.todo = migrateTodoState(state.todo);
     // If the alarm was enabled (anything other than ALARM_DISABLED), create a monitor
     if (state.status !== 'ALARM_DISABLED') {
       if (!entry.monitor) {
