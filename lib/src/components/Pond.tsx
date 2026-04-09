@@ -51,6 +51,8 @@ const mousetermTheme: DockviewTheme = {
   dndPanelOverlay: 'group',
 };
 
+let dialogKeyboardActive = false;
+
 // --- Types ---
 
 export interface DetachedItem {
@@ -291,13 +293,13 @@ function TodoAlarmDialog({
   useEffect(() => {
     const el = dialogRef.current;
     if (!el) return;
+    dialogKeyboardActive = true;
     const handler = (e: KeyboardEvent) => {
       if (!el.contains(document.activeElement)) return;
       if (e.key === 'a') {
         e.preventDefault();
         e.stopImmediatePropagation();
-        if (alarmEnabled) disableSessionAlarm(sessionId);
-        else toggleSessionAlarm(sessionId);
+        dismissOrToggleAlarm(sessionId, getSessionState(sessionId).status);
       }
       if (e.key === 't') {
         e.preventDefault();
@@ -306,8 +308,11 @@ function TodoAlarmDialog({
       }
     };
     window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [sessionId, alarmEnabled]);
+    return () => {
+      dialogKeyboardActive = false;
+      window.removeEventListener('keydown', handler, true);
+    };
+  }, [sessionId]);
 
   const toggleBtn = (active: boolean) => [
     'rounded px-2 py-1 text-[11px] font-medium transition-colors',
@@ -1509,6 +1514,7 @@ export function Pond({
       }
 
       if (e.key === 't' && sid && selectedTypeRef.current === 'pane') {
+        if (dialogKeyboardActive) return;
         e.preventDefault();
         e.stopPropagation();
         toggleSessionTodo(sid);
@@ -1516,6 +1522,7 @@ export function Pond({
       }
 
       if (e.key === 'a' && sid && selectedTypeRef.current === 'pane') {
+        if (dialogKeyboardActive) return;
         e.preventDefault();
         e.stopPropagation();
         dismissOrToggleAlarm(sid, getSessionState(sid).status);
