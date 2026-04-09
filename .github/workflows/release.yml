@@ -79,6 +79,7 @@ jobs:
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip.sig
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/**
 
   build-vscode:
     name: Build VSCode Extension
@@ -117,7 +118,9 @@ jobs:
 
   publish-vscode:
     name: Publish VSCode Extension
-    needs: build-vscode
+    needs:
+      - build-standalone
+      - build-vscode
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

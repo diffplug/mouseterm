@@ -61,12 +61,42 @@ prompt_secret() {
     fi
 }
 
+prompt_secret_multiline() {
+    local varname="$1"
+    local prompt="$2"
+    local sentinel="__EOF_${varname}__"
+    if [[ -z "${!varname:-}" ]]; then
+        cat >&2 <<EOF
+$prompt
+Paste the value, then finish with a line containing only: $sentinel
+EOF
+
+        local value=""
+        local line=""
+        while IFS= read -rs line; do
+            if [[ "$line" == "$sentinel" ]]; then
+                break
+            fi
+            value+="$line"$'\n'
+        done
+
+        if [[ -z "$value" ]]; then
+            error "$varname was not provided"
+        fi
+
+        printf -v "$varname" '%s' "${value%$'\n'}"
+        export "$varname"
+    fi
+}
+
 check_command() {
     command -v "$1" &>/dev/null || error "Required command not found: $1. Install with: $2"
 }
 
 check_git_clean() {
     log "Checking git status..."
+
+    rm -rf "$WORK_DIR"
 
     if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --quiet; then
         error "Local changes detected. Commit or stash changes before deploying."
@@ -90,6 +120,47 @@ check_git_clean() {
     fi
 
     log "Git status clean."
+}
+
+find_nsis_script() {
+    find "$WORK_DIR/standalone-win-x64" \
+        \( -name "*.nsi" -o -name "*.nsh" \) \
+        -print \
+        | head -1
+}
+
+rebuild_windows_installer() {
+    local signed_exe="$1"
+    local installer_path="$2"
+
+    check_command makensis "Install NSIS (makensis) and re-download artifacts"
+
+    local script_path
+    script_path=$(find_nsis_script)
+    [[ -n "$script_path" ]] || error "NSIS script not found in downloaded artifacts; include bundle/nsis staging files before rebuilding the installer."
+
+    local script_dir
+    script_dir="$(cd "$(dirname "$script_path")" && pwd)"
+    local bundle_root
+    bundle_root="$(cd "$script_dir/.." && pwd)"
+
+    local staged_exe
+    staged_exe=$(find "$bundle_root" -name "MouseTerm.exe" -not -path "$signed_exe" | head -1)
+    [[ -n "$staged_exe" ]] || error "Could not find staged MouseTerm.exe for NSIS rebuild"
+
+    cp "$signed_exe" "$staged_exe"
+
+    local installer_name
+    installer_name="$(basename "$installer_path")"
+
+    rm -f "$installer_path"
+    log "Rebuilding NSIS installer: $installer_name"
+    (
+        cd "$script_dir"
+        makensis -NOCD -X"OutFile $installer_name" "$(basename "$script_path")"
+    )
+
+    [[ -f "$installer_path" ]] || error "NSIS rebuild did not produce $installer_path"
 }
 
 resolve_tag_sha() {
@@ -348,7 +419,7 @@ sign_windows() {
     installer_path=$(find "$WORK_DIR/standalone-win-x64" -name "*setup*.exe" -o -name "*install*.exe" | head -1)
 
     if [[ -n "$installer_path" ]]; then
-        # TODO: Rebuild NSIS installer with signed exe, then sign the installer
+        rebuild_windows_installer "$exe_path" "$installer_path"
         log "Signing installer: $installer_path"
         jsign \
             --storetype PIV \
@@ -374,7 +445,7 @@ sign_updates() {
 
     log "Signing update bundles with Tauri key..."
 
-    prompt_secret TAURI_SIGNING_PRIVATE_KEY "Enter Tauri signing private key"
+    prompt_secret_multiline TAURI_SIGNING_PRIVATE_KEY "Enter Tauri signing private key"
 
     local release_dir="$WORK_DIR/release-assets"
     mkdir -p "$release_dir"
