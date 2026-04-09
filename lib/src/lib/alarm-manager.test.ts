@@ -279,6 +279,30 @@ describe('AlarmManager in isolation', () => {
     expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
   });
 
+  it('dismissing a ringing alarm resets a partially-drained soft-TODO bucket to full', () => {
+    const id = 'bucket-reset-on-dismiss';
+    createSoftTodo(id);
+
+    // Drain the bucket partially
+    manager.drainTodoBucket(id);
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.6);
+
+    // Drive to ALARM_RINGING again
+    manager.clearAttention(id);
+    manager.onData(id);
+    vi.advanceTimersByTime(1_600);
+    manager.onData(id);
+    manager.onData(id);
+    vi.advanceTimersByTime(2_000);
+    vi.advanceTimersByTime(3_000);
+    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+
+    // Dismiss should reset the bucket to full
+    manager.dismissAlarm(id);
+    expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
+  });
+
   it('re-attending a ringing alarm does NOT override a hard TODO', () => {
     const id = 'bucket-no-reset-hard';
     createSoftTodo(id);

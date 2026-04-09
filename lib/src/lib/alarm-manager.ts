@@ -190,7 +190,7 @@ export class AlarmManager {
     const entry = this.entries.get(id);
     if (!entry?.monitor) return;
     if (entry.monitor.getStatus() !== 'ALARM_RINGING') return;
-    if (entry.todo === TODO_OFF) {
+    if (!isHardTodo(entry.todo)) {
       entry.todo = TODO_SOFT_FULL;
     }
     entry.monitor.attend();
