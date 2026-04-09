@@ -295,7 +295,7 @@ function TodoAlarmDialog({
       if (!el.contains(document.activeElement)) return;
       if (e.key === 'a') {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         if (alarmEnabled) disableSessionAlarm(sessionId);
         else toggleSessionAlarm(sessionId);
       }
