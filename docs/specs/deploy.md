@@ -264,9 +264,9 @@ Human-driven steps, in order:
 1. **Update dependencies page** — run `node website/scripts/generate-deps.js` and review the diff in `website/src/data/dependencies.json`. Commit if changed.
 2. **Finalize changelog** — promote the `[Unreleased]` section in `CHANGELOG.md` to `[X.Y.Z]` with today's date. Write release notes covering both standalone and VSCode changes.
 3. **Bump versions** — update `version` in all three places:
-   - `standalone/src-tauri/tauri.conf.json`
-   - `vscode-ext/package.json`
-   - `lib/package.json`
+   - [standalone/src-tauri/tauri.conf.json](../../standalone/src-tauri/tauri.conf.json)
+   - [vscode-ext/package.json](../../vscode-ext/package.json)
+   - [lib/package.json](../../lib/package.json)
 4. **Commit and tag** — `git commit -m "Release vX.Y.Z"` then `git tag vX.Y.Z`.
 5. **Push** — `git push && git push origin vX.Y.Z`. This triggers CI (Stage 1).
 6. **Wait for CI** — monitor the workflow run. VSCode extension publishes automatically.
