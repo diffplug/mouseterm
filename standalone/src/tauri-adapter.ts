@@ -199,10 +199,6 @@ export class TauriAdapter implements PlatformAdapter {
     this.alarmManager.markTodo(id);
   }
 
-  alarmPromoteTodo(id: string): void {
-    this.alarmManager.promoteTodo(id);
-  }
-
   alarmClearTodo(id: string): void {
     this.alarmManager.clearTodo(id);
   }

@@ -1,3 +1,6 @@
+> [!CAUTION]
+> This project is under construction and not ready for public use. Please check back in a few days!
+
 # MouseTerm
 
 Multitasking terminal for mice.

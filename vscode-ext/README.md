@@ -1,3 +1,6 @@
+> [!CAUTION]
+> This project is under construction and not ready for public use. Please check back in a few days!
+
 # MouseTerm
 
 Multitasking terminal with tmux keybindings, mouse support, and a built-in alarm system for completed tasks and prompts.

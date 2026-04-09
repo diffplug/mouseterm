@@ -142,10 +142,15 @@ export function attachRouter(
   // Route webview messages to the PTY manager
   const messageDisposable = webview.onDidReceiveMessage((msg: WebviewMessage) => {
     switch (msg.type) {
-      case 'pty:spawn':
+      case 'pty:spawn': {
         claim(msg.id);
-        ptyManager.spawn(msg.id, msg.options);
+        const spawnOptions = { ...msg.options };
+        if (!spawnOptions.cwd) {
+          spawnOptions.cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        }
+        ptyManager.spawn(msg.id, spawnOptions);
         break;
+      }
       case 'pty:input':
         ptyManager.write(msg.id, msg.data);
         break;
@@ -285,9 +290,6 @@ export function attachRouter(
         break;
       case 'alarm:markTodo':
         alarmManager.markTodo(msg.id);
-        break;
-      case 'alarm:promoteTodo':
-        alarmManager.promoteTodo(msg.id);
         break;
       case 'alarm:clearTodo':
         alarmManager.clearTodo(msg.id);
