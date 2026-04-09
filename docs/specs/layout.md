@@ -162,7 +162,7 @@ All handled in a single capture-phase `keydown` listener on `window`. Every hand
 | `x` | Kill with confirmation | Restore session + kill confirmation |
 | `d` | Detach to door | Restore session (stay in command) |
 | `z` | Toggle maximize/restore | — |
-| `t` | Toggle TODO flag (none → soft → hard → none) | — |
+| `t` | Toggle TODO flag (none/soft → hard → none) | — |
 | `a` | Dismiss or toggle alarm | — |
 
 ### Kill confirmation

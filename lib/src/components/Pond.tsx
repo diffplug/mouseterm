@@ -27,7 +27,6 @@ import {
   getSessionStateSnapshot,
   markSessionAttention,
   markSessionTodo,
-  softSessionTodo,
   subscribeToSessionStateChanges,
   toggleSessionAlarm,
   toggleSessionTodo,
@@ -294,11 +293,6 @@ function TodoAlarmDialog({
     if (!el) return;
     const handler = (e: KeyboardEvent) => {
       if (!el.contains(document.activeElement)) return;
-      if (e.key === 't') {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSessionTodo(sessionId);
-      }
       if (e.key === 'a') {
         e.preventDefault();
         e.stopPropagation();
@@ -328,16 +322,12 @@ function TodoAlarmDialog({
     >
       {/* TODO row */}
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-[10px] font-mono text-muted">[t]</span>
+        <span className="w-[20px]" aria-hidden="true" />
         <span className="text-[11px] text-foreground font-medium w-10">TODO</span>
         <div className="flex gap-1 ml-auto">
           <button type="button" className={toggleBtn(sessionState.todo === 'hard')}
             onClick={() => { if (sessionState.todo !== 'hard') markSessionTodo(sessionId); }}>
             hard
-          </button>
-          <button type="button" className={toggleBtn(sessionState.todo === 'soft')}
-            onClick={() => { if (sessionState.todo !== 'soft') softSessionTodo(sessionId); }}>
-            soft
           </button>
           <button type="button" className={toggleBtn(sessionState.todo === false)}
             onClick={() => { if (sessionState.todo !== false) clearSessionTodo(sessionId); }}>
