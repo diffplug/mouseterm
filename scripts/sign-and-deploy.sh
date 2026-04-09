@@ -114,10 +114,10 @@ download_artifacts() {
         run_id=$(gh run list \
             --repo "$GITHUB_REPO" \
             --workflow release.yml \
-            --limit 10 \
-            --json databaseId,headBranch,status \
-            --jq ".[] | select(.headBranch == \"$tag\") | .databaseId" \
-            | head -1)
+            --branch "$tag" \
+            --limit 5 \
+            --json databaseId \
+            --jq ".[0].databaseId // empty")
 
         if [[ -z "$run_id" ]]; then
             attempts=$((attempts + 1))
@@ -160,10 +160,10 @@ resume_download() {
     run_id=$(gh run list \
         --repo "$GITHUB_REPO" \
         --workflow release.yml \
-        --limit 10 \
-        --json databaseId,headBranch,status \
-        --jq ".[] | select(.headBranch == \"$tag\") | .databaseId" \
-        | head -1)
+        --branch "$tag" \
+        --limit 5 \
+        --json databaseId \
+        --jq ".[0].databaseId // empty")
 
     [[ -z "$run_id" ]] && error "Could not find workflow run for tag $tag"
 
@@ -370,10 +370,33 @@ sign_updates() {
     [[ -f "$WORK_DIR/$FNAME_MAC_ARM_DMG" ]] && cp "$WORK_DIR/$FNAME_MAC_ARM_DMG" "$release_dir/"
     [[ -f "$WORK_DIR/$FNAME_MAC_INTEL_DMG" ]] && cp "$WORK_DIR/$FNAME_MAC_INTEL_DMG" "$release_dir/"
 
-    # Windows NSIS zip
+    # Windows NSIS zip — rebuild with signed exe so Tauri auto-update gets the signed binary
     local win_nsis
     win_nsis=$(find "$WORK_DIR/standalone-win-x64" -name "*.nsis.zip" | head -1)
-    [[ -n "$win_nsis" ]] && cp "$win_nsis" "$release_dir/$FNAME_WIN_UPDATE"
+    if [[ -n "$win_nsis" ]]; then
+        local signed_exe
+        signed_exe=$(find "$WORK_DIR/standalone-win-x64" -name "MouseTerm.exe" -not -name "*setup*" -not -name "*install*" | head -1)
+        if [[ -n "$signed_exe" ]]; then
+            log "Rebuilding NSIS zip with signed executable..."
+            local nsis_tmp="$WORK_DIR/nsis-repack"
+            mkdir -p "$nsis_tmp"
+            unzip -o "$win_nsis" -d "$nsis_tmp"
+            # Replace the unsigned exe inside the extracted zip with the signed one
+            local inner_exe
+            inner_exe=$(find "$nsis_tmp" -name "MouseTerm.exe" -not -name "*setup*" -not -name "*install*" | head -1)
+            if [[ -n "$inner_exe" ]]; then
+                cp "$signed_exe" "$inner_exe"
+                # Rebuild the zip
+                (cd "$nsis_tmp" && zip -r "$release_dir/$FNAME_WIN_UPDATE" .)
+            else
+                warn "Could not find exe inside NSIS zip; copying original"
+                cp "$win_nsis" "$release_dir/$FNAME_WIN_UPDATE"
+            fi
+            rm -rf "$nsis_tmp"
+        else
+            cp "$win_nsis" "$release_dir/$FNAME_WIN_UPDATE"
+        fi
+    fi
 
     # Windows installer
     [[ -f "$WORK_DIR/$FNAME_WIN_EXE" ]] && cp "$WORK_DIR/$FNAME_WIN_EXE" "$release_dir/"
@@ -481,12 +504,24 @@ create_release() {
         echo "Release $tag" > "$notes_file"
     fi
 
-    # Create the release
-    gh release create "$tag" \
-        --repo "$GITHUB_REPO" \
-        --title "$tag" \
-        --notes-file "$notes_file" \
-        "$release_dir"/*
+    # Create or update the release
+    if gh release view "$tag" --repo "$GITHUB_REPO" &>/dev/null; then
+        log "Release $tag already exists — updating assets..."
+        gh release upload "$tag" \
+            --repo "$GITHUB_REPO" \
+            --clobber \
+            "$release_dir"/*
+        gh release edit "$tag" \
+            --repo "$GITHUB_REPO" \
+            --title "$tag" \
+            --notes-file "$notes_file"
+    else
+        gh release create "$tag" \
+            --repo "$GITHUB_REPO" \
+            --title "$tag" \
+            --notes-file "$notes_file" \
+            "$release_dir"/*
+    fi
 
     rm -f "$notes_file"
 
