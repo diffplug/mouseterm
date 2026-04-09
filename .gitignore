@@ -15,6 +15,9 @@ vscode-ext/media/
 vscode-ext/node_modules/
 vscode-ext/*.vsix
 
+# Release signing work directory (created by scripts/sign-and-deploy.sh)
+release-signed/
+
 # Tauri / Standalone
 standalone/src-tauri/target/
 standalone/src-tauri/binaries/

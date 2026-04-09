@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-standalone:
+    name: Build Standalone (${{ matrix.target }})
+    strategy:
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact-name: standalone-linux-x64
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            artifact-name: standalone-mac-aarch64
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            artifact-name: standalone-mac-x86_64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact-name: standalone-win-x64
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: standalone/src-tauri
+
+      - name: Install system dependencies (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: standalone
+          tauriScript: pnpm tauri
+          args: --target ${{ matrix.target }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: |
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app.tar.gz
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app.tar.gz.sig
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage.tar.gz
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage.tar.gz.sig
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip.sig
+            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/**
+
+  build-vscode:
+    name: Build VSCode Extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test lib
+        run: pnpm --filter mouseterm-lib test
+
+      - name: Build frontend for VSCode
+        run: pnpm --filter mouseterm build:frontend
+
+      - name: Build extension
+        run: pnpm --filter mouseterm build
+
+      - name: Package extension
+        run: cd vscode-ext && npx vsce package --no-dependencies
+
+      - name: Upload .vsix
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension
+          path: vscode-ext/*.vsix
+
+  publish-vscode:
+    name: Publish VSCode Extension
+    needs:
+      - build-standalone
+      - build-vscode
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download .vsix
+        uses: actions/download-artifact@v4
+        with:
+          name: vscode-extension
+          path: vscode-ext
+
+      - name: Publish to VS Code Marketplace
+        run: cd vscode-ext && npx vsce publish --packagePath *.vsix --no-dependencies
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to OpenVSX
+        run: cd vscode-ext && npx ovsx publish --packagePath *.vsix --no-dependencies
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
