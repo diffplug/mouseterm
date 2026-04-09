@@ -45,7 +45,7 @@ Triggered by tag push `v*`. Three parallel jobs:
 
 ### Job: `build-standalone` (matrix)
 
-Runs on `ubuntu-latest` (win + linux) and `macos-latest` (mac). Uses `tauri-apps/tauri-action@v0`.
+Runs on `ubuntu-22.04` (linux), `macos-latest` (mac), and `windows-latest` (win). Uses `tauri-apps/tauri-action@v0`.
 
 ```yaml
 strategy:
