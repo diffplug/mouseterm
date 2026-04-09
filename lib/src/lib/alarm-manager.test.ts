@@ -254,6 +254,54 @@ describe('AlarmManager in isolation', () => {
     expect(manager.getState(id).todo).toBe(TODO_HARD);
   });
 
+  it('re-attending a ringing alarm resets a partially-drained soft-TODO bucket to full', () => {
+    const id = 'bucket-reset-on-reattend';
+    createSoftTodo(id);
+
+    // Drain the bucket partially (3 out of 5 keypresses)
+    manager.drainTodoBucket(id);
+    manager.drainTodoBucket(id);
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.4);
+
+    // Drive to ALARM_RINGING again
+    manager.clearAttention(id);
+    manager.onData(id);
+    vi.advanceTimersByTime(1_600);
+    manager.onData(id);
+    manager.onData(id);
+    vi.advanceTimersByTime(2_000);
+    vi.advanceTimersByTime(3_000);
+    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+
+    // Re-attend should reset the bucket to full
+    manager.attend(id);
+    expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
+  });
+
+  it('re-attending a ringing alarm does NOT override a hard TODO', () => {
+    const id = 'bucket-no-reset-hard';
+    createSoftTodo(id);
+
+    // Promote to hard
+    manager.promoteTodo(id);
+    expect(manager.getState(id).todo).toBe(TODO_HARD);
+
+    // Drive to ALARM_RINGING again
+    manager.clearAttention(id);
+    manager.onData(id);
+    vi.advanceTimersByTime(1_600);
+    manager.onData(id);
+    manager.onData(id);
+    vi.advanceTimersByTime(2_000);
+    vi.advanceTimersByTime(3_000);
+    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+
+    // Re-attend should NOT change hard TODO
+    manager.attend(id);
+    expect(manager.getState(id).todo).toBe(TODO_HARD);
+  });
+
   it('drainTodoBucket is a no-op for hard TODOs', () => {
     const id = 'bucket-hard-noop';
     manager.toggleTodo(id);

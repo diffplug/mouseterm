@@ -129,7 +129,7 @@ export class AlarmManager {
 
     if (previousStatus === 'ALARM_RINGING') {
       entry.attentionDismissedRing = true;
-      if (entry.todo === TODO_OFF) {
+      if (!isHardTodo(entry.todo)) {
         entry.todo = TODO_SOFT_FULL;
       }
     }

@@ -206,7 +206,7 @@ The Session leaves `ALARM_RINGING` and returns to `NOTHING_TO_SHOW` when any of 
 - the user marks the Session as hard TODO (`t` key or context menu)
 - new output arrives while the Session has attention (starts a new `MIGHT_BE_BUSY` cycle; without attention the alarm stays ringing — see latch in transition rules)
 
-All attention-based dismissals (the first three above) create a soft TODO if `todo` is currently `TODO_OFF`. This prevents phantom dismissals where the alarm vanishes without a trace. Printable keypresses drain the soft TODO's leaky bucket, and if the bucket empties completely the soft TODO clears — so users who engage with the output don't accumulate breadcrumbs. If the user stops typing, the bucket refills over `cfg.todoBucket.timeToFullSeconds` (default 3 s). Synthetic terminal reports (focus events, cursor-position responses) do not drain the bucket.
+All attention-based dismissals (the first three above) create a soft TODO if `todo` is not already `TODO_HARD`. If a partially-drained soft TODO already exists, the bucket resets to full — a fresh alarm ring deserves a full drain cycle. This prevents phantom dismissals where the alarm vanishes without a trace. Printable keypresses drain the soft TODO's leaky bucket, and if the bucket empties completely the soft TODO clears — so users who engage with the output don't accumulate breadcrumbs. If the user stops typing, the bucket refills over `cfg.todoBucket.timeToFullSeconds` (default 3 s). Synthetic terminal reports (focus events, cursor-position responses) do not drain the bucket.
 
 The Session leaves `ALARM_RINGING` and returns to `ALARM_DISABLED` when:
 
