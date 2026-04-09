@@ -261,6 +261,7 @@ Interaction (`dismissOrToggleAlarm` state machine):
 - left-click the bell in any other enabled state: disables the alarm (destroys activity monitor)
 - pressing `a` on a selected Pane in command mode: same as left-click
 - right-click the bell (any state): opens a context menu with:
+  - a TODO row with `hard` and `off` options only; soft TODOs are never manually selectable here
   - "Mark as TODO" / "Clear TODO" (toggles hard TODO), with `[t]` shortcut hint
   - "Disable alarms" (only when alarm is enabled)
   - brief description of soft/hard TODO behavior

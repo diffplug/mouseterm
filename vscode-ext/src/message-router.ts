@@ -291,9 +291,6 @@ export function attachRouter(
       case 'alarm:markTodo':
         alarmManager.markTodo(msg.id);
         break;
-      case 'alarm:promoteTodo':
-        alarmManager.promoteTodo(msg.id);
-        break;
       case 'alarm:clearTodo':
         alarmManager.clearTodo(msg.id);
         break;

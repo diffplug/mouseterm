@@ -37,8 +37,8 @@
   --mt-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #2d2d2d);
   --mt-tab-active-fg: var(--vscode-tab-activeForeground, #ffffff);
   --mt-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #969696);
-  --mt-tab-selected-bg: var(--vscode-tab-activeBackground, #1e1e1e);
-  --mt-tab-selected-fg: var(--vscode-tab-activeForeground, #ffffff);
+  --mt-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #094771);
+  --mt-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #ffffff);
 
   /* Terminal */
   --mt-terminal-bg: var(--vscode-terminal-background, #1e1e1e);
@@ -104,8 +104,8 @@ body.vscode-light {
   --mt-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #ececec);
   --mt-tab-active-fg: var(--vscode-tab-activeForeground, #333333);
   --mt-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #8e8e8e);
-  --mt-tab-selected-bg: var(--vscode-tab-activeBackground, #ffffff);
-  --mt-tab-selected-fg: var(--vscode-tab-activeForeground, #333333);
+  --mt-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
+  --mt-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #000000);
   --mt-terminal-bg: var(--vscode-terminal-background, #ffffff);
   --mt-terminal-fg: var(--vscode-terminal-foreground, #333333);
   --mt-badge-bg: var(--vscode-badge-background, #007acc);
@@ -157,8 +157,8 @@ body.vscode-light {
     --mt-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #ececec);
     --mt-tab-active-fg: var(--vscode-tab-activeForeground, #333333);
     --mt-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #8e8e8e);
-    --mt-tab-selected-bg: var(--vscode-tab-activeBackground, #ffffff);
-    --mt-tab-selected-fg: var(--vscode-tab-activeForeground, #333333);
+    --mt-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
+    --mt-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #000000);
     --mt-terminal-bg: var(--vscode-terminal-background, #ffffff);
     --mt-terminal-fg: var(--vscode-terminal-foreground, #333333);
     --mt-badge-bg: var(--vscode-badge-background, #007acc);

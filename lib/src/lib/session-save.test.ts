@@ -48,7 +48,6 @@ function createPlatform(savedState: PersistedSession | null): PlatformAdapter {
     alarmClearAttention: () => {},
     alarmToggleTodo: () => {},
     alarmMarkTodo: () => {},
-    alarmPromoteTodo: () => {},
     alarmClearTodo: () => {},
     onAlarmState: () => {},
     offAlarmState: () => {},
