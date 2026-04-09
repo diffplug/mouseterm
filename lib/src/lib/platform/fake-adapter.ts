@@ -143,9 +143,7 @@ export class FakePtyAdapter implements PlatformAdapter {
   alarmClearAttention(id?: string): void { this.alarmManager.clearAttention(id); }
   alarmToggleTodo(id: string): void { this.alarmManager.toggleTodo(id); }
   alarmMarkTodo(id: string): void { this.alarmManager.markTodo(id); }
-  alarmPromoteTodo(id: string): void { this.alarmManager.promoteTodo(id); }
   alarmClearTodo(id: string): void { this.alarmManager.clearTodo(id); }
-  alarmSoftTodo(id: string): void { this.alarmManager.softTodo(id); }
   onAlarmState(handler: (detail: AlarmStateDetail) => void): void { this.alarmStateHandlers.add(handler); }
   offAlarmState(handler: (detail: AlarmStateDetail) => void): void { this.alarmStateHandlers.delete(handler); }
 

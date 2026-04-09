@@ -52,9 +52,7 @@ export interface PlatformAdapter {
   alarmClearAttention(id?: string): void;
   alarmToggleTodo(id: string): void;
   alarmMarkTodo(id: string): void;
-  alarmPromoteTodo(id: string): void;
   alarmClearTodo(id: string): void;
-  alarmSoftTodo(id: string): void;
   onAlarmState(handler: (detail: AlarmStateDetail) => void): void;
   offAlarmState(handler: (detail: AlarmStateDetail) => void): void;
 

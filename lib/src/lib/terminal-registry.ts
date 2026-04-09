@@ -238,16 +238,8 @@ export function markSessionTodo(id: string): void {
   getPlatform().alarmMarkTodo(resolveTerminalSessionId(id));
 }
 
-export function promoteSessionTodo(id: string): void {
-  getPlatform().alarmPromoteTodo(resolveTerminalSessionId(id));
-}
-
 export function clearSessionTodo(id: string): void {
   getPlatform().alarmClearTodo(resolveTerminalSessionId(id));
-}
-
-export function softSessionTodo(id: string): void {
-  getPlatform().alarmSoftTodo(resolveTerminalSessionId(id));
 }
 
 // --- Terminal theme ---

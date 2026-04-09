@@ -27,7 +27,6 @@ import {
   getSessionStateSnapshot,
   markSessionAttention,
   markSessionTodo,
-  softSessionTodo,
   subscribeToSessionStateChanges,
   toggleSessionAlarm,
   toggleSessionTodo,
@@ -51,6 +50,8 @@ const mousetermTheme: DockviewTheme = {
   dndOverlayMounting: 'absolute',
   dndPanelOverlay: 'group',
 };
+
+let dialogKeyboardActive = false;
 
 // --- Types ---
 
@@ -292,23 +293,26 @@ function TodoAlarmDialog({
   useEffect(() => {
     const el = dialogRef.current;
     if (!el) return;
+    dialogKeyboardActive = true;
     const handler = (e: KeyboardEvent) => {
       if (!el.contains(document.activeElement)) return;
-      if (e.key === 't') {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSessionTodo(sessionId);
-      }
       if (e.key === 'a') {
         e.preventDefault();
-        e.stopPropagation();
-        if (alarmEnabled) disableSessionAlarm(sessionId);
-        else toggleSessionAlarm(sessionId);
+        e.stopImmediatePropagation();
+        dismissOrToggleAlarm(sessionId, getSessionState(sessionId).status);
+      }
+      if (e.key === 't') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        toggleSessionTodo(sessionId);
       }
     };
     window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [sessionId, alarmEnabled]);
+    return () => {
+      dialogKeyboardActive = false;
+      window.removeEventListener('keydown', handler, true);
+    };
+  }, [sessionId]);
 
   const toggleBtn = (active: boolean) => [
     'rounded px-2 py-1 text-[11px] font-medium transition-colors',
@@ -334,10 +338,6 @@ function TodoAlarmDialog({
           <button type="button" className={toggleBtn(sessionState.todo === 'hard')}
             onClick={() => { if (sessionState.todo !== 'hard') markSessionTodo(sessionId); }}>
             hard
-          </button>
-          <button type="button" className={toggleBtn(sessionState.todo === 'soft')}
-            onClick={() => { if (sessionState.todo !== 'soft') softSessionTodo(sessionId); }}>
-            soft
           </button>
           <button type="button" className={toggleBtn(sessionState.todo === false)}
             onClick={() => { if (sessionState.todo !== false) clearSessionTodo(sessionId); }}>
@@ -1514,6 +1514,7 @@ export function Pond({
       }
 
       if (e.key === 't' && sid && selectedTypeRef.current === 'pane') {
+        if (dialogKeyboardActive) return;
         e.preventDefault();
         e.stopPropagation();
         toggleSessionTodo(sid);
@@ -1521,6 +1522,7 @@ export function Pond({
       }
 
       if (e.key === 'a' && sid && selectedTypeRef.current === 'pane') {
+        if (dialogKeyboardActive) return;
         e.preventDefault();
         e.stopPropagation();
         dismissOrToggleAlarm(sid, getSessionState(sid).status);

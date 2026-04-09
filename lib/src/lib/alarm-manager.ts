@@ -233,22 +233,6 @@ export class AlarmManager {
     this.notify(id);
   }
 
-  /** Promote soft TODO to hard */
-  promoteTodo(id: string): void {
-    const entry = this.getOrCreateEntry(id);
-    if (entry.todo !== 'soft') return;
-    entry.todo = 'hard';
-    this.notify(id);
-  }
-
-  /** Explicitly set to soft TODO */
-  softTodo(id: string): void {
-    const entry = this.getOrCreateEntry(id);
-    if (entry.todo === 'soft') return;
-    entry.todo = 'soft';
-    this.notify(id);
-  }
-
   /** Clear any TODO state */
   clearTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
