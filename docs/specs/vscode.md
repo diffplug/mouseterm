@@ -163,7 +163,6 @@ All types defined in `message-types.ts`. Webview-side handling in `vscode-adapte
 | `alarm:clearAttention` | Clear attention timer |
 | `alarm:toggleTodo` | Toggle TODO (false <-> hard) |
 | `alarm:markTodo` | Set hard TODO |
-| `alarm:promoteTodo` | Promote soft TODO to hard |
 | `alarm:clearTodo` | Remove TODO |
 
 **Extension Host -> Webview:**

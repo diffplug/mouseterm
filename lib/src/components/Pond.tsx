@@ -299,6 +299,11 @@ function TodoAlarmDialog({
         if (alarmEnabled) disableSessionAlarm(sessionId);
         else toggleSessionAlarm(sessionId);
       }
+      if (e.key === 't') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        toggleSessionTodo(sessionId);
+      }
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
@@ -322,7 +327,7 @@ function TodoAlarmDialog({
     >
       {/* TODO row */}
       <div className="flex items-center gap-2 mb-2">
-        <span className="w-[20px]" aria-hidden="true" />
+        <span className="text-[10px] font-mono text-muted">[t]</span>
         <span className="text-[11px] text-foreground font-medium w-10">TODO</span>
         <div className="flex gap-1 ml-auto">
           <button type="button" className={toggleBtn(sessionState.todo === 'hard')}
