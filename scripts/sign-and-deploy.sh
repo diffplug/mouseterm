@@ -307,7 +307,18 @@ sign_macos_app() {
     security find-identity -v -p codesigning | grep -q "$MACOS_IDENTITY" \
         || error "Signing identity not found: $MACOS_IDENTITY"
 
-    # Sign with hardened runtime
+    # Sign all nested binaries first (node-pty prebuilds, etc.)
+    # --deep doesn't reliably reach into Resources subdirectories
+    log "Signing nested binaries..."
+    find "$app_path" \( -name "*.node" -o -name "*.dylib" -o -name "spawn-helper" \) -type f | while read -r binary; do
+        log "  Signing: ${binary#"$app_path/"}"
+        codesign --force --sign "$MACOS_IDENTITY" \
+            --options runtime \
+            --timestamp \
+            "$binary"
+    done
+
+    # Sign the outer .app bundle
     codesign --force --deep --sign "$MACOS_IDENTITY" \
         --options runtime \
         --timestamp \
