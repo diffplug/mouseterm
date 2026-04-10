@@ -75,6 +75,16 @@ jobs:
              standalone/src-tauri/target/${{ matrix.target }}/release/nsis/x64/plugins/
         shell: bash
 
+      - name: Stage updater bundles
+        run: |
+          mkdir -p standalone/src-tauri/target/${{ matrix.target }}/release/updater-bundles
+          cp standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.tar.gz \
+             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.tar.gz.sig \
+             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip \
+             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip.sig \
+             standalone/src-tauri/target/${{ matrix.target }}/release/updater-bundles/ 2>/dev/null || true
+        shell: bash
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -85,14 +95,9 @@ jobs:
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app
-            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app.tar.gz
-            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app.tar.gz.sig
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
-            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage.tar.gz
-            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage.tar.gz.sig
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
-            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip
-            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip.sig
+            standalone/src-tauri/target/${{ matrix.target }}/release/updater-bundles/*
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/**
             standalone/src-tauri/target/${{ matrix.target }}/release/nsis/**
             standalone/sidecar/**

@@ -527,7 +527,7 @@ sign_updates() {
 
     # Windows NSIS zip — rebuild with signed exe so Tauri auto-update gets the signed binary
     local win_nsis
-    win_nsis=$(find "$SIGN_DIR/standalone-win-x64" -name "*.nsis.zip" | head -1)
+    win_nsis=$(find "$SIGN_DIR/standalone-win-x64" -path "*/updater-bundles/*.nsis.zip" -o -name "*.nsis.zip" | head -1)
     if [[ -n "$win_nsis" ]]; then
         local signed_exe
         signed_exe=$(find "$SIGN_DIR/standalone-win-x64" -name "MouseTerm.exe" -not -name "*setup*" -not -name "*install*" | head -1)
@@ -562,7 +562,7 @@ sign_updates() {
     [[ -n "$linux_appimage" ]] && cp "$linux_appimage" "$release_dir/$FNAME_LINUX_APPIMAGE"
 
     local linux_update
-    linux_update=$(find "$SIGN_DIR/standalone-linux-x64" -name "*.AppImage.tar.gz" | head -1)
+    linux_update=$(find "$SIGN_DIR/standalone-linux-x64" -path "*/updater-bundles/*.AppImage.tar.gz" -o -name "*.AppImage.tar.gz" | head -1)
     [[ -n "$linux_update" ]] && cp "$linux_update" "$release_dir/$FNAME_LINUX_UPDATE"
 
     local linux_deb
