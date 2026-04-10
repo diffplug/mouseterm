@@ -32,7 +32,9 @@ app launch
 
 The `Update` object from `download()` is held in memory for the session. The close handler intercepts the window close event, writes a success marker to `localStorage` *before* calling `install()` (because on Windows, NSIS force-kills the process), then calls `install()`.
 
-## Banner states
+## Update notice in the Baseboard
+
+Update status appears as a text notice on the right side of the Baseboard (the always-visible bottom strip — see `layout.md`). It coexists with doors and shortcut hints.
 
 | State | Message | Changelog | Auto-dismiss |
 |-------|---------|-----------|--------------|
@@ -40,9 +42,13 @@ The `Update` object from `download()` is held in memory for the session. The clo
 | `post-update-success` | "Updated to v0.5.0 — from v0.4.0." | Yes | 10 seconds |
 | `post-update-failure` | "Update to v0.5.0 failed — will retry next launch." | No | No |
 
-All states are dismissible via [×]. Dismissing hides the banner for the session only — it does not affect whether the update installs on quit.
+All states are dismissible via [×]. Dismissing hides the notice for the session only — it does not affect whether the update installs on quit.
 
-The banner sits above the terminal content (pushes it down, never overlaps). It's 32px tall, uses `bg-surface-alt` / `text-muted` / `border-border` tokens for theme adaptation.
+The notice matches the Baseboard's existing text style (9px mono, `text-muted`). It's pushed right via `ml-auto` so it doesn't compete with doors or the shortcut hint on the left.
+
+### Threading
+
+The Baseboard is in `lib/` but the updater is standalone-only. The notice is threaded as a `ReactNode` prop: `App` → `Pond` → `Baseboard` (via `baseboardNotice`). This keeps all updater knowledge out of `lib/` — the Baseboard just renders an opaque slot.
 
 ## Platform behavior at quit
 
@@ -70,10 +76,10 @@ The success marker is written *before* `install()` because Windows NSIS force-ki
 | File | Role |
 |------|------|
 | [`standalone/src/updater.ts`](../../standalone/src/updater.ts) | State machine, update check, background download, close handler, post-install markers |
-| [`standalone/src/UpdateBanner.tsx`](../../standalone/src/UpdateBanner.tsx) | Pure presentational component — renders banner based on `UpdateBannerState` |
-| [`standalone/src/main.tsx`](../../standalone/src/main.tsx) | Mounts `<ConnectedUpdateBanner />` above `<App />`, calls `startUpdateCheck()` after platform init |
+| [`standalone/src/UpdateBanner.tsx`](../../standalone/src/UpdateBanner.tsx) | Pure presentational component — renders inline notice content for the Baseboard |
+| [`standalone/src/main.tsx`](../../standalone/src/main.tsx) | Passes `<ConnectedUpdateBanner />` as the `baseboardNotice` prop to `<App />`, calls `startUpdateCheck()` after platform init |
 
-All updater code is standalone-only — none of it lives in `lib/`.
+All updater code is standalone-only. The Baseboard accepts a generic `notice` prop (`ReactNode`) — it has no knowledge of the updater.
 
 ## Configuration
 
@@ -104,6 +110,8 @@ The Rust side registers the plugin with `tauri_plugin_updater::Builder::new().bu
 **Why install on quit, not on demand?** MouseTerm is a terminal app with running processes. A mid-session relaunch would kill all sessions. By installing at quit time, the user has already decided to close their terminals.
 
 **Why no "skip this version"?** The update is already downloaded and will install on quit regardless. There's nothing to opt out of. [×] just hides the notification.
+
+**Why the Baseboard, not a top banner?** A top banner pushes terminal content down, which is disruptive in a terminal app. The Baseboard is already a status strip — the update notice fits naturally alongside doors and shortcut hints. It also avoids adding a new UI element; the notice just occupies unused space in an existing one.
 
 **Why write the success marker before `install()`?** On Windows, the NSIS installer force-kills the process — code after `install()` may never run. Writing optimistically and overwriting on failure handles both platforms correctly.
 

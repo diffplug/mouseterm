@@ -28,8 +28,12 @@ async function bootstrap() {
 
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
-      <ConnectedUpdateBanner />
-      <App initialPaneIds={result.paneIds} restoredLayout={result.layout} initialDetached={result.detached} />
+      <App
+        initialPaneIds={result.paneIds}
+        restoredLayout={result.layout}
+        initialDetached={result.detached}
+        baseboardNotice={<ConnectedUpdateBanner />}
+      />
     </StrictMode>,
   );
 }

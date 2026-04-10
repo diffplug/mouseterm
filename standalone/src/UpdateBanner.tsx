@@ -34,8 +34,8 @@ export function UpdateBanner({ state, onDismiss, onOpenChangelog }: UpdateBanner
   }
 
   return (
-    <div className="flex items-center gap-2 border-b border-border bg-surface-alt px-2.5 h-8 text-[11px] text-muted shrink-0">
-      <span className="flex-1 truncate">{message}</span>
+    <span className="flex items-center gap-1.5 pb-1 text-[9px] font-mono tracking-[0.06em] text-muted">
+      <span className="truncate">{message}</span>
       {showChangelog && (
         <button
           onClick={onOpenChangelog}
@@ -49,8 +49,8 @@ export function UpdateBanner({ state, onDismiss, onOpenChangelog }: UpdateBanner
         className="shrink-0 rounded p-0.5 hover:bg-foreground/10 hover:text-foreground"
         aria-label="Dismiss"
       >
-        <XIcon size={14} />
+        <XIcon size={10} />
       </button>
-    </div>
+    </span>
   );
 }

@@ -951,12 +951,14 @@ export function Pond({
   initialDetached,
   onApiReady,
   onEvent,
+  baseboardNotice,
 }: {
   initialPaneIds?: string[];
   restoredLayout?: unknown;
   initialDetached?: PersistedDetachedItem[];
   onApiReady?: (api: DockviewApi) => void;
   onEvent?: (event: PondEvent) => void;
+  baseboardNotice?: React.ReactNode;
 } = {}) {
   const apiRef = useRef<DockviewApi | null>(null);
   const [dockviewApi, setDockviewApi] = useState<DockviewApi | null>(null);
@@ -1786,7 +1788,7 @@ export function Pond({
             </div>
 
             {/* Baseboard — always visible */}
-            <Baseboard items={detached} activeId={selectedType === 'door' ? selectedId : null} onReattach={handleReattach} />
+            <Baseboard items={detached} activeId={selectedType === 'door' ? selectedId : null} onReattach={handleReattach} notice={baseboardNotice} />
 
             {/* Kill confirmation overlay — centered over the pane being killed */}
             {confirmKill && (

@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo, useLayoutEffect, useContext, useSyncExternalStore } from 'react';
+import { useRef, useState, useMemo, useLayoutEffect, useContext, useSyncExternalStore, type ReactNode } from 'react';
 import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { Door } from './Door';
 import { DoorElementsContext, type DetachedItem } from './Pond';
@@ -8,9 +8,10 @@ export interface BaseboardProps {
   items: DetachedItem[];
   activeId: string | null;
   onReattach: (item: DetachedItem) => void;
+  notice?: ReactNode;
 }
 
-export function Baseboard({ items, activeId, onReattach }: BaseboardProps) {
+export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProps) {
   const { elements: doorElements, bumpVersion } = useContext(DoorElementsContext);
   const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -192,6 +193,8 @@ export function Baseboard({ items, activeId, onReattach }: BaseboardProps) {
           <CaretRightIcon size={10} weight="bold" />
         </button>
       )}
+
+      {notice && <div className="ml-auto shrink-0">{notice}</div>}
     </div>
   );
 }
