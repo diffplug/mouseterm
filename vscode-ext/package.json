@@ -2,7 +2,7 @@
   "name": "mouseterm",
   "displayName": "MouseTerm",
   "description": "Multitasking terminal with tmux keybindings, mouse support, and a built-in alarm system for completed tasks and prompts.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "mouseterm",
   "license": "FSL-1.1-MIT",
   "icon": "icon.png",
