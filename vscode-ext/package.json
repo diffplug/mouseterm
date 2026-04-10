@@ -3,9 +3,10 @@
   "displayName": "MouseTerm",
   "description": "Multitasking terminal with tmux keybindings, mouse support, and a built-in alarm system for completed tasks and prompts.",
   "version": "0.4.0",
-  "publisher": "mouseterm",
+  "publisher": "diffplug",
   "license": "FSL-1.1-MIT",
   "icon": "icon.png",
+  "homepage": "https://mouseterm.com/",
   "repository": {
     "type": "git",
     "url": "https://github.com/diffplug/mouseterm"
