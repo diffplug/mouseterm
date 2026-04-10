@@ -411,7 +411,7 @@ sign_windows() {
 
     # Find the inner exe
     local exe_path
-    exe_path=$(find "$WORK_DIR/standalone-win-x64" -name "MouseTerm.exe" -not -name "*setup*" -not -name "*install*" | head -1)
+    exe_path=$(find "$WORK_DIR/standalone-win-x64" \( -name "MouseTerm.exe" -o -name "mouseterm.exe" \) -not -name "*setup*" -not -name "*install*" | head -1)
     [[ -n "$exe_path" ]] || error "Windows executable not found"
 
     log "Signing inner executable: $exe_path"

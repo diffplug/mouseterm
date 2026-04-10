@@ -67,6 +67,7 @@ jobs:
         with:
           name: ${{ matrix.artifact-name }}
           path: |
+            standalone/src-tauri/target/${{ matrix.target }}/release/mouseterm.exe
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
