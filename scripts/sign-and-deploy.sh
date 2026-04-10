@@ -145,13 +145,13 @@ rebuild_windows_installer() {
     local script_dir
     script_dir="$(cd "$(dirname "$script_path")" && pwd)"
 
-    # The .nsi contains absolute Windows paths that don't exist on macOS.
-    # Patch MAINBINARYSRCPATH to point to the signed exe.
-    local abs_signed_exe
-    abs_signed_exe="$(cd "$(dirname "$signed_exe")" && pwd)/$(basename "$signed_exe")"
-    sed -i '' "s|^!define MAINBINARYSRCPATH .*|!define MAINBINARYSRCPATH \"$abs_signed_exe\"|" "$script_path"
+    # The .nsi contains ~60 absolute Windows paths from the CI runner.
+    # Replace them all with local artifact paths using the helper script.
+    local artifact_dir
+    artifact_dir="$(cd "$WORK_DIR/standalone-win-x64" && pwd)"
+    perl "$SCRIPT_DIR/patch-nsis-paths.pl" "$script_path" "$artifact_dir"
 
-    # Patch ADDITIONALPLUGINSPATH to point to the plugin bundled in artifacts.
+    # Patch ADDITIONALPLUGINSPATH separately — it is outside the checkout tree.
     local plugin_dir
     plugin_dir=$(find "$WORK_DIR/standalone-win-x64" -name "nsis_tauri_utils.dll" -exec dirname {} \; | head -1)
     if [[ -n "$plugin_dir" ]]; then

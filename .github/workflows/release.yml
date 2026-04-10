@@ -95,6 +95,8 @@ jobs:
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip.sig
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/**
             standalone/src-tauri/target/${{ matrix.target }}/release/nsis/**
+            standalone/sidecar/**
+            standalone/src-tauri/binaries/**
 
   build-vscode:
     name: Build VSCode Extension
