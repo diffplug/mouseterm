@@ -2,7 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/). Release checklist in [deploy.md](docs/specs/deploy.md).
+
+## [0.3.0] - 2026-04-10
+
+- Yet another initial release to test publishing.
 
 ## [0.2.0] - 2026-04-09
 
