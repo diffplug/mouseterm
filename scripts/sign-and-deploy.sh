@@ -91,6 +91,11 @@ check_command() {
     command -v "$1" &>/dev/null || error "Required command not found: $1. Install with: $2"
 }
 
+artifacts_cached() {
+    local version="$1"
+    [[ -f "$WORK_DIR/.version" ]] && [[ "$(cat "$WORK_DIR/.version")" == "$version" ]]
+}
+
 check_git_clean() {
     log "Checking git status..."
 
@@ -194,6 +199,12 @@ find_release_run_id() {
 download_artifacts() {
     local version="$1"
     local tag="v$version"
+
+    if artifacts_cached "$version"; then
+        log "Artifacts already downloaded for $version, skipping download"
+        return
+    fi
+
     local tag_sha
     tag_sha=$(resolve_tag_sha "$tag")
 
@@ -233,6 +244,7 @@ download_artifacts() {
         --repo "$GITHUB_REPO" \
         --dir "$WORK_DIR"
 
+    echo "$version" > "$WORK_DIR/.version"
     log "Artifacts downloaded to $WORK_DIR"
     ls -la "$WORK_DIR"
 }
@@ -240,6 +252,12 @@ download_artifacts() {
 resume_download() {
     local version="$1"
     local tag="v$version"
+
+    if artifacts_cached "$version"; then
+        log "Artifacts already downloaded for $version, skipping download"
+        return
+    fi
+
     local tag_sha
     tag_sha=$(resolve_tag_sha "$tag")
 
@@ -268,6 +286,7 @@ resume_download() {
         --repo "$GITHUB_REPO" \
         --dir "$WORK_DIR"
 
+    echo "$version" > "$WORK_DIR/.version"
     log "Artifacts downloaded to $WORK_DIR"
     ls -la "$WORK_DIR"
 }
