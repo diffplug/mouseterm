@@ -120,6 +120,21 @@ This runs in CI because VSCode Marketplace publishing uses PAT tokens (no hardwa
 
 `scripts/sign-and-deploy.sh` — modeled on the Type The Rhythm script.
 
+### Local directory layout
+
+The script uses a three-directory layout under `release-signed/`:
+
+| Directory | Purpose | Mutated? |
+|-----------|---------|----------|
+| `downloads/` | Raw CI artifacts, cached per-artifact | **Never** — read-only after download |
+| `work/` | Fresh copy of downloads for each signing run | Yes — codesign, jsign, and NSIS path patching all modify files here |
+| `release-assets/` | Final signed artifacts for GitHub Release upload | Yes — built from signed work copies |
+
+**Key invariant:** Downloaded artifacts in `downloads/` are never modified. All signing and patching operates on copies in `work/`. This means:
+- Re-running a signing step after a failure doesn't require re-downloading
+- Modifying the signing scripts (e.g. `patch-nsis-paths.pl`) doesn't require re-downloading
+- Per-artifact caching: each artifact has its own download marker, so a partial download failure only retries the failed artifacts
+
 ### Prerequisites
 
 ```bash

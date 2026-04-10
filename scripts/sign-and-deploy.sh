@@ -9,11 +9,25 @@ set -euo pipefail
 #
 # Usage: ./scripts/sign-and-deploy.sh all <version>
 #   Example: ./scripts/sign-and-deploy.sh all 0.1.0
+#
+# INVARIANT: Downloaded artifacts in $DOWNLOAD_DIR are NEVER modified.
+# All signing/patching operates on copies in $SIGN_DIR.
+# This allows re-running any signing step without re-downloading.
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORK_DIR="$REPO_ROOT/release-signed"
+DOWNLOAD_DIR="$WORK_DIR/downloads"
+SIGN_DIR="$WORK_DIR/work"
+
+# Known artifact names (must match release.yml matrix artifact-name values)
+ARTIFACT_NAMES=(
+    standalone-mac-aarch64
+    standalone-win-x64
+    standalone-linux-x64
+    vscode-extension
+)
 
 # =============================================================================
 # Configuration
@@ -91,15 +105,22 @@ check_command() {
     command -v "$1" &>/dev/null || error "Required command not found: $1. Install with: $2"
 }
 
-artifacts_cached() {
-    local version="$1"
-    [[ -f "$WORK_DIR/.version" ]] && [[ "$(cat "$WORK_DIR/.version")" == "$version" ]]
+# Returns 0 if a specific artifact has already been downloaded
+artifact_downloaded() {
+    local name="$1"
+    [[ -f "$DOWNLOAD_DIR/.downloaded-$name" ]]
+}
+
+# Returns 0 if ALL known artifacts have been downloaded
+all_artifacts_downloaded() {
+    for name in "${ARTIFACT_NAMES[@]}"; do
+        artifact_downloaded "$name" || return 1
+    done
+    return 0
 }
 
 check_git_clean() {
     log "Checking git status..."
-
-    rm -rf "$WORK_DIR"
 
     if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --quiet; then
         error "Local changes detected. Commit or stash changes before deploying."
@@ -125,8 +146,22 @@ check_git_clean() {
     log "Git status clean."
 }
 
+# Copies downloaded artifacts to $SIGN_DIR for mutation.
+# Call this before any signing step to get a fresh working copy.
+prepare_sign_dir() {
+    log "Preparing working copies from downloaded artifacts..."
+    rm -rf "$SIGN_DIR"
+    mkdir -p "$SIGN_DIR"
+    # Copy only the artifact directories (not marker files)
+    for name in "${ARTIFACT_NAMES[@]}"; do
+        if [[ -d "$DOWNLOAD_DIR/$name" ]]; then
+            cp -R "$DOWNLOAD_DIR/$name" "$SIGN_DIR/$name"
+        fi
+    done
+}
+
 find_nsis_script() {
-    find "$WORK_DIR/standalone-win-x64" \
+    find "$SIGN_DIR/standalone-win-x64" \
         -name "installer.nsi" \
         -print \
         | head -1
@@ -148,12 +183,12 @@ rebuild_windows_installer() {
     # The .nsi contains ~60 absolute Windows paths from the CI runner.
     # Replace them all with local artifact paths using the helper script.
     local artifact_dir
-    artifact_dir="$(cd "$WORK_DIR/standalone-win-x64" && pwd)"
+    artifact_dir="$(cd "$SIGN_DIR/standalone-win-x64" && pwd)"
     perl "$SCRIPT_DIR/patch-nsis-paths.pl" "$script_path" "$artifact_dir"
 
     # Patch ADDITIONALPLUGINSPATH separately — it is outside the checkout tree.
     local plugin_dir
-    plugin_dir=$(find "$WORK_DIR/standalone-win-x64" -name "nsis_tauri_utils.dll" -exec dirname {} \; | head -1)
+    plugin_dir=$(find "$SIGN_DIR/standalone-win-x64" -name "nsis_tauri_utils.dll" -exec dirname {} \; | head -1)
     if [[ -n "$plugin_dir" ]]; then
         local abs_plugin_dir
         abs_plugin_dir="$(cd "$plugin_dir" && pwd)"
@@ -204,15 +239,47 @@ find_release_run_id() {
 }
 
 # =============================================================================
-# Download CI Artifacts
+# Download CI Artifacts (per-artifact caching)
 # =============================================================================
+
+# Downloads artifacts individually, skipping any already cached.
+# Artifacts are stored in $DOWNLOAD_DIR and NEVER modified after download.
+download_artifacts_from_run() {
+    local run_id="$1"
+
+    mkdir -p "$DOWNLOAD_DIR"
+
+    for name in "${ARTIFACT_NAMES[@]}"; do
+        if artifact_downloaded "$name"; then
+            log "  $name: already downloaded, skipping"
+            continue
+        fi
+
+        log "  $name: downloading..."
+        if gh run download "$run_id" \
+            --repo "$GITHUB_REPO" \
+            --name "$name" \
+            --dir "$DOWNLOAD_DIR"; then
+            touch "$DOWNLOAD_DIR/.downloaded-$name"
+            log "  $name: done"
+        else
+            warn "  $name: download failed (will retry on next run)"
+        fi
+    done
+
+    if all_artifacts_downloaded; then
+        log "All artifacts downloaded to $DOWNLOAD_DIR"
+    else
+        error "Some artifacts failed to download. Re-run to retry."
+    fi
+}
 
 download_artifacts() {
     local version="$1"
     local tag="v$version"
 
-    if artifacts_cached "$version"; then
-        log "Artifacts already downloaded for $version, skipping download"
+    if all_artifacts_downloaded; then
+        log "All artifacts already downloaded, skipping"
         return
     fi
 
@@ -246,26 +313,16 @@ download_artifacts() {
         || error "Workflow failed. Check: https://github.com/$GITHUB_REPO/actions/runs/$run_id"
 
     log "Workflow completed successfully!"
-
-    rm -rf "$WORK_DIR"
-    mkdir -p "$WORK_DIR"
-
     log "Downloading artifacts..."
-    gh run download "$run_id" \
-        --repo "$GITHUB_REPO" \
-        --dir "$WORK_DIR"
-
-    echo "$version" > "$WORK_DIR/.version"
-    log "Artifacts downloaded to $WORK_DIR"
-    ls -la "$WORK_DIR"
+    download_artifacts_from_run "$run_id"
 }
 
 resume_download() {
     local version="$1"
     local tag="v$version"
 
-    if artifacts_cached "$version"; then
-        log "Artifacts already downloaded for $version, skipping download"
+    if all_artifacts_downloaded; then
+        log "All artifacts already downloaded, skipping"
         return
     fi
 
@@ -288,18 +345,8 @@ resume_download() {
     fi
 
     log "Found completed workflow run: $run_id"
-
-    rm -rf "$WORK_DIR"
-    mkdir -p "$WORK_DIR"
-
     log "Downloading artifacts..."
-    gh run download "$run_id" \
-        --repo "$GITHUB_REPO" \
-        --dir "$WORK_DIR"
-
-    echo "$version" > "$WORK_DIR/.version"
-    log "Artifacts downloaded to $WORK_DIR"
-    ls -la "$WORK_DIR"
+    download_artifacts_from_run "$run_id"
 }
 
 # =============================================================================
@@ -346,7 +393,7 @@ sign_macos() {
     log "Starting macOS code signing..."
 
     local app
-    app=$(find "$WORK_DIR/standalone-mac-aarch64" -name "*.app" -type d | head -1)
+    app=$(find "$SIGN_DIR/standalone-mac-aarch64" -name "*.app" -type d | head -1)
 
     [[ -n "$app" ]] && sign_macos_app "$app" "aarch64"
 
@@ -363,7 +410,7 @@ notarize_macos_app() {
 
     log "Notarizing macOS app ($arch_label)..."
 
-    local zip_path="$WORK_DIR/notarize-${arch_label}.zip"
+    local zip_path="$SIGN_DIR/notarize-${arch_label}.zip"
 
     ditto -c -k --keepParent "$app_path" "$zip_path"
 
@@ -390,7 +437,7 @@ notarize_macos() {
     prompt_secret APPLE_SIGN_PASS "Enter Apple ID password (or app-specific password)"
 
     local app
-    app=$(find "$WORK_DIR/standalone-mac-aarch64" -name "*.app" -type d | head -1)
+    app=$(find "$SIGN_DIR/standalone-mac-aarch64" -name "*.app" -type d | head -1)
 
     [[ -n "$app" ]] && notarize_macos_app "$app" "aarch64"
 
@@ -401,10 +448,10 @@ notarize_macos() {
 
         log "Creating $FNAME_MAC_DMG..."
         hdiutil create -volname "MouseTerm" -srcfolder "$app" \
-            -ov -format UDZO "$WORK_DIR/$FNAME_MAC_DMG"
+            -ov -format UDZO "$SIGN_DIR/$FNAME_MAC_DMG"
 
         log "Creating $FNAME_MAC_UPDATE..."
-        tar -czf "$WORK_DIR/$FNAME_MAC_UPDATE" -C "$(dirname "$app")" "$app_name"
+        tar -czf "$SIGN_DIR/$FNAME_MAC_UPDATE" -C "$(dirname "$app")" "$app_name"
     fi
 
     log "All macOS notarization and packaging complete"
@@ -422,7 +469,7 @@ sign_windows() {
 
     # Find the inner exe
     local exe_path
-    exe_path=$(find "$WORK_DIR/standalone-win-x64" \( -name "MouseTerm.exe" -o -name "mouseterm.exe" \) -not -name "*setup*" -not -name "*install*" | head -1)
+    exe_path=$(find "$SIGN_DIR/standalone-win-x64" \( -name "MouseTerm.exe" -o -name "mouseterm.exe" \) -not -name "*setup*" -not -name "*install*" | head -1)
     [[ -n "$exe_path" ]] || error "Windows executable not found"
 
     log "Signing inner executable: $exe_path"
@@ -436,7 +483,7 @@ sign_windows() {
 
     # Find the NSIS installer
     local installer_path
-    installer_path=$(find "$WORK_DIR/standalone-win-x64" -name "*setup*.exe" -o -name "*install*.exe" | head -1)
+    installer_path=$(find "$SIGN_DIR/standalone-win-x64" -name "*setup*.exe" -o -name "*install*.exe" | head -1)
 
     if [[ -n "$installer_path" ]]; then
         rebuild_windows_installer "$exe_path" "$installer_path"
@@ -450,7 +497,7 @@ sign_windows() {
             "$installer_path"
 
         # Copy with stable filename
-        cp "$installer_path" "$WORK_DIR/$FNAME_WIN_EXE"
+        cp "$installer_path" "$SIGN_DIR/$FNAME_WIN_EXE"
     fi
 
     log "Windows signing complete"
@@ -472,18 +519,18 @@ sign_updates() {
 
     # Collect and rename update bundles with stable filenames
     # macOS .tar.gz (already created by notarize step)
-    [[ -f "$WORK_DIR/$FNAME_MAC_UPDATE" ]] && cp "$WORK_DIR/$FNAME_MAC_UPDATE" "$release_dir/"
-    [[ -f "$WORK_DIR/$FNAME_MAC_DMG" ]] && cp "$WORK_DIR/$FNAME_MAC_DMG" "$release_dir/"
+    [[ -f "$SIGN_DIR/$FNAME_MAC_UPDATE" ]] && cp "$SIGN_DIR/$FNAME_MAC_UPDATE" "$release_dir/"
+    [[ -f "$SIGN_DIR/$FNAME_MAC_DMG" ]] && cp "$SIGN_DIR/$FNAME_MAC_DMG" "$release_dir/"
 
     # Windows NSIS zip — rebuild with signed exe so Tauri auto-update gets the signed binary
     local win_nsis
-    win_nsis=$(find "$WORK_DIR/standalone-win-x64" -name "*.nsis.zip" | head -1)
+    win_nsis=$(find "$SIGN_DIR/standalone-win-x64" -name "*.nsis.zip" | head -1)
     if [[ -n "$win_nsis" ]]; then
         local signed_exe
-        signed_exe=$(find "$WORK_DIR/standalone-win-x64" -name "MouseTerm.exe" -not -name "*setup*" -not -name "*install*" | head -1)
+        signed_exe=$(find "$SIGN_DIR/standalone-win-x64" -name "MouseTerm.exe" -not -name "*setup*" -not -name "*install*" | head -1)
         if [[ -n "$signed_exe" ]]; then
             log "Rebuilding NSIS zip with signed executable..."
-            local nsis_tmp="$WORK_DIR/nsis-repack"
+            local nsis_tmp="$SIGN_DIR/nsis-repack"
             mkdir -p "$nsis_tmp"
             unzip -o "$win_nsis" -d "$nsis_tmp"
             # Replace the unsigned exe inside the extracted zip with the signed one
@@ -504,19 +551,19 @@ sign_updates() {
     fi
 
     # Windows installer
-    [[ -f "$WORK_DIR/$FNAME_WIN_EXE" ]] && cp "$WORK_DIR/$FNAME_WIN_EXE" "$release_dir/"
+    [[ -f "$SIGN_DIR/$FNAME_WIN_EXE" ]] && cp "$SIGN_DIR/$FNAME_WIN_EXE" "$release_dir/"
 
     # Linux AppImage
     local linux_appimage
-    linux_appimage=$(find "$WORK_DIR/standalone-linux-x64" -name "*.AppImage" -not -name "*.tar.gz" | head -1)
+    linux_appimage=$(find "$SIGN_DIR/standalone-linux-x64" -name "*.AppImage" -not -name "*.tar.gz" | head -1)
     [[ -n "$linux_appimage" ]] && cp "$linux_appimage" "$release_dir/$FNAME_LINUX_APPIMAGE"
 
     local linux_update
-    linux_update=$(find "$WORK_DIR/standalone-linux-x64" -name "*.AppImage.tar.gz" | head -1)
+    linux_update=$(find "$SIGN_DIR/standalone-linux-x64" -name "*.AppImage.tar.gz" | head -1)
     [[ -n "$linux_update" ]] && cp "$linux_update" "$release_dir/$FNAME_LINUX_UPDATE"
 
     local linux_deb
-    linux_deb=$(find "$WORK_DIR/standalone-linux-x64" -name "*.deb" | head -1)
+    linux_deb=$(find "$SIGN_DIR/standalone-linux-x64" -name "*.deb" | head -1)
     [[ -n "$linux_deb" ]] && cp "$linux_deb" "$release_dir/$FNAME_LINUX_DEB"
 
     # Generate .sig files for update bundles using Tauri CLI
@@ -678,6 +725,7 @@ main() {
 
             check_git_clean
             download_artifacts "$version"
+            prepare_sign_dir
             sign_macos
             notarize_macos
             sign_windows
@@ -689,6 +737,7 @@ main() {
             [[ -z "$version" ]] && error "Usage: $(basename "$0") resume <version>"
 
             resume_download "$version"
+            prepare_sign_dir
             sign_macos
             notarize_macos
             sign_windows
@@ -696,17 +745,21 @@ main() {
             create_release "$version"
             ;;
         sign-mac)
+            prepare_sign_dir
             sign_macos
             ;;
         notarize)
+            prepare_sign_dir
             notarize_macos
             ;;
         sign-win)
+            prepare_sign_dir
             sign_windows
             ;;
         sign-updates)
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") sign-updates <version>"
+            prepare_sign_dir
             sign_updates "$version"
             ;;
         release)
