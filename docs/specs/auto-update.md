@@ -193,12 +193,11 @@ The `check()` call handles endpoint fetching, version comparison, and signature 
 |------|----------------|
 | `standalone/src/updater.ts` | Update check, background download, quit-time install, post-install markers, state |
 | `standalone/src/UpdateBanner.tsx` | Banner React component |
-| `standalone/src/App.tsx` | Mounts `<UpdateBanner />` at the top of the app |
+| `standalone/src/main.tsx` | Mounts `<UpdateBanner />` at the top of the app |
 
 The updater module is standalone-only — it does not go into `lib/` because the VSCode extension and website have no use for it.
 
 ## Setup required
 
-1. `pnpm --filter mouseterm-standalone add @tauri-apps/plugin-updater @tauri-apps/plugin-process`
-2. Add `"process"` to the `plugins` allowlist in `tauri.conf.json` if not already present.
-3. Add `"installMode": "passive"` to the updater Windows config in `tauri.conf.json`.
+1. `pnpm --filter mouseterm-standalone add @tauri-apps/plugin-updater`
+2. Add `"installMode": "passive"` to the updater Windows config in `tauri.conf.json`.

@@ -80,13 +80,14 @@ describe('updater', () => {
       expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     });
 
-    it('skips update check when a post-install marker is present', async () => {
+    it('still runs update check after reading a post-install marker', async () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ from: '0.3.0', to: '0.4.0' }));
 
       startUpdateCheck();
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(0);
 
-      expect(mocks.check).not.toHaveBeenCalled();
+      expect(mocks.check).toHaveBeenCalledOnce();
     });
   });
 

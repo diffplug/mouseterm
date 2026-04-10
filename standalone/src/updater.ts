@@ -68,8 +68,6 @@ async function runUpdateCheck(): Promise<void> {
       const marker = JSON.parse(raw);
       if (marker.failed) {
         setState({ status: 'post-update-failure', version: marker.version });
-        registerCloseHandler();
-        return;
       } else if (marker.from && marker.to) {
         setState({ status: 'post-update-success', from: marker.from, to: marker.to });
         setTimeout(() => {
@@ -77,8 +75,6 @@ async function runUpdateCheck(): Promise<void> {
             setState({ status: 'idle' });
           }
         }, 10_000);
-        registerCloseHandler();
-        return;
       }
     }
   } catch {
