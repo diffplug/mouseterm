@@ -96,7 +96,6 @@ jobs:
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
-            standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
             standalone/src-tauri/target/${{ matrix.target }}/release/updater-bundles/*
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/**
             standalone/src-tauri/target/${{ matrix.target }}/release/nsis/**

@@ -52,8 +52,6 @@ FNAME_MAC_DMG="MouseTerm-macos-aarch64.dmg"
 FNAME_MAC_UPDATE="MouseTerm-macos-aarch64.tar.gz"
 FNAME_LINUX_APPIMAGE="MouseTerm-linux-x86_64.AppImage"
 FNAME_LINUX_UPDATE="MouseTerm-linux-x86_64.AppImage.tar.gz"
-FNAME_LINUX_DEB="MouseTerm-linux-x86_64.deb"
-FNAME_MANIFEST="latest.json"
 
 # =============================================================================
 # Helper Functions
@@ -450,8 +448,14 @@ notarize_macos() {
         app_name=$(basename "$app")
 
         log "Creating $FNAME_MAC_DMG..."
-        hdiutil create -volname "MouseTerm" -srcfolder "$app" \
+        local dmg_stage="$SIGN_DIR/dmg-stage"
+        rm -rf "$dmg_stage"
+        mkdir -p "$dmg_stage"
+        cp -R "$app" "$dmg_stage/"
+        ln -s /Applications "$dmg_stage/Applications"
+        hdiutil create -volname "MouseTerm" -srcfolder "$dmg_stage" \
             -ov -format UDZO "$SIGN_DIR/$FNAME_MAC_DMG"
+        rm -rf "$dmg_stage"
 
         log "Creating $FNAME_MAC_UPDATE..."
         tar -czf "$SIGN_DIR/$FNAME_MAC_UPDATE" -C "$(dirname "$app")" "$app_name"
@@ -565,10 +569,6 @@ sign_updates() {
     linux_update=$(find "$SIGN_DIR/standalone-linux-x64" -path "*/updater-bundles/*.AppImage.tar.gz" -o -name "*.AppImage.tar.gz" | head -1)
     [[ -n "$linux_update" ]] && cp "$linux_update" "$release_dir/$FNAME_LINUX_UPDATE"
 
-    local linux_deb
-    linux_deb=$(find "$SIGN_DIR/standalone-linux-x64" -name "*.deb" | head -1)
-    [[ -n "$linux_deb" ]] && cp "$linux_deb" "$release_dir/$FNAME_LINUX_DEB"
-
     # Generate .sig files for update bundles using Tauri CLI
     for bundle in "$release_dir/$FNAME_MAC_UPDATE" \
                   "$release_dir/$FNAME_WIN_UPDATE" \
@@ -591,11 +591,12 @@ sign_updates() {
 
     # Read .sig file contents
     local sig_mac="" sig_win="" sig_linux=""
-    [[ -f "$release_dir/$FNAME_MAC_UPDATE.sig" ]] && sig_mac=$(cat "$release_dir/$FNAME_MAC_UPDATE.sig")
-    [[ -f "$release_dir/$FNAME_WIN_UPDATE.sig" ]] && sig_win=$(cat "$release_dir/$FNAME_WIN_UPDATE.sig")
-    [[ -f "$release_dir/$FNAME_LINUX_UPDATE.sig" ]] && sig_linux=$(cat "$release_dir/$FNAME_LINUX_UPDATE.sig")
+    [[ -f "$release_dir/$FNAME_MAC_UPDATE.sig" ]] && { sig_mac=$(cat "$release_dir/$FNAME_MAC_UPDATE.sig"); rm "$release_dir/$FNAME_MAC_UPDATE.sig"; }
+    [[ -f "$release_dir/$FNAME_WIN_UPDATE.sig" ]] && { sig_win=$(cat "$release_dir/$FNAME_WIN_UPDATE.sig"); rm "$release_dir/$FNAME_WIN_UPDATE.sig"; }
+    [[ -f "$release_dir/$FNAME_LINUX_UPDATE.sig" ]] && { sig_linux=$(cat "$release_dir/$FNAME_LINUX_UPDATE.sig"); rm "$release_dir/$FNAME_LINUX_UPDATE.sig"; }
 
-    cat > "$release_dir/$FNAME_MANIFEST" <<EOF
+    local website_manifest="$REPO_ROOT/website/public/standalone-latest.json"
+    cat > "$website_manifest" <<EOF
 {
   "version": "$version",
   "notes": "See https://github.com/$GITHUB_REPO/releases/tag/v$version",
@@ -617,12 +618,7 @@ sign_updates() {
 }
 EOF
 
-    log "Update manifest written to $release_dir/$FNAME_MANIFEST"
-
-    # Copy manifest to website for serving via mouseterm.com
-    local website_manifest="$REPO_ROOT/website/public/standalone-latest.json"
-    cp "$release_dir/$FNAME_MANIFEST" "$website_manifest"
-    log "Manifest copied to $website_manifest — commit and deploy website to make it live"
+    log "Update manifest written to $website_manifest — commit and deploy website to make it live"
 
     log "Update bundle signing complete"
 }
