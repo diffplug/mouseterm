@@ -20,9 +20,10 @@ close $fh;
 
 # Extract CI checkout root from MAINBINARYSRCPATH.
 # The path looks like: "D:\a\mouseterm\mouseterm\standalone\src-tauri\target\...\mouseterm.exe"
-# We want everything before \standalone\src-tauri\
+# We want everything before \src-tauri\ (including \standalone) because
+# actions/upload-artifact strips the common ancestor (standalone/) from paths.
 my $ci_root;
-if ($content =~ /MAINBINARYSRCPATH\s+"(.+?)\\standalone\\src-tauri\\/) {
+if ($content =~ /MAINBINARYSRCPATH\s+"(.+?)\\src-tauri\\/) {
     $ci_root = $1;
 } else {
     die "Could not extract CI checkout root from MAINBINARYSRCPATH in $nsi_file\n";
