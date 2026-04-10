@@ -204,12 +204,15 @@ rebuild_windows_installer() {
     log "Rebuilding NSIS installer: $installer_name"
     (
         cd "$script_dir"
-        makensis -NOCD -X"OutFile $installer_name" "$(basename "$script_path")"
+        makensis -NOCD "$(basename "$script_path")"
     )
 
-    local output_path="$script_dir/$installer_name"
-    [[ -f "$output_path" ]] || error "NSIS rebuild did not produce $installer_name"
-    mv "$output_path" "$installer_path"
+    # makensis outputs whatever filename the .nsi defines; find it
+    local output_exe
+    output_exe=$(find "$script_dir" -maxdepth 1 -name "*.exe" -newer "$script_path" | head -1)
+    [[ -n "$output_exe" ]] || error "NSIS rebuild did not produce an installer"
+    log "NSIS produced: $(basename "$output_exe")"
+    mv "$output_exe" "$installer_path"
 }
 
 resolve_tag_sha() {
@@ -259,7 +262,7 @@ download_artifacts_from_run() {
         if gh run download "$run_id" \
             --repo "$GITHUB_REPO" \
             --name "$name" \
-            --dir "$DOWNLOAD_DIR"; then
+            --dir "$DOWNLOAD_DIR/$name"; then
             touch "$DOWNLOAD_DIR/.downloaded-$name"
             log "  $name: done"
         else

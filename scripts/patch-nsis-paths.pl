@@ -44,6 +44,13 @@ $content =~ s/\Q$ci_root\E([^"]*)/
     "$local_root$rest"
 /ge;
 
+# Remove the /a flag from File directives — it sets Windows file attributes
+# and is silently skipped on non-Windows, causing files to not be included.
+my $fa_count = 0;
+$fa_count++ while $content =~ /\bFile\s+\/a\b/g;
+$content =~ s/\bFile\s+\/a\b/File/g;
+print "Removed $fa_count 'File /a' flags (unsupported on non-Windows)\n" if $fa_count;
+
 open my $out, '>', $nsi_file or die "Cannot write $nsi_file: $!";
 print $out $content;
 close $out;
