@@ -67,6 +67,14 @@ jobs:
         run: find standalone/src-tauri/target/${{ matrix.target }}/release/bundle -type f | sort
         shell: bash
 
+      - name: Copy NSIS plugin for artifact upload (Windows)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: |
+          mkdir -p standalone/src-tauri/target/${{ matrix.target }}/release/nsis/x64/plugins
+          cp "$LOCALAPPDATA/tauri/NSIS/Plugins/x86-unicode/additional/nsis_tauri_utils.dll" \
+             standalone/src-tauri/target/${{ matrix.target }}/release/nsis/x64/plugins/
+        shell: bash
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -86,6 +94,7 @@ jobs:
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip.sig
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/**
+            standalone/src-tauri/target/${{ matrix.target }}/release/nsis/**
 
   build-vscode:
     name: Build VSCode Extension

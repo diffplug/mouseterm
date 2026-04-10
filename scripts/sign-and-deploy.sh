@@ -127,7 +127,7 @@ check_git_clean() {
 
 find_nsis_script() {
     find "$WORK_DIR/standalone-win-x64" \
-        \( -name "*.nsi" -o -name "*.nsh" \) \
+        -name "installer.nsi" \
         -print \
         | head -1
 }
@@ -136,22 +136,31 @@ rebuild_windows_installer() {
     local signed_exe="$1"
     local installer_path="$2"
 
-    check_command makensis "Install NSIS (makensis) and re-download artifacts"
+    check_command makensis "Install NSIS: brew install makensis"
 
     local script_path
     script_path=$(find_nsis_script)
-    [[ -n "$script_path" ]] || error "NSIS script not found in downloaded artifacts; include bundle/nsis staging files before rebuilding the installer."
+    [[ -n "$script_path" ]] || error "NSIS script not found in downloaded artifacts; ensure release.yml uploads the nsis staging directory."
 
     local script_dir
     script_dir="$(cd "$(dirname "$script_path")" && pwd)"
-    local bundle_root
-    bundle_root="$(cd "$script_dir/.." && pwd)"
 
-    local staged_exe
-    staged_exe=$(find "$bundle_root" -name "MouseTerm.exe" -not -path "$signed_exe" | head -1)
-    [[ -n "$staged_exe" ]] || error "Could not find staged MouseTerm.exe for NSIS rebuild"
+    # The .nsi contains absolute Windows paths that don't exist on macOS.
+    # Patch MAINBINARYSRCPATH to point to the signed exe.
+    local abs_signed_exe
+    abs_signed_exe="$(cd "$(dirname "$signed_exe")" && pwd)/$(basename "$signed_exe")"
+    sed -i '' "s|^!define MAINBINARYSRCPATH .*|!define MAINBINARYSRCPATH \"$abs_signed_exe\"|" "$script_path"
 
-    cp "$signed_exe" "$staged_exe"
+    # Patch ADDITIONALPLUGINSPATH to point to the plugin bundled in artifacts.
+    local plugin_dir
+    plugin_dir=$(find "$WORK_DIR/standalone-win-x64" -name "nsis_tauri_utils.dll" -exec dirname {} \; | head -1)
+    if [[ -n "$plugin_dir" ]]; then
+        local abs_plugin_dir
+        abs_plugin_dir="$(cd "$plugin_dir" && pwd)"
+        sed -i '' "s|^!define ADDITIONALPLUGINSPATH .*|!define ADDITIONALPLUGINSPATH \"$abs_plugin_dir\"|" "$script_path"
+    else
+        warn "nsis_tauri_utils.dll not found in artifacts; makensis may fail"
+    fi
 
     local installer_name
     installer_name="$(basename "$installer_path")"
@@ -163,7 +172,9 @@ rebuild_windows_installer() {
         makensis -NOCD -X"OutFile $installer_name" "$(basename "$script_path")"
     )
 
-    [[ -f "$installer_path" ]] || error "NSIS rebuild did not produce $installer_path"
+    local output_path="$script_dir/$installer_name"
+    [[ -f "$output_path" ]] || error "NSIS rebuild did not produce $installer_name"
+    mv "$output_path" "$installer_path"
 }
 
 resolve_tag_sha() {
