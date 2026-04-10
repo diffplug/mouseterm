@@ -1770,7 +1770,7 @@ export function Pond({
           <DoorElementsContext.Provider value={{ elements: doorElements, version: doorElementsVersion, bumpVersion: bumpDoorElementsVersion }}>
           <RenamingIdContext.Provider value={renamingPaneId}>
           <ZoomedContext.Provider value={zoomed}>
-          <div className="h-screen flex flex-col bg-surface text-foreground font-sans overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col bg-surface text-foreground font-sans overflow-hidden">
             {/* Dockview */}
             <div className="flex-1 min-h-0 relative p-1.5">
               <div ref={dockviewContainerRef} className="absolute inset-1.5">
