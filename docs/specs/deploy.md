@@ -7,9 +7,9 @@ Every release produces three artifact groups under one version and changelog:
 | Artifact | Format | Destination |
 |----------|--------|-------------|
 | VSCode extension | `.vsix` | VS Code Marketplace + OpenVSX |
-| Standalone (Windows) | NSIS `.exe` installer | GitHub Release + Tauri updater |
-| Standalone (macOS, Apple Silicon) | `.dmg` (install) + `.tar.gz` (update) | GitHub Release + Tauri updater |
-| Standalone (Linux) | AppImage | GitHub Release + Tauri updater |
+| Standalone (Windows) | `.nsis.zip` (contains NSIS installer) | GitHub Release + Tauri updater |
+| Standalone (macOS, Apple Silicon) | `.tar.gz` (contains signed `.app`) | GitHub Release + Tauri updater |
+| Standalone (Linux) | `.AppImage.tar.gz` (contains AppImage) | GitHub Release + Tauri updater |
 
 ## Release checklist
 
@@ -33,8 +33,8 @@ Human-driven steps, in order:
 8. **Deploy website** — commit the updated `website/public/standalone-latest.json` and deploy mouseterm.com so the updater endpoint is live.
 9. **Verify the release**
    - Check GitHub Release assets are correct
-   - On a Mac: download the `.dmg`, open it, confirm no Gatekeeper warnings
-   - On Windows: download the `.exe` installer, confirm no SmartScreen warnings
+   - On a Mac: extract the `.tar.gz`, open the `.app`, confirm no Gatekeeper warnings
+   - On Windows: extract the `.nsis.zip`, run the installer, confirm no SmartScreen warnings
    - Confirm Tauri auto-updater picks up the new version (test from a previous version)
    - Confirm VSCode extension is live on Marketplace and OpenVSX
 
@@ -193,7 +193,7 @@ codesign/jsign the executable
    - Build the update manifest JSON (see below) with the `.sig` contents inline
 6. **Create GitHub Release**
    - `gh release create v0.1.0 --title "v0.1.0" --notes-file CHANGELOG.md`
-   - Upload: signed installers (`.dmg`, `.exe`, `.AppImage`) + update bundles (`.tar.gz`, `.nsis.zip`)
+   - Upload: update bundles (`.tar.gz`, `.nsis.zip`, `.AppImage.tar.gz`)
 7. **Verify** — spot-check signatures, confirm release assets are correct
 
 ### Resuming after failure
@@ -211,21 +211,18 @@ All release assets use **stable filenames** (no version in the name). This allow
 
 | Asset | Filename | Purpose |
 |-------|----------|---------|
-| Windows installer | `MouseTerm-windows-x64.exe` | Direct download |
-| Windows update bundle | `MouseTerm-windows-x64.nsis.zip` | Tauri updater |
-| macOS installer | `MouseTerm-macos-aarch64.dmg` | Direct download |
-| macOS update bundle | `MouseTerm-macos-aarch64.tar.gz` | Tauri updater |
-| Linux AppImage | `MouseTerm-linux-x86_64.AppImage` | Direct download |
-| Linux update bundle | `MouseTerm-linux-x86_64.AppImage.tar.gz` | Tauri updater |
+| Windows | `MouseTerm-windows-x64.nsis.zip` | Download + Tauri updater |
+| macOS | `MouseTerm-macos-aarch64.tar.gz` | Download + Tauri updater |
+| Linux | `MouseTerm-linux-x86_64.AppImage.tar.gz` | Download + Tauri updater |
 
 ### Download hotlinks
 
 The mouseterm.com download page can link directly to the latest release with no server-side logic:
 
 ```
-https://github.com/diffplug/mouseterm/releases/latest/download/MouseTerm-windows-x64.exe
-https://github.com/diffplug/mouseterm/releases/latest/download/MouseTerm-macos-aarch64.dmg
-https://github.com/diffplug/mouseterm/releases/latest/download/MouseTerm-linux-x86_64.AppImage
+https://github.com/diffplug/mouseterm/releases/latest/download/MouseTerm-windows-x64.nsis.zip
+https://github.com/diffplug/mouseterm/releases/latest/download/MouseTerm-macos-aarch64.tar.gz
+https://github.com/diffplug/mouseterm/releases/latest/download/MouseTerm-linux-x86_64.AppImage.tar.gz
 ```
 
 These can later be migrated to `mouseterm.com/download/...` URLs backed by Cloudflare R2 (for analytics) without changing anything in the app — only the website links and the updater endpoint URL in `tauri.conf.json` would change.

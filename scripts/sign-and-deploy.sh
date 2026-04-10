@@ -45,13 +45,10 @@ TSA_URL="http://ts.ssl.com"
 # GitHub repo
 GITHUB_REPO="diffplug/mouseterm"
 
-# Stable filenames for release assets
-FNAME_WIN_EXE="MouseTerm-windows-x64.exe"
-FNAME_WIN_UPDATE="MouseTerm-windows-x64.nsis.zip"
-FNAME_MAC_DMG="MouseTerm-macos-aarch64.dmg"
-FNAME_MAC_UPDATE="MouseTerm-macos-aarch64.tar.gz"
-FNAME_LINUX_APPIMAGE="MouseTerm-linux-x86_64.AppImage"
-FNAME_LINUX_UPDATE="MouseTerm-linux-x86_64.AppImage.tar.gz"
+# Stable filenames for release assets (update bundles only)
+FNAME_WIN="MouseTerm-windows-x64.nsis.zip"
+FNAME_MAC="MouseTerm-macos-aarch64.tar.gz"
+FNAME_LINUX="MouseTerm-linux-x86_64.AppImage.tar.gz"
 
 # =============================================================================
 # Helper Functions
@@ -447,18 +444,8 @@ notarize_macos() {
         local app_name
         app_name=$(basename "$app")
 
-        log "Creating $FNAME_MAC_DMG..."
-        local dmg_stage="$SIGN_DIR/dmg-stage"
-        rm -rf "$dmg_stage"
-        mkdir -p "$dmg_stage"
-        cp -R "$app" "$dmg_stage/"
-        ln -s /Applications "$dmg_stage/Applications"
-        hdiutil create -volname "MouseTerm" -srcfolder "$dmg_stage" \
-            -ov -format UDZO "$SIGN_DIR/$FNAME_MAC_DMG"
-        rm -rf "$dmg_stage"
-
-        log "Creating $FNAME_MAC_UPDATE..."
-        tar -czf "$SIGN_DIR/$FNAME_MAC_UPDATE" -C "$(dirname "$app")" "$app_name"
+        log "Creating $FNAME_MAC..."
+        tar -czf "$SIGN_DIR/$FNAME_MAC" -C "$(dirname "$app")" "$app_name"
     fi
 
     log "All macOS notarization and packaging complete"
@@ -503,8 +490,6 @@ sign_windows() {
             --tsmode RFC3161 \
             "$installer_path"
 
-        # Copy with stable filename
-        cp "$installer_path" "$SIGN_DIR/$FNAME_WIN_EXE"
     fi
 
     log "Windows signing complete"
@@ -524,55 +509,42 @@ sign_updates() {
     local release_dir="$WORK_DIR/release-assets"
     mkdir -p "$release_dir"
 
-    # Collect and rename update bundles with stable filenames
-    # macOS .tar.gz (already created by notarize step)
-    [[ -f "$SIGN_DIR/$FNAME_MAC_UPDATE" ]] && cp "$SIGN_DIR/$FNAME_MAC_UPDATE" "$release_dir/"
-    [[ -f "$SIGN_DIR/$FNAME_MAC_DMG" ]] && cp "$SIGN_DIR/$FNAME_MAC_DMG" "$release_dir/"
+    # Collect update bundles with stable filenames
+    # macOS .tar.gz (created by notarize step from signed+notarized .app)
+    [[ -f "$SIGN_DIR/$FNAME_MAC" ]] && cp "$SIGN_DIR/$FNAME_MAC" "$release_dir/"
 
-    # Windows NSIS zip — rebuild with signed exe so Tauri auto-update gets the signed binary
+    # Windows NSIS zip — rebuild with signed installer
     local win_nsis
     win_nsis=$(find "$SIGN_DIR/standalone-win-x64" -path "*/updater-bundles/*.nsis.zip" -o -name "*.nsis.zip" | head -1)
     if [[ -n "$win_nsis" ]]; then
-        local signed_exe
-        signed_exe=$(find "$SIGN_DIR/standalone-win-x64" -name "MouseTerm.exe" -not -name "*setup*" -not -name "*install*" | head -1)
-        if [[ -n "$signed_exe" ]]; then
-            log "Rebuilding NSIS zip with signed executable..."
-            local nsis_tmp="$SIGN_DIR/nsis-repack"
-            mkdir -p "$nsis_tmp"
-            unzip -o "$win_nsis" -d "$nsis_tmp"
-            # Replace the unsigned exe inside the extracted zip with the signed one
-            local inner_exe
-            inner_exe=$(find "$nsis_tmp" -name "MouseTerm.exe" -not -name "*setup*" -not -name "*install*" | head -1)
-            if [[ -n "$inner_exe" ]]; then
-                cp "$signed_exe" "$inner_exe"
-                # Rebuild the zip
-                (cd "$nsis_tmp" && zip -r "$release_dir/$FNAME_WIN_UPDATE" .)
-            else
-                warn "Could not find exe inside NSIS zip; copying original"
-                cp "$win_nsis" "$release_dir/$FNAME_WIN_UPDATE"
+        log "Rebuilding NSIS zip with signed installer..."
+        local signed_installer="$SIGN_DIR/standalone-win-x64/bundle/nsis/"
+        local nsis_tmp="$SIGN_DIR/nsis-repack"
+        mkdir -p "$nsis_tmp"
+        unzip -o "$win_nsis" -d "$nsis_tmp"
+        # Find the signed installer and replace the one in the zip
+        local signed_setup
+        signed_setup=$(find "$SIGN_DIR/standalone-win-x64" -name "*setup*.exe" | head -1)
+        if [[ -n "$signed_setup" ]]; then
+            local inner_setup
+            inner_setup=$(find "$nsis_tmp" -name "*setup*.exe" | head -1)
+            if [[ -n "$inner_setup" ]]; then
+                cp "$signed_setup" "$inner_setup"
             fi
-            rm -rf "$nsis_tmp"
-        else
-            cp "$win_nsis" "$release_dir/$FNAME_WIN_UPDATE"
         fi
+        (cd "$nsis_tmp" && zip -r "$release_dir/$FNAME_WIN" .)
+        rm -rf "$nsis_tmp"
     fi
 
-    # Windows installer
-    [[ -f "$SIGN_DIR/$FNAME_WIN_EXE" ]] && cp "$SIGN_DIR/$FNAME_WIN_EXE" "$release_dir/"
-
-    # Linux AppImage
-    local linux_appimage
-    linux_appimage=$(find "$SIGN_DIR/standalone-linux-x64" -name "*.AppImage" -not -name "*.tar.gz" | head -1)
-    [[ -n "$linux_appimage" ]] && cp "$linux_appimage" "$release_dir/$FNAME_LINUX_APPIMAGE"
-
+    # Linux AppImage.tar.gz
     local linux_update
     linux_update=$(find "$SIGN_DIR/standalone-linux-x64" -path "*/updater-bundles/*.AppImage.tar.gz" -o -name "*.AppImage.tar.gz" | head -1)
-    [[ -n "$linux_update" ]] && cp "$linux_update" "$release_dir/$FNAME_LINUX_UPDATE"
+    [[ -n "$linux_update" ]] && cp "$linux_update" "$release_dir/$FNAME_LINUX"
 
     # Generate .sig files for update bundles using Tauri CLI
-    for bundle in "$release_dir/$FNAME_MAC_UPDATE" \
-                  "$release_dir/$FNAME_WIN_UPDATE" \
-                  "$release_dir/$FNAME_LINUX_UPDATE"; do
+    for bundle in "$release_dir/$FNAME_MAC" \
+                  "$release_dir/$FNAME_WIN" \
+                  "$release_dir/$FNAME_LINUX"; do
         if [[ -f "$bundle" ]]; then
             log "Tauri-signing: $(basename "$bundle")"
             # Use tauri signer to sign the bundle
@@ -591,9 +563,9 @@ sign_updates() {
 
     # Read .sig file contents
     local sig_mac="" sig_win="" sig_linux=""
-    [[ -f "$release_dir/$FNAME_MAC_UPDATE.sig" ]] && { sig_mac=$(cat "$release_dir/$FNAME_MAC_UPDATE.sig"); rm "$release_dir/$FNAME_MAC_UPDATE.sig"; }
-    [[ -f "$release_dir/$FNAME_WIN_UPDATE.sig" ]] && { sig_win=$(cat "$release_dir/$FNAME_WIN_UPDATE.sig"); rm "$release_dir/$FNAME_WIN_UPDATE.sig"; }
-    [[ -f "$release_dir/$FNAME_LINUX_UPDATE.sig" ]] && { sig_linux=$(cat "$release_dir/$FNAME_LINUX_UPDATE.sig"); rm "$release_dir/$FNAME_LINUX_UPDATE.sig"; }
+    [[ -f "$release_dir/$FNAME_MAC.sig" ]] && { sig_mac=$(cat "$release_dir/$FNAME_MAC.sig"); rm "$release_dir/$FNAME_MAC.sig"; }
+    [[ -f "$release_dir/$FNAME_WIN.sig" ]] && { sig_win=$(cat "$release_dir/$FNAME_WIN.sig"); rm "$release_dir/$FNAME_WIN.sig"; }
+    [[ -f "$release_dir/$FNAME_LINUX.sig" ]] && { sig_linux=$(cat "$release_dir/$FNAME_LINUX.sig"); rm "$release_dir/$FNAME_LINUX.sig"; }
 
     local website_manifest="$REPO_ROOT/website/public/standalone-latest.json"
     cat > "$website_manifest" <<EOF
@@ -603,15 +575,15 @@ sign_updates() {
   "pub_date": "$pub_date",
   "platforms": {
     "darwin-aarch64": {
-      "url": "$base_url/$FNAME_MAC_UPDATE",
+      "url": "$base_url/$FNAME_MAC",
       "signature": "$sig_mac"
     },
     "windows-x86_64": {
-      "url": "$base_url/$FNAME_WIN_UPDATE",
+      "url": "$base_url/$FNAME_WIN",
       "signature": "$sig_win"
     },
     "linux-x86_64": {
-      "url": "$base_url/$FNAME_LINUX_UPDATE",
+      "url": "$base_url/$FNAME_LINUX",
       "signature": "$sig_linux"
     }
   }
