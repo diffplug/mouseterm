@@ -7,9 +7,9 @@ Every release produces three artifact groups under one version and changelog:
 | Artifact | Format | Destination |
 |----------|--------|-------------|
 | VSCode extension | `.vsix` | VS Code Marketplace + OpenVSX |
-| Standalone (Windows) | `.nsis.zip` (contains NSIS installer) | GitHub Release + Tauri updater |
+| Standalone (Windows) | `.exe` (NSIS installer) | GitHub Release + Tauri updater |
 | Standalone (macOS, Apple Silicon) | `.tar.gz` (contains signed `.app`) | GitHub Release + Tauri updater |
-| Standalone (Linux) | `.AppImage.tar.gz` (contains AppImage) | GitHub Release + Tauri updater |
+| Standalone (Linux) | `.AppImage` | GitHub Release + Tauri updater |
 
 ## Release checklist
 
@@ -34,7 +34,7 @@ Human-driven steps, in order:
 9. **Verify the release**
    - Check GitHub Release assets are correct
    - On a Mac: extract the `.tar.gz`, open the `.app`, confirm no Gatekeeper warnings
-   - On Windows: extract the `.nsis.zip`, run the installer, confirm no SmartScreen warnings
+   - On Windows: run the `.exe` installer, confirm no SmartScreen warnings
    - Confirm Tauri auto-updater picks up the new version (test from a previous version)
    - Confirm VSCode extension is live on Marketplace and OpenVSX
 
@@ -158,13 +158,13 @@ There are two independent signing layers. OS signing proves the executable is fr
 | Layer | What it signs | Who verifies | What happens without it |
 |-------|--------------|--------------|------------------------|
 | OS (codesign / jsign) | The executable (`.app` / `.exe`) | The OS, on launch | Gatekeeper / SmartScreen warnings |
-| Tauri updater (ed25519) | The update bundle (`.tar.gz` / `.nsis.zip`) | The running app, on update | Updater rejects the download |
+| Tauri updater (ed25519) | The update bundle (`.tar.gz` / `.exe` / `.AppImage`) | The running app, on update | Updater rejects the download |
 
 **Order matters:** OS-sign the inner executable first, then package it into the update bundle, then Tauri-sign the bundle. The `.sig` file is generated from the final bundle that already contains the OS-signed binary.
 
 ```
 codesign/jsign the executable
-  → package into update bundle (.tar.gz / .nsis.zip)
+  → package into update bundle (.tar.gz for macOS; installer/AppImage directly on Windows/Linux)
     → Tauri-sign the bundle → produces .sig file
       → upload bundle + .sig to GitHub Release
 ```
@@ -186,14 +186,15 @@ codesign/jsign the executable
 4. **Sign Windows** (OS layer)
    - Sign the inner exe: `jsign --storetype PIV --storepass "$PIN" --alias AUTHENTICATION --tsaurl http://ts.ssl.com --tsmode RFC3161 MouseTerm.exe`
    - Rebuild the NSIS installer around the signed exe
-   - Sign the installer exe: `jsign ... MouseTerm-windows-x64.exe`
+   - Sign the installer exe: `jsign ... MouseTerm-windows-x64-setup.exe`
 5. **Sign update bundles** (Tauri layer)
-   - Tauri-sign each update bundle (the `.tar.gz` and `.nsis.zip` from steps 3-4) using `TAURI_SIGNING_PRIVATE_KEY`
+   - Tauri-sign each update bundle using `TAURI_SIGNING_PRIVATE_KEY`
+   - Current Tauri v2 output mode (`createUpdaterArtifacts: true`) uses the NSIS installer `.exe` directly on Windows and the `.AppImage` directly on Linux
    - This produces a `.sig` file per bundle
    - Build the update manifest JSON (see below) with the `.sig` contents inline
 6. **Create GitHub Release**
    - `gh release create v0.1.0 --title "v0.1.0" --notes-file CHANGELOG.md`
-   - Upload: update bundles (`.tar.gz`, `.nsis.zip`, `.AppImage.tar.gz`)
+   - Upload: update bundles (`.tar.gz`, `.exe`, `.AppImage`)
 7. **Verify** — spot-check signatures, confirm release assets are correct
 
 ### Resuming after failure
@@ -202,6 +203,7 @@ codesign/jsign the executable
 ./scripts/sign-and-deploy.sh resume 0.1.0  # re-download + sign + release
 ./scripts/sign-and-deploy.sh sign-mac       # re-sign macOS only
 ./scripts/sign-and-deploy.sh sign-win       # re-sign Windows only
+./scripts/sign-and-deploy.sh sign-updates 0.1.0  # regenerate updater signatures from existing signed work
 ./scripts/sign-and-deploy.sh release 0.1.0  # re-create GitHub Release only
 ```
 
@@ -211,18 +213,18 @@ All release assets use **stable filenames** (no version in the name). This allow
 
 | Asset | Filename | Purpose |
 |-------|----------|---------|
-| Windows | `MouseTerm-windows-x64.nsis.zip` | Download + Tauri updater |
+| Windows | `MouseTerm-windows-x64-setup.exe` | Download + Tauri updater |
 | macOS | `MouseTerm-macos-aarch64.tar.gz` | Download + Tauri updater |
-| Linux | `MouseTerm-linux-x86_64.AppImage.tar.gz` | Download + Tauri updater |
+| Linux | `MouseTerm-linux-x86_64.AppImage` | Download + Tauri updater |
 
 ### Download hotlinks
 
 The mouseterm.com download page can link directly to the latest release with no server-side logic:
 
 ```
-https://github.com/diffplug/mouseterm/releases/latest/download/MouseTerm-windows-x64.nsis.zip
+https://github.com/diffplug/mouseterm/releases/latest/download/MouseTerm-windows-x64-setup.exe
 https://github.com/diffplug/mouseterm/releases/latest/download/MouseTerm-macos-aarch64.tar.gz
-https://github.com/diffplug/mouseterm/releases/latest/download/MouseTerm-linux-x86_64.AppImage.tar.gz
+https://github.com/diffplug/mouseterm/releases/latest/download/MouseTerm-linux-x86_64.AppImage
 ```
 
 These can later be migrated to `mouseterm.com/download/...` URLs backed by Cloudflare R2 (for analytics) without changing anything in the app — only the website links and the updater endpoint URL in `tauri.conf.json` would change.
@@ -249,6 +251,8 @@ In `standalone/src-tauri/tauri.conf.json`:
 }
 ```
 
+`createUpdaterArtifacts: true` is the Tauri v2 artifact mode. In this mode Windows updates use the NSIS installer `.exe` directly, Linux updates use the `.AppImage` directly, and macOS updates use the `.app.tar.gz` archive. Do not configure `"v1Compatible"` unless intentionally producing legacy `.nsis.zip` and `.AppImage.tar.gz` updater bundles for old Tauri v1 clients.
+
 And in the Rust app bootstrap (`standalone/src-tauri/src/lib.rs`), the updater plugin is registered with:
 
 ```rust
@@ -268,7 +272,7 @@ Generated by the local script after signing. The script writes it to `website/pu
   "pub_date": "2026-03-25T12:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "url": "https://github.com/diffplug/mouseterm/releases/download/v0.1.0/MouseTerm-windows-x64.nsis.zip",
+      "url": "https://github.com/diffplug/mouseterm/releases/download/v0.1.0/MouseTerm-windows-x64-setup.exe",
       "signature": "<contents of .sig file>"
     },
     "darwin-aarch64": {
@@ -276,7 +280,7 @@ Generated by the local script after signing. The script writes it to `website/pu
       "signature": "<contents of .sig file>"
     },
     "linux-x86_64": {
-      "url": "https://github.com/diffplug/mouseterm/releases/download/v0.1.0/MouseTerm-linux-x86_64.AppImage.tar.gz",
+      "url": "https://github.com/diffplug/mouseterm/releases/download/v0.1.0/MouseTerm-linux-x86_64.AppImage",
       "signature": "<contents of .sig file>"
     }
   }

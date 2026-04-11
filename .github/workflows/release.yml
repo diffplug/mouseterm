@@ -75,17 +75,6 @@ jobs:
              standalone/src-tauri/target/${{ matrix.target }}/release/nsis/x64/plugins/
         shell: bash
 
-      - name: Stage updater bundles
-        run: |
-          dest="standalone/src-tauri/target/${{ matrix.target }}/release/updater-bundles"
-          mkdir -p "$dest"
-          find standalone/src-tauri/target/${{ matrix.target }}/release/bundle \
-            \( -name "*.tar.gz" -o -name "*.tar.gz.sig" -o -name "*.nsis.zip" -o -name "*.nsis.zip.sig" \) \
-            -exec cp {} "$dest/" \;
-          echo "Staged updater bundles:"
-          ls -la "$dest/" 2>/dev/null || echo "(empty)"
-        shell: bash
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -97,7 +86,6 @@ jobs:
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
-            standalone/src-tauri/target/${{ matrix.target }}/release/updater-bundles/*
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/**
             standalone/src-tauri/target/${{ matrix.target }}/release/nsis/**
             standalone/sidecar/**

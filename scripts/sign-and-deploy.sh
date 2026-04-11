@@ -46,9 +46,9 @@ TSA_URL="http://ts.ssl.com"
 GITHUB_REPO="diffplug/mouseterm"
 
 # Stable filenames for release assets (update bundles only)
-FNAME_WIN="MouseTerm-windows-x64.nsis.zip"
+FNAME_WIN="MouseTerm-windows-x64-setup.exe"
 FNAME_MAC="MouseTerm-macos-aarch64.tar.gz"
-FNAME_LINUX="MouseTerm-linux-x86_64.AppImage.tar.gz"
+FNAME_LINUX="MouseTerm-linux-x86_64.AppImage"
 
 # =============================================================================
 # Helper Functions
@@ -507,39 +507,33 @@ sign_updates() {
     prompt_secret_multiline TAURI_SIGNING_PRIVATE_KEY "Enter Tauri signing private key"
 
     local release_dir="$WORK_DIR/release-assets"
+    rm -rf "$release_dir"
     mkdir -p "$release_dir"
 
     # Collect update bundles with stable filenames
     # macOS .tar.gz (created by notarize step from signed+notarized .app)
-    [[ -f "$SIGN_DIR/$FNAME_MAC" ]] && cp "$SIGN_DIR/$FNAME_MAC" "$release_dir/"
+    [[ -f "$SIGN_DIR/$FNAME_MAC" ]] || error "macOS update bundle not found at $SIGN_DIR/$FNAME_MAC. Run signing and notarization first."
+    cp "$SIGN_DIR/$FNAME_MAC" "$release_dir/"
 
-    # Windows NSIS zip — rebuild with signed installer
-    local win_nsis
-    win_nsis=$(find "$SIGN_DIR/standalone-win-x64" -path "*/updater-bundles/*.nsis.zip" -o -name "*.nsis.zip" | head -1)
-    if [[ -n "$win_nsis" ]]; then
-        log "Rebuilding NSIS zip with signed installer..."
-        local signed_installer="$SIGN_DIR/standalone-win-x64/bundle/nsis/"
-        local nsis_tmp="$SIGN_DIR/nsis-repack"
-        mkdir -p "$nsis_tmp"
-        unzip -o "$win_nsis" -d "$nsis_tmp"
-        # Find the signed installer and replace the one in the zip
-        local signed_setup
-        signed_setup=$(find "$SIGN_DIR/standalone-win-x64" -name "*setup*.exe" | head -1)
-        if [[ -n "$signed_setup" ]]; then
-            local inner_setup
-            inner_setup=$(find "$nsis_tmp" -name "*setup*.exe" | head -1)
-            if [[ -n "$inner_setup" ]]; then
-                cp "$signed_setup" "$inner_setup"
-            fi
-        fi
-        (cd "$nsis_tmp" && zip -r "$release_dir/$FNAME_WIN" .)
-        rm -rf "$nsis_tmp"
-    fi
+    # Windows NSIS installer. With Tauri v2 createUpdaterArtifacts=true,
+    # the installer itself is the updater bundle; there is no .nsis.zip.
+    local signed_setup
+    signed_setup=$(find "$SIGN_DIR/standalone-win-x64" \
+        -path "*/release/bundle/nsis/*setup*.exe" \
+        -type f \
+        | head -1)
+    [[ -n "$signed_setup" ]] || error "Windows NSIS installer not found. Run Windows signing first."
+    cp "$signed_setup" "$release_dir/$FNAME_WIN"
 
-    # Linux AppImage.tar.gz
+    # Linux AppImage. With Tauri v2 createUpdaterArtifacts=true,
+    # the AppImage itself is the updater bundle; there is no .AppImage.tar.gz.
     local linux_update
-    linux_update=$(find "$SIGN_DIR/standalone-linux-x64" -path "*/updater-bundles/*.AppImage.tar.gz" -o -name "*.AppImage.tar.gz" | head -1)
-    [[ -n "$linux_update" ]] && cp "$linux_update" "$release_dir/$FNAME_LINUX"
+    linux_update=$(find "$SIGN_DIR/standalone-linux-x64" \
+        -path "*/release/bundle/appimage/*.AppImage" \
+        -type f \
+        | head -1)
+    [[ -n "$linux_update" ]] || error "Linux AppImage not found in signed work directory."
+    cp "$linux_update" "$release_dir/$FNAME_LINUX"
 
     # Generate .sig files for update bundles using Tauri CLI
     for bundle in "$release_dir/$FNAME_MAC" \
@@ -566,6 +560,10 @@ sign_updates() {
     [[ -f "$release_dir/$FNAME_MAC.sig" ]] && { sig_mac=$(cat "$release_dir/$FNAME_MAC.sig"); rm "$release_dir/$FNAME_MAC.sig"; }
     [[ -f "$release_dir/$FNAME_WIN.sig" ]] && { sig_win=$(cat "$release_dir/$FNAME_WIN.sig"); rm "$release_dir/$FNAME_WIN.sig"; }
     [[ -f "$release_dir/$FNAME_LINUX.sig" ]] && { sig_linux=$(cat "$release_dir/$FNAME_LINUX.sig"); rm "$release_dir/$FNAME_LINUX.sig"; }
+
+    [[ -n "$sig_mac" ]] || error "Missing Tauri signature for $FNAME_MAC"
+    [[ -n "$sig_win" ]] || error "Missing Tauri signature for $FNAME_WIN"
+    [[ -n "$sig_linux" ]] || error "Missing Tauri signature for $FNAME_LINUX"
 
     local website_manifest="$REPO_ROOT/website/public/standalone-latest.json"
     cat > "$website_manifest" <<EOF
@@ -609,6 +607,9 @@ create_release() {
     check_command gh "brew install gh && gh auth login"
 
     [[ -d "$release_dir" ]] || error "Release assets not found at $release_dir. Run signing steps first."
+    for asset in "$FNAME_MAC" "$FNAME_WIN" "$FNAME_LINUX"; do
+        [[ -f "$release_dir/$asset" ]] || error "Release asset missing: $release_dir/$asset. Run sign-updates first."
+    done
 
     # Extract changelog for this version
     local notes_file="$WORK_DIR/release-notes.md"
@@ -660,7 +661,7 @@ Commands:
     sign-mac            Re-sign macOS app bundles
     notarize            Re-notarize macOS apps
     sign-win            Re-sign Windows executable
-    sign-updates VER    Re-generate Tauri update signatures and manifest
+    sign-updates VER    Re-generate Tauri update signatures and manifest from existing signed work
     release VERSION     Re-create GitHub Release from existing signed assets
 
 Environment Variables:
@@ -673,6 +674,7 @@ Examples:
     $(basename "$0") all 0.1.0       # Full pipeline
     $(basename "$0") resume 0.1.0    # Resume after CI completed
     $(basename "$0") sign-mac        # Re-sign macOS only
+    $(basename "$0") sign-updates 0.1.0 # Re-sign update bundles only
     $(basename "$0") release 0.1.0   # Re-create GitHub Release
 EOF
 }
@@ -730,7 +732,7 @@ main() {
         sign-updates)
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") sign-updates <version>"
-            prepare_sign_dir
+            [[ -d "$SIGN_DIR" ]] || error "Signed work directory not found at $SIGN_DIR. Run all/resume first."
             sign_updates "$version"
             ;;
         release)
