@@ -226,8 +226,8 @@ function Home() {
           <div className="mt-10 space-y-3 text-base leading-relaxed">
             <p>
               Install for VSCode (and its forks) —{" "}
-              <a href="https://marketplace.visualstudio.com/items?itemName=mouseterm.mouseterm" className="text-[var(--color-caramel)] hover:underline">Microsoft VSCode Marketplace</a>{" / "}
-              <a href="https://open-vsx.org/extension/mouseterm/mouseterm" className="text-[var(--color-caramel)] hover:underline">OpenVSX</a>
+              <a href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm" className="text-[var(--color-caramel)] hover:underline">Microsoft VSCode Marketplace</a>{" / "}
+              <a href="https://open-vsx.org/extension/diffplug/mouseterm" className="text-[var(--color-caramel)] hover:underline">OpenVSX</a>
             </p>
             <p>
               Standalone apps —{" "}
