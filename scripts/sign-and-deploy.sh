@@ -633,11 +633,14 @@ create_release() {
         gh release edit "$tag" \
             --repo "$GITHUB_REPO" \
             --title "$tag" \
+            --verify-tag \
+            --draft=false \
             --notes-file "$notes_file"
     else
         gh release create "$tag" \
             --repo "$GITHUB_REPO" \
             --title "$tag" \
+            --verify-tag \
             --notes-file "$notes_file" \
             "$release_dir"/*
     fi

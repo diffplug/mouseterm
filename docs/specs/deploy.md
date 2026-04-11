@@ -195,6 +195,8 @@ codesign/jsign the executable
 6. **Create GitHub Release**
    - `gh release create v0.1.0 --title "v0.1.0" --notes-file CHANGELOG.md`
    - Upload: update bundles (`.tar.gz`, `.exe`, `.AppImage`)
+   - If a draft release already exists for the tag, publish it after uploading assets
+   - Verify the tag exists on the remote before creating or publishing the release
 7. **Verify** — spot-check signatures, confirm release assets are correct
 
 ### Resuming after failure
