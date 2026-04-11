@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import SiteHeader from "../components/SiteHeader";
 import posterUrl from "../assets/video-climb-blink-and-stare.webp";
 import videoUrl from "../assets/video-climb-blink-and-stare.mp4";
+import standaloneLatest from "@standalone-latest";
 
 export { Home as Component };
 
@@ -228,8 +229,11 @@ function Home() {
               <a href="https://marketplace.visualstudio.com/items?itemName=mouseterm.mouseterm" className="text-[var(--color-caramel)] hover:underline">Microsoft VSCode Marketplace</a>{" / "}
               <a href="https://open-vsx.org/extension/mouseterm/mouseterm" className="text-[var(--color-caramel)] hover:underline">OpenVSX</a>
             </p>
-            <p className="opacity-50 text-sm">
-              Standalone apps for Windows, Mac, and Linux — coming soon.
+            <p>
+              Standalone apps —{" "}
+              <a href={standaloneLatest.platforms["windows-x86_64"].url} className="text-[var(--color-caramel)] hover:underline">Windows</a>{" / "}
+              <a href={standaloneLatest.platforms["darwin-aarch64"].url} className="text-[var(--color-caramel)] hover:underline">Mac</a>{" / "}
+              <a href={standaloneLatest.platforms["linux-x86_64"].url} className="text-[var(--color-caramel)] hover:underline">Linux</a>
             </p>
           </div>
         </section>
