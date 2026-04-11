@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/). Release checklist in [deploy.md](docs/specs/deploy.md).
 
+## [0.5.2] - 2026-04-10
+- Codex fixes.
+
 ## [0.5.1] - 2026-04-10
 - Fix uploading glob.
 
