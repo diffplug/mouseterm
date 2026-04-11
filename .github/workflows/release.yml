@@ -77,12 +77,13 @@ jobs:
 
       - name: Stage updater bundles
         run: |
-          mkdir -p standalone/src-tauri/target/${{ matrix.target }}/release/updater-bundles
-          cp standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.tar.gz \
-             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.tar.gz.sig \
-             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip \
-             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip.sig \
-             standalone/src-tauri/target/${{ matrix.target }}/release/updater-bundles/ 2>/dev/null || true
+          dest="standalone/src-tauri/target/${{ matrix.target }}/release/updater-bundles"
+          mkdir -p "$dest"
+          find standalone/src-tauri/target/${{ matrix.target }}/release/bundle \
+            \( -name "*.tar.gz" -o -name "*.tar.gz.sig" -o -name "*.nsis.zip" -o -name "*.nsis.zip.sig" \) \
+            -exec cp {} "$dest/" \;
+          echo "Staged updater bundles:"
+          ls -la "$dest/" 2>/dev/null || echo "(empty)"
         shell: bash
 
       - name: Upload artifacts
