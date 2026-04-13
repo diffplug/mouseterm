@@ -145,11 +145,14 @@ fn shutdown_sidecar(state: tauri::State<'_, SidecarState>) {
 }
 
 fn resolve_sidecar_path(resource_dir: Option<PathBuf>, manifest_dir: &Path) -> PathBuf {
-    if let Some(sidecar_path) = resource_dir
-        .map(|dir| dir.join("sidecar").join("main.js"))
-        .filter(|path| path.is_file())
-    {
-        return sidecar_path;
+    if let Some(ref dir) = resource_dir {
+        // Tauri maps `../sidecar` to `_up_/sidecar` when bundling resources
+        for prefix in &["sidecar", "_up_/sidecar"] {
+            let path = dir.join(prefix).join("main.js");
+            if path.is_file() {
+                return path;
+            }
+        }
     }
 
     manifest_dir.join("..").join("sidecar").join("main.js")
@@ -294,6 +297,24 @@ mod tests {
     fn prefers_packaged_sidecar_when_resource_exists() {
         let resource_dir = unique_temp_dir("resource");
         let sidecar_dir = resource_dir.join("sidecar");
+        let sidecar_path = sidecar_dir.join("main.js");
+
+        fs::create_dir_all(&sidecar_dir).expect("failed to create sidecar dir");
+        fs::write(&sidecar_path, "console.log('packaged');").expect("failed to create sidecar");
+
+        let resolved = resolve_sidecar_path(
+            Some(resource_dir.clone()),
+            Path::new("/repo/standalone/src-tauri"),
+        );
+
+        assert_eq!(resolved, sidecar_path);
+        fs::remove_dir_all(&resource_dir).expect("failed to clean temp dir");
+    }
+
+    #[test]
+    fn finds_sidecar_under_up_prefix() {
+        let resource_dir = unique_temp_dir("resource-up");
+        let sidecar_dir = resource_dir.join("_up_").join("sidecar");
         let sidecar_path = sidecar_dir.join("main.js");
 
         fs::create_dir_all(&sidecar_dir).expect("failed to create sidecar dir");
