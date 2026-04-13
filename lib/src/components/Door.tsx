@@ -40,7 +40,7 @@ export function Door({
         'transition-colors hover:bg-surface-raised',
       ].join(' ')}
       style={{
-        border: '2px solid var(--mt-border)',
+        border: '2px solid var(--color-border)',
         borderBottom: '2px solid transparent',
       }}
       onClick={onClick}
