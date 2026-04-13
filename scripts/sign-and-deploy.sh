@@ -37,6 +37,7 @@ ARTIFACT_NAMES=(
 MACOS_IDENTITY="Developer ID Application: DiffPlug LLC (LXW8WAGWYX)"
 MACOS_TEAM_ID="LXW8WAGWYX"
 APPLE_ID="edgar.twigg@gmail.com"
+MACOS_NODE_ENTITLEMENTS="$REPO_ROOT/standalone/src-tauri/entitlements-macos-node.plist"
 
 # Windows Signing (jsign with PIV)
 JSIGN_ALIAS="AUTHENTICATION"
@@ -380,19 +381,30 @@ sign_macos_app() {
     security find-identity -v -p codesigning | grep -q "$MACOS_IDENTITY" \
         || error "Signing identity not found: $MACOS_IDENTITY"
 
-    # Sign all nested binaries first (node-pty prebuilds, etc.)
+    # Sign all nested binaries first (node sidecar, node-pty prebuilds, etc.)
     # --deep doesn't reliably reach into Resources subdirectories
     log "Signing nested binaries..."
-    find "$app_path" \( -name "*.node" -o -name "*.dylib" -o -name "spawn-helper" \) -type f | while read -r binary; do
+    [[ -f "$MACOS_NODE_ENTITLEMENTS" ]] || error "Node entitlements not found: $MACOS_NODE_ENTITLEMENTS"
+
+    find "$app_path/Contents/MacOS" "$app_path/Contents/Resources" -type f \
+        \( -perm -111 -o -name "*.node" -o -name "*.dylib" -o -name "spawn-helper" \) | while read -r binary; do
         log "  Signing: ${binary#"$app_path/"}"
+
+        local entitlements_args=()
+        if [[ "$binary" == "$app_path/Contents/MacOS/node" ]]; then
+            entitlements_args=(--entitlements "$MACOS_NODE_ENTITLEMENTS")
+        fi
+
         codesign --force --sign "$MACOS_IDENTITY" \
             --options runtime \
+            "${entitlements_args[@]}" \
             --timestamp \
             "$binary"
     done
 
-    # Sign the outer .app bundle
-    codesign --force --deep --sign "$MACOS_IDENTITY" \
+    # Sign the outer .app bundle after nested code. Do not use --deep here:
+    # it would re-sign the Node sidecar and drop the entitlements it needs to run.
+    codesign --force --sign "$MACOS_IDENTITY" \
         --options runtime \
         --timestamp \
         "$app_path"
@@ -400,6 +412,23 @@ sign_macos_app() {
     # Verify
     codesign --verify --deep --strict --verbose=2 "$app_path" \
         || error "Signature verification failed for $app_path"
+
+    local node_sidecar="$app_path/Contents/MacOS/node"
+    local sidecar_dir=""
+    for candidate in "$app_path/Contents/Resources/_up_/sidecar" "$app_path/Contents/Resources/sidecar"; do
+        if [[ -d "$candidate" ]]; then
+            sidecar_dir="$candidate"
+            break
+        fi
+    done
+
+    [[ -x "$node_sidecar" ]] || error "Node sidecar missing or not executable: $node_sidecar"
+    [[ -n "$sidecar_dir" ]] || error "Sidecar resources not found in $app_path"
+
+    "$node_sidecar" -p "process.version" >/dev/null \
+        || error "Signed Node sidecar failed to launch"
+    (cd "$sidecar_dir" && "$node_sidecar" -e "require('node-pty')") \
+        || error "Signed Node sidecar failed to load node-pty"
 
     log "macOS signing complete ($arch_label)"
 }
