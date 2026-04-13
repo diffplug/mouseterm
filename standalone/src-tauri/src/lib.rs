@@ -144,6 +144,38 @@ fn shutdown_sidecar(state: tauri::State<'_, SidecarState>) {
     let _ = state.tx.send(SidecarMsg::Shutdown);
 }
 
+#[tauri::command]
+fn get_project_dir() -> String {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default()
+}
+
+#[derive(Serialize, Clone)]
+struct ShellInfo {
+    name: String,
+    path: String,
+}
+
+#[tauri::command]
+fn get_default_shell() -> ShellInfo {
+    #[cfg(target_os = "windows")]
+    let shell_path = std::env::var("ComSpec")
+        .or_else(|_| std::env::var("COMSPEC"))
+        .unwrap_or_else(|_| String::from("C:\\Windows\\System32\\cmd.exe"));
+
+    #[cfg(not(target_os = "windows"))]
+    let shell_path = std::env::var("SHELL")
+        .unwrap_or_else(|_| String::from("/bin/sh"));
+
+    let name = Path::new(&shell_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| shell_path.clone());
+
+    ShellInfo { name, path: shell_path }
+}
+
 fn resolve_sidecar_path(resource_dir: Option<PathBuf>, manifest_dir: &Path) -> PathBuf {
     if let Some(ref dir) = resource_dir {
         // Tauri maps `../sidecar` to `_up_/sidecar` when bundling resources
@@ -262,7 +294,23 @@ pub fn run() {
         .setup(|app| {
             let sidecar_state = start_sidecar(app.handle());
             app.manage(sidecar_state);
+
+            // On non-macOS, remove native decorations for a fully custom title bar.
+            // macOS uses titleBarStyle "Overlay" from config instead, which preserves
+            // rounded corners and native traffic-light buttons.
+            #[cfg(not(target_os = "macos"))]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_decorations(false);
+                }
+            }
+
             Ok(())
+        })
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                std::process::exit(0);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             pty_spawn,
@@ -273,6 +321,8 @@ pub fn run() {
             pty_get_scrollback,
             pty_request_init,
             shutdown_sidecar,
+            get_project_dir,
+            get_default_shell,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MouseTerm");

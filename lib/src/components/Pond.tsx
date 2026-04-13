@@ -1688,6 +1688,30 @@ export function Pond({
   const handleReattachRef = useRef(handleReattach);
   handleReattachRef.current = handleReattach;
 
+  // Listen for external "new terminal" requests (e.g. from the standalone AppBar)
+  useEffect(() => {
+    const handler = () => {
+      const api = apiRef.current;
+      if (!api) return;
+      const newId = generatePaneId();
+      const active = api.activePanel;
+      let direction: 'right' | 'below' = 'right';
+      if (active) {
+        direction = (active.api.width - active.api.height > 0) ? 'right' : 'below';
+      }
+      api.addPanel({
+        id: newId,
+        component: 'terminal',
+        tabComponent: 'terminal',
+        title: '<unnamed>',
+        position: active ? { referencePanel: active.id, direction } : undefined,
+      });
+      selectPanel(newId);
+    };
+    window.addEventListener('mouseterm:new-terminal', handler);
+    return () => window.removeEventListener('mouseterm:new-terminal', handler);
+  }, [generatePaneId, selectPanel]);
+
   const addSplitPanel = useCallback((
     id: string | null,
     direction: 'right' | 'below',
