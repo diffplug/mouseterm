@@ -1,11 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { invoke } from "@tauri-apps/api/core";
 import { setPlatform } from "mouseterm-lib/lib/platform";
 import { reconnectFromInit } from "mouseterm-lib/lib/reconnect";
 import App from "mouseterm-lib/App";
 import "mouseterm-lib/index.css";
 import { TauriAdapter } from "./tauri-adapter";
 import { UpdateBanner } from "./UpdateBanner";
+import { AppBar, type ShellEntry } from "./AppBar";
 import { startUpdateCheck, useUpdateState, dismissBanner, openChangelog } from "./updater";
 
 // Initialize Tauri platform adapter before rendering
@@ -26,8 +28,16 @@ async function bootstrap() {
 
   startUpdateCheck();
 
+  // Fetch app bar data from Rust backend
+  const [projectDir, defaultShell] = await Promise.all([
+    invoke<string>("get_project_dir"),
+    invoke<ShellEntry>("get_default_shell"),
+  ]);
+  const shells: ShellEntry[] = [defaultShell];
+
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
+      <AppBar projectDir={projectDir} shells={shells} />
       <App
         initialPaneIds={result.paneIds}
         restoredLayout={result.layout}
