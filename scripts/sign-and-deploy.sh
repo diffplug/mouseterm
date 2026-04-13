@@ -114,6 +114,23 @@ all_artifacts_downloaded() {
     return 0
 }
 
+ensure_version() {
+    local version="$1"
+    local version_file="$WORK_DIR/.version"
+
+    if [[ -f "$version_file" ]]; then
+        local existing
+        existing=$(cat "$version_file")
+        if [[ "$existing" != "$version" ]]; then
+            log "Version mismatch: found $existing, expected $version. Clearing release-signed/..."
+            rm -rf "$WORK_DIR"
+        fi
+    fi
+
+    mkdir -p "$WORK_DIR"
+    echo "$version" > "$version_file"
+}
+
 check_git_clean() {
     log "Checking git status..."
 
@@ -699,6 +716,7 @@ main() {
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") all <version>"
 
+            ensure_version "$version"
             check_git_clean
             download_artifacts "$version"
             prepare_sign_dir
@@ -712,6 +730,7 @@ main() {
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") resume <version>"
 
+            ensure_version "$version"
             resume_download "$version"
             prepare_sign_dir
             sign_macos
@@ -735,12 +754,14 @@ main() {
         sign-updates)
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") sign-updates <version>"
+            ensure_version "$version"
             [[ -d "$SIGN_DIR" ]] || error "Signed work directory not found at $SIGN_DIR. Run all/resume first."
             sign_updates "$version"
             ;;
         release)
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") release <version>"
+            ensure_version "$version"
             create_release "$version"
             ;;
         *)
