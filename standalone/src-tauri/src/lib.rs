@@ -307,11 +307,6 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|_window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                std::process::exit(0);
-            }
-        })
         .invoke_handler(tauri::generate_handler![
             pty_spawn,
             pty_write,

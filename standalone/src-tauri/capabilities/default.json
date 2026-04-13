@@ -3,16 +3,16 @@
   "description": "Default capability set for MouseTerm",
   "windows": ["main"],
   "permissions": [
-    "core:default",
+    "core:app:allow-version",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
+    "core:window:allow-destroy",
     "core:window:allow-is-maximized",
     "core:window:allow-start-dragging",
-    "shell:allow-spawn",
-    "shell:allow-stdin-write",
-    "shell:allow-kill",
-    "shell:allow-open",
+    "shell:default",
     "updater:default"
   ]
 }
