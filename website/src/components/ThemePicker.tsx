@@ -1,8 +1,35 @@
-import { useState } from "react";
-import { THEMES, applyTheme } from "../lib/playground-themes";
+import { useState, useEffect, useCallback } from "react";
+import {
+  getAllThemes,
+  getActiveThemeId,
+  setActiveThemeId,
+  getTheme,
+  applyTheme,
+} from "mouseterm-lib/lib/themes";
+import { ThemeStore } from "./ThemeStore";
 
 export function ThemePicker() {
-  const [activeTheme, setActiveTheme] = useState(THEMES[0].name);
+  const [themes, setThemes] = useState(getAllThemes);
+  const [activeId, setActiveId] = useState(getActiveThemeId);
+  const [storeOpen, setStoreOpen] = useState(false);
+
+  // Restore persisted theme on mount
+  useEffect(() => {
+    const theme = getTheme(activeId);
+    if (theme) applyTheme(theme);
+  }, []);
+
+  const refreshThemes = useCallback(() => {
+    setThemes(getAllThemes());
+  }, []);
+
+  const select = (id: string) => {
+    const theme = getTheme(id);
+    if (!theme) return;
+    setActiveId(id);
+    setActiveThemeId(id);
+    applyTheme(theme);
+  };
 
   return (
     <div className="flex items-center gap-3">
@@ -12,18 +39,15 @@ export function ThemePicker() {
       >
         Theme
       </span>
-      <div className="flex items-center gap-1.5">
-        {THEMES.map((theme) => {
-          const isActive = theme.name === activeTheme;
+      <div className="flex items-center gap-1.5 overflow-x-auto">
+        {themes.map((theme) => {
+          const isActive = theme.id === activeId;
           return (
             <button
-              key={theme.name}
-              onClick={() => {
-                setActiveTheme(theme.name);
-                applyTheme(theme.name);
-              }}
+              key={theme.id}
+              onClick={() => select(theme.id)}
               title={theme.label}
-              className="group relative flex items-center justify-center rounded-full transition-transform hover:scale-110"
+              className="group relative flex shrink-0 items-center justify-center rounded-full transition-transform hover:scale-110"
               style={{
                 width: 22,
                 height: 22,
@@ -55,7 +79,27 @@ export function ThemePicker() {
             </button>
           );
         })}
+
+        {/* Add theme button */}
+        <button
+          onClick={() => setStoreOpen(true)}
+          title="Install theme from OpenVSX"
+          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[12px] transition-colors"
+          style={{ color: "rgba(255, 255, 255, 0.25)", border: "1px dashed rgba(255, 255, 255, 0.15)" }}
+        >
+          +
+        </button>
       </div>
+
+      <ThemeStore
+        open={storeOpen}
+        onClose={() => setStoreOpen(false)}
+        onThemesChanged={() => {
+          refreshThemes();
+          // Sync active ID in case install auto-selected a theme
+          setActiveId(getActiveThemeId());
+        }}
+      />
     </div>
   );
 }

@@ -5,3 +5,5 @@ packages:
   - vscode-ext
   - website
 minimumReleaseAge: 20160
+minimumReleaseAgeExclude:
+  - jsdom

@@ -28,6 +28,13 @@
     "homepage": "https://github.com/tauri-apps/plugins-workspace#readme"
   },
   {
+    "name": "@tauri-apps/plugin-updater",
+    "version": "2.10.1",
+    "license": "MIT OR Apache-2.0",
+    "author": null,
+    "homepage": "https://github.com/tauri-apps/plugins-workspace#readme"
+  },
+  {
     "name": "@xterm/addon-fit",
     "version": "0.11.0",
     "license": "MIT",
@@ -68,6 +75,20 @@
     "license": "MIT",
     "author": "https://github.com/mathuo",
     "homepage": "https://github.com/mathuo/dockview"
+  },
+  {
+    "name": "fflate",
+    "version": "0.8.2",
+    "license": "MIT",
+    "author": "Arjun Barrett",
+    "homepage": "https://101arrowz.github.io/fflate"
+  },
+  {
+    "name": "jsonc-parser",
+    "version": "3.3.1",
+    "license": "MIT",
+    "author": "Microsoft Corporation",
+    "homepage": "https://github.com/microsoft/node-jsonc-parser#readme"
   },
   {
     "name": "node-addon-api",
