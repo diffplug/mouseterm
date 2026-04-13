@@ -24,6 +24,19 @@ function abbreviateHome(dir: string, home: string): string {
   return dir;
 }
 
+// ── Tooltip wrapper ────────────────────────────────────────────────────────
+
+function Tip({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="group relative flex items-stretch">
+      {children}
+      <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-surface-raised px-2 py-1 text-[10px] text-foreground opacity-0 shadow-md border border-border transition-opacity group-hover:opacity-100">
+        {label}
+      </span>
+    </div>
+  );
+}
+
 // ── Windows/Linux window buttons ───────────────────────────────────────────
 
 function WinControls() {
@@ -39,29 +52,35 @@ function WinControls() {
 
   return (
     <div className="flex items-stretch self-stretch">
-      <button
-        className="flex w-11 items-center justify-center text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
-        onClick={() => appWindow.minimize()}
-        aria-label="Minimize"
-      >
-        <MinusIcon size={12} weight="bold" />
-      </button>
-      <button
-        className="flex w-11 items-center justify-center text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
-        onClick={() => { appWindow.toggleMaximize(); }}
-        aria-label={maximized ? 'Restore' : 'Maximize'}
-      >
-        {maximized
-          ? <CornersInIcon size={12} weight="bold" />
-          : <CornersOutIcon size={12} weight="bold" />}
-      </button>
-      <button
-        className="flex w-11 items-center justify-center text-muted transition-colors hover:bg-error/90 hover:text-white"
-        onClick={() => appWindow.close()}
-        aria-label="Close"
-      >
-        <XIcon size={12} weight="bold" />
-      </button>
+      <Tip label="Minimize">
+        <button
+          className="flex w-11 items-center justify-center text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          onClick={() => appWindow.minimize()}
+          aria-label="Minimize"
+        >
+          <MinusIcon size={12} weight="bold" />
+        </button>
+      </Tip>
+      <Tip label={maximized ? 'Restore' : 'Maximize'}>
+        <button
+          className="flex w-11 items-center justify-center text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          onClick={() => { appWindow.toggleMaximize(); }}
+          aria-label={maximized ? 'Restore' : 'Maximize'}
+        >
+          {maximized
+            ? <CornersInIcon size={12} weight="bold" />
+            : <CornersOutIcon size={12} weight="bold" />}
+        </button>
+      </Tip>
+      <Tip label="Close">
+        <button
+          className="flex w-11 items-center justify-center text-muted transition-colors hover:bg-error/90 hover:text-white"
+          onClick={() => appWindow.close()}
+          aria-label="Close"
+        >
+          <XIcon size={12} weight="bold" />
+        </button>
+      </Tip>
     </div>
   );
 }
@@ -71,6 +90,7 @@ function WinControls() {
 function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const defaultShell = shells[0];
 
   const handleSelect = useCallback((shell: ShellEntry) => {
     setOpen(false);
@@ -98,21 +118,35 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
   }, [open]);
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        className="flex h-6 items-center gap-1 rounded px-2 text-xs text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-      >
-        <PlusIcon size={12} weight="bold" />
-        <CaretDownIcon size={10} weight="bold" />
-      </button>
+    <div ref={ref} className="relative flex items-center">
+      {/* Primary action: click to open a new terminal with the default shell */}
+      <Tip label="New terminal">
+        <button
+          className="flex h-6 items-center gap-1.5 rounded-l px-2 text-xs text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          onClick={() => defaultShell && handleSelect(defaultShell)}
+          aria-label={`New ${defaultShell?.name ?? 'terminal'}`}
+        >
+          <PlusIcon size={12} weight="bold" />
+          <span className="font-mono text-[11px]">{defaultShell?.name ?? 'shell'}</span>
+        </button>
+      </Tip>
+      {/* Dropdown caret: pick a different shell type */}
+      <Tip label="Choose shell">
+        <button
+          className="flex h-6 items-center rounded-r px-1 text-xs text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          aria-haspopup="menu"
+        >
+          <CaretDownIcon size={10} weight="bold" />
+        </button>
+      </Tip>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 min-w-[140px] rounded border border-border bg-surface-raised py-1 shadow-lg">
+        <div className="absolute right-0 top-full z-50 mt-1 min-w-[140px] rounded border border-border bg-surface-raised py-1 shadow-md" role="menu">
           {shells.map((shell) => (
             <button
               key={shell.path}
+              role="menuitem"
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-surface-alt"
               onClick={() => handleSelect(shell)}
             >
