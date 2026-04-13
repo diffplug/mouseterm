@@ -9,6 +9,7 @@ export interface ShellEntry {
 
 interface AppBarProps {
   projectDir: string;
+  homeDir: string;
   shells: ShellEntry[];
 }
 
@@ -162,9 +163,17 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
 
 // ── AppBar ─────────────────────────────────────────────────────────────────
 
-export function AppBar({ projectDir, shells }: AppBarProps) {
-  const homeDir = projectDir;
+function projectName(dir: string): string {
+  const sep = dir.includes('\\') ? '\\' : '/';
+  const parts = dir.split(sep).filter(Boolean);
+  return parts[parts.length - 1] ?? dir;
+}
+
+export function AppBar({ projectDir, homeDir, shells }: AppBarProps) {
   const displayDir = abbreviateHome(projectDir, homeDir);
+  const name = projectName(projectDir);
+  // Show just the directory name when it's the home dir (avoids bare "~")
+  const isHome = projectDir === homeDir;
 
   return (
     <div
@@ -182,12 +191,19 @@ export function AppBar({ projectDir, shells }: AppBarProps) {
         </div>
       )}
 
-      {/* Project directory — centered fill */}
-      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center justify-center">
-        <span data-tauri-drag-region className="truncate px-4 text-muted">
-          {displayDir}
-        </span>
-      </div>
+      {/* Project directory — centered */}
+      <Tip label={displayDir}>
+        <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center justify-center gap-1.5 px-4">
+          <span data-tauri-drag-region className="truncate font-medium text-foreground/70">
+            {isHome ? '~' : name}
+          </span>
+          {!isHome && (
+            <span data-tauri-drag-region className="hidden truncate text-muted sm:inline">
+              {displayDir}
+            </span>
+          )}
+        </div>
+      </Tip>
 
       {/* Shell dropdown on the right (macOS) or window controls (Windows/Linux) */}
       {IS_MAC ? (

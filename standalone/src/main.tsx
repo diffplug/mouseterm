@@ -29,15 +29,16 @@ async function bootstrap() {
   startUpdateCheck();
 
   // Fetch app bar data from Rust backend
-  const [projectDir, defaultShell] = await Promise.all([
+  const [homeDir, defaultShell] = await Promise.all([
     invoke<string>("get_project_dir"),
     invoke<ShellEntry>("get_default_shell"),
   ]);
+  const projectDir = homeDir; // For now, project dir defaults to home
   const shells: ShellEntry[] = [defaultShell];
 
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
-      <AppBar projectDir={projectDir} shells={shells} />
+      <AppBar projectDir={projectDir} homeDir={homeDir} shells={shells} />
       <App
         initialPaneIds={result.paneIds}
         restoredLayout={result.layout}
