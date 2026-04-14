@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { create, getCwdForPid, parseCwdFromLsof, resolveSpawnConfig } = require('./pty-core');
+const { create, getCwdForPid, parseCwdFromLsof, resolveSpawnConfig, detectAvailableShells } = require('./pty-core');
 
 test('resolveSpawnConfig uses POSIX shell and home defaults', () => {
   const config = resolveSpawnConfig(undefined, {
@@ -19,7 +19,7 @@ test('resolveSpawnConfig uses POSIX shell and home defaults', () => {
   assert.equal(config.cols, 80);
   assert.equal(config.rows, 30);
   assert.equal(config.env.TERM_PROGRAM, 'MouseTerm');
-  assert.deepEqual(config.loginArg, ['-l']);
+  assert.deepEqual(config.shellArgs, ['-l']);
 });
 
 test('resolveSpawnConfig uses Windows shell and profile defaults', () => {
@@ -36,7 +36,7 @@ test('resolveSpawnConfig uses Windows shell and profile defaults', () => {
   assert.equal(config.cwd, 'C:\\Users\\tester');
   assert.equal(config.cwdWarning, null);
   assert.equal(config.env.TERM_PROGRAM, 'MouseTerm');
-  assert.deepEqual(config.loginArg, []);
+  assert.deepEqual(config.shellArgs, []);
 });
 
 test('resolveSpawnConfig preserves explicit cwd', () => {
@@ -60,7 +60,7 @@ test('resolveSpawnConfig preserves explicit cwd', () => {
   assert.equal(config.cwdWarning, null);
   assert.equal(config.cols, 120);
   assert.equal(config.rows, 40);
-  assert.deepEqual(config.loginArg, ['-l']);
+  assert.deepEqual(config.shellArgs, ['-l']);
 });
 
 test('resolveSpawnConfig skips -l for csh-style shells that reject it', () => {
@@ -74,7 +74,7 @@ test('resolveSpawnConfig skips -l for csh-style shells that reject it', () => {
   });
 
   assert.equal(config.shell, '/bin/tcsh');
-  assert.deepEqual(config.loginArg, []);
+  assert.deepEqual(config.shellArgs, []);
 });
 
 test('resolveSpawnConfig falls back to the default directory when explicit cwd is missing', () => {
@@ -111,7 +111,7 @@ test('resolveSpawnConfig skips -l for csh', () => {
   });
 
   assert.equal(config.shell, '/bin/csh');
-  assert.deepEqual(config.loginArg, []);
+  assert.deepEqual(config.shellArgs, []);
 });
 
 test('create buffers scrollback for getScrollback requests', () => {
@@ -185,4 +185,172 @@ test('getCwdForPid uses lsof with -a and parses the target pid cwd', () => {
     args: ['-a', '-d', 'cwd', '-p', '4242', '-Fn'],
     options: { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
   }]);
+});
+
+// ── resolveSpawnConfig shell/args override ──────────────────────────────
+
+test('resolveSpawnConfig uses explicit shell and args when provided', () => {
+  const config = resolveSpawnConfig(
+    { shell: '/usr/bin/fish', args: ['--private'] },
+    {
+      platform: 'linux',
+      env: { SHELL: '/bin/bash' },
+      osModule: {
+        homedir: () => '/home/tester',
+        tmpdir: () => '/tmp/fallback',
+      },
+    },
+  );
+
+  assert.equal(config.shell, '/usr/bin/fish');
+  assert.deepEqual(config.shellArgs, ['--private']);
+});
+
+test('resolveSpawnConfig uses explicit shell with default args fallback', () => {
+  const config = resolveSpawnConfig(
+    { shell: '/bin/zsh' },
+    {
+      platform: 'linux',
+      env: { SHELL: '/bin/bash' },
+      osModule: {
+        homedir: () => '/home/tester',
+        tmpdir: () => '/tmp/fallback',
+      },
+    },
+  );
+
+  assert.equal(config.shell, '/bin/zsh');
+  assert.deepEqual(config.shellArgs, ['-l']);
+});
+
+test('resolveSpawnConfig uses explicit args with empty array', () => {
+  const config = resolveSpawnConfig(
+    { args: [] },
+    {
+      platform: 'linux',
+      env: { SHELL: '/bin/bash' },
+      osModule: {
+        homedir: () => '/home/tester',
+        tmpdir: () => '/tmp/fallback',
+      },
+    },
+  );
+
+  assert.equal(config.shell, '/bin/bash');
+  assert.deepEqual(config.shellArgs, []);
+});
+
+// ── detectAvailableShells ───────────────────────────────────────────────
+
+test('detectAvailableShells returns $SHELL on non-Windows', () => {
+  const shells = detectAvailableShells({
+    platform: 'linux',
+    env: { SHELL: '/bin/zsh' },
+  });
+
+  assert.deepEqual(shells, [{ name: 'zsh', path: '/bin/zsh', args: [] }]);
+});
+
+test('detectAvailableShells falls back to /bin/sh when $SHELL is unset', () => {
+  const shells = detectAvailableShells({
+    platform: 'darwin',
+    env: {},
+  });
+
+  assert.deepEqual(shells, [{ name: 'sh', path: '/bin/sh', args: [] }]);
+});
+
+test('detectAvailableShells detects PowerShell and cmd on Windows', () => {
+  const existingFiles = new Set([
+    'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    'C:\\Windows\\System32\\cmd.exe',
+  ]);
+
+  const shells = detectAvailableShells({
+    platform: 'win32',
+    env: {
+      SystemRoot: 'C:\\Windows',
+      ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+      ProgramFiles: 'C:\\Program Files',
+      'ProgramFiles(x86)': 'C:\\Program Files (x86)',
+    },
+    fsModule: {
+      statSync(p) {
+        if (existingFiles.has(p)) return { isFile: () => true, isDirectory: () => false };
+        throw new Error('ENOENT');
+      },
+      readdirSync() { throw new Error('ENOENT'); },
+    },
+    execSync() { throw new Error('not available'); },
+  });
+
+  assert.equal(shells.length, 2);
+  assert.equal(shells[0].name, 'Windows PowerShell');
+  assert.equal(shells[1].name, 'Command Prompt');
+});
+
+test('detectAvailableShells detects Git Bash on Windows', () => {
+  const existingFiles = new Set([
+    'C:\\Windows\\System32\\cmd.exe',
+    'C:\\Program Files\\Git\\bin\\bash.exe',
+  ]);
+
+  const shells = detectAvailableShells({
+    platform: 'win32',
+    env: {
+      SystemRoot: 'C:\\Windows',
+      ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+      ProgramFiles: 'C:\\Program Files',
+      'ProgramFiles(x86)': 'C:\\Program Files (x86)',
+    },
+    fsModule: {
+      statSync(p) {
+        if (existingFiles.has(p)) return { isFile: () => true, isDirectory: () => false };
+        throw new Error('ENOENT');
+      },
+      readdirSync() { throw new Error('ENOENT'); },
+    },
+    execSync() { throw new Error('not available'); },
+  });
+
+  const gitBash = shells.find((s) => s.name === 'Git Bash');
+  assert.ok(gitBash, 'Git Bash should be detected');
+  assert.equal(gitBash.path, 'C:\\Program Files\\Git\\bin\\bash.exe');
+  assert.deepEqual(gitBash.args, ['--login', '-i']);
+});
+
+test('detectAvailableShells detects WSL distros on Windows', () => {
+  const existingFiles = new Set([
+    'C:\\Windows\\System32\\cmd.exe',
+    'C:\\Windows\\System32\\wsl.exe',
+  ]);
+
+  const shells = detectAvailableShells({
+    platform: 'win32',
+    env: {
+      SystemRoot: 'C:\\Windows',
+      ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+      ProgramFiles: 'C:\\Program Files',
+      'ProgramFiles(x86)': 'C:\\Program Files (x86)',
+    },
+    fsModule: {
+      statSync(p) {
+        if (existingFiles.has(p)) return { isFile: () => true, isDirectory: () => false };
+        throw new Error('ENOENT');
+      },
+      readdirSync() { throw new Error('ENOENT'); },
+    },
+    execSync() {
+      // wsl.exe -l -q returns UTF-16LE with null bytes
+      return 'Ubuntu\r\nDebian\r\n';
+    },
+  });
+
+  const ubuntu = shells.find((s) => s.name === 'Ubuntu');
+  assert.ok(ubuntu, 'Ubuntu WSL should be detected');
+  assert.equal(ubuntu.path, 'C:\\Windows\\System32\\wsl.exe');
+  assert.deepEqual(ubuntu.args, ['-d', 'Ubuntu']);
+
+  const debian = shells.find((s) => s.name === 'Debian');
+  assert.ok(debian, 'Debian WSL should be detected');
 });
