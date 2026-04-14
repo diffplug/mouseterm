@@ -390,16 +390,18 @@ sign_macos_app() {
         \( -perm -111 -o -name "*.node" -o -name "*.dylib" -o -name "spawn-helper" \) | while read -r binary; do
         log "  Signing: ${binary#"$app_path/"}"
 
-        local entitlements_args=()
         if [[ "$binary" == "$app_path/Contents/MacOS/node" ]]; then
-            entitlements_args=(--entitlements "$MACOS_NODE_ENTITLEMENTS")
+            codesign --force --sign "$MACOS_IDENTITY" \
+                --options runtime \
+                --entitlements "$MACOS_NODE_ENTITLEMENTS" \
+                --timestamp \
+                "$binary"
+        else
+            codesign --force --sign "$MACOS_IDENTITY" \
+                --options runtime \
+                --timestamp \
+                "$binary"
         fi
-
-        codesign --force --sign "$MACOS_IDENTITY" \
-            --options runtime \
-            "${entitlements_args[@]}" \
-            --timestamp \
-            "$binary"
     done
 
     # Sign the outer .app bundle after nested code. Do not use --deep here:
