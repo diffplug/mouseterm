@@ -101,7 +101,7 @@ function Playground() {
         <ThemePicker />
       </PlaygroundToolbar>
 
-      <main className="fixed top-[100px] left-0 right-0 bottom-0">
+      <main className="fixed top-[132px] right-0 bottom-0 left-0 flex min-h-0 md:top-[148px]">
         {PondModule ? (
           <PondModule.Pond
             initialPaneIds={[PANE_MAIN]}

@@ -5,14 +5,14 @@ At the `/playground` route on the website. **Status: Implemented** (Epics 14, 15
 ## Layout
 
 - `SiteHeader` at top (with Playground as active nav item).
-- `PlaygroundToolbar` below the header: a dedicated toolbar with a **theme picker** dead center (mouse-based, not keyboard). Visually distinct from the site nav — belongs to the sandbox, not the website.
-- Below the toolbar: MouseTerm `Pond` embedded fullscreen using `FakePtyAdapter`.
+- `PlaygroundToolbar` below the fixed site header: a dedicated toolbar with a **theme picker** centered in the available width. It sits below the header's hitbox so swatches remain clickable, and the swatch row scrolls horizontally on narrow screens while the install button stays visible.
+- Below the toolbar: MouseTerm `Pond` embedded fullscreen using `FakePtyAdapter`. The page-level `<main>` is a flex container so Pond's `flex-1 min-h-0` root receives a real height.
 
 ### Implementation
 
 - `website/src/pages/Playground.tsx` — Page component. Dynamically imports Pond (SSR-safe). Initializes `FakePtyAdapter`, `TutorialShell`, and `TutorialDetector`. Passes `onApiReady` to set up the 3-pane layout and `onEvent` for step detection.
 - `website/src/components/PlaygroundToolbar.tsx` — Toolbar shell with centered slot.
-- `website/src/components/ThemePicker.tsx` — Color dot swatches for 5 themes.
+- `website/src/components/ThemePicker.tsx` — Color dot swatches for bundled themes plus an OpenVSX install button.
 - `website/vite.config.ts` — Vite alias `mouseterm-lib` → `../lib/src` for workspace imports.
 
 ## Initial State
@@ -127,14 +127,14 @@ The sandbox stays fully functional after completion. Running `tut` shows "Tutori
 
 Implemented in `website/src/lib/playground-themes.ts` and `website/src/components/ThemePicker.tsx`.
 
-5 themes available: **Dark** (default), **Monokai**, **Solarized**, **Nord**, **Dracula**.
+Bundled themes are provided by `mouseterm-lib/lib/themes` and include Dark+, Light+, GitHub variants, and Dracula variants. Users can install additional themes from OpenVSX via the `+` button.
 
-Each theme is defined as a map of `--vscode-*` CSS variable overrides. `applyTheme()` sets these on `document.body`, which:
+Each theme is defined as a map of `--vscode-*` CSS variable overrides. `applyTheme()` applies the active theme, which:
 1. Cascades into `--mt-*` variables (via `var(--vscode-*, fallback)` in `theme.css`)
 2. Triggers the `MutationObserver` in `terminal-registry.ts` to re-read `getTerminalTheme()` for all xterm.js terminals
 3. Updates Dockview/Tailwind token colors
 
-The Dark theme uses an empty vars map (relies on the existing CSS fallback values).
+The picker restores the persisted active theme on mount and keeps the `+` install action outside the scrollable swatch strip so it remains reachable on phone-width viewports.
 
 ## Technical Notes
 
@@ -142,4 +142,3 @@ The Dark theme uses an empty vars map (relies on the existing CSS fallback value
 - `FakePtyAdapter` extensions: `setInputHandler(id, fn)` routes `writePty` calls to a custom handler; `sendOutput(id, data)` writes to a terminal's output stream.
 - `Pond` extensions: `initialPaneIds` prop seeds the first pane(s); `onApiReady` callback prop exposes `DockviewApi`; `onEvent` callback prop fires `PondEvent` for mode/zoom/detach/selection/split changes (types: `modeChange`, `zoomChange`, `detachChange`, `split`, `selectionChange`).
 - `SCENARIO_TUTORIAL_MOTD` scenario added to `lib/src/lib/platform/fake-scenarios.ts`.
-

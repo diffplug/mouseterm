@@ -32,14 +32,14 @@ export function ThemePicker() {
   };
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex w-full min-w-0 items-center justify-center gap-2">
       <span
-        className="text-[11px] font-medium tracking-wide uppercase"
+        className="shrink-0 text-[11px] font-medium tracking-wide uppercase"
         style={{ color: "rgba(255, 255, 255, 0.35)" }}
       >
         Theme
       </span>
-      <div className="flex items-center gap-1.5 overflow-x-auto">
+      <div className="flex min-w-0 items-center gap-1 overflow-x-auto px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {themes.map((theme) => {
           const isActive = theme.id === activeId;
           return (
@@ -47,10 +47,8 @@ export function ThemePicker() {
               key={theme.id}
               onClick={() => select(theme.id)}
               title={theme.label}
-              className="group relative flex shrink-0 items-center justify-center rounded-full transition-transform hover:scale-110"
+              className="group relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105"
               style={{
-                width: 22,
-                height: 22,
                 outline: isActive
                   ? `2px solid ${theme.accent}`
                   : "2px solid transparent",
@@ -61,8 +59,8 @@ export function ThemePicker() {
               <span
                 className="block rounded-full"
                 style={{
-                  width: 14,
-                  height: 14,
+                  width: 16,
+                  height: 16,
                   backgroundColor: theme.swatch,
                   boxShadow: `inset -2px -2px 4px rgba(0,0,0,0.3), inset 2px 2px 4px rgba(255,255,255,0.08)`,
                 }}
@@ -71,8 +69,8 @@ export function ThemePicker() {
               <span
                 className="absolute bottom-0 right-0 block rounded-full"
                 style={{
-                  width: 6,
-                  height: 6,
+                  width: 7,
+                  height: 7,
                   backgroundColor: theme.accent,
                 }}
               />
@@ -84,7 +82,7 @@ export function ThemePicker() {
         <button
           onClick={() => setStoreOpen(true)}
           title="Install theme from OpenVSX"
-          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[12px] transition-colors"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[13px] transition-colors hover:bg-white/5"
           style={{ color: "rgba(255, 255, 255, 0.25)", border: "1px dashed rgba(255, 255, 255, 0.15)" }}
         >
           +
