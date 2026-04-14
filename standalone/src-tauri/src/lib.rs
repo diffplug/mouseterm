@@ -102,6 +102,15 @@ fn request_from_sidecar(
     event: &str,
     data: JsonValue,
 ) -> Result<JsonValue, String> {
+    request_from_sidecar_timeout(state, event, data, Duration::from_secs(1))
+}
+
+fn request_from_sidecar_timeout(
+    state: &SidecarState,
+    event: &str,
+    data: JsonValue,
+    timeout: Duration,
+) -> Result<JsonValue, String> {
     let request_id = format!(
         "req-{}",
         state.next_request_id.fetch_add(1, Ordering::Relaxed)
@@ -125,7 +134,7 @@ fn request_from_sidecar(
     });
     send_to_sidecar(state, msg.to_string());
 
-    match rx.recv_timeout(Duration::from_secs(1)) {
+    match rx.recv_timeout(timeout) {
         Ok(response) => Ok(response),
         Err(_) => {
             if let Ok(mut pending) = state.pending_requests.lock() {
@@ -225,7 +234,7 @@ struct ShellInfo {
 
 #[tauri::command]
 fn get_available_shells(state: tauri::State<'_, SidecarState>) -> Result<Vec<ShellInfo>, String> {
-    let response = request_from_sidecar(&state, "pty:getShells", serde_json::json!({}))?;
+    let response = request_from_sidecar_timeout(&state, "pty:getShells", serde_json::json!({}), Duration::from_secs(10))?;
     let shells: Vec<ShellInfo> = response
         .get("shells")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
