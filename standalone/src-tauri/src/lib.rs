@@ -1,11 +1,16 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    env,
+    fs::{create_dir_all, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+    sync::mpsc,
+    sync::{Arc, Mutex},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
@@ -21,6 +26,62 @@ struct SidecarState {
     tx: SidecarSender,
     pending_requests: PendingRequests,
     next_request_id: AtomicU64,
+}
+
+const LOG_FILE_ENV: &str = "MOUSETERM_LOG_FILE";
+
+fn log_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default()
+}
+
+fn default_log_path() -> PathBuf {
+    if let Some(path) = env::var_os(LOG_FILE_ENV) {
+        return PathBuf::from(path);
+    }
+
+    #[cfg(target_os = "windows")]
+    if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
+        return PathBuf::from(local_app_data)
+            .join("MouseTerm")
+            .join("mouseterm.log");
+    }
+
+    env::temp_dir().join("mouseterm.log")
+}
+
+fn init_log() {
+    let path = default_log_path();
+    if let Some(parent) = path.parent() {
+        let _ = create_dir_all(parent);
+    }
+
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&path)
+    {
+        let _ = writeln!(
+            file,
+            "[{}] MouseTerm log started at {}",
+            log_timestamp(),
+            path.display()
+        );
+    }
+}
+
+fn append_log(message: impl AsRef<str>) {
+    let path = default_log_path();
+    if let Some(parent) = path.parent() {
+        let _ = create_dir_all(parent);
+    }
+
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "[{}] {}", log_timestamp(), message.as_ref());
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -39,7 +100,10 @@ fn request_from_sidecar(
     event: &str,
     data: JsonValue,
 ) -> Result<JsonValue, String> {
-    let request_id = format!("req-{}", state.next_request_id.fetch_add(1, Ordering::Relaxed));
+    let request_id = format!(
+        "req-{}",
+        state.next_request_id.fetch_add(1, Ordering::Relaxed)
+    );
     let (tx, rx) = mpsc::channel();
     state
         .pending_requests
@@ -73,11 +137,7 @@ fn request_from_sidecar(
 // ── Tauri commands ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn pty_spawn(
-    state: tauri::State<'_, SidecarState>,
-    id: String,
-    options: Option<PtySpawnOptions>,
-) {
+fn pty_spawn(state: tauri::State<'_, SidecarState>, id: String, options: Option<PtySpawnOptions>) {
     let msg = serde_json::json!({
         "event": "pty:spawn",
         "data": { "id": id, "options": options }
@@ -95,12 +155,7 @@ fn pty_write(state: tauri::State<'_, SidecarState>, id: String, data: String) {
 }
 
 #[tauri::command]
-fn pty_resize(
-    state: tauri::State<'_, SidecarState>,
-    id: String,
-    cols: u16,
-    rows: u16,
-) {
+fn pty_resize(state: tauri::State<'_, SidecarState>, id: String, cols: u16, rows: u16) {
     let msg = serde_json::json!({
         "event": "pty:resize",
         "data": { "id": id, "cols": cols, "rows": rows }
@@ -124,7 +179,10 @@ fn pty_request_init(state: tauri::State<'_, SidecarState>) {
 }
 
 #[tauri::command]
-fn pty_get_cwd(state: tauri::State<'_, SidecarState>, id: String) -> Result<Option<String>, String> {
+fn pty_get_cwd(
+    state: tauri::State<'_, SidecarState>,
+    id: String,
+) -> Result<Option<String>, String> {
     let response = request_from_sidecar(&state, "pty:getCwd", serde_json::json!({ "id": id }))?;
     Ok(response
         .get("cwd")
@@ -132,8 +190,12 @@ fn pty_get_cwd(state: tauri::State<'_, SidecarState>, id: String) -> Result<Opti
 }
 
 #[tauri::command]
-fn pty_get_scrollback(state: tauri::State<'_, SidecarState>, id: String) -> Result<Option<String>, String> {
-    let response = request_from_sidecar(&state, "pty:getScrollback", serde_json::json!({ "id": id }))?;
+fn pty_get_scrollback(
+    state: tauri::State<'_, SidecarState>,
+    id: String,
+) -> Result<Option<String>, String> {
+    let response =
+        request_from_sidecar(&state, "pty:getScrollback", serde_json::json!({ "id": id }))?;
     Ok(response
         .get("data")
         .and_then(|data| data.as_str().map(String::from)))
@@ -165,15 +227,17 @@ fn get_default_shell() -> ShellInfo {
         .unwrap_or_else(|_| String::from("C:\\Windows\\System32\\cmd.exe"));
 
     #[cfg(not(target_os = "windows"))]
-    let shell_path = std::env::var("SHELL")
-        .unwrap_or_else(|_| String::from("/bin/sh"));
+    let shell_path = std::env::var("SHELL").unwrap_or_else(|_| String::from("/bin/sh"));
 
     let name = Path::new(&shell_path)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| shell_path.clone());
 
-    ShellInfo { name, path: shell_path }
+    ShellInfo {
+        name,
+        path: shell_path,
+    }
 }
 
 fn resolve_sidecar_path(resource_dir: Option<PathBuf>, manifest_dir: &Path) -> PathBuf {
@@ -190,20 +254,25 @@ fn resolve_sidecar_path(resource_dir: Option<PathBuf>, manifest_dir: &Path) -> P
     manifest_dir.join("..").join("sidecar").join("main.js")
 }
 
-fn start_sidecar(app: &AppHandle) -> SidecarState {
+fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
     let sidecar_path = resolve_sidecar_path(
         app.path().resource_dir().ok(),
         Path::new(env!("CARGO_MANIFEST_DIR")),
     );
+    append_log(format!(
+        "[sidecar] resolved script: {}",
+        sidecar_path.display()
+    ));
 
     let (mut rx, mut child) = app
         .shell()
         .sidecar("node")
-        .expect("failed to resolve bundled Node.js runtime")
+        .map_err(|err| format!("failed to resolve bundled Node.js runtime: {err}"))?
         .arg(&sidecar_path)
         .set_raw_out(false)
         .spawn()
-        .expect("failed to start Node.js sidecar");
+        .map_err(|err| format!("failed to start Node.js sidecar: {err}"))?;
+    append_log("[sidecar] spawned Node.js runtime");
 
     let handle = app.clone();
     let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
@@ -214,14 +283,21 @@ fn start_sidecar(app: &AppHandle) -> SidecarState {
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
-                    let Ok(line) = String::from_utf8(line) else { continue };
+                    let Ok(line) = String::from_utf8(line) else {
+                        append_log("[sidecar stdout] invalid UTF-8");
+                        continue;
+                    };
                     let Ok(mut msg) = serde_json::from_str::<serde_json::Value>(&line) else {
+                        append_log(format!("[sidecar stdout] {}", line.trim_end()));
                         continue;
                     };
-                    let Some(event) = msg.get("event").and_then(|e| e.as_str()).map(String::from) else {
+                    let Some(event) = msg.get("event").and_then(|e| e.as_str()).map(String::from)
+                    else {
+                        append_log("[sidecar stdout] JSON line missing event");
                         continue;
                     };
-                    let data = msg.as_object_mut()
+                    let data = msg
+                        .as_object_mut()
                         .and_then(|m| m.remove("data"))
                         .unwrap_or(serde_json::Value::Null);
 
@@ -241,18 +317,23 @@ fn start_sidecar(app: &AppHandle) -> SidecarState {
                 }
                 CommandEvent::Stderr(line) => {
                     if let Ok(line) = String::from_utf8(line) {
-                        eprintln!("[sidecar] {}", line.trim_end());
+                        let message = format!("[sidecar] {}", line.trim_end());
+                        eprintln!("{message}");
+                        append_log(message);
                     }
                 }
                 CommandEvent::Error(err) => {
-                    eprintln!("[sidecar] {}", err);
+                    let message = format!("[sidecar] {err}");
+                    eprintln!("{message}");
+                    append_log(message);
                 }
                 CommandEvent::Terminated(payload) => {
-                    eprintln!(
+                    let message = format!(
                         "[sidecar] exited (code: {:?}, signal: {:?})",
-                        payload.code,
-                        payload.signal
+                        payload.code, payload.signal
                     );
+                    eprintln!("{message}");
+                    append_log(message);
                     break;
                 }
                 _ => {}
@@ -266,10 +347,14 @@ fn start_sidecar(app: &AppHandle) -> SidecarState {
     std::thread::spawn(move || {
         while let Ok(msg) = writer_rx.recv() {
             match msg {
-                SidecarMsg::Shutdown => break,
+                SidecarMsg::Shutdown => {
+                    append_log("[sidecar] shutdown requested");
+                    break;
+                }
                 SidecarMsg::Json(line) => {
                     let payload = format!("{}\n", line);
                     if child.write(payload.as_bytes()).is_err() {
+                        append_log("[sidecar] stdin write failed");
                         break;
                     }
                 }
@@ -277,11 +362,11 @@ fn start_sidecar(app: &AppHandle) -> SidecarState {
         }
     });
 
-    SidecarState {
+    Ok(SidecarState {
         tx,
         pending_requests,
         next_request_id: AtomicU64::new(0),
-    }
+    })
 }
 
 // ── App entry point ─────────────────────────────────────────────────────────
@@ -292,8 +377,15 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            let sidecar_state = start_sidecar(app.handle());
+            init_log();
+            append_log("[app] setup started");
+
+            let sidecar_state = start_sidecar(app.handle()).map_err(|err| {
+                append_log(format!("[sidecar] {err}"));
+                std::io::Error::new(std::io::ErrorKind::Other, err)
+            })?;
             app.manage(sidecar_state);
+            append_log("[app] sidecar state registered");
 
             // On non-macOS, remove native decorations for a fully custom title bar.
             // macOS uses titleBarStyle "Overlay" from config instead, which preserves
@@ -380,6 +472,9 @@ mod tests {
 
         let resolved = resolve_sidecar_path(None, manifest_dir);
 
-        assert_eq!(resolved, manifest_dir.join("..").join("sidecar").join("main.js"));
+        assert_eq!(
+            resolved,
+            manifest_dir.join("..").join("sidecar").join("main.js")
+        );
     }
 }

@@ -202,6 +202,10 @@ codesign/jsign the executable
    - Verify the tag exists on the remote before creating or publishing the release
 7. **Verify** — spot-check signatures, confirm release assets are correct
 
+### Packaged app logging
+
+Windows release builds use the GUI subsystem, so launching `mouseterm.exe` from a terminal returns immediately and does not stream stdout/stderr. The Tauri backend writes sidecar diagnostics to `%LOCALAPPDATA%\MouseTerm\mouseterm.log` on Windows, or to `$TMPDIR/mouseterm.log` on other platforms. Set `MOUSETERM_LOG_FILE` to override the path.
+
 ### Resuming after failure
 
 ```bash
