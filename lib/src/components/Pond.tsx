@@ -32,6 +32,7 @@ import {
   toggleSessionTodo,
   destroyTerminal,
   swapTerminals,
+  setPendingShellOpts,
   type SessionStatus,
 } from '../lib/terminal-registry';
 import { resolvePanelElement, findPanelInDirection, findRestoreNeighbor, type DetachDirection } from '../lib/spatial-nav';
@@ -1690,10 +1691,17 @@ export function Pond({
 
   // Listen for external "new terminal" requests (e.g. from the standalone AppBar)
   useEffect(() => {
-    const handler = () => {
+    const handler = (e: Event) => {
       const api = apiRef.current;
       if (!api) return;
+      const detail = (e as CustomEvent).detail;
       const newId = generatePaneId();
+
+      // Store shell options so getOrCreateTerminal picks them up on mount
+      if (detail?.shell) {
+        setPendingShellOpts(newId, { shell: detail.shell, args: detail.args });
+      }
+
       const active = api.activePanel;
       let direction: 'right' | 'below' = 'right';
       if (active) {
