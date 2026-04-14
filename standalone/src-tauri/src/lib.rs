@@ -256,21 +256,45 @@ fn resolve_sidecar_path(resource_dir: Option<PathBuf>, manifest_dir: &Path) -> P
     manifest_dir.join("..").join("sidecar").join("main.js")
 }
 
+fn strip_windows_verbatim_prefix(path_string: &str) -> Option<PathBuf> {
+    if let Some(stripped) = path_string.strip_prefix(r"\\?\UNC\") {
+        return Some(PathBuf::from(format!(r"\\{stripped}")));
+    }
+    if let Some(stripped) = path_string.strip_prefix(r"\\?\") {
+        return Some(PathBuf::from(stripped));
+    }
+
+    None
+}
+
+fn sidecar_script_arg_path(path: &Path) -> PathBuf {
+    if let Some(path) = strip_windows_verbatim_prefix(&path.to_string_lossy()) {
+        return path;
+    }
+
+    path.to_path_buf()
+}
+
 fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
     let sidecar_path = resolve_sidecar_path(
         app.path().resource_dir().ok(),
         Path::new(env!("CARGO_MANIFEST_DIR")),
     );
+    let sidecar_arg_path = sidecar_script_arg_path(&sidecar_path);
     append_log(format!(
         "[sidecar] resolved script: {}",
         sidecar_path.display()
+    ));
+    append_log(format!(
+        "[sidecar] script argument: {}",
+        sidecar_arg_path.display()
     ));
 
     let (mut rx, mut child) = app
         .shell()
         .sidecar("node")
         .map_err(|err| format!("failed to resolve bundled Node.js runtime: {err}"))?
-        .arg(&sidecar_path)
+        .arg(&sidecar_arg_path)
         .set_raw_out(false)
         .spawn()
         .map_err(|err| format!("failed to start Node.js sidecar: {err}"))?;
@@ -419,7 +443,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_sidecar_path;
+    use super::{resolve_sidecar_path, strip_windows_verbatim_prefix};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -477,6 +501,30 @@ mod tests {
         assert_eq!(
             resolved,
             manifest_dir.join("..").join("sidecar").join("main.js")
+        );
+    }
+
+    #[test]
+    fn strips_windows_verbatim_prefix_for_node_main_script() {
+        let path = strip_windows_verbatim_prefix(
+            r"\\?\C:\Users\EdgarTwigg\AppData\Local\MouseTerm\_up_\sidecar\main.js",
+        )
+        .expect("expected verbatim path to be stripped");
+
+        assert_eq!(
+            path,
+            PathBuf::from(r"C:\Users\EdgarTwigg\AppData\Local\MouseTerm\_up_\sidecar\main.js")
+        );
+    }
+
+    #[test]
+    fn strips_windows_verbatim_unc_prefix_for_node_main_script() {
+        let path = strip_windows_verbatim_prefix(r"\\?\UNC\server\share\MouseTerm\sidecar\main.js")
+            .expect("expected verbatim UNC path to be stripped");
+
+        assert_eq!(
+            path,
+            PathBuf::from(r"\\server\share\MouseTerm\sidecar\main.js")
         );
     }
 }
