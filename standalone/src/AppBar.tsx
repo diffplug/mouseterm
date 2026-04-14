@@ -5,6 +5,7 @@ import { CaretDownIcon, MinusIcon, CornersOutIcon, CornersInIcon, XIcon, Termina
 export interface ShellEntry {
   name: string;
   path: string;
+  args?: string[];
 }
 
 interface AppBarProps {
@@ -95,7 +96,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
 
   const handleSelect = useCallback((shell: ShellEntry) => {
     setOpen(false);
-    window.dispatchEvent(new CustomEvent('mouseterm:new-terminal', { detail: { shell: shell.path } }));
+    window.dispatchEvent(new CustomEvent('mouseterm:new-terminal', { detail: { shell: shell.path, args: shell.args } }));
   }, []);
 
   // Close on click outside

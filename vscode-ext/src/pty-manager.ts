@@ -196,9 +196,34 @@ function sendToChild(msg: any): void {
   }
 }
 
-export function spawn(id: string, options?: { cols?: number; rows?: number; cwd?: string }): void {
+export function spawn(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void {
   ptyBuffers.set(id, createBufferEntry(true));
-  sendToChild({ type: 'spawn', id, cols: options?.cols || 80, rows: options?.rows || 30, cwd: options?.cwd });
+  sendToChild({ type: 'spawn', id, cols: options?.cols || 80, rows: options?.rows || 30, cwd: options?.cwd, shell: options?.shell, args: options?.args });
+}
+
+export interface ShellEntry {
+  name: string;
+  path: string;
+  args: string[];
+}
+
+export function getAvailableShells(): Promise<ShellEntry[]> {
+  return new Promise((resolve) => {
+    const requestId = `shells-${Date.now()}`;
+    const timeout = setTimeout(() => {
+      child?.off('message', handler);
+      resolve([]);
+    }, 5000);
+    const handler = (msg: any) => {
+      if (msg.type === 'shells' && msg.requestId === requestId) {
+        clearTimeout(timeout);
+        child?.off('message', handler);
+        resolve(msg.shells || []);
+      }
+    };
+    child?.on('message', handler);
+    sendToChild({ type: 'getShells', requestId });
+  });
 }
 
 export function getCwd(id: string): Promise<string | null> {

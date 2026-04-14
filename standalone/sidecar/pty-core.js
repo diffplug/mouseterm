@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, execSync } = require('node:child_process');
 
 function safeResolve(resolver) {
   try {
@@ -55,14 +55,15 @@ function directoryExists(cwd, fsModule = fs) {
 }
 
 function resolveSpawnConfig(options, runtime = {}) {
-  const { cols = 80, rows = 30, cwd } = options || {};
+  const { cols = 80, rows = 30, cwd, shell: explicitShell, args: explicitArgs } = options || {};
   const env = runtime.env || process.env;
   const platform = runtime.platform || process.platform;
   const osModule = runtime.osModule || os;
   const fsModule = runtime.fsModule || fs;
   const defaultCwd = resolveDefaultCwd(platform, env, osModule);
   const missingExplicitCwd = Boolean(cwd) && !directoryExists(cwd, fsModule);
-  const shell = resolveDefaultShell(platform, env);
+  const shell = explicitShell || resolveDefaultShell(platform, env);
+  const shellArgs = explicitArgs || resolveLoginArg(shell, platform);
 
   return {
     cols,
@@ -71,11 +72,145 @@ function resolveSpawnConfig(options, runtime = {}) {
     cwdWarning: missingExplicitCwd ? `unable to restore because directory ${cwd} was removed` : null,
     env: { ...env, TERM_PROGRAM: 'MouseTerm' },
     shell,
-    loginArg: resolveLoginArg(shell, platform),
+    shellArgs,
   };
 }
 
 module.exports.resolveSpawnConfig = resolveSpawnConfig;
+
+// ── Shell detection ────────────────────────────────────────────────────────
+
+function fileExists(filePath, fsModule = fs) {
+  try {
+    return fsModule.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function detectWindowsShells(runtime = {}) {
+  const env = runtime.env || process.env;
+  const fsModule = runtime.fsModule || fs;
+  const execSyncFn = runtime.execSync || execSync;
+  const systemRoot = env.SystemRoot || env.SYSTEMROOT || 'C:\\Windows';
+  const shells = [];
+
+  // Windows PowerShell (built-in)
+  const winPowerShell = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  if (fileExists(winPowerShell, fsModule)) {
+    shells.push({ name: 'Windows PowerShell', path: winPowerShell, args: [] });
+  }
+
+  // Command Prompt
+  const cmdPath = env.ComSpec || env.COMSPEC || path.win32.join(systemRoot, 'System32', 'cmd.exe');
+  if (fileExists(cmdPath, fsModule)) {
+    shells.push({ name: 'Command Prompt', path: cmdPath, args: [] });
+  }
+
+  // PowerShell Core (pwsh) — scan Program Files
+  const pwshDirs = [
+    path.win32.join(env.ProgramFiles || 'C:\\Program Files', 'PowerShell'),
+    path.win32.join(env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'PowerShell'),
+  ];
+  for (const dir of pwshDirs) {
+    try {
+      const versions = fsModule.readdirSync(dir).sort().reverse();
+      for (const ver of versions) {
+        const pwshPath = path.win32.join(dir, ver, 'pwsh.exe');
+        if (fileExists(pwshPath, fsModule)) {
+          shells.push({ name: 'PowerShell', path: pwshPath, args: [] });
+          break; // only add the newest version
+        }
+      }
+      if (shells.some((s) => s.name === 'PowerShell')) break;
+    } catch { /* dir doesn't exist */ }
+  }
+
+  // WSL distributions
+  try {
+    const wslExe = path.win32.join(systemRoot, 'System32', 'wsl.exe');
+    if (fileExists(wslExe, fsModule)) {
+      const raw = execSyncFn(`"${wslExe}" -l -q`, {
+        encoding: 'utf-16le',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 5000,
+      });
+      const distros = raw.split(/\r?\n/)
+        .map((line) => line.replace(/\0/g, '').trim())
+        .filter(Boolean);
+      for (const distro of distros) {
+        shells.push({ name: distro, path: wslExe, args: ['-d', distro] });
+      }
+    }
+  } catch { /* WSL not installed or no distros */ }
+
+  // Git Bash
+  const gitBashPaths = [
+    path.win32.join(env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin', 'bash.exe'),
+    path.win32.join(env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Git', 'bin', 'bash.exe'),
+  ];
+  for (const gbPath of gitBashPaths) {
+    if (fileExists(gbPath, fsModule)) {
+      shells.push({ name: 'Git Bash', path: gbPath, args: ['--login', '-i'] });
+      break;
+    }
+  }
+
+  // Visual Studio Developer shells
+  const vsBasePaths = [
+    env.ProgramFiles || 'C:\\Program Files',
+    env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)',
+  ];
+  for (const base of vsBasePaths) {
+    const vsRoot = path.win32.join(base, 'Microsoft Visual Studio');
+    let years;
+    try { years = fsModule.readdirSync(vsRoot); } catch { continue; }
+    for (const year of years.sort().reverse()) {
+      let editions;
+      try { editions = fsModule.readdirSync(path.win32.join(vsRoot, year)); } catch { continue; }
+      for (const edition of editions) {
+        const toolsDir = path.win32.join(vsRoot, year, edition, 'Common7', 'Tools');
+
+        // Developer Command Prompt
+        const vsDevCmd = path.win32.join(toolsDir, 'VsDevCmd.bat');
+        if (fileExists(vsDevCmd, fsModule) && fileExists(cmdPath, fsModule)) {
+          shells.push({
+            name: `Developer Command Prompt for VS ${year}`,
+            path: cmdPath,
+            args: ['/k', vsDevCmd],
+          });
+        }
+
+        // Developer PowerShell
+        const launchScript = path.win32.join(toolsDir, 'Launch-VsDevShell.ps1');
+        if (fileExists(launchScript, fsModule) && fileExists(winPowerShell, fsModule)) {
+          shells.push({
+            name: `Developer PowerShell for VS ${year}`,
+            path: winPowerShell,
+            args: ['-NoExit', '-Command', `& { Import-Module "${launchScript}" }`],
+          });
+        }
+      }
+    }
+  }
+
+  return shells;
+}
+
+function detectAvailableShells(runtime = {}) {
+  const platform = runtime.platform || process.platform;
+  if (platform === 'win32') {
+    return detectWindowsShells(runtime);
+  }
+
+  // macOS / Linux: return $SHELL or /bin/sh
+  const env = runtime.env || process.env;
+  const shellPath = env.SHELL || '/bin/sh';
+  const name = path.posix.basename(shellPath);
+  return [{ name, path: shellPath, args: [] }];
+}
+
+module.exports.detectAvailableShells = detectAvailableShells;
 
 function parseCwdFromLsof(output, pid) {
   const lines = output.split(/\r?\n/);
@@ -173,7 +308,7 @@ module.exports.create = function create(send, ptyModule) {
 
     let p;
     try {
-      p = pty.spawn(config.shell, config.loginArg, {
+      p = pty.spawn(config.shell, config.shellArgs, {
         name: 'xterm-256color',
         cols: config.cols,
         rows: config.rows,
@@ -267,5 +402,9 @@ module.exports.create = function create(send, ptyModule) {
     }, timeout);
   }
 
-  return { spawn, write, resize, kill, killAll, list, getCwd, getScrollback, gracefulKillAll };
+  function getShells(requestId) {
+    send('shells', { shells: detectAvailableShells(), requestId });
+  }
+
+  return { spawn, write, resize, kill, killAll, list, getCwd, getScrollback, gracefulKillAll, getShells };
 };

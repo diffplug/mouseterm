@@ -66,6 +66,10 @@ export class FakePtyAdapter implements PlatformAdapter {
     });
   }
 
+  async getAvailableShells(): Promise<{ name: string; path: string; args?: string[] }[]> {
+    return [{ name: 'fake-shell', path: '/bin/fake', args: [] }];
+  }
+
   spawnPty(id: string): void {
     this.terminals.add(id);
     const scenario = this.scenarioMap.get(id) ?? this.defaultScenario;

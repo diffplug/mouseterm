@@ -89,6 +89,8 @@ struct PtySpawnOptions {
     cols: Option<u16>,
     rows: Option<u16>,
     cwd: Option<String>,
+    shell: Option<String>,
+    args: Option<Vec<String>>,
 }
 
 fn send_to_sidecar(state: &SidecarState, line: String) {
@@ -99,6 +101,15 @@ fn request_from_sidecar(
     state: &SidecarState,
     event: &str,
     data: JsonValue,
+) -> Result<JsonValue, String> {
+    request_from_sidecar_timeout(state, event, data, Duration::from_secs(1))
+}
+
+fn request_from_sidecar_timeout(
+    state: &SidecarState,
+    event: &str,
+    data: JsonValue,
+    timeout: Duration,
 ) -> Result<JsonValue, String> {
     let request_id = format!(
         "req-{}",
@@ -123,7 +134,7 @@ fn request_from_sidecar(
     });
     send_to_sidecar(state, msg.to_string());
 
-    match rx.recv_timeout(Duration::from_secs(1)) {
+    match rx.recv_timeout(timeout) {
         Ok(response) => Ok(response),
         Err(_) => {
             if let Ok(mut pending) = state.pending_requests.lock() {
@@ -213,31 +224,22 @@ fn get_project_dir() -> String {
         .unwrap_or_default()
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 struct ShellInfo {
     name: String,
     path: String,
+    #[serde(default)]
+    args: Vec<String>,
 }
 
 #[tauri::command]
-fn get_default_shell() -> ShellInfo {
-    #[cfg(target_os = "windows")]
-    let shell_path = std::env::var("ComSpec")
-        .or_else(|_| std::env::var("COMSPEC"))
-        .unwrap_or_else(|_| String::from("C:\\Windows\\System32\\cmd.exe"));
-
-    #[cfg(not(target_os = "windows"))]
-    let shell_path = std::env::var("SHELL").unwrap_or_else(|_| String::from("/bin/sh"));
-
-    let name = Path::new(&shell_path)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| shell_path.clone());
-
-    ShellInfo {
-        name,
-        path: shell_path,
-    }
+fn get_available_shells(state: tauri::State<'_, SidecarState>) -> Result<Vec<ShellInfo>, String> {
+    let response = request_from_sidecar_timeout(&state, "pty:getShells", serde_json::json!({}), Duration::from_secs(10))?;
+    let shells: Vec<ShellInfo> = response
+        .get("shells")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    Ok(shells)
 }
 
 fn resolve_sidecar_path(resource_dir: Option<PathBuf>, manifest_dir: &Path) -> PathBuf {
@@ -254,21 +256,45 @@ fn resolve_sidecar_path(resource_dir: Option<PathBuf>, manifest_dir: &Path) -> P
     manifest_dir.join("..").join("sidecar").join("main.js")
 }
 
+fn strip_windows_verbatim_prefix(path_string: &str) -> Option<PathBuf> {
+    if let Some(stripped) = path_string.strip_prefix(r"\\?\UNC\") {
+        return Some(PathBuf::from(format!(r"\\{stripped}")));
+    }
+    if let Some(stripped) = path_string.strip_prefix(r"\\?\") {
+        return Some(PathBuf::from(stripped));
+    }
+
+    None
+}
+
+fn sidecar_script_arg_path(path: &Path) -> PathBuf {
+    if let Some(path) = strip_windows_verbatim_prefix(&path.to_string_lossy()) {
+        return path;
+    }
+
+    path.to_path_buf()
+}
+
 fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
     let sidecar_path = resolve_sidecar_path(
         app.path().resource_dir().ok(),
         Path::new(env!("CARGO_MANIFEST_DIR")),
     );
+    let sidecar_arg_path = sidecar_script_arg_path(&sidecar_path);
     append_log(format!(
         "[sidecar] resolved script: {}",
         sidecar_path.display()
+    ));
+    append_log(format!(
+        "[sidecar] script argument: {}",
+        sidecar_arg_path.display()
     ));
 
     let (mut rx, mut child) = app
         .shell()
         .sidecar("node")
         .map_err(|err| format!("failed to resolve bundled Node.js runtime: {err}"))?
-        .arg(&sidecar_path)
+        .arg(&sidecar_arg_path)
         .set_raw_out(false)
         .spawn()
         .map_err(|err| format!("failed to start Node.js sidecar: {err}"))?;
@@ -409,7 +435,7 @@ pub fn run() {
             pty_request_init,
             shutdown_sidecar,
             get_project_dir,
-            get_default_shell,
+            get_available_shells,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MouseTerm");
@@ -417,7 +443,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_sidecar_path;
+    use super::{resolve_sidecar_path, strip_windows_verbatim_prefix};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -475,6 +501,30 @@ mod tests {
         assert_eq!(
             resolved,
             manifest_dir.join("..").join("sidecar").join("main.js")
+        );
+    }
+
+    #[test]
+    fn strips_windows_verbatim_prefix_for_node_main_script() {
+        let path = strip_windows_verbatim_prefix(
+            r"\\?\C:\Users\EdgarTwigg\AppData\Local\MouseTerm\_up_\sidecar\main.js",
+        )
+        .expect("expected verbatim path to be stripped");
+
+        assert_eq!(
+            path,
+            PathBuf::from(r"C:\Users\EdgarTwigg\AppData\Local\MouseTerm\_up_\sidecar\main.js")
+        );
+    }
+
+    #[test]
+    fn strips_windows_verbatim_unc_prefix_for_node_main_script() {
+        let path = strip_windows_verbatim_prefix(r"\\?\UNC\server\share\MouseTerm\sidecar\main.js")
+            .expect("expected verbatim UNC path to be stripped");
+
+        assert_eq!(
+            path,
+            PathBuf::from(r"\\server\share\MouseTerm\sidecar\main.js")
         );
     }
 }

@@ -37,6 +37,7 @@ interface TerminalEntry {
 }
 
 const registry = new Map<string, TerminalEntry>();
+const pendingShellOpts = new Map<string, { shell?: string; args?: string[] }>();
 const primedSessionStates = new Map<string, Partial<SessionUiState>>();
 
 // --- Watch for VSCode theme changes and re-apply xterm themes ---
@@ -391,6 +392,14 @@ function setupTerminalEntry(id: string): TerminalEntry {
 }
 
 /**
+ * Store shell options for a terminal that will be created shortly.
+ * The options are consumed (deleted) by getOrCreateTerminal when the terminal mounts.
+ */
+export function setPendingShellOpts(id: string, opts: { shell?: string; args?: string[] }): void {
+  pendingShellOpts.set(id, opts);
+}
+
+/**
  * Get or create a terminal for the given pane ID.
  * The terminal is created once and persists across React mount/unmount cycles.
  */
@@ -400,9 +409,17 @@ export function getOrCreateTerminal(id: string): TerminalEntry {
 
   const entry = setupTerminalEntry(id);
 
+  // Consume any pending shell options set before panel creation
+  const shellOpts = pendingShellOpts.get(id);
+  pendingShellOpts.delete(id);
+
   // Spawn PTY
   const dims = entry.fit.proposeDimensions();
-  getPlatform().spawnPty(id, { cols: dims?.cols || 80, rows: dims?.rows || 30 });
+  getPlatform().spawnPty(id, {
+    cols: dims?.cols || 80,
+    rows: dims?.rows || 30,
+    ...shellOpts,
+  });
 
   return entry;
 }
