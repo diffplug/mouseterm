@@ -37,6 +37,7 @@ ARTIFACT_NAMES=(
 MACOS_IDENTITY="Developer ID Application: DiffPlug LLC (LXW8WAGWYX)"
 MACOS_TEAM_ID="LXW8WAGWYX"
 APPLE_ID="edgar.twigg@gmail.com"
+MACOS_NODE_ENTITLEMENTS="$REPO_ROOT/standalone/src-tauri/entitlements-macos-node.plist"
 
 # Windows Signing (jsign with PIV)
 JSIGN_ALIAS="AUTHENTICATION"
@@ -112,6 +113,23 @@ all_artifacts_downloaded() {
         artifact_downloaded "$name" || return 1
     done
     return 0
+}
+
+ensure_version() {
+    local version="$1"
+    local version_file="$WORK_DIR/.version"
+
+    if [[ -f "$version_file" ]]; then
+        local existing
+        existing=$(cat "$version_file")
+        if [[ "$existing" != "$version" ]]; then
+            log "Version mismatch: found $existing, expected $version. Clearing release-signed/..."
+            rm -rf "$WORK_DIR"
+        fi
+    fi
+
+    mkdir -p "$WORK_DIR"
+    echo "$version" > "$version_file"
 }
 
 check_git_clean() {
@@ -363,19 +381,32 @@ sign_macos_app() {
     security find-identity -v -p codesigning | grep -q "$MACOS_IDENTITY" \
         || error "Signing identity not found: $MACOS_IDENTITY"
 
-    # Sign all nested binaries first (node-pty prebuilds, etc.)
+    # Sign all nested binaries first (node sidecar, node-pty prebuilds, etc.)
     # --deep doesn't reliably reach into Resources subdirectories
     log "Signing nested binaries..."
-    find "$app_path" \( -name "*.node" -o -name "*.dylib" -o -name "spawn-helper" \) -type f | while read -r binary; do
+    [[ -f "$MACOS_NODE_ENTITLEMENTS" ]] || error "Node entitlements not found: $MACOS_NODE_ENTITLEMENTS"
+
+    find "$app_path/Contents/MacOS" "$app_path/Contents/Resources" -type f \
+        \( -perm -111 -o -name "*.node" -o -name "*.dylib" -o -name "spawn-helper" \) | while read -r binary; do
         log "  Signing: ${binary#"$app_path/"}"
-        codesign --force --sign "$MACOS_IDENTITY" \
-            --options runtime \
-            --timestamp \
-            "$binary"
+
+        if [[ "$binary" == "$app_path/Contents/MacOS/node" ]]; then
+            codesign --force --sign "$MACOS_IDENTITY" \
+                --options runtime \
+                --entitlements "$MACOS_NODE_ENTITLEMENTS" \
+                --timestamp \
+                "$binary"
+        else
+            codesign --force --sign "$MACOS_IDENTITY" \
+                --options runtime \
+                --timestamp \
+                "$binary"
+        fi
     done
 
-    # Sign the outer .app bundle
-    codesign --force --deep --sign "$MACOS_IDENTITY" \
+    # Sign the outer .app bundle after nested code. Do not use --deep here:
+    # it would re-sign the Node sidecar and drop the entitlements it needs to run.
+    codesign --force --sign "$MACOS_IDENTITY" \
         --options runtime \
         --timestamp \
         "$app_path"
@@ -383,6 +414,23 @@ sign_macos_app() {
     # Verify
     codesign --verify --deep --strict --verbose=2 "$app_path" \
         || error "Signature verification failed for $app_path"
+
+    local node_sidecar="$app_path/Contents/MacOS/node"
+    local sidecar_dir=""
+    for candidate in "$app_path/Contents/Resources/_up_/sidecar" "$app_path/Contents/Resources/sidecar"; do
+        if [[ -d "$candidate" ]]; then
+            sidecar_dir="$candidate"
+            break
+        fi
+    done
+
+    [[ -x "$node_sidecar" ]] || error "Node sidecar missing or not executable: $node_sidecar"
+    [[ -n "$sidecar_dir" ]] || error "Sidecar resources not found in $app_path"
+
+    "$node_sidecar" -p "process.version" >/dev/null \
+        || error "Signed Node sidecar failed to launch"
+    (cd "$sidecar_dir" && "$node_sidecar" -e "require('node-pty')") \
+        || error "Signed Node sidecar failed to load node-pty"
 
     log "macOS signing complete ($arch_label)"
 }
@@ -699,6 +747,7 @@ main() {
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") all <version>"
 
+            ensure_version "$version"
             check_git_clean
             download_artifacts "$version"
             prepare_sign_dir
@@ -712,6 +761,7 @@ main() {
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") resume <version>"
 
+            ensure_version "$version"
             resume_download "$version"
             prepare_sign_dir
             sign_macos
@@ -735,12 +785,14 @@ main() {
         sign-updates)
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") sign-updates <version>"
+            ensure_version "$version"
             [[ -d "$SIGN_DIR" ]] || error "Signed work directory not found at $SIGN_DIR. Run all/resume first."
             sign_updates "$version"
             ;;
         release)
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") release <version>"
+            ensure_version "$version"
             create_release "$version"
             ;;
         *)

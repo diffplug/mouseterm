@@ -144,12 +144,13 @@ All types defined in `message-types.ts`. Webview-side handling in `vscode-adapte
 
 | Message | Purpose |
 |---------|---------|
-| `pty:spawn` | Create new PTY (id, optional cols/rows/cwd) |
+| `pty:spawn` | Create new PTY (id, optional cols/rows/cwd/shell/args) |
 | `pty:input` | Write data to PTY |
 | `pty:resize` | Resize PTY dimensions |
 | `pty:kill` | Kill PTY and release ownership |
 | `pty:getCwd` | Query PTY working directory (request-response via requestId) |
 | `pty:getScrollback` | Query PTY scrollback buffer (request-response via requestId) |
+| `pty:getShells` | Query available shells (request-response via requestId) |
 | `mouseterm:init` | Trigger reconnection: get PTY list + replay data |
 | `mouseterm:saveState` | Frontend persisting session state |
 | `mouseterm:flushSessionSaveDone` | Ack for deactivate-triggered flush (matched by requestId) |
@@ -175,6 +176,7 @@ All types defined in `message-types.ts`. Webview-side handling in `vscode-adapte
 | `pty:replay` | Buffered output since spawn (response to `mouseterm:init`) |
 | `pty:cwd` | CWD query response (matched by requestId) |
 | `pty:scrollback` | Scrollback query response (matched by requestId) |
+| `pty:shells` | Available shells list response (matched by requestId) |
 | `mouseterm:flushSessionSave` | Request webview to save state now (deactivate trigger, matched by requestId) |
 | `alarm:state` | Alarm state change (status, todo, attentionDismissedRing) |
 

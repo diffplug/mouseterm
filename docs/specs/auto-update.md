@@ -30,7 +30,7 @@ app launch
                          └─ install fails → overwrite with failure marker → exit normally
 ```
 
-The `Update` object from `download()` is held in memory for the session. The close handler intercepts the window close event, writes a success marker to `localStorage` *before* calling `install()` (because on Windows, NSIS force-kills the process), then calls `install()`.
+The `Update` object from `download()` is held in memory for the session. The close handler intercepts the window close event, writes a success marker to `localStorage` *before* calling `install()` (because on Windows, NSIS force-kills the process), then calls `install()`. In Vite dev mode (`pnpm dev:standalone`), the close handler skips `install()` without preventing the close. Dev mode is useful for testing check/download/banner behavior, but install must be tested from a packaged app because the updater resolves its replacement target from the current executable path.
 
 ## Update notice in the Baseboard
 
@@ -57,6 +57,7 @@ The Baseboard is in `lib/` but the updater is standalone-only. The notice is thr
 | Windows | Launches NSIS installer in passive mode (progress bar, no user interaction). Force-kills the app. | Automatic (NSIS) |
 | macOS | Replaces the `.app` bundle in place | `getCurrentWindow().close()` after `install()` returns |
 | Linux | Replaces the AppImage in place | `getCurrentWindow().close()` after `install()` returns |
+| Vite dev mode | Skips `install()` to avoid replacing the dev executable directory | Native close proceeds normally |
 
 Windows uses `"installMode": "passive"` (configured in `tauri.conf.json` under `plugins.updater.windows`).
 
@@ -95,7 +96,7 @@ In `standalone/src-tauri/tauri.conf.json`:
 }
 ```
 
-The Rust side registers the plugin with `tauri_plugin_updater::Builder::new().build()` in `lib.rs`. No custom Rust commands or `on_before_exit` hooks — the JS close handler handles everything.
+The Rust side registers the plugin with `tauri_plugin_updater::Builder::new().build()` in `lib.rs`. No custom Rust commands or `on_before_exit` hooks — the JS close handler handles everything. Capabilities must include `core:window:allow-destroy` as well as `core:window:allow-close`: Tauri's `onCloseRequested` API calls `destroy()` after the handler returns when the close was not prevented.
 
 ## Dependencies
 

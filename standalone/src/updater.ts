@@ -15,6 +15,10 @@ let currentVersion = '';
 
 const listeners = new Set<() => void>();
 
+function shouldSkipInstallInDev(): boolean {
+  return import.meta.env.DEV && import.meta.env.MODE !== 'test';
+}
+
 function setState(next: UpdateBannerState) {
   state = next;
   for (const listener of listeners) {
@@ -122,6 +126,12 @@ function registerCloseHandler(): void {
 
   getCurrentWindow().onCloseRequested(async (event) => {
     if (!pendingUpdate) return;
+
+    if (shouldSkipInstallInDev()) {
+      console.warn('[updater] Skipping update install in dev mode. Use a packaged app to test install.');
+      pendingUpdate = null;
+      return;
+    }
 
     event.preventDefault();
 

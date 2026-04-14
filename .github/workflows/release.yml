@@ -153,9 +153,10 @@ jobs:
           path: vscode-ext
 
       - name: Publish to VS Code Marketplace
+        working-directory: vscode-ext
         run: |
           for i in 1 2 3; do
-            cd vscode-ext && npx vsce publish --packagePath *.vsix --no-dependencies && exit 0
+            npx vsce publish --packagePath *.vsix --no-dependencies && exit 0
             echo "Attempt $i failed, retrying in 10s..."
             sleep 10
           done
@@ -164,9 +165,10 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Publish to OpenVSX
+        working-directory: vscode-ext
         run: |
           for i in 1 2 3; do
-            cd vscode-ext && npx ovsx publish --packagePath *.vsix --no-dependencies && exit 0
+            npx ovsx publish --packagePath *.vsix --no-dependencies && exit 0
             echo "Attempt $i failed, retrying in 10s..."
             sleep 10
           done

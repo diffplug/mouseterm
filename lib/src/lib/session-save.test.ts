@@ -24,6 +24,7 @@ function createPlatform(savedState: PersistedSession | null): PlatformAdapter {
     writePty: () => {},
     resizePty: () => {},
     killPty: () => {},
+    getAvailableShells: vi.fn(async () => []),
     getCwd: vi.fn(async () => '/tmp/live'),
     getScrollback: vi.fn(async () => 'echo hello\n'),
     onPtyData: () => {},
