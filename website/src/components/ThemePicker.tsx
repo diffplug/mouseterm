@@ -77,17 +77,18 @@ export function ThemePicker() {
             </button>
           );
         })}
-
-        {/* Add theme button */}
-        <button
-          onClick={() => setStoreOpen(true)}
-          title="Install theme from OpenVSX"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[13px] transition-colors hover:bg-white/5"
-          style={{ color: "rgba(255, 255, 255, 0.25)", border: "1px dashed rgba(255, 255, 255, 0.15)" }}
-        >
-          +
-        </button>
       </div>
+
+      {/* Add theme button */}
+      <button
+        onClick={() => setStoreOpen(true)}
+        title="Install theme from OpenVSX"
+        aria-label="Install theme from OpenVSX"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[13px] transition-colors hover:bg-white/5"
+        style={{ color: "rgba(255, 255, 255, 0.25)", border: "1px dashed rgba(255, 255, 255, 0.15)" }}
+      >
+        +
+      </button>
 
       <ThemeStore
         open={storeOpen}
