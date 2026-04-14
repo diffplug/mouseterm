@@ -2,12 +2,13 @@ import type { SessionStatus, TodoState } from '../../lib/src/lib/alarm-manager';
 
 // Messages from webview → extension host
 export type WebviewMessage =
-  | { type: 'pty:spawn'; id: string; options?: { cols?: number; rows?: number; cwd?: string } }
+  | { type: 'pty:spawn'; id: string; options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] } }
   | { type: 'pty:input'; id: string; data: string }
   | { type: 'pty:resize'; id: string; cols: number; rows: number }
   | { type: 'pty:kill'; id: string }
   | { type: 'pty:getCwd'; id: string; requestId?: string }
   | { type: 'pty:getScrollback'; id: string; requestId?: string }
+  | { type: 'pty:getShells'; requestId?: string }
   | { type: 'mouseterm:init' }
   | { type: 'mouseterm:saveState'; state: unknown }
   | { type: 'mouseterm:flushSessionSaveDone'; requestId: string }
@@ -22,7 +23,6 @@ export type WebviewMessage =
   | { type: 'alarm:clearAttention'; id?: string }
   | { type: 'alarm:toggleTodo'; id: string }
   | { type: 'alarm:markTodo'; id: string }
-  | { type: 'alarm:promoteTodo'; id: string }
   | { type: 'alarm:clearTodo'; id: string };
 
 export interface PtyInfo {
@@ -39,6 +39,7 @@ export type ExtensionMessage =
   | { type: 'pty:replay'; id: string; data: string }
   | { type: 'pty:cwd'; id: string; cwd: string | null; requestId?: string }
   | { type: 'pty:scrollback'; id: string; data: string | null; requestId?: string }
+  | { type: 'pty:shells'; shells: Array<{ name: string; path: string; args: string[] }>; requestId?: string }
   | { type: 'mouseterm:flushSessionSave'; requestId: string }
   // Alarm state updates
   | { type: 'alarm:state'; id: string; status: SessionStatus; todo: TodoState; attentionDismissedRing: boolean };

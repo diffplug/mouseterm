@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import SiteHeader from "../components/SiteHeader";
 import posterUrl from "../assets/video-climb-blink-and-stare.webp";
 import videoUrl from "../assets/video-climb-blink-and-stare.mp4";
+import standaloneLatest from "@standalone-latest";
 
 export { Home as Component };
 
@@ -16,6 +17,36 @@ const ASTERISK_THRESHOLD = 0.50;
  *  The video keeps scrubbing underneath. */
 const UNPIN_THRESHOLD = 0.8;
 
+const PILL =
+  "inline-block px-4 py-1.5 rounded-md border border-[var(--color-caramel)]/30 text-[var(--color-caramel)] text-sm font-display font-medium hover:bg-[var(--color-caramel)]/10 hover:border-[var(--color-caramel)]/60 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150";
+
+const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string[] }> = {
+  "darwin-aarch64": {
+    pill: "Mac Silicon",
+    title: "Installing on Mac",
+    steps: [
+      "Double-click the downloaded .tar.gz to extract MouseTerm.app",
+      "Drag MouseTerm.app to Applications",
+    ],
+  },
+  "windows-x86_64": {
+    pill: "Windows x64",
+    title: "Installing on Windows",
+    steps: [
+      "Double-click the downloaded ...-setup.exe",
+      "If SmartScreen appears: More info \u2192 Run anyway",
+    ],
+  },
+  "linux-x86_64": {
+    pill: "Linux x64",
+    title: "Installing on Linux",
+    steps: [
+      "Make executable: chmod +x MouseTerm*.AppImage",
+      "Run from terminal or double-click to launch",
+    ],
+  },
+};
+
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const runwayRef = useRef<HTMLDivElement>(null);
@@ -27,6 +58,7 @@ function Home() {
   const footnoteRef = useRef<HTMLParagraphElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const headerBrandRef = useRef<HTMLAnchorElement>(null);
+  const [installGuide, setInstallGuide] = useState<string | null>(null);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -217,20 +249,48 @@ function Home() {
 
           <a
             href="/playground"
-            className="inline-block px-8 py-3 rounded-md bg-[var(--color-caramel)] text-[var(--color-bg)] font-display font-semibold text-lg hover:brightness-110 transition-[filter]"
+            className="inline-block px-8 py-3 rounded-md bg-[var(--color-caramel)] text-[var(--color-bg)] font-display font-semibold text-lg hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150"
           >
             Try it in the Playground
           </a>
 
-          <div className="mt-10 space-y-3 text-base leading-relaxed">
-            <p>
-              Install for VSCode (and its forks) —{" "}
-              <a href="https://marketplace.visualstudio.com/items?itemName=mouseterm.mouseterm" className="text-[var(--color-caramel)] hover:underline">Microsoft VSCode Marketplace</a>{" / "}
-              <a href="https://open-vsx.org/extension/mouseterm/mouseterm" className="text-[var(--color-caramel)] hover:underline">OpenVSX</a>
-            </p>
-            <p className="opacity-50 text-sm">
-              Standalone apps for Windows, Mac, and Linux — coming soon.
-            </p>
+          <div className="mt-6 space-y-5">
+            <div>
+              <p className="text-xs uppercase tracking-widest opacity-40 mb-2">VSCode extension</p>
+              <div className="flex flex-wrap gap-2">
+                <a href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm" className={PILL}>VSCode Marketplace</a>
+                <a href="https://open-vsx.org/extension/diffplug/mouseterm" className={PILL}>OpenVSX</a>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-widest opacity-40 mb-2">Standalone app</p>
+              <div className="flex flex-wrap gap-2">
+                {(["darwin-aarch64", "windows-x86_64", "linux-x86_64"] as const).map((key) => (
+                  <a
+                    key={key}
+                    href={standaloneLatest.platforms[key].url}
+                    onClick={() => setInstallGuide(key)}
+                    className={`${PILL}${installGuide === key ? " bg-[var(--color-caramel)]/10 border-[var(--color-caramel)]/60" : ""}`}
+                  >
+                    {INSTALL_STEPS[key].pill}
+                  </a>
+                ))}
+                <a href="https://github.com/diffplug/mouseterm/issues/8" className={PILL}>Other</a>
+              </div>
+              {installGuide && INSTALL_STEPS[installGuide] && (
+                <div className="mt-3 rounded-md border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 px-4 py-3">
+                  <p className="text-xs uppercase tracking-widest text-[var(--color-caramel)] mb-2">{INSTALL_STEPS[installGuide].title}</p>
+                  <ol className="space-y-1 text-sm opacity-70">
+                    {INSTALL_STEPS[installGuide].steps.map((step, i) => (
+                      <li key={i} className="flex gap-2">
+                        <span className="text-[var(--color-caramel)] shrink-0">{i + 1}.</span>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
           </div>
         </section>
 

@@ -27,6 +27,7 @@ rl.on('line', (line) => {
       case 'pty:requestInit': mgr.list(); break;
       case 'pty:getCwd':  mgr.getCwd(data.id, data.requestId); break;
       case 'pty:getScrollback': mgr.getScrollback(data.id, data.requestId); break;
+      case 'pty:getShells':  mgr.getShells(data.requestId); break;
       case 'pty:gracefulKillAll': mgr.gracefulKillAll(data.timeout); break;
       default: console.error(`[sidecar] Unknown event: ${event}`);
     }

@@ -1,0 +1,19 @@
+{
+  "version": "0.6.2",
+  "notes": "See https://github.com/diffplug/mouseterm/releases/tag/v0.6.2",
+  "pub_date": "2026-04-14T00:43:56Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "url": "https://github.com/diffplug/mouseterm/releases/download/v0.6.2/MouseTerm-macos-aarch64.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUYlpCcFVqWDVhckQ4VUZnTW9BcjBsOExkM2w0L1dlNXpOWHRlRmliZXg4VEJGcmZ3ZEhhd0pvOFl3THYyYURvRnJlMGFmZ243eUh2aFlNb0ZWbzNrS1FMWjhvWml1WWdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc2MTI3NDM1CWZpbGU6TW91c2VUZXJtLW1hY29zLWFhcmNoNjQudGFyLmd6Ck10VHNtTWJKTFl3dlByMGhaNDJvZzNrcUFmbW1HdE9TemNheUtnNC9KT3liVmRveFdoQ1lGVE5zeTFGaE1DdmRLendJTE5kODF3dFZ3d1dFWTVJWUJBPT0K"
+    },
+    "windows-x86_64": {
+      "url": "https://github.com/diffplug/mouseterm/releases/download/v0.6.2/MouseTerm-windows-x64-setup.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUYlpCcFVqWDVhclBjbVV2b3RnUlE2enlQdzVVNloyaGUwbC9EeHl1UmYzUWNDd3FFanRlTFZFQ01tNlJobWRSSUxvM3BMVGxkREQ0NGNhUjBuNHFVdHNLU29WQmpPdWdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc2MTI3NDM2CWZpbGU6TW91c2VUZXJtLXdpbmRvd3MteDY0LXNldHVwLmV4ZQpJakVnbndER29ZYXRaNW9wQmxmeU1xaVY2ZUZzZCtUenpLUkVGRExlUERSVXFGRVlSanpWZS9MOVlTVjc1d2VTUFF0eDF6RS9IcmpqWkRQenlsa2JCUT09Cg=="
+    },
+    "linux-x86_64": {
+      "url": "https://github.com/diffplug/mouseterm/releases/download/v0.6.2/MouseTerm-linux-x86_64.AppImage",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUYlpCcFVqWDVhckJ6RU5Wa0hreHcxaitUMzV5TXhwR0FnVXkwTGpLa0JnU05XbXZrb2hUWGZ1Zmo4OGo3dXV4QmwyanFObVZrbmd0MUk3a1lkYWI5ay9WNDVWQUJoOEFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc2MTI3NDM2CWZpbGU6TW91c2VUZXJtLWxpbnV4LXg4Nl82NC5BcHBJbWFnZQpJS3FIU3lmRG1lTTRjUTgvNmh0ZGFQS3VhZUlBVnVjWkE4YTEvTGxTWEhvaSsrZXkyNGtKMFRQeExTUmF2V1JFc1FzMEc4RGRVZnNvYzhZWGxqazRDZz09Cg=="
+    }
+  }
+}

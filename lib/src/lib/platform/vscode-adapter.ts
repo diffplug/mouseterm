@@ -80,7 +80,16 @@ export class VSCodeAdapter implements PlatformAdapter {
     // No-op — the extension host handles cleanup
   }
 
-  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string }): void {
+  async getAvailableShells(): Promise<{ name: string; path: string; args?: string[] }[]> {
+    const result = await this.requestResponse(
+      'pty:getShells', 'pty:shells', {},
+      (msg) => msg.shells as { name: string; path: string; args?: string[] }[],
+      5000,
+    );
+    return result ?? [];
+  }
+
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void {
     this.vscode.postMessage({ type: 'pty:spawn', id, options });
   }
 
@@ -192,10 +201,6 @@ export class VSCodeAdapter implements PlatformAdapter {
 
   alarmMarkTodo(id: string): void {
     this.vscode.postMessage({ type: 'alarm:markTodo', id });
-  }
-
-  alarmPromoteTodo(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:promoteTodo', id });
   }
 
   alarmClearTodo(id: string): void {

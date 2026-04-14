@@ -55,6 +55,7 @@ Frontend Library (lib/src/)
 - **Save before kill.** Deactivate must save session state *before* killing PTYs. CWD and scrollback queries need live processes. See ordering in `extension.ts:deactivate()`.
 - **Alarm state is global.** A single `AlarmManager` instance in `message-router.ts` is shared across all routers and survives router disposal. PTY data feeds into it at module level, regardless of webview visibility.
 - **PTY ownership.** Each router tracks its PTYs in `ownedPtyIds`. A module-level `globalOwnedPtyIds` set prevents a reconnecting router from stealing PTYs owned by another webview.
+- **Shell login args are shell-specific.** The shared `pty-core.js` launches POSIX shells with `-l` only for shells that accept it. `csh`/`tcsh` must be spawned without `-l` so both the standalone app and VS Code extension can open a usable terminal for users whose login shell is C shell-derived.
 - **mergeAlarmStates on every save path.** Both the frontend periodic save (`onSaveState` callback) and the backend deactivate refresh (`refreshSavedSessionStateFromPtys`) must merge current alarm states. Missing this causes alarm state to revert on restore.
 - **Scrollback trailing newline.** Restored scrollback must end with `\n` to avoid zsh printing a `%` artifact at the top of the terminal.
 - **retainContextWhenHidden.** Set on `WebviewPanel` (editor tabs) but NOT on `WebviewView` (bottom panel). The view relies on reconnect/replay when it becomes visible again; the panel keeps its DOM alive.
@@ -143,12 +144,13 @@ All types defined in `message-types.ts`. Webview-side handling in `vscode-adapte
 
 | Message | Purpose |
 |---------|---------|
-| `pty:spawn` | Create new PTY (id, optional cols/rows/cwd) |
+| `pty:spawn` | Create new PTY (id, optional cols/rows/cwd/shell/args) |
 | `pty:input` | Write data to PTY |
 | `pty:resize` | Resize PTY dimensions |
 | `pty:kill` | Kill PTY and release ownership |
 | `pty:getCwd` | Query PTY working directory (request-response via requestId) |
 | `pty:getScrollback` | Query PTY scrollback buffer (request-response via requestId) |
+| `pty:getShells` | Query available shells (request-response via requestId) |
 | `mouseterm:init` | Trigger reconnection: get PTY list + replay data |
 | `mouseterm:saveState` | Frontend persisting session state |
 | `mouseterm:flushSessionSaveDone` | Ack for deactivate-triggered flush (matched by requestId) |
@@ -162,7 +164,6 @@ All types defined in `message-types.ts`. Webview-side handling in `vscode-adapte
 | `alarm:clearAttention` | Clear attention timer |
 | `alarm:toggleTodo` | Toggle TODO (false <-> hard) |
 | `alarm:markTodo` | Set hard TODO |
-| `alarm:promoteTodo` | Promote soft TODO to hard |
 | `alarm:clearTodo` | Remove TODO |
 
 **Extension Host -> Webview:**
@@ -175,6 +176,7 @@ All types defined in `message-types.ts`. Webview-side handling in `vscode-adapte
 | `pty:replay` | Buffered output since spawn (response to `mouseterm:init`) |
 | `pty:cwd` | CWD query response (matched by requestId) |
 | `pty:scrollback` | Scrollback query response (matched by requestId) |
+| `pty:shells` | Available shells list response (matched by requestId) |
 | `mouseterm:flushSessionSave` | Request webview to save state now (deactivate trigger, matched by requestId) |
 | `alarm:state` | Alarm state change (status, todo, attentionDismissedRing) |
 

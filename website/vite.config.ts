@@ -8,6 +8,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "mouseterm-lib": path.resolve(__dirname, "../lib/src"),
+      "@standalone-latest": path.resolve(
+        __dirname,
+        "public/standalone-latest.json",
+      ),
     },
   },
   server: {

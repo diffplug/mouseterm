@@ -66,6 +66,10 @@ export class FakePtyAdapter implements PlatformAdapter {
     });
   }
 
+  async getAvailableShells(): Promise<{ name: string; path: string; args?: string[] }[]> {
+    return [{ name: 'fake-shell', path: '/bin/fake', args: [] }];
+  }
+
   spawnPty(id: string): void {
     this.terminals.add(id);
     const scenario = this.scenarioMap.get(id) ?? this.defaultScenario;
@@ -143,7 +147,6 @@ export class FakePtyAdapter implements PlatformAdapter {
   alarmClearAttention(id?: string): void { this.alarmManager.clearAttention(id); }
   alarmToggleTodo(id: string): void { this.alarmManager.toggleTodo(id); }
   alarmMarkTodo(id: string): void { this.alarmManager.markTodo(id); }
-  alarmPromoteTodo(id: string): void { this.alarmManager.promoteTodo(id); }
   alarmClearTodo(id: string): void { this.alarmManager.clearTodo(id); }
   onAlarmState(handler: (detail: AlarmStateDetail) => void): void { this.alarmStateHandlers.add(handler); }
   offAlarmState(handler: (detail: AlarmStateDetail) => void): void { this.alarmStateHandlers.delete(handler); }

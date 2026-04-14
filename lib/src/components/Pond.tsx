@@ -27,11 +27,12 @@ import {
   getSessionStateSnapshot,
   markSessionAttention,
   markSessionTodo,
-  promoteSessionTodo,
   subscribeToSessionStateChanges,
+  toggleSessionAlarm,
   toggleSessionTodo,
   destroyTerminal,
   swapTerminals,
+  setPendingShellOpts,
   type SessionStatus,
 } from '../lib/terminal-registry';
 import { resolvePanelElement, findPanelInDirection, findRestoreNeighbor, type DetachDirection } from '../lib/spatial-nav';
@@ -50,6 +51,8 @@ const mousetermTheme: DockviewTheme = {
   dndOverlayMounting: 'absolute',
   dndPanelOverlay: 'group',
 };
+
+let dialogKeyboardActive = false;
 
 // --- Types ---
 
@@ -87,7 +90,7 @@ export type PondEvent =
 // --- Variants ---
 
 const tabVariant = tv({
-  base: 'flex h-full w-full cursor-grab items-center gap-2 rounded-t-md px-3 leading-none font-mono tracking-normal select-none active:cursor-grabbing',
+  base: 'flex h-full w-full cursor-grab items-center gap-1.5 rounded-t pl-2 pr-[5px] text-[12px] leading-none font-mono tracking-normal select-none active:cursor-grabbing',
   variants: {
     state: {
       selected: 'bg-tab-selected-bg text-tab-selected-fg',
@@ -267,7 +270,7 @@ function usePopoverFocusTrap(
   }, [ref, onClose, restoreFocusSelector]);
 }
 
-function AlarmContextMenu({
+function TodoAlarmDialog({
   position,
   sessionId,
   onClose,
@@ -279,106 +282,92 @@ function AlarmContextMenu({
   const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
   const sessionState = sessionStates.get(sessionId) ?? DEFAULT_SESSION_UI_STATE;
   const alarmEnabled = sessionState.status !== 'ALARM_DISABLED';
-  const hasHardTodo = sessionState.todo === 'hard';
-  const menuRef = useRef<HTMLDivElement>(null);
-  const firstActionRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  usePopoverFocusTrap(menuRef, onClose, `[data-alarm-button-for="${sessionId}"]`);
+  usePopoverFocusTrap(dialogRef, onClose, `[data-alarm-button-for="${sessionId}"]`);
 
   useEffect(() => {
-    firstActionRef.current?.focus();
+    dialogRef.current?.querySelector<HTMLElement>('button')?.focus();
   }, []);
+
+  // Keyboard shortcuts within dialog
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    dialogKeyboardActive = true;
+    const handler = (e: KeyboardEvent) => {
+      if (!el.contains(document.activeElement)) return;
+      if (e.key === 'a') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        dismissOrToggleAlarm(sessionId, getSessionState(sessionId).status);
+      }
+      if (e.key === 't') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        toggleSessionTodo(sessionId);
+      }
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => {
+      dialogKeyboardActive = false;
+      window.removeEventListener('keydown', handler, true);
+    };
+  }, [sessionId]);
+
+  const toggleBtn = (active: boolean) => [
+    'rounded px-2 py-1 text-[11px] font-medium transition-colors',
+    active
+      ? 'bg-accent/20 text-accent border border-accent/40'
+      : 'text-muted border border-border hover:bg-foreground/10 hover:text-foreground',
+  ].join(' ');
 
   return createPortal(
     <div
-      ref={menuRef}
-      className="z-[9999] w-[220px] rounded-lg border border-border bg-surface-raised p-2 shadow-lg"
-      style={clampOverlayPosition({ left: position.x, top: position.y, width: 220, height: 156 })}
-      role="menu"
-      aria-label="Alarm options"
-    >
-      <button
-        ref={firstActionRef}
-        type="button"
-        className="flex w-full items-center rounded px-2.5 py-1.5 text-left text-[11px] text-foreground transition-colors hover:bg-foreground/10"
-        onClick={() => { hasHardTodo ? clearSessionTodo(sessionId) : markSessionTodo(sessionId); onClose(); }}
-      >
-        {hasHardTodo ? 'Clear TODO' : 'Mark as TODO'}
-        <span className="ml-auto text-[10px] font-mono text-muted">[t]</span>
-      </button>
-      {alarmEnabled && (
-        <button
-          type="button"
-          className="flex w-full items-center rounded px-2.5 py-1.5 text-left text-[11px] text-foreground transition-colors hover:bg-foreground/10"
-          onClick={() => { disableSessionAlarm(sessionId); onClose(); }}
-        >
-          Disable alarms
-        </button>
-      )}
-      <div className="mt-2 border-t border-border pt-2 px-2.5 text-[9px] leading-relaxed text-muted">
-        <span className="font-semibold">Soft TODO</span> — auto-created when an alarm is dismissed. Clears when you type in the terminal.
-        <br />
-        <span className="font-semibold">Hard TODO</span> — set with <span className="font-mono">[t]</span>. Only clears manually.
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-function TodoPillPrompt({
-  position,
-  sessionId,
-  onClose,
-}: {
-  position: { x: number; y: number };
-  sessionId: string;
-  onClose: () => void;
-}) {
-  const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
-  const sessionState = sessionStates.get(sessionId) ?? DEFAULT_SESSION_UI_STATE;
-  const promptRef = useRef<HTMLDivElement>(null);
-  const clearButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (sessionState.todo !== 'soft') {
-      onClose();
-    }
-  }, [onClose, sessionState.todo]);
-
-  usePopoverFocusTrap(promptRef, onClose, `[data-session-todo-for="${sessionId}"]`);
-
-  useEffect(() => {
-    clearButtonRef.current?.focus();
-  }, []);
-
-  return createPortal(
-    <div
-      ref={promptRef}
-      className="z-[9999] w-[220px] rounded-lg border border-border bg-surface-raised p-2 shadow-lg"
-      style={clampOverlayPosition({ left: position.x - 110, top: position.y, width: 220, height: 128 })}
+      ref={dialogRef}
+      className="z-[9999] w-[280px] rounded-lg border border-border bg-surface-raised p-3 shadow-lg"
+      style={clampOverlayPosition({ left: position.x, top: position.y, width: 280, height: 160 })}
       role="dialog"
       aria-modal="true"
-      aria-label="Soft TODO options"
+      aria-label="TODO and alarm settings"
     >
-      <div className="px-2.5 pb-2 text-[10px] leading-relaxed text-muted">
-        Keep this as a manual reminder, or clear it now.
+      {/* TODO row */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[10px] font-mono text-muted">[t]</span>
+        <span className="text-[11px] text-foreground font-medium w-10">TODO</span>
+        <div className="flex gap-1 ml-auto">
+          <button type="button" className={toggleBtn(sessionState.todo === 'hard')}
+            onClick={() => { if (sessionState.todo !== 'hard') markSessionTodo(sessionId); }}>
+            hard
+          </button>
+          <button type="button" className={toggleBtn(sessionState.todo === false)}
+            onClick={() => { if (sessionState.todo !== false) clearSessionTodo(sessionId); }}>
+            off
+          </button>
+        </div>
       </div>
-      <div className="flex gap-2 px-2.5">
-        <button
-          ref={clearButtonRef}
-          type="button"
-          className="flex-1 rounded border border-border px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-foreground/10"
-          onClick={() => { clearSessionTodo(sessionId); onClose(); }}
-        >
-          Clear
-        </button>
-        <button
-          type="button"
-          className="flex-1 rounded border border-border px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-foreground/10"
-          onClick={() => { promoteSessionTodo(sessionId); onClose(); }}
-        >
-          Keep
-        </button>
+
+      {/* Alarm row */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[10px] font-mono text-muted">[a]</span>
+        <span className="text-[11px] text-foreground font-medium w-10">alarm</span>
+        <div className="flex gap-1 ml-auto">
+          <button type="button" className={toggleBtn(alarmEnabled)}
+            onClick={() => { if (!alarmEnabled) toggleSessionAlarm(sessionId); }}>
+            enabled
+          </button>
+          <button type="button" className={toggleBtn(!alarmEnabled)}
+            onClick={() => { if (alarmEnabled) disableSessionAlarm(sessionId); }}>
+            disabled
+          </button>
+        </div>
+      </div>
+
+      {/* Help text */}
+      <div className="border-t border-border pt-2 text-[9px] leading-relaxed text-muted">
+        When an alarming tab is selected,<br />
+        the alarm is cleared and the tab gets a soft TODO.<br />
+        Typing characters into the tab will automatically clear a soft TODO.
       </div>
     </div>,
     document.body,
@@ -506,8 +495,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const tabRef = useRef<HTMLDivElement>(null);
   const suppressAlarmClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const [todoPrompt, setTodoPrompt] = useState<{ x: number; y: number } | null>(null);
+  const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number } | null>(null);
   const showTodoPill = sessionState.todo !== false && tier !== 'minimal';
   const alarmButtonAriaLabel = sessionState.status === 'ALARM_RINGING'
     ? 'Alarm ringing'
@@ -520,10 +508,10 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
       ? 'Enable alarm [a] - Right-click for options'
       : 'Disable alarm [a] - Right-click for options';
 
-  const openAlarmMenuFromButton = useCallback((button: HTMLButtonElement) => {
+  const openDialogFromButton = useCallback((button: HTMLButtonElement) => {
     const rect = button.getBoundingClientRect();
-    setContextMenu({
-      x: rect.left + rect.width / 2 - 110,
+    setDialogPosition({
+      x: rect.left + rect.width / 2 - 140,
       y: rect.bottom + 6,
     });
   }, []);
@@ -531,9 +519,9 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const triggerAlarmButtonAction = useCallback((displayedStatus: SessionStatus, button: HTMLButtonElement) => {
     const result = actions.onAlarmButton(api.id, displayedStatus);
     if (result === 'dismissed') {
-      openAlarmMenuFromButton(button);
+      openDialogFromButton(button);
     }
-  }, [actions, api.id, openAlarmMenuFromButton]);
+  }, [actions, api.id, openDialogFromButton]);
 
   useEffect(() => {
     const el = tabRef.current;
@@ -581,7 +569,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         )}
         <HeaderActionButton
           className={[
-            'flex h-6 min-w-6 items-center justify-center rounded transition-colors shrink-0',
+            'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0',
             sessionState.status === 'ALARM_RINGING'
               ? 'bg-warning/15 text-warning hover:bg-warning/20 motion-safe:animate-pulse motion-reduce:animate-none'
               : 'text-muted hover:bg-foreground/10 hover:text-foreground',
@@ -601,16 +589,16 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             }
             triggerAlarmButtonAction(sessionState.status, e.currentTarget);
           }}
-          onContextMenu={(e) => setContextMenu({ x: e.clientX, y: e.clientY })}
+          onContextMenu={(e) => { e.preventDefault(); setDialogPosition({ x: e.clientX, y: e.clientY }); }}
           ariaLabel={alarmButtonAriaLabel}
           tooltip={alarmButtonTooltip}
           dataAlarmButtonFor={api.id}
         >
           <span className="relative flex items-center justify-center">
             {sessionState.status === 'ALARM_DISABLED' ? (
-              <BellSlashIcon size={15} />
+              <BellSlashIcon size={14} />
             ) : (
-              <BellIcon size={15} weight="fill" />
+              <BellIcon size={14} weight="fill" />
             )}
             {(sessionState.status === 'MIGHT_BE_BUSY' || sessionState.status === 'BUSY' || sessionState.status === 'MIGHT_NEED_ATTENTION') && (
               <span className={[
@@ -630,16 +618,12 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
               'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10',
               sessionState.todo === 'soft' ? 'border border-dashed border-muted' : 'border border-muted',
             ].join(' ')}
-            aria-label={sessionState.todo === 'soft' ? 'Soft TODO options' : 'Clear TODO'}
+            aria-label="TODO settings"
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              if (sessionState.todo === 'soft') {
-                const rect = e.currentTarget.getBoundingClientRect();
-                setTodoPrompt({ x: rect.left + rect.width / 2, y: rect.bottom + 6 });
-                return;
-              }
-              clearSessionTodo(api.id);
+              const rect = e.currentTarget.getBoundingClientRect();
+              setDialogPosition({ x: rect.left + rect.width / 2 - 140, y: rect.bottom + 6 });
             }}
           >
             TODO
@@ -650,56 +634,49 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         <>
           {/* Split/Zoom controls — hidden at compact and minimal tiers */}
           {tier === 'full' && (
-            <div className="ml-1 flex shrink-0 items-center gap-1">
+            <div className="ml-1 flex shrink-0 items-center gap-0.5">
               <HeaderActionButton
-                className="flex h-6 min-w-6 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitH(api.id); }}
                 ariaLabel="Split horizontal"
                 tooltip='Split horizontal ["]'
-              ><SplitHorizontalIcon size={15} /></HeaderActionButton>
+              ><SplitHorizontalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
-                className="flex h-6 min-w-6 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitV(api.id); }}
                 ariaLabel="Split vertical"
                 tooltip="Split vertical [%]"
-              ><SplitVerticalIcon size={15} /></HeaderActionButton>
+              ><SplitVerticalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
-                className="flex h-6 min-w-6 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onZoom(api.id); }}
                 ariaLabel={zoomed ? 'Unzoom' : 'Zoom'}
                 tooltip={zoomed ? 'Unzoom [z]' : 'Zoom [z]'}
-              >{zoomed ? <ArrowsInIcon size={15} /> : <ArrowsOutIcon size={15} />}</HeaderActionButton>
+              >{zoomed ? <ArrowsInIcon size={14} /> : <ArrowsOutIcon size={14} />}</HeaderActionButton>
             </div>
           )}
           {/* Detach / Kill controls — always visible */}
-          <div className="ml-1 flex shrink-0 items-center gap-1">
+          <div className="ml-1 flex shrink-0 items-center gap-0.5">
             <HeaderActionButton
-              className="flex h-6 min-w-6 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+              className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
               onClick={(e) => { e.stopPropagation(); actions.onDetach(api.id); }}
               ariaLabel="Detach"
               tooltip="Detach [d]"
-            ><ArrowLineDownIcon size={15} /></HeaderActionButton>
+            ><ArrowLineDownIcon size={14} /></HeaderActionButton>
             <HeaderActionButton
-              className="flex h-6 min-w-6 items-center justify-center rounded text-muted transition-colors hover:bg-error/10 hover:text-error"
+              className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-error/10 hover:text-error"
               onClick={(e) => { e.stopPropagation(); actions.onKill(api.id); }}
               ariaLabel="Kill"
               tooltip="Kill [x]"
-            ><XIcon size={15} /></HeaderActionButton>
+            ><XIcon size={14} /></HeaderActionButton>
           </div>
         </>
       )}
-      {contextMenu && (
-        <AlarmContextMenu
-          position={contextMenu}
+      {dialogPosition && (
+        <TodoAlarmDialog
+          position={dialogPosition}
           sessionId={api.id}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
-      {todoPrompt && (
-        <TodoPillPrompt
-          position={todoPrompt}
-          sessionId={api.id}
-          onClose={() => setTodoPrompt(null)}
+          onClose={() => setDialogPosition(null)}
         />
       )}
     </div>
@@ -710,6 +687,21 @@ const components = { terminal: TerminalPanel };
 const tabComponents = { terminal: TerminalPaneHeader };
 
 // --- Selection overlay ---
+
+function useWindowFocused(): boolean {
+  const [focused, setFocused] = useState(() => document.hasFocus());
+  useEffect(() => {
+    const onFocus = () => setFocused(true);
+    const onBlur = () => setFocused(false);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+  return focused;
+}
 
 function readSelectionColor() {
   return getComputedStyle(document.documentElement).getPropertyValue('--mt-selection-terminal').trim();
@@ -755,11 +747,12 @@ export function roundedRectPath(
 }
 
 /** SVG marching-ants border that adapts its dash pattern to tile evenly. */
-export function MarchingAntsRect({ width, height, isDoor, color }: {
+export function MarchingAntsRect({ width, height, isDoor, color, paused }: {
   width: number;
   height: number;
   isDoor: boolean;
   color: string;
+  paused?: boolean;
 }) {
   const svgRef = useRef<SVGPathElement>(null);
   const [dashStyle, setDashStyle] = useState<{ dasharray: string; offset: number } | null>(null);
@@ -801,7 +794,7 @@ export function MarchingAntsRect({ width, height, isDoor, color }: {
         strokeDasharray={dashStyle?.dasharray}
         style={dashStyle ? {
           animation: `marching-ants ${ma.cycleDuration}s linear infinite`,
-          animationPlayState: ma.paused ? 'paused' : 'running',
+          animationPlayState: (ma.paused || paused) ? 'paused' : 'running',
           ['--march-offset' as string]: `-${dashStyle.offset}px`,
         } : undefined}
       />
@@ -818,6 +811,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
   const { elements: panelElements, version: panelVersion } = useContext(PanelElementsContext);
   const { elements: doorElements, version: doorVersion } = useContext(DoorElementsContext);
   const selectionColor = useSelectionColor();
+  const windowFocused = useWindowFocused();
   const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const isDoor = selectedType === 'door';
 
@@ -868,13 +862,13 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
     width: rect.width,
     height: rect.height,
     zIndex: 50,
-    transition: 'top 150ms, left 150ms, width 150ms, height 150ms',
+    transition: 'top 150ms, left 150ms, width 150ms, height 150ms, filter 200ms',
+    filter: windowFocused ? undefined : 'saturate(0.3)',
   };
 
   if (mode === 'passthrough') {
     style.borderRadius = isDoor ? '0.375rem 0.375rem 0 0' : '0.5rem';
-    style.border = `2px solid ${selectionColor}`;
-    style.boxShadow = `0 0 15px color-mix(in srgb, ${selectionColor} 30%, transparent)`;
+    style.border = `1px solid ${selectionColor}`;
     return <div style={style} />;
   }
 
@@ -885,6 +879,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
         height={rect.height}
         isDoor={isDoor}
         color={selectionColor}
+        paused={!windowFocused}
       />
     </div>
   );
@@ -933,7 +928,7 @@ function KillConfirmOverlay({ confirmKill, panelElements }: {
     return (
       <div
         style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width, height: rect.height, zIndex: 100 }}
-        className="flex items-center justify-center bg-black/50 rounded"
+        className="flex items-center justify-center bg-surface/50 rounded"
       >
         <KillConfirmCard char={confirmKill.char} />
       </div>
@@ -942,7 +937,7 @@ function KillConfirmOverlay({ confirmKill, panelElements }: {
 
   // Fallback: centered in viewport
   return (
-    <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center">
+    <div className="fixed inset-0 bg-surface/50 z-[100] flex items-center justify-center">
       <KillConfirmCard char={confirmKill.char} />
     </div>
   );
@@ -957,12 +952,14 @@ export function Pond({
   initialDetached,
   onApiReady,
   onEvent,
+  baseboardNotice,
 }: {
   initialPaneIds?: string[];
   restoredLayout?: unknown;
   initialDetached?: PersistedDetachedItem[];
   onApiReady?: (api: DockviewApi) => void;
   onEvent?: (event: PondEvent) => void;
+  baseboardNotice?: React.ReactNode;
 } = {}) {
   const apiRef = useRef<DockviewApi | null>(null);
   const [dockviewApi, setDockviewApi] = useState<DockviewApi | null>(null);
@@ -1520,6 +1517,7 @@ export function Pond({
       }
 
       if (e.key === 't' && sid && selectedTypeRef.current === 'pane') {
+        if (dialogKeyboardActive) return;
         e.preventDefault();
         e.stopPropagation();
         toggleSessionTodo(sid);
@@ -1527,6 +1525,7 @@ export function Pond({
       }
 
       if (e.key === 'a' && sid && selectedTypeRef.current === 'pane') {
+        if (dialogKeyboardActive) return;
         e.preventDefault();
         e.stopPropagation();
         dismissOrToggleAlarm(sid, getSessionState(sid).status);
@@ -1690,6 +1689,37 @@ export function Pond({
   const handleReattachRef = useRef(handleReattach);
   handleReattachRef.current = handleReattach;
 
+  // Listen for external "new terminal" requests (e.g. from the standalone AppBar)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const api = apiRef.current;
+      if (!api) return;
+      const detail = (e as CustomEvent).detail;
+      const newId = generatePaneId();
+
+      // Store shell options so getOrCreateTerminal picks them up on mount
+      if (detail?.shell) {
+        setPendingShellOpts(newId, { shell: detail.shell, args: detail.args });
+      }
+
+      const active = api.activePanel;
+      let direction: 'right' | 'below' = 'right';
+      if (active) {
+        direction = (active.api.width - active.api.height > 0) ? 'right' : 'below';
+      }
+      api.addPanel({
+        id: newId,
+        component: 'terminal',
+        tabComponent: 'terminal',
+        title: '<unnamed>',
+        position: active ? { referencePanel: active.id, direction } : undefined,
+      });
+      selectPanel(newId);
+    };
+    window.addEventListener('mouseterm:new-terminal', handler);
+    return () => window.removeEventListener('mouseterm:new-terminal', handler);
+  }, [generatePaneId, selectPanel]);
+
   const addSplitPanel = useCallback((
     id: string | null,
     direction: 'right' | 'below',
@@ -1774,7 +1804,7 @@ export function Pond({
           <DoorElementsContext.Provider value={{ elements: doorElements, version: doorElementsVersion, bumpVersion: bumpDoorElementsVersion }}>
           <RenamingIdContext.Provider value={renamingPaneId}>
           <ZoomedContext.Provider value={zoomed}>
-          <div className="h-screen flex flex-col bg-surface text-foreground font-sans overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col bg-surface text-foreground font-sans overflow-hidden">
             {/* Dockview */}
             <div className="flex-1 min-h-0 relative p-1.5">
               <div ref={dockviewContainerRef} className="absolute inset-1.5">
@@ -1790,7 +1820,7 @@ export function Pond({
             </div>
 
             {/* Baseboard — always visible */}
-            <Baseboard items={detached} activeId={selectedType === 'door' ? selectedId : null} onReattach={handleReattach} />
+            <Baseboard items={detached} activeId={selectedType === 'door' ? selectedId : null} onReattach={handleReattach} notice={baseboardNotice} />
 
             {/* Kill confirmation overlay — centered over the pane being killed */}
             {confirmKill && (

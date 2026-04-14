@@ -13,8 +13,11 @@ export interface PlatformAdapter {
   init(): Promise<void>;
   shutdown(): void;
 
+  // Shell detection
+  getAvailableShells(): Promise<{ name: string; path: string; args?: string[] }[]>;
+
   // PTY operations
-  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string }): void;
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void;
   writePty(id: string, data: string): void;
   resizePty(id: string, cols: number, rows: number): void;
   killPty(id: string): void;
@@ -52,7 +55,6 @@ export interface PlatformAdapter {
   alarmClearAttention(id?: string): void;
   alarmToggleTodo(id: string): void;
   alarmMarkTodo(id: string): void;
-  alarmPromoteTodo(id: string): void;
   alarmClearTodo(id: string): void;
   onAlarmState(handler: (detail: AlarmStateDetail) => void): void;
   offAlarmState(handler: (detail: AlarmStateDetail) => void): void;
