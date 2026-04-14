@@ -11,13 +11,14 @@ const mgr = create((event, data) => {
 
 process.on('message', (msg) => {
   switch (msg.type) {
-    case 'spawn':   mgr.spawn(msg.id, { cols: msg.cols, rows: msg.rows, cwd: msg.cwd }); break;
+    case 'spawn':   mgr.spawn(msg.id, { cols: msg.cols, rows: msg.rows, cwd: msg.cwd, shell: msg.shell, args: msg.args }); break;
     case 'input':   mgr.write(msg.id, msg.data); break;
     case 'resize':  mgr.resize(msg.id, msg.cols, msg.rows); break;
     case 'kill':    mgr.kill(msg.id); break;
     case 'killAll': mgr.killAll(); break;
     case 'gracefulKillAll': mgr.gracefulKillAll(msg.timeout); break;
     case 'getCwd':  mgr.getCwd(msg.id); break;
+    case 'getShells': mgr.getShells(msg.requestId); break;
   }
 });
 

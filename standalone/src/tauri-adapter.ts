@@ -87,7 +87,13 @@ export class TauriAdapter implements PlatformAdapter {
     invoke("shutdown_sidecar");
   }
 
-  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string }): void {
+  async getAvailableShells(): Promise<{ name: string; path: string; args?: string[] }[]> {
+    try {
+      return await rawInvoke<{ name: string; path: string; args?: string[] }[]>("get_available_shells");
+    } catch { return []; }
+  }
+
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void {
     invoke("pty_spawn", { id, options });
   }
 

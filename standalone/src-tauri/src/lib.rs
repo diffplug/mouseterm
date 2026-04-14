@@ -89,6 +89,8 @@ struct PtySpawnOptions {
     cols: Option<u16>,
     rows: Option<u16>,
     cwd: Option<String>,
+    shell: Option<String>,
+    args: Option<Vec<String>>,
 }
 
 fn send_to_sidecar(state: &SidecarState, line: String) {
@@ -213,31 +215,22 @@ fn get_project_dir() -> String {
         .unwrap_or_default()
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 struct ShellInfo {
     name: String,
     path: String,
+    #[serde(default)]
+    args: Vec<String>,
 }
 
 #[tauri::command]
-fn get_default_shell() -> ShellInfo {
-    #[cfg(target_os = "windows")]
-    let shell_path = std::env::var("ComSpec")
-        .or_else(|_| std::env::var("COMSPEC"))
-        .unwrap_or_else(|_| String::from("C:\\Windows\\System32\\cmd.exe"));
-
-    #[cfg(not(target_os = "windows"))]
-    let shell_path = std::env::var("SHELL").unwrap_or_else(|_| String::from("/bin/sh"));
-
-    let name = Path::new(&shell_path)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| shell_path.clone());
-
-    ShellInfo {
-        name,
-        path: shell_path,
-    }
+fn get_available_shells(state: tauri::State<'_, SidecarState>) -> Result<Vec<ShellInfo>, String> {
+    let response = request_from_sidecar(&state, "pty:getShells", serde_json::json!({}))?;
+    let shells: Vec<ShellInfo> = response
+        .get("shells")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    Ok(shells)
 }
 
 fn resolve_sidecar_path(resource_dir: Option<PathBuf>, manifest_dir: &Path) -> PathBuf {
@@ -409,7 +402,7 @@ pub fn run() {
             pty_request_init,
             shutdown_sidecar,
             get_project_dir,
-            get_default_shell,
+            get_available_shells,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MouseTerm");
