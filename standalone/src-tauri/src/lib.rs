@@ -219,8 +219,10 @@ fn shutdown_sidecar(state: tauri::State<'_, SidecarState>) {
     kill_process_tree(state.child_pid);
 }
 
-/// Kill a process and its children. On Windows, `taskkill /T` handles the
-/// entire tree so that child shell processes don't outlive the sidecar.
+/// Kill the sidecar process. On Windows, `taskkill /T` kills the entire
+/// process tree so that child shell processes don't outlive the sidecar.
+/// On Unix, a single SIGTERM to the sidecar is sufficient because node-pty
+/// manages its own child processes and cleans them up on exit.
 fn kill_process_tree(pid: u32) {
     append_log(format!("[sidecar] killing process tree (pid={pid})"));
     #[cfg(target_os = "windows")]

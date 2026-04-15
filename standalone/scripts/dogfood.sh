@@ -61,7 +61,7 @@ else
     MINGW*|MSYS*|CYGWIN*|Windows_NT)
       "$RELEASE_DIR/mouseterm.exe" ;;
     Darwin)
-      open "$RELEASE_DIR/bundle/macos/MouseTerm.app" ;;
+      "$RELEASE_DIR/mouseterm" ;;
     Linux)
       "$RELEASE_DIR/mouseterm" ;;
     *)
