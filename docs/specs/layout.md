@@ -68,7 +68,7 @@ The content area is a tiling layout of panes, powered by dockview. Each pane occ
 
 ### Pane header
 
-Each pane has a 30px header that doubles as a drag handle. The header uses `cursor-grab` / `active:cursor-grabbing` and `select-none`. Background uses `--mt-tab-*` theme tokens (adapts to VSCode host theme). Dockview's default close button and right-actions container are hidden via CSS.
+Each pane has a 30px header that doubles as a drag handle. The header uses `cursor-grab` / `active:cursor-grabbing` and `select-none`. Background uses `--color-tab-*` theme tokens (adapts to VSCode host theme). Dockview's default close button and right-actions container are hidden via CSS.
 
 Elements from left to right:
 
@@ -279,9 +279,9 @@ Custom `mousetermTheme` extends dockview's `themeAbyss`:
 - Pane header height: `--dv-tabs-and-actions-container-height: 30px`
 - 6px padding around the dockview area (`p-1.5` on wrapper, `inset-1.5` on container)
 
-Colors use a two-layer CSS variable strategy: `--mt-*` semantic tokens → `var(--vscode-*, <fallback>)`. In VSCode, host theme variables take precedence. In standalone mode, fallback values apply (Dark+ defaults with `prefers-color-scheme: light` overrides). Tailwind v4 `@theme` block registers `--mt-*` tokens as Tailwind colors (e.g., `bg-surface`, `text-foreground`, `border-border`). See `theme.css` for the full token map.
+Colors use a two-layer CSS variable strategy: `@theme --color-*` tokens → `var(--vscode-*, <fallback>)`. In VSCode, host theme variables take precedence. In standalone mode, fallback values apply (Dark+ defaults with `prefers-color-scheme: light` overrides). Tailwind v4 `@theme` block registers `--color-*` tokens as Tailwind colors (e.g., `bg-surface`, `text-foreground`, `border-border`). See `theme.css` for the full token map.
 
-Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. All dockview container backgrounds are flattened to `var(--mt-surface)`.
+Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. All dockview container backgrounds are flattened to `var(--color-surface)`.
 
 ## Corner cases
 
@@ -315,4 +315,4 @@ Dockview's separator borders, sash handles, and groupview borders are all set to
 | `lib/src/lib/reconnect.ts` | Priority-based recovery: live PTYs first, then saved session, then empty |
 | `lib/src/lib/resume-patterns.ts` | Detects resumable commands (`claude --resume`, etc.) in scrollback |
 | `lib/src/index.css` | Dockview theme overrides — separator/sash/border removal, background flattening |
-| `lib/src/theme.css` | Two-layer VSCode theme token system (`--mt-*` → `--vscode-*`) and Tailwind v4 `@theme` integration |
+| `lib/src/theme.css` | Two-layer VSCode theme token system (`@theme --color-*` → `--vscode-*`) and Tailwind v4 `@theme` integration |

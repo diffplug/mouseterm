@@ -60,7 +60,7 @@ interface InstalledOrigin {
 }
 ```
 
-This replaces the current `PlaygroundTheme` interface in `website/src/lib/playground-themes.ts`.
+This replaced the old `PlaygroundTheme` interface (previously in `website/src/lib/playground-themes.ts`, now deleted).
 
 ## Conversion pipeline
 
@@ -90,7 +90,7 @@ For each key in the VSCode theme's `colors` object: if it's in `CONSUMED_VSCODE_
 
 ## Bundled themes
 
-Bundled themes are extracted at build time by a Node.js script (`scripts/bundle-themes.mjs`) and written to `lib/src/lib/themes/bundled.json`. This file is checked into git so builds don't require network access.
+Bundled themes are extracted at build time by a Node.js script (`lib/scripts/bundle-themes.mjs`) and written to `lib/src/lib/themes/bundled.json`. This file is checked into git so builds don't require network access.
 
 ### Source extensions
 
@@ -105,7 +105,7 @@ Dark+ and Light+ are VSCode built-in themes not published to OpenVSX. Their valu
 ### Build script flow
 
 ```
-scripts/bundle-themes.mjs
+lib/scripts/bundle-themes.mjs
   |
   +- for each extension in EXTENSIONS list:
   |    +- fetch /api/{ns}/{name}/latest from OpenVSX
@@ -200,7 +200,7 @@ user searches OpenVSX
 | [`lib/src/lib/themes/openvsx.ts`](../../lib/src/lib/themes/openvsx.ts) | OpenVSX search API, VSIX download + extraction |
 | [`lib/src/lib/themes/bundled.json`](../../lib/src/lib/themes/bundled.json) | Pre-converted bundled themes (generated, checked in) |
 | [`lib/src/lib/themes/index.ts`](../../lib/src/lib/themes/index.ts) | Barrel export |
-| [`scripts/bundle-themes.mjs`](../../scripts/bundle-themes.mjs) | Build-time script to download and convert themes from OpenVSX |
+| [`lib/scripts/bundle-themes.mjs`](../../lib/scripts/bundle-themes.mjs) | Build-time script to download and convert themes from OpenVSX |
 | [`lib/src/theme.css`](../../lib/src/theme.css) | `@theme` tokens with `var(--vscode-*, fallback)` + light mode overrides |
 | [`lib/src/lib/terminal-registry.ts`](../../lib/src/lib/terminal-registry.ts) | MutationObserver + `getTerminalTheme()` — no changes needed |
 | [`lib/src/components/ThemePicker.tsx`](../../lib/src/components/ThemePicker.tsx) | Shared website/standalone dropdown and OpenVSX dialog for selecting, installing, and deleting themes |
