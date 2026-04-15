@@ -37,7 +37,7 @@ if [[ "${1:-}" == "--install" ]]; then
   case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*|Windows_NT)
       INSTALL_DIR="$LOCALAPPDATA/MouseTerm"
-      if [[ ! -f "$INSTALL_DIR/mouseterm.exe" ]]; then
+      if [[ ! -f "$INSTALL_DIR/uninstall.exe" ]]; then
         echo "MouseTerm is not installed yet."
         echo "Run the installer once first:"
         echo "  $RELEASE_DIR/bundle/nsis/MouseTerm_*-setup.exe"
@@ -45,6 +45,12 @@ if [[ "${1:-}" == "--install" ]]; then
         echo "After that, 'dogfood:standalone --install' will work from then on."
         exit 1
       fi
+      # Wipe everything except uninstall.exe (managed by NSIS), then copy
+      TMP_UNINSTALL="$(mktemp)"
+      cp "$INSTALL_DIR/uninstall.exe" "$TMP_UNINSTALL"
+      rm -rf "$INSTALL_DIR"
+      mkdir -p "$INSTALL_DIR"
+      mv "$TMP_UNINSTALL" "$INSTALL_DIR/uninstall.exe"
       cp "$RELEASE_DIR/mouseterm.exe" "$INSTALL_DIR/"
       cp "$RELEASE_DIR/node.exe" "$INSTALL_DIR/"
       cp -r "$RELEASE_DIR/_up_/" "$INSTALL_DIR/_up_/"
