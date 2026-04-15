@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, RunEvent};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 enum SidecarMsg {
@@ -26,6 +26,7 @@ struct SidecarState {
     tx: SidecarSender,
     pending_requests: PendingRequests,
     next_request_id: AtomicU64,
+    child_pid: u32,
 }
 
 const LOG_FILE_ENV: &str = "MOUSETERM_LOG_FILE";
@@ -215,6 +216,26 @@ fn pty_get_scrollback(
 #[tauri::command]
 fn shutdown_sidecar(state: tauri::State<'_, SidecarState>) {
     let _ = state.tx.send(SidecarMsg::Shutdown);
+    kill_process_tree(state.child_pid);
+}
+
+/// Kill a process and its children. On Windows, `taskkill /T` handles the
+/// entire tree so that child shell processes don't outlive the sidecar.
+fn kill_process_tree(pid: u32) {
+    append_log(format!("[sidecar] killing process tree (pid={pid})"));
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+    }
+    #[cfg(unix)]
+    {
+        unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+    }
 }
 
 #[tauri::command]
@@ -298,7 +319,8 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
         .set_raw_out(false)
         .spawn()
         .map_err(|err| format!("failed to start Node.js sidecar: {err}"))?;
-    append_log("[sidecar] spawned Node.js runtime");
+    let child_pid = child.pid();
+    append_log(format!("[sidecar] spawned Node.js runtime (pid={child_pid})"));
 
     let handle = app.clone();
     let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
@@ -392,6 +414,7 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
         tx,
         pending_requests,
         next_request_id: AtomicU64::new(0),
+        child_pid,
     })
 }
 
@@ -437,8 +460,17 @@ pub fn run() {
             get_project_dir,
             get_available_shells,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running MouseTerm");
+        .build(tauri::generate_context!())
+        .expect("error while building MouseTerm")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<SidecarState>() {
+                    append_log("[app] exit — killing sidecar");
+                    let _ = state.tx.send(SidecarMsg::Shutdown);
+                    kill_process_tree(state.child_pid);
+                }
+            }
+        });
 }
 
 #[cfg(test)]

@@ -17,10 +17,19 @@
 #
 set -euo pipefail
 
+# Skip past "--" that pnpm injects when forwarding arguments
+[[ "${1:-}" == "--" ]] && shift
+
 RELEASE_DIR="standalone/src-tauri/target/release"
 
-# Build
-pnpm run build:standalone
+if [[ "${1:-}" == "--install" ]]; then
+  # Full build with bundling, but disable updater artifact signing
+  pnpm --filter mouseterm-standalone tauri build \
+    -c '{"bundle":{"createUpdaterArtifacts":false}}'
+else
+  # Fast build: skip bundling entirely since we just need the exe
+  pnpm --filter mouseterm-standalone tauri build --no-bundle
+fi
 
 if [[ "${1:-}" == "--install" ]]; then
   # --- Install mode ---
