@@ -80,6 +80,9 @@ export function ThemeStore({ open, onClose, onThemesChanged }: ThemeStoreProps) 
   };
 
   const handleRemove = (extensionId: string) => {
+    const confirmed = window.confirm(`Remove installed themes from ${extensionId}?`);
+    if (!confirmed) return;
+
     const installed = getInstalledThemes();
     for (const theme of installed) {
       if (theme.origin.kind === "installed" && theme.origin.extensionId === extensionId) {

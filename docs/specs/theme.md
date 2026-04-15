@@ -136,6 +136,14 @@ The store module provides:
 - `getActiveThemeId()` / `setActiveThemeId(id)` — persists choice across sessions
 - `addInstalledTheme(theme)` / `removeInstalledTheme(id)` — manages user-installed themes
 
+## Website playground picker
+
+The website renders the theme picker only on `/playground`. `Playground.tsx` passes it through `SiteHeader`'s playground-only `controls` slot and enables `themeAware`, so the same active `--vscode-*` variables style the header background, border, text, banner, Pond, Dockview, and terminals.
+
+The picker is labeled `Theme:` and uses a custom dropdown rather than a native `<select>` because installed themes need an inline delete action. The dropdown lists bundled themes first, then installed themes. Installed theme rows show an `X`; deletion requires browser confirmation and removes that single theme from `mouseterm:installed-themes`. If the active installed theme is deleted, the picker applies the first remaining theme immediately and persists it as `mouseterm:active-theme`.
+
+The dropdown footer is always `Install theme from OpenVSX`; it opens the runtime installer dialog. The picker is not mounted on non-playground routes.
+
 ## Runtime OpenVSX installer
 
 Users can browse and install themes from OpenVSX directly in the app.
@@ -186,6 +194,8 @@ user searches OpenVSX
 | [`scripts/bundle-themes.mjs`](../../scripts/bundle-themes.mjs) | Build-time script to download and convert themes from OpenVSX |
 | [`lib/src/theme.css`](../../lib/src/theme.css) | `@theme` tokens with `var(--vscode-*, fallback)` + light mode overrides |
 | [`lib/src/lib/terminal-registry.ts`](../../lib/src/lib/terminal-registry.ts) | MutationObserver + `getTerminalTheme()` — no changes needed |
+| [`website/src/components/ThemePicker.tsx`](../../website/src/components/ThemePicker.tsx) | Playground-only header dropdown for selecting, installing, and deleting themes |
+| [`website/src/components/SiteHeader.tsx`](../../website/src/components/SiteHeader.tsx) | Shared site header; playground enables `themeAware` so header chrome follows the active theme |
 
 ## Dependencies
 

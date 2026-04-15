@@ -4,15 +4,15 @@ At the `/playground` route on the website. **Status: Implemented** (Epics 14, 15
 
 ## Layout
 
-- `SiteHeader` at top (with Playground as active nav item).
-- `PlaygroundToolbar` below the fixed site header: a dedicated toolbar with a **theme picker** centered in the available width. It sits below the header's hitbox so swatches remain clickable, and the swatch row scrolls horizontally on narrow screens while the install button stays visible.
-- Below the toolbar: MouseTerm `Pond` embedded fullscreen using `FakePtyAdapter`. The page-level `<main>` is a flex container so Pond's `flex-1 min-h-0` root receives a real height.
+- `SiteHeader` at top (with Playground as active nav item). On `/playground`, the header renders the **Theme:** dropdown as an optional header control; other routes do not render it.
+- Below the header: MouseTerm `Pond` embedded fullscreen using `FakePtyAdapter`. The page-level `<main>` is a flex container so Pond's `flex-1 min-h-0` root receives a real height.
+- The playground header uses the active `--vscode-*` theme variables for its background, border, text, and banner colors so theme changes affect the header as well as Pond.
 
 ### Implementation
 
 - `website/src/pages/Playground.tsx` — Page component. Dynamically imports Pond (SSR-safe). Initializes `FakePtyAdapter`, `TutorialShell`, and `TutorialDetector`. Passes `onApiReady` to set up the 3-pane layout and `onEvent` for step detection.
-- `website/src/components/PlaygroundToolbar.tsx` — Toolbar shell with centered slot.
-- `website/src/components/ThemePicker.tsx` — Color dot swatches for bundled themes plus an OpenVSX install button.
+- `website/src/components/SiteHeader.tsx` — Shared header. Accepts an optional playground-only `controls` slot and a `themeAware` mode that reads the active VSCode theme variables.
+- `website/src/components/ThemePicker.tsx` — Header dropdown for bundled and installed themes. The footer action opens the OpenVSX installer.
 - `website/vite.config.ts` — Vite alias `mouseterm-lib` → `../lib/src` for workspace imports.
 
 ## Initial State
@@ -125,16 +125,18 @@ The sandbox stays fully functional after completion. Running `tut` shows "Tutori
 
 ## Theme Picker
 
-Implemented in `website/src/lib/playground-themes.ts` and `website/src/components/ThemePicker.tsx`.
+Implemented in `mouseterm-lib/lib/themes` and `website/src/components/ThemePicker.tsx`.
 
-Bundled themes are provided by `mouseterm-lib/lib/themes` and include Dark+, Light+, GitHub variants, and Dracula variants. Users can install additional themes from OpenVSX via the `+` button.
+Bundled themes are provided by `mouseterm-lib/lib/themes` and include Dark+, Light+, GitHub variants, and Dracula variants. Users can install additional themes from OpenVSX through the dropdown footer action.
+
+The picker appears only on `/playground`, inside `SiteHeader`, labeled `Theme:`. The trigger opens a dropdown of bundled and installed themes. The dropdown footer is always `Install theme from OpenVSX`, which opens the theme store dialog. Installed theme rows include an `X` delete control; deletion requires browser confirmation before removing the theme from localStorage. If the active installed theme is deleted, the picker falls back to the first bundled theme and applies it immediately.
 
 Each theme is defined as a map of `--vscode-*` CSS variable overrides. `applyTheme()` applies the active theme, which:
-1. Cascades into `--mt-*` variables (via `var(--vscode-*, fallback)` in `theme.css`)
+1. Cascades into `--color-*` variables (via `var(--vscode-*, fallback)` in `theme.css`)
 2. Triggers the `MutationObserver` in `terminal-registry.ts` to re-read `getTerminalTheme()` for all xterm.js terminals
 3. Updates Dockview/Tailwind token colors
 
-The picker restores the persisted active theme on mount and keeps the `+` install action outside the scrollable swatch strip so it remains reachable on phone-width viewports.
+The picker restores the persisted active theme on mount. The playground header is `themeAware`, so the same active theme also affects the site header chrome while the picker remains hidden on non-playground routes.
 
 ## Technical Notes
 
