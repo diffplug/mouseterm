@@ -95,7 +95,9 @@ function Home() {
         const rect = runway.getBoundingClientRect();
         const runwayScroll = -rect.top;
         const runwayHeight = runway.offsetHeight - window.innerHeight;
-        const fraction = Math.min(1, Math.max(0, runwayScroll / runwayHeight));
+        const fraction = runwayHeight > 0
+          ? Math.min(1, Math.max(0, runwayScroll / runwayHeight))
+          : 0;
         // Scrub video
         if (video.duration && isFinite(video.duration)) {
           video.currentTime = fraction * video.duration;
