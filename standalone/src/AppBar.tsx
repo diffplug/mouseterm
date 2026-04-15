@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { CaretDownIcon, MinusIcon, CornersOutIcon, CornersInIcon, XIcon, TerminalWindowIcon, PlusIcon } from '@phosphor-icons/react';
-import { StandaloneThemePicker } from './StandaloneThemePicker';
+import { ThemePicker } from '../../lib/src/components/ThemePicker';
 
 export interface ShellEntry {
   name: string;
@@ -210,13 +210,13 @@ export function AppBar({ projectDir, homeDir, shells }: AppBarProps) {
       {/* Shell dropdown on the right (macOS) or window controls (Windows/Linux) */}
       {IS_MAC ? (
         <div className="flex items-center gap-1 pr-2">
-          <StandaloneThemePicker />
+          <ThemePicker variant="standalone-appbar" />
           <ShellDropdown shells={shells} />
         </div>
       ) : (
         <div className="flex items-stretch self-stretch">
           <div className="flex items-center pr-2">
-            <StandaloneThemePicker />
+            <ThemePicker variant="standalone-appbar" />
           </div>
           <WinControls />
         </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import SiteHeader from "../components/SiteHeader";
-import { ThemePicker } from "../components/ThemePicker";
+import { ThemePicker } from "mouseterm-lib/components/ThemePicker";
 import { TutorialShell } from "../lib/tutorial-shell";
 import { TutorialDetector } from "../lib/tutorial-detection";
 
@@ -90,7 +90,7 @@ function Playground() {
       <SiteHeader
         activePath="/playground"
         themeAware
-        controls={<ThemePicker />}
+        controls={<ThemePicker variant="playground-header" />}
       />
 
       <main className="fixed top-24 right-0 bottom-0 left-0 flex min-h-0 md:top-28">

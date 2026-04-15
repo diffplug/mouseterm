@@ -136,21 +136,22 @@ The store module provides:
 - `getActiveThemeId()` / `setActiveThemeId(id)` — persists choice across sessions
 - `addInstalledTheme(theme)` / `removeInstalledTheme(id)` — manages user-installed themes
 
-## Website playground picker
+## Shared theme picker
 
-The website renders the theme picker only on `/playground`. `Playground.tsx` passes it through `SiteHeader`'s playground-only `controls` slot and enables `themeAware`, so the same active `--vscode-*` variables style the header background, border, text, banner, Pond, Dockview, and terminals.
+`lib/src/components/ThemePicker.tsx` exports a shared `ThemePicker` with two variants:
 
-The picker is labeled `Theme:` and uses a custom dropdown rather than a native `<select>` because installed themes need an inline delete action. The dropdown lists bundled themes first, then installed themes. Installed theme rows show an `X`; deletion requires browser confirmation and removes that single theme from `mouseterm:installed-themes`. If the active installed theme is deleted, the picker applies the first remaining theme immediately and persists it as `mouseterm:active-theme`.
+- `playground-header` — used only on `/playground`, passed through `SiteHeader`'s `controls` slot. It renders a visible `Theme:` label and uses a mobile fixed dropdown so the menu stays inside the viewport.
+- `standalone-appbar` — used only by the Tauri standalone `AppBar`. It uses a compact trigger for the 30px AppBar and an anchored dropdown.
 
-The dropdown footer is always `Install theme from OpenVSX`; it opens the runtime installer dialog. The picker is not mounted on non-playground routes.
+Both variants use the same state and behavior: restore the persisted active theme on mount, list bundled themes first, append installed themes, persist selected themes to `mouseterm:active-theme`, apply selections immediately, show an `X` for installed themes, confirm before deletion, and fall back to the first remaining theme when deleting the active installed theme. The dropdown footer is always `Install theme from OpenVSX`; it opens the shared runtime installer dialog.
+
+The picker is mounted only by the website playground page and the standalone AppBar. It is not mounted on non-playground website routes, and it is not mounted from `mouseterm-lib/App`, `Pond`, or any VS Code extension entry point.
 
 ## Standalone AppBar picker
 
-The standalone Tauri app renders its theme picker in `AppBar`, not in `mouseterm-lib/App` or `Pond`, so the VS Code extension entry point does not mount it. On macOS it sits in the right-side AppBar action group next to the shell dropdown; on Windows/Linux it sits before the native window controls. The AppBar already uses `bg-surface-alt`, `text-foreground`, and related theme tokens, so changing the active theme updates the AppBar chrome as well as Dockview and terminals.
+The standalone Tauri app renders the shared theme picker in `AppBar`, not in `mouseterm-lib/App` or `Pond`, so the VS Code extension entry point does not mount it. On macOS it sits in the right-side AppBar action group next to the shell dropdown; on Windows/Linux it sits before the native window controls. The AppBar already uses `bg-surface-alt`, `text-foreground`, and related theme tokens, so changing the active theme updates the AppBar chrome as well as Dockview and terminals.
 
 `standalone/src/main.tsx` restores the persisted active theme before reconnecting/restoring Pond. This prevents the first terminal render from briefly using fallback colors. The picker itself also restores and refreshes theme state on mount.
-
-The standalone picker has the same core behavior as the playground picker: it lists bundled and installed themes, persists selection to `mouseterm:active-theme`, applies the theme immediately, shows an `X` for installed themes, confirms deletion, falls back to the first remaining theme if the active installed theme is deleted, and exposes `Install theme from OpenVSX` as the dropdown footer action.
 
 ## Runtime OpenVSX installer
 
@@ -202,9 +203,8 @@ user searches OpenVSX
 | [`scripts/bundle-themes.mjs`](../../scripts/bundle-themes.mjs) | Build-time script to download and convert themes from OpenVSX |
 | [`lib/src/theme.css`](../../lib/src/theme.css) | `@theme` tokens with `var(--vscode-*, fallback)` + light mode overrides |
 | [`lib/src/lib/terminal-registry.ts`](../../lib/src/lib/terminal-registry.ts) | MutationObserver + `getTerminalTheme()` — no changes needed |
-| [`website/src/components/ThemePicker.tsx`](../../website/src/components/ThemePicker.tsx) | Playground-only header dropdown for selecting, installing, and deleting themes |
+| [`lib/src/components/ThemePicker.tsx`](../../lib/src/components/ThemePicker.tsx) | Shared website/standalone dropdown and OpenVSX dialog for selecting, installing, and deleting themes |
 | [`website/src/components/SiteHeader.tsx`](../../website/src/components/SiteHeader.tsx) | Shared site header; playground enables `themeAware` so header chrome follows the active theme |
-| [`standalone/src/StandaloneThemePicker.tsx`](../../standalone/src/StandaloneThemePicker.tsx) | Standalone-only AppBar dropdown and OpenVSX dialog |
 | [`standalone/src/AppBar.tsx`](../../standalone/src/AppBar.tsx) | Mounts the standalone theme picker in the Tauri AppBar, outside the VS Code extension path |
 | [`standalone/src/main.tsx`](../../standalone/src/main.tsx) | Restores the persisted standalone theme before Pond reconnects |
 

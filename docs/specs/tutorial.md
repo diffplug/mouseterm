@@ -12,7 +12,7 @@ At the `/playground` route on the website. **Status: Implemented** (Epics 14, 15
 
 - `website/src/pages/Playground.tsx` — Page component. Dynamically imports Pond (SSR-safe). Initializes `FakePtyAdapter`, `TutorialShell`, and `TutorialDetector`. Passes `onApiReady` to set up the 3-pane layout and `onEvent` for step detection.
 - `website/src/components/SiteHeader.tsx` — Shared header. Accepts an optional playground-only `controls` slot and a `themeAware` mode that reads the active VSCode theme variables.
-- `website/src/components/ThemePicker.tsx` — Header dropdown for bundled and installed themes. The footer action opens the OpenVSX installer.
+- `mouseterm-lib/components/ThemePicker` — Shared header dropdown for bundled and installed themes. The playground passes `variant="playground-header"` and the footer action opens the OpenVSX installer.
 - `website/vite.config.ts` — Vite alias `mouseterm-lib` → `../lib/src` for workspace imports.
 
 ## Initial State
@@ -125,7 +125,7 @@ The sandbox stays fully functional after completion. Running `tut` shows "Tutori
 
 ## Theme Picker
 
-Implemented in `mouseterm-lib/lib/themes` and `website/src/components/ThemePicker.tsx`.
+Implemented in `mouseterm-lib/lib/themes` and `mouseterm-lib/components/ThemePicker`.
 
 Bundled themes are provided by `mouseterm-lib/lib/themes` and include Dark+, Light+, GitHub variants, and Dracula variants. Users can install additional themes from OpenVSX through the dropdown footer action.
 
