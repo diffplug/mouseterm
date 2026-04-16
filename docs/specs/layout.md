@@ -167,7 +167,7 @@ All handled in a single capture-phase `keydown` listener on `window`. Every hand
 
 ### Kill confirmation
 
-Pressing `x` shows a pane-centered semi-transparent overlay (`KillConfirmOverlay` → `KillConfirmCard`) with a random uppercase letter (A-Z, excluding X). Typing that letter confirms the kill (destroys session, removes pane). Escape cancels.
+Pressing `x` (or clicking the kill button) enters command mode and shows a pane-centered semi-transparent overlay (`KillConfirmOverlay` → `KillConfirmCard`) with a random uppercase letter (A-Z, excluding X). Typing that letter confirms the kill (destroys session, removes pane). Cancel with Escape key, clicking the `[ESC] to cancel` button, or clicking another panel. Any other key triggers a shake animation (400ms `shake-x` keyframe) then auto-dismisses the confirmation.
 
 ## Selection overlay
 

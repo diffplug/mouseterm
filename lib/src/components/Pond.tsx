@@ -76,6 +76,7 @@ function toDetachedItem(item: PersistedDetachedItem): DetachedItem {
 interface ConfirmKill {
   id: string;
   char: string;
+  shaking?: boolean;
 }
 
 export type PondMode = 'command' | 'passthrough';
@@ -887,24 +888,25 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
 
 // --- Kill confirmation overlay ---
 
-function KillConfirmCard({ char }: { char: string }) {
+export function KillConfirmCard({ char, onCancel, shaking }: { char: string; onCancel?: () => void; shaking?: boolean }) {
   return (
-    <div className="bg-surface-raised border border-error/30 px-6 py-4 rounded-lg text-center shadow-lg">
-      <h2 className="text-sm font-bold mb-2 text-foreground">Kill Session?</h2>
+    <div className={`bg-surface-raised border border-error/30 px-6 py-4 rounded-lg text-center shadow-lg${shaking ? ' motion-safe:animate-shake-x' : ''}`}>
+      <h2 className="text-base font-bold mb-3 text-foreground">Kill Session?</h2>
       <div className="bg-black py-2 px-6 rounded border border-border inline-block mb-2">
-        <span className="text-2xl font-black text-error">{char}</span>
+        <span className="text-xl font-bold text-error">{char}</span>
       </div>
-      <div className="text-[9px] text-muted uppercase tracking-widest leading-relaxed">
+      <div className="text-xs text-muted uppercase tracking-widest leading-relaxed">
         <div>[{char}] to confirm</div>
-        <div>[ESC] to cancel</div>
+        <button type="button" onClick={onCancel} className="uppercase hover:text-foreground transition-colors cursor-pointer">[ESC] to cancel</button>
       </div>
     </div>
   );
 }
 
-function KillConfirmOverlay({ confirmKill, panelElements }: {
+function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
   confirmKill: ConfirmKill;
   panelElements: Map<string, HTMLElement>;
+  onCancel: () => void;
 }) {
   const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
@@ -930,7 +932,7 @@ function KillConfirmOverlay({ confirmKill, panelElements }: {
         style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width, height: rect.height, zIndex: 100 }}
         className="flex items-center justify-center bg-surface/50 rounded"
       >
-        <KillConfirmCard char={confirmKill.char} />
+        <KillConfirmCard char={confirmKill.char} onCancel={onCancel} shaking={confirmKill.shaking} />
       </div>
     );
   }
@@ -938,7 +940,7 @@ function KillConfirmOverlay({ confirmKill, panelElements }: {
   // Fallback: centered in viewport
   return (
     <div className="fixed inset-0 bg-surface/50 z-[100] flex items-center justify-center">
-      <KillConfirmCard char={confirmKill.char} />
+      <KillConfirmCard char={confirmKill.char} onCancel={onCancel} shaking={confirmKill.shaking} />
     </div>
   );
 }
@@ -998,6 +1000,7 @@ export function Pond({
 
   // UI state
   const [confirmKill, setConfirmKill] = useState<ConfirmKill | null>(null);
+  useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
   const [renamingPaneId, setRenamingPaneId] = useState<string | null>(null);
   const [detached, setDetached] = useState<DetachedItem[]>(() => (initialDetached ?? []).map(toDetachedItem));
   const [zoomed, setZoomed] = useState(false);
@@ -1022,6 +1025,7 @@ export function Pond({
   confirmKillRef.current = confirmKill;
   const renamingRef = useRef(renamingPaneId);
   renamingRef.current = renamingPaneId;
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSavePromiseRef = useRef<Promise<void> | null>(null);
 
@@ -1410,8 +1414,14 @@ export function Pond({
           } else {
             setSelectedId(null);
           }
+          setConfirmKill(null);
+          return;
         }
-        setConfirmKill(null);
+        // Wrong key — shake then dismiss
+        if (!ck.shaking) {
+          setConfirmKill({ ...ck, shaking: true });
+          shakeTimerRef.current = setTimeout(() => setConfirmKill(null), 400);
+        }
         return;
       }
 
@@ -1745,6 +1755,7 @@ export function Pond({
 
   const pondActions: PondActions = useMemo(() => ({
     onKill: (id: string) => {
+      exitTerminalMode();
       const char = randomKillChar();
       setConfirmKill({ id, char });
     },
@@ -1775,6 +1786,7 @@ export function Pond({
       }
     },
     onClickPanel: (id: string) => {
+      setConfirmKill(null);
       enterTerminalMode(id);
     },
     onStartRename: (id: string) => {
@@ -1790,7 +1802,7 @@ export function Pond({
     onCancelRename: () => {
       setRenamingPaneId(null);
     },
-  }), [addSplitPanel, detachPanel, enterTerminalMode]);
+  }), [addSplitPanel, detachPanel, enterTerminalMode, exitTerminalMode]);
   const pondActionsRef = useRef(pondActions);
   pondActionsRef.current = pondActions;
 
@@ -1827,6 +1839,7 @@ export function Pond({
               <KillConfirmOverlay
                 confirmKill={confirmKill}
                 panelElements={panelElements}
+                onCancel={() => setConfirmKill(null)}
               />
             )}
 
