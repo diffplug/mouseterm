@@ -240,13 +240,6 @@ fn kill_process_tree(pid: u32) {
     }
 }
 
-#[tauri::command]
-fn get_project_dir() -> String {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_default()
-}
-
 #[derive(Serialize, Deserialize, Clone)]
 struct ShellInfo {
     name: String,
@@ -459,7 +452,6 @@ pub fn run() {
             pty_get_scrollback,
             pty_request_init,
             shutdown_sidecar,
-            get_project_dir,
             get_available_shells,
         ])
         .build(tauri::generate_context!())

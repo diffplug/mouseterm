@@ -10,8 +10,6 @@ export interface ShellEntry {
 }
 
 interface AppBarProps {
-  projectDir: string;
-  homeDir: string;
   shells: ShellEntry[];
 }
 
@@ -19,13 +17,6 @@ const IS_MAC = typeof (navigator as any).userAgentData?.platform === 'string'
   ? (navigator as any).userAgentData.platform === 'macOS'
   : /Mac/.test(navigator.platform);
 const appWindow = getCurrentWindow();
-
-function abbreviateHome(dir: string, home: string): string {
-  if (dir === home) return '~';
-  if (dir.startsWith(home + '/')) return '~' + dir.slice(home.length);
-  if (dir.startsWith(home + '\\')) return '~' + dir.slice(home.length);
-  return dir;
-}
 
 // ── Tooltip wrapper ────────────────────────────────────────────────────────
 
@@ -165,18 +156,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
 
 // ── AppBar ─────────────────────────────────────────────────────────────────
 
-function projectName(dir: string): string {
-  const sep = dir.includes('\\') ? '\\' : '/';
-  const parts = dir.split(sep).filter(Boolean);
-  return parts[parts.length - 1] ?? dir;
-}
-
-export function AppBar({ projectDir, homeDir, shells }: AppBarProps) {
-  const displayDir = abbreviateHome(projectDir, homeDir);
-  const name = projectName(projectDir);
-  // Show just the directory name when it's the home dir (avoids bare "~")
-  const isHome = projectDir === homeDir;
-
+export function AppBar({ shells }: AppBarProps) {
   return (
     <div
       data-tauri-drag-region
@@ -193,21 +173,8 @@ export function AppBar({ projectDir, homeDir, shells }: AppBarProps) {
         </div>
       )}
 
-      {/* Project directory — centered */}
-      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center justify-center">
-        <Tip label={displayDir}>
-          <div data-tauri-drag-region className="flex min-w-0 items-center gap-1.5 px-4">
-            <span data-tauri-drag-region className="truncate font-medium text-foreground/70">
-              {isHome ? '~' : name}
-            </span>
-            {!isHome && (
-              <span data-tauri-drag-region className="hidden truncate text-muted sm:inline">
-                {displayDir}
-              </span>
-            )}
-          </div>
-        </Tip>
-      </div>
+      {/* Draggable spacer */}
+      <div data-tauri-drag-region className="flex-1 self-stretch" />
 
       {/* Shell dropdown on the right (macOS) or window controls (Windows/Linux) */}
       {IS_MAC ? (
