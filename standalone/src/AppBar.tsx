@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { CaretDownIcon, MinusIcon, CornersOutIcon, CornersInIcon, XIcon, TerminalWindowIcon, PlusIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, MinusIcon, CornersOutIcon, CornersInIcon, XIcon, PlusIcon, CheckIcon } from '@phosphor-icons/react';
 import { ThemePicker } from '../../lib/src/components/ThemePicker';
 
 export interface ShellEntry {
@@ -83,11 +83,10 @@ function WinControls() {
 
 function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
   const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<ShellEntry | undefined>(shells[0]);
   const ref = useRef<HTMLDivElement>(null);
-  const defaultShell = shells[0];
 
-  const handleSelect = useCallback((shell: ShellEntry) => {
-    setOpen(false);
+  const spawn = useCallback((shell: ShellEntry) => {
     window.dispatchEvent(new CustomEvent('mouseterm:new-terminal', { detail: { shell: shell.path, args: shell.args } }));
   }, []);
 
@@ -113,41 +112,50 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
 
   return (
     <div ref={ref} className="relative flex items-center">
-      {/* Primary action: click to open a new terminal with the default shell */}
-      <Tip label="New terminal">
+      {/* Primary action: [+] spawns a new terminal with the selected shell */}
+      <Tip label={`New ${selected?.name ?? 'terminal'}`}>
         <button
-          className="flex h-6 items-center gap-1.5 rounded-l px-2 text-xs text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
-          onClick={() => defaultShell && handleSelect(defaultShell)}
-          aria-label={`New ${defaultShell?.name ?? 'terminal'}`}
+          className="flex h-6 items-center rounded-l px-1.5 text-xs text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          onClick={() => selected && spawn(selected)}
+          aria-label={`New ${selected?.name ?? 'terminal'}`}
         >
           <PlusIcon size={12} weight="bold" />
-          <span className="font-mono text-[11px]">{defaultShell?.name ?? 'shell'}</span>
         </button>
       </Tip>
-      {/* Dropdown caret: pick a different shell type */}
+      {/* Selector: shows current shell name + caret; click to choose a different shell */}
       <Tip label="Choose shell">
         <button
-          className="flex h-6 items-center rounded-r px-1 text-xs text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          className="flex h-6 items-center gap-1 rounded-r px-2 text-xs text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           aria-haspopup="menu"
         >
+          <span className="font-mono text-[11px]">{selected?.name ?? 'shell'}</span>
           <CaretDownIcon size={10} weight="bold" />
         </button>
       </Tip>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 min-w-[140px] rounded border border-border bg-surface-raised py-1 shadow-md" role="menu">
-          {shells.map((shell) => (
-            <button
-              key={shell.path}
-              role="menuitem"
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-surface-alt"
-              onClick={() => handleSelect(shell)}
-            >
-              <TerminalWindowIcon size={14} />
-              {shell.name}
-            </button>
-          ))}
+        <div className="absolute right-0 top-full z-50 mt-1 w-max rounded border border-border bg-surface-raised py-1 shadow-md" role="menu">
+          {shells.map((shell) => {
+            const isSelected = shell.path === selected?.path;
+            return (
+              <button
+                key={shell.path}
+                role="menuitemradio"
+                aria-checked={isSelected}
+                className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-surface-alt"
+                onClick={() => {
+                  setSelected(shell);
+                  setOpen(false);
+                }}
+              >
+                <span className="flex w-3.5 shrink-0 items-center justify-center">
+                  {isSelected && <CheckIcon size={12} weight="bold" />}
+                </span>
+                {shell.name}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
