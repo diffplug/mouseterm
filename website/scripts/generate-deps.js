@@ -29,6 +29,21 @@ for (const [license, packages] of Object.entries(raw)) {
 const themeExtensions = JSON.parse(readFileSync(themeExtensionsPath, "utf-8"));
 deps.push(...themeExtensions);
 
+// Manual overrides for extensions that don't declare a license in their metadata
+const missingLicense = {
+  "Solarized & Selenized": "MIT",
+};
+for (const dep of deps) {
+  if (!dep.license) {
+    const override = missingLicense[dep.name];
+    if (!override) {
+      console.error(`ERROR: "${dep.name}" has no license. Add it to missingLicense in generate-deps.js`);
+      process.exit(1);
+    }
+    dep.license = override;
+  }
+}
+
 deps.sort((a, b) => a.name.localeCompare(b.name));
 
 writeFileSync(outPath, JSON.stringify(deps, null, 2) + "\n");

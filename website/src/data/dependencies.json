@@ -163,7 +163,7 @@
   {
     "name": "Solarized & Selenized",
     "version": "0.3.18",
-    "license": null,
+    "license": "MIT",
     "author": "santoso-wijaya",
     "homepage": "https://github.com/santoso-wijaya/vscode-helios-selene"
   },
