@@ -1,7 +1,7 @@
 import { useRef, useState, useMemo, useLayoutEffect, useContext, useSyncExternalStore, type ReactNode } from 'react';
 import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { Door } from './Door';
-import { DoorElementsContext, type DetachedItem } from './Pond';
+import { DoorElementsContext, WindowFocusedContext, type DetachedItem } from './Pond';
 import { DEFAULT_SESSION_UI_STATE, getSessionStateSnapshot, subscribeToSessionStateChanges } from '../lib/terminal-registry';
 
 export interface BaseboardProps {
@@ -13,6 +13,7 @@ export interface BaseboardProps {
 
 export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProps) {
   const { elements: doorElements, bumpVersion } = useContext(DoorElementsContext);
+  const windowFocused = useContext(WindowFocusedContext);
   const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -176,6 +177,7 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
             doorId={item.id}
             title={item.title}
             isActive={activeId === item.id}
+            windowFocused={windowFocused}
             status={sessionState.status}
 
             todo={sessionState.todo}

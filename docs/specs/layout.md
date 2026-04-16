@@ -22,7 +22,7 @@ The user can navigate between all elements using the mouse, or by entering `comm
 
 ```
 Pond
-├── Context providers (Mode, SelectedId, PondActions, PanelElements, DoorElements, RenamingId, Zoomed)
+├── Context providers (Mode, SelectedId, PondActions, PanelElements, DoorElements, RenamingId, Zoomed, WindowFocused)
 │   └── div (h-screen, flex col)
 │       ├── Dockview wrapper (flex-1, 6px padding around edges)
 │       │   ├── DockviewReact (tiling layout engine, singleTabMode="fullwidth")
