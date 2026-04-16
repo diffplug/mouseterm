@@ -84,6 +84,27 @@
     "homepage": "https://101arrowz.github.io/fflate"
   },
   {
+    "name": "GitHub Theme",
+    "version": "6.3.5",
+    "license": "MIT",
+    "author": "open-vsx",
+    "homepage": "https://github.com/primer/github-vscode-theme#readme"
+  },
+  {
+    "name": "Gruvbox Theme",
+    "version": "1.29.1",
+    "license": "MIT",
+    "author": "jdinhify",
+    "homepage": "https://github.com/jdinhify/vscode-theme-gruvbox"
+  },
+  {
+    "name": "Iceberg Theme",
+    "version": "2.0.5",
+    "license": "MIT",
+    "author": "cocopon",
+    "homepage": "https://cocopon.github.io/iceberg.vim/"
+  },
+  {
     "name": "jsonc-parser",
     "version": "3.3.1",
     "license": "MIT",
@@ -138,6 +159,13 @@
     "license": "MIT",
     "author": null,
     "homepage": "https://react.dev/"
+  },
+  {
+    "name": "Solarized & Selenized",
+    "version": "0.3.18",
+    "license": null,
+    "author": "santoso-wijaya",
+    "homepage": "https://github.com/santoso-wijaya/vscode-helios-selene"
   },
   {
     "name": "tailwind-merge",
