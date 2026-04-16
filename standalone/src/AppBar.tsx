@@ -194,27 +194,29 @@ export function AppBar({ projectDir, homeDir, shells }: AppBarProps) {
       )}
 
       {/* Project directory — centered */}
-      <Tip label={displayDir}>
-        <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center justify-center gap-1.5 px-4">
-          <span data-tauri-drag-region className="truncate font-medium text-foreground/70">
-            {isHome ? '~' : name}
-          </span>
-          {!isHome && (
-            <span data-tauri-drag-region className="hidden truncate text-muted sm:inline">
-              {displayDir}
+      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center justify-center">
+        <Tip label={displayDir}>
+          <div data-tauri-drag-region className="flex min-w-0 items-center gap-1.5 px-4">
+            <span data-tauri-drag-region className="truncate font-medium text-foreground/70">
+              {isHome ? '~' : name}
             </span>
-          )}
-        </div>
-      </Tip>
+            {!isHome && (
+              <span data-tauri-drag-region className="hidden truncate text-muted sm:inline">
+                {displayDir}
+              </span>
+            )}
+          </div>
+        </Tip>
+      </div>
 
       {/* Shell dropdown on the right (macOS) or window controls (Windows/Linux) */}
       {IS_MAC ? (
-        <div className="flex items-center gap-1 pr-2">
+        <div className="ml-auto flex items-center gap-1 pr-2">
           <ThemePicker variant="standalone-appbar" />
           <ShellDropdown shells={shells} />
         </div>
       ) : (
-        <div className="flex items-stretch self-stretch">
+        <div className="ml-auto flex items-stretch self-stretch">
           <div className="flex items-center pr-2">
             <ThemePicker variant="standalone-appbar" />
           </div>
