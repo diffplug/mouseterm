@@ -27,10 +27,15 @@ Here are the key development loops:
 
 ```sh
 pnpm install
-pnpm dev:website  # http://localhost:5173/playground
-pnpm storybook    # http://localhost:6006
-pnpm test           # runs all tests
+pnpm dev:website    # vite hotreload at http://localhost:5173/playground
+pnpm dev:standalone # tauri hotreload
+
 pnpm dogfood:vscode # builds the VSCode extension and installs it into your local VSCode
+pnpm dogfood:standalone           # builds and runs the standalone app
+pnpm dogfood:standalone --install # installs your local build overtop of your existing system installation
+
+pnpm storybook    # http://localhost:6006
+pnpm test         # runs all tests
 ```
 
 ### Folder structure
