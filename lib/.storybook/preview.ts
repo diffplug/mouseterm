@@ -43,7 +43,7 @@ const preview: Preview = {
     },
   },
   initialGlobals: {
-    theme: 'Dark+',
+    theme: 'GitHub Dark Default',
   },
   decorators: [
     // Theme switcher: inject --vscode-* CSS variables

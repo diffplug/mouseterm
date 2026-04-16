@@ -1,6 +1,6 @@
 [package]
 name = "mouseterm"
-version = "0.1.0"
+version = "0.6.2"
 description = "Mouse-friendly multitasking terminal"
 authors = ["DiffPlug"]
 license = "FSL-1.1-MIT"

@@ -704,7 +704,7 @@ function useWindowFocused(): boolean {
 }
 
 function readSelectionColor() {
-  return getComputedStyle(document.documentElement).getPropertyValue('--mt-selection-terminal').trim();
+  return getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim();
 }
 
 function useSelectionColor() {

@@ -13,7 +13,8 @@
     "build:website": "pnpm --filter mouseterm-website build",
     "dogfood:vscode": "pnpm run build:vscode && pnpm --filter mouseterm dogfood",
     "dogfood:standalone": "bash standalone/scripts/dogfood.sh",
-    "storybook": "pnpm --filter mouseterm-lib storybook"
+    "storybook": "pnpm --filter mouseterm-lib storybook",
+    "bundle-themes": "node lib/scripts/bundle-themes.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

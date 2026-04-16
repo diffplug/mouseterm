@@ -231,7 +231,7 @@ Example of the pattern:
 --color-surface: var(--mt-surface);
 ```
 
-Full mapping in `lib/src/theme.css` covers: surfaces (3), text (2), accent/borders (4), tabs (6), terminal bg/fg/cursor/selection (4), all 16 ANSI colors + bright variants, badges (2), semantic status (3), inputs (2), buttons (3), and selection (2). Dark mode fallbacks (VS Code Dark+ defaults) are in `:root`; light mode overrides (VS Code Light+ defaults) are in `body.vscode-light`; a standalone fallback uses `@media (prefers-color-scheme: light)` for non-VS Code contexts.
+Full mapping in `lib/src/theme.css` covers: surfaces (3), text (2), accent/borders (4), tabs (6), terminal bg/fg/cursor/selection (4), all 16 ANSI colors + bright variants, badges (2), semantic status (3), inputs (2), buttons (3), and selection (2). Dark mode fallbacks are in `:root`; light mode overrides are in `body.vscode-light`; a standalone fallback uses `@media (prefers-color-scheme: light)` for non-VS Code contexts.
 
 A `MutationObserver` in `terminal-registry.ts` watches for VS Code theme changes on `body`/`html` (class and style attribute mutations) and live-updates all xterm.js instances.
 

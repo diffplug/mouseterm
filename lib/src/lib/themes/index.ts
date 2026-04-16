@@ -1,0 +1,15 @@
+export type { MouseTermTheme, BundledOrigin, InstalledOrigin } from './types';
+export { CONSUMED_VSCODE_KEYS, convertVscodeThemeColors, uiThemeToType } from './convert';
+export { applyTheme } from './apply';
+export {
+  getBundledThemes,
+  getInstalledThemes,
+  getAllThemes,
+  getTheme,
+  addInstalledTheme,
+  removeInstalledTheme,
+  getActiveThemeId,
+  setActiveThemeId,
+} from './store';
+export { searchThemes, fetchExtensionThemes } from './openvsx';
+export type { OpenVSXSearchResult, OpenVSXExtension } from './openvsx';

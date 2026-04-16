@@ -12,8 +12,8 @@
 #
 # Install mode (--install):
 #   Copies the built files over the system-installed copy, bypassing the slow
-#   bundling/installer step. Requires a one-time install via the NSIS installer
-#   so that registry entries, shortcuts, etc. are in place. Currently Windows only.
+#   installer step. Requires a one-time install first (NSIS installer on Windows,
+#   DMG on macOS) so that the install location exists.
 #
 set -euo pipefail
 
@@ -23,9 +23,14 @@ set -euo pipefail
 RELEASE_DIR="standalone/src-tauri/target/release"
 
 if [[ "${1:-}" == "--install" ]]; then
-  # Full build with bundling, but disable updater artifact signing
+  # Full build with bundling, but disable updater artifact signing.
+  # On macOS, build only the .app bundle (skip DMG creation).
+  BUNDLE_ARGS=()
+  case "$(uname -s)" in
+    Darwin) BUNDLE_ARGS=(--bundles app) ;;
+  esac
   pnpm --filter mouseterm-standalone tauri build \
-    -c '{"bundle":{"createUpdaterArtifacts":false}}'
+    -c '{"bundle":{"createUpdaterArtifacts":false}}' "${BUNDLE_ARGS[@]}"
 else
   # Fast build: skip bundling entirely since we just need the exe
   pnpm --filter mouseterm-standalone tauri build --no-bundle
@@ -54,6 +59,20 @@ if [[ "${1:-}" == "--install" ]]; then
       cp "$RELEASE_DIR/mouseterm.exe" "$INSTALL_DIR/"
       cp "$RELEASE_DIR/node.exe" "$INSTALL_DIR/"
       cp -r "$RELEASE_DIR/_up_/" "$INSTALL_DIR/_up_/"
+      echo "✦ Installed to $INSTALL_DIR"
+      ;;
+    Darwin)
+      INSTALL_DIR="/Applications/MouseTerm.app"
+      if [[ ! -d "$INSTALL_DIR" ]]; then
+        echo "MouseTerm is not installed yet."
+        echo "Install via the DMG first:"
+        echo "  open $RELEASE_DIR/bundle/dmg/MouseTerm_*.dmg"
+        echo ""
+        echo "After that, 'dogfood:standalone --install' will work from then on."
+        exit 1
+      fi
+      rm -rf "$INSTALL_DIR"
+      cp -r "$RELEASE_DIR/bundle/macos/MouseTerm.app" "$INSTALL_DIR"
       echo "✦ Installed to $INSTALL_DIR"
       ;;
     *)
