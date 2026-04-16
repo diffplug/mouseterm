@@ -17,21 +17,21 @@
     "name": "@tauri-apps/api",
     "version": "2.10.1",
     "license": "Apache-2.0 OR MIT",
-    "author": null,
+    "author": "Tauri Apps Contributors",
     "homepage": "https://github.com/tauri-apps/tauri#readme"
   },
   {
     "name": "@tauri-apps/plugin-shell",
     "version": "2.3.5",
     "license": "MIT OR Apache-2.0",
-    "author": null,
+    "author": "Tauri Apps Contributors",
     "homepage": "https://github.com/tauri-apps/plugins-workspace#readme"
   },
   {
     "name": "@tauri-apps/plugin-updater",
     "version": "2.10.1",
     "license": "MIT OR Apache-2.0",
-    "author": null,
+    "author": "Tauri Apps Contributors",
     "homepage": "https://github.com/tauri-apps/plugins-workspace#readme"
   },
   {
@@ -45,7 +45,7 @@
     "name": "@xterm/xterm",
     "version": "6.0.0",
     "license": "MIT",
-    "author": null,
+    "author": "Christopher Jeffrey, SourceLair Private Company, xterm.js authors",
     "homepage": "https://github.com/xtermjs/xterm.js#readme"
   },
   {
@@ -115,7 +115,7 @@
     "name": "node-addon-api",
     "version": "7.1.1",
     "license": "MIT",
-    "author": null,
+    "author": "Node.js API collaborators",
     "homepage": "https://github.com/nodejs/node-addon-api"
   },
   {
@@ -129,14 +129,14 @@
     "name": "react",
     "version": "19.2.4",
     "license": "MIT",
-    "author": null,
+    "author": "Meta Platforms, Inc. and affiliates",
     "homepage": "https://react.dev/"
   },
   {
     "name": "react-dom",
     "version": "19.2.4",
     "license": "MIT",
-    "author": null,
+    "author": "Meta Platforms, Inc. and affiliates",
     "homepage": "https://react.dev/"
   },
   {
@@ -157,7 +157,7 @@
     "name": "scheduler",
     "version": "0.27.0",
     "license": "MIT",
-    "author": null,
+    "author": "Meta Platforms, Inc. and affiliates",
     "homepage": "https://react.dev/"
   },
   {
@@ -185,7 +185,7 @@
     "name": "tailwindcss",
     "version": "4.2.2",
     "license": "MIT",
-    "author": null,
+    "author": "Tailwind Labs, Inc.",
     "homepage": "https://tailwindcss.com"
   }
 ]

@@ -29,9 +29,20 @@ for (const [license, packages] of Object.entries(raw)) {
 const themeExtensions = JSON.parse(readFileSync(themeExtensionsPath, "utf-8"));
 deps.push(...themeExtensions);
 
-// Manual overrides for extensions that don't declare a license in their metadata
+// Manual overrides for dependencies missing license or author in their metadata
 const missingLicense = {
   "Solarized & Selenized": "MIT",
+};
+const missingAuthor = {
+  "@tauri-apps/api": "Tauri Apps Contributors",
+  "@tauri-apps/plugin-shell": "Tauri Apps Contributors",
+  "@tauri-apps/plugin-updater": "Tauri Apps Contributors",
+  "@xterm/xterm": "Christopher Jeffrey, SourceLair Private Company, xterm.js authors",
+  "node-addon-api": "Node.js API collaborators",
+  "react": "Meta Platforms, Inc. and affiliates",
+  "react-dom": "Meta Platforms, Inc. and affiliates",
+  "scheduler": "Meta Platforms, Inc. and affiliates",
+  "tailwindcss": "Tailwind Labs, Inc.",
 };
 for (const dep of deps) {
   if (!dep.license) {
@@ -41,6 +52,14 @@ for (const dep of deps) {
       process.exit(1);
     }
     dep.license = override;
+  }
+  if (!dep.author) {
+    const override = missingAuthor[dep.name];
+    if (!override) {
+      console.error(`ERROR: "${dep.name}" has no author. Add it to missingAuthor in generate-deps.js`);
+      process.exit(1);
+    }
+    dep.author = override;
   }
 }
 
