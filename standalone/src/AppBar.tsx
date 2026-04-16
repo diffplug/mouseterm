@@ -135,7 +135,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
         </button>
       </Tip>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-max rounded border border-border bg-surface-raised py-1 shadow-md" role="menu">
+        <div className="absolute left-0 top-full z-50 mt-1 w-max rounded border border-border bg-surface-raised py-1 shadow-md" role="menu">
           {shells.map((shell) => {
             const isSelected = shell.path === selected?.path;
             return (
