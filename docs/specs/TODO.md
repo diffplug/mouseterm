@@ -1,5 +1,0 @@
-- [ ] fix headerbar color and size / font size
-- [ ] fix selection size / glow
-- [ ] desaturate selection on blur
-- [ ] alarm right-click popup and TODO/soft-TODO popup
-- [ ] dynamic shrinking on soft-TODO during typing
