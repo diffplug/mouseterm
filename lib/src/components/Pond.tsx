@@ -888,7 +888,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
 
 // --- Kill confirmation overlay ---
 
-function KillConfirmCard({ char, onCancel, shaking }: { char: string; onCancel?: () => void; shaking?: boolean }) {
+export function KillConfirmCard({ char, onCancel, shaking }: { char: string; onCancel?: () => void; shaking?: boolean }) {
   return (
     <div className={`bg-surface-raised border border-error/30 px-6 py-4 rounded-lg text-center shadow-lg${shaking ? ' animate-shake-x' : ''}`}>
       <h2 className="text-base font-bold mb-3 text-foreground">Kill Session?</h2>
@@ -1000,6 +1000,7 @@ export function Pond({
 
   // UI state
   const [confirmKill, setConfirmKill] = useState<ConfirmKill | null>(null);
+  useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
   const [renamingPaneId, setRenamingPaneId] = useState<string | null>(null);
   const [detached, setDetached] = useState<DetachedItem[]>(() => (initialDetached ?? []).map(toDetachedItem));
   const [zoomed, setZoomed] = useState(false);
@@ -1024,6 +1025,7 @@ export function Pond({
   confirmKillRef.current = confirmKill;
   const renamingRef = useRef(renamingPaneId);
   renamingRef.current = renamingPaneId;
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSavePromiseRef = useRef<Promise<void> | null>(null);
 
@@ -1418,7 +1420,7 @@ export function Pond({
         // Wrong key — shake then dismiss
         if (!ck.shaking) {
           setConfirmKill({ ...ck, shaking: true });
-          setTimeout(() => setConfirmKill(null), 400);
+          shakeTimerRef.current = setTimeout(() => setConfirmKill(null), 400);
         }
         return;
       }
