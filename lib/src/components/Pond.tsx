@@ -430,6 +430,7 @@ export const PondActionsContext = createContext<PondActions>({
 
 export const RenamingIdContext = createContext<string | null>(null);
 export const ZoomedContext = createContext(false);
+export const WindowFocusedContext = createContext(true);
 
 const ARROW_OPPOSITES: Record<string, string> = {
   ArrowLeft: 'ArrowRight', ArrowRight: 'ArrowLeft',
@@ -487,11 +488,12 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const selectedId = useContext(SelectedIdContext);
   const renamingId = useContext(RenamingIdContext);
   const zoomed = useContext(ZoomedContext);
+  const windowFocused = useContext(WindowFocusedContext);
   const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
   const actions = useContext(PondActionsContext);
   const sessionState = sessionStates.get(api.id) ?? DEFAULT_SESSION_UI_STATE;
   const isSelected = selectedId === api.id;
-  const showSelectedHeader = mode === 'passthrough' && isSelected;
+  const showSelectedHeader = mode === 'passthrough' && isSelected && windowFocused;
   const isRenaming = renamingId === api.id;
   const tabRef = useRef<HTMLDivElement>(null);
   const suppressAlarmClickRef = useRef(false);
@@ -812,7 +814,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
   const { elements: panelElements, version: panelVersion } = useContext(PanelElementsContext);
   const { elements: doorElements, version: doorVersion } = useContext(DoorElementsContext);
   const selectionColor = useSelectionColor();
-  const windowFocused = useWindowFocused();
+  const windowFocused = useContext(WindowFocusedContext);
   const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const isDoor = selectedType === 'door';
 
@@ -997,6 +999,8 @@ export function Pond({
   const [mode, setMode] = useState<PondMode>('command');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<'pane' | 'door'>('pane');
+
+  const windowFocused = useWindowFocused();
 
   // UI state
   const [confirmKill, setConfirmKill] = useState<ConfirmKill | null>(null);
@@ -1816,6 +1820,7 @@ export function Pond({
           <DoorElementsContext.Provider value={{ elements: doorElements, version: doorElementsVersion, bumpVersion: bumpDoorElementsVersion }}>
           <RenamingIdContext.Provider value={renamingPaneId}>
           <ZoomedContext.Provider value={zoomed}>
+          <WindowFocusedContext.Provider value={windowFocused}>
           <div className="flex-1 min-h-0 flex flex-col bg-surface text-foreground font-sans overflow-hidden">
             {/* Dockview */}
             <div className="flex-1 min-h-0 relative p-1.5">
@@ -1844,6 +1849,7 @@ export function Pond({
             )}
 
           </div>
+          </WindowFocusedContext.Provider>
           </ZoomedContext.Provider>
           </RenamingIdContext.Provider>
           </DoorElementsContext.Provider>
