@@ -127,7 +127,7 @@ The sandbox stays fully functional after completion. Running `tut` shows "Tutori
 
 Implemented in `mouseterm-lib/lib/themes` and `mouseterm-lib/components/ThemePicker`.
 
-Bundled themes are provided by `mouseterm-lib/lib/themes` and include Dark+, Light+, GitHub variants, and Dracula variants. Users can install additional themes from OpenVSX through the dropdown footer action.
+Bundled themes are provided by `mouseterm-lib/lib/themes` and include only GitHub variants. Users can install additional themes from OpenVSX through the dropdown footer action.
 
 The picker appears only on `/playground`, inside `SiteHeader`, labeled `Theme:`. The trigger opens a dropdown of bundled and installed themes. The dropdown footer is always `Install theme from OpenVSX`, which opens the theme store dialog. Installed theme rows include an `X` delete control; deletion requires browser confirmation before removing the theme from localStorage. If the active installed theme is deleted, the picker falls back to the first bundled theme and applies it immediately.
 

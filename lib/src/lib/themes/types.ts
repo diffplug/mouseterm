@@ -1,5 +1,5 @@
 export interface MouseTermTheme {
-  /** Stable unique ID, e.g. "GitHub.github-vscode-theme.dark-default" or "builtin.dark-plus" */
+  /** Stable unique ID, e.g. "GitHub.github-vscode-theme.github-dark-default" */
   id: string;
   /** Human-readable label from the VSCode theme */
   label: string;
@@ -21,7 +21,7 @@ export interface BundledOrigin {
 
 export interface InstalledOrigin {
   kind: 'installed';
-  /** OpenVSX namespace/name, e.g. "dracula-theme/theme-dracula" */
+  /** OpenVSX namespace/name, e.g. "publisher/theme-extension" */
   extensionId: string;
   /** ISO date string */
   installedAt: string;

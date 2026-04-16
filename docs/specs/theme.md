@@ -37,13 +37,13 @@ The old three-layer system (`--vscode-*` → `--mt-*` → `--color-*`) had a red
 
 ### Light theme body class
 
-`applyTheme()` adds `vscode-light` to `document.body.classList` for light themes and removes it for dark themes. `theme.css` has a `body.vscode-light` selector that switches all `--color-*` fallback values to the Light+ palette. Without this class, a light theme that doesn't explicitly define every key would get dark fallbacks for missing keys.
+`applyTheme()` adds `vscode-light` to `document.body.classList` for light themes and removes it for dark themes. `theme.css` has a `body.vscode-light` selector that switches all `--color-*` fallback values to the light fallback palette. Without this class, a light theme that doesn't explicitly define every key would get dark fallbacks for missing keys.
 
 ## Theme data model
 
 ```typescript
 interface MouseTermTheme {
-  id: string;           // "GitHub.github-vscode-theme.dark-default" or "builtin.dark-plus"
+  id: string;           // "GitHub.github-vscode-theme.github-dark-default"
   label: string;        // "GitHub Dark Default"
   type: 'dark' | 'light';
   swatch: string;       // editor.background — used for picker preview
@@ -55,7 +55,7 @@ interface MouseTermTheme {
 interface BundledOrigin { kind: 'bundled' }
 interface InstalledOrigin {
   kind: 'installed';
-  extensionId: string;  // "dracula-theme/theme-dracula"
+  extensionId: string;  // "publisher/theme-extension"
   installedAt: string;  // ISO date
 }
 ```
@@ -86,7 +86,7 @@ Not all VSCode theme color keys matter to MouseTerm — only the ~45 keys that a
 
 ### Conversion rule
 
-For each key in the VSCode theme's `colors` object: if it's in `CONSUMED_VSCODE_KEYS`, emit `--vscode-${key.replace(/\./g, '-')}` → value. Keys not consumed by MouseTerm are silently dropped. Missing keys fall through to the `@theme` fallbacks in `theme.css` (Dark+ or Light+ defaults), which is the same behavior as VSCode itself.
+For each key in the VSCode theme's `colors` object: if it's in `CONSUMED_VSCODE_KEYS`, emit `--vscode-${key.replace(/\./g, '-')}` → value. Keys not consumed by MouseTerm are silently dropped. Missing keys fall through to the `@theme` fallbacks in `theme.css`, which is the same behavior as VSCode itself.
 
 ## Bundled themes
 
@@ -97,10 +97,6 @@ Bundled themes are extracted at build time by a Node.js script (`lib/scripts/bun
 | Extension | OpenVSX ID | Variants |
 |-----------|-----------|----------|
 | GitHub VSCode Theme | `GitHub/github-vscode-theme` | Dark Default, Light Default, Dark Dimmed, Dark High Contrast, Light High Contrast, Dark Colorblind, Light Colorblind, etc. |
-| Dracula | `dracula-theme/theme-dracula` | Dracula, Dracula Soft |
-| VSCode builtins | (hardcoded) | Dark+, Light+ |
-
-Dark+ and Light+ are VSCode built-in themes not published to OpenVSX. Their values are hardcoded (from the existing `lib/.storybook/themes.ts`).
 
 ### Build script flow
 
@@ -116,8 +112,6 @@ lib/scripts/bundle-themes.mjs
   |         +- read theme JSON from ZIP (parse with jsonc-parser for comments)
   |         +- convertVscodeThemeColors(colors) -> vars
   |         +- emit MouseTermTheme object
-  |
-  +- append hardcoded Dark+ and Light+ themes
   |
   +- write lib/src/lib/themes/bundled.json
 ```
@@ -231,6 +225,6 @@ user searches OpenVSX
 
 **Why filter to `CONSUMED_VSCODE_KEYS` instead of passing all colors through?** VSCode themes can define 500+ color keys. Setting all of them as CSS variables would be wasteful (most are never read) and could cause unexpected interactions if VSCode adds new keys that happen to match future `--color-*` variables.
 
-**Why set the `vscode-light` body class?** `theme.css` uses `body.vscode-light` to switch all `--color-*` fallback values to the Light+ palette. Without this class, a light theme that doesn't explicitly define every key would get dark fallbacks for the missing ones, creating a broken mixed appearance.
+**Why set the `vscode-light` body class?** `theme.css` uses `body.vscode-light` to switch all `--color-*` fallback values to the light fallback palette. Without this class, a light theme that doesn't explicitly define every key would get dark fallbacks for the missing ones, creating a broken mixed appearance.
 
 **Why not use OpenVSX's direct file access instead of downloading the full VSIX?** OpenVSX doesn't expose individual theme files via API — you have to download the full VSIX. However, theme-only extensions are typically small (50-200 KB), so this is fine. The build script and runtime installer share the same extraction logic.

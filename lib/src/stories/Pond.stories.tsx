@@ -73,13 +73,13 @@ export const MultiPane: Story = {
 
 export const MultiPaneDark: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_LS_OUTPUT) } },
-  globals: { theme: 'Dark+' },
+  globals: { theme: 'GitHub Dark Default' },
   play: splitPanes,
 };
 
 export const MultiPaneLight: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_LS_OUTPUT) } },
-  globals: { theme: 'Light+' },
+  globals: { theme: 'GitHub Light Default' },
   play: splitPanes,
 };
 
