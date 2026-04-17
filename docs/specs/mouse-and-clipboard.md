@@ -55,7 +55,7 @@ Activated by clicking the Mouse icon. While the temporary override is active:
 - The Mouse icon is replaced with the No-Mouse icon.
 - A banner appears next to the No-Mouse icon reading:
   `Temporary mouse override until mouse-up. [Make permanent] [Cancel]`
-- The override persists until the **next mouse-up event inside the terminal content area** (live region or scrollback). The click on the No-Mouse icon itself, or on the banner's buttons, does **not** count as that mouse-up.
+- The override persists until the **next mouse-up event inside the terminal content area** (live region or scrollback) that is paired with a prior mouse-down in the same area. The click on the No-Mouse icon itself, the banner's buttons, and any "orphan" mouse-up from a drag that started outside the terminal do **not** count as that mouse-up.
 - After that mouse-up, the override automatically ends: mouse reporting is restored to the inside program, the banner is dismissed, and the icon reverts to the Mouse icon.
 
 ### 2.2 Making the Override Permanent
@@ -82,7 +82,7 @@ If the user activates an override and then never performs a mouse action, the ov
 
 ## 3. Selection Behavior
 
-Selection is available whenever the terminal is handling mouse events — that is, whenever mouse reporting is not active, or an override is in effect, or the drag originates in scrollback (see §3.6).
+Selection is available whenever the terminal is handling mouse events — that is, whenever mouse reporting is not active, or an override is in effect, or the drag originates in scrollback (see §3.5).
 
 ### 3.1 Initiating a Selection
 
@@ -110,7 +110,8 @@ When a URL or path token is detected near the current drag position, an addition
 The selection is anchored to the characters under it, not to screen coordinates.
 
 - **Pure scroll:** if content scrolls (translates vertically with no character changes), the selection scrolls with it. This is coordinate math only; no matching is required.
-- **Content change:** if any character within the selection's coordinate range changes, the selection is immediately canceled. The user can try again.
+- **Content change:** if any cell overlapped by the selection changes, the selection is immediately canceled. Repaints outside the selected cells (e.g. a status line, clock, or progress bar elsewhere on screen) are irrelevant and do not cancel the selection.
+- **Terminal resize:** a resize counts as a content change and cancels any active selection.
 - There is no partial-match or content-tracking heuristic. Cancel-on-change is the rule.
 
 ### 3.5 Selection in the Live Region vs. Scrollback
@@ -119,11 +120,17 @@ The selection is anchored to the characters under it, not to screen coordinates.
 - **Scrollback:** selection is **always** available, regardless of mouse reporting or override state. The override state of the Mouse icon is irrelevant for drags that originate in scrollback.
 - **Crossing the boundary:** a drag that begins in scrollback and continues into the live region is allowed and produces a single continuous selection. A drag that begins in the live region while mouse reporting is active (with no override) is forwarded to the inside program, not treated as a selection.
 
-### 3.6 Ending a Selection
+### 3.6 During a Drag
+
+- **Auto-scroll:** if the mouse reaches the top or bottom edge of the viewport during a drag, the terminal scrolls in that direction at a modest rate so the selection can extend beyond the visible region. Auto-scroll stops when the cursor moves back inside the viewport or the mouse button is released.
+- **Keyboard routing:** while a terminal-handled drag is in progress, the terminal consumes keystrokes relevant to the drag — **Alt** for block-selection shape (§3.2), **e** for smart extension (§5), **Esc** to cancel the drag and any in-progress selection. All other keystrokes are ignored and **not** forwarded to the inside program for the duration of the drag. Normal keyboard routing resumes when the mouse button is released.
+
+### 3.7 Ending a Selection
 
 - Releasing the mouse button ends the drag and fixes the selection.
 - The selection popup (§4) appears.
 - The selection persists until the user acts on it (copy, extend, etc.), clicks elsewhere to dismiss it, presses **Esc**, or the underlying content changes.
+- Starting a new drag (mouse-down in the terminal content area) immediately replaces any existing selection with the new one; the previous popup is dismissed.
 
 ---
 
@@ -153,12 +160,12 @@ Copies the selected text with two transformations applied:
 
 ### 4.2 Keyboard Shortcuts
 
-While a selection is active:
+While the terminal has an active selection:
 
 - **Cmd+C** (Ctrl+C on non-macOS) triggers Copy Raw.
 - **Cmd+Shift+C** (Ctrl+Shift+C on non-macOS) triggers Copy Rewrapped.
 
-These shortcuts work whether or not the popup is visible and whether or not the user has clicked on it. The shortcuts take precedence over any shell interrupt behavior while a selection is active.
+These shortcuts work whether or not the popup is visible and whether or not the user has clicked on it. The precedence rule is narrow: Ctrl+C is intercepted as Copy Raw **only** when a terminal selection is active. With no terminal selection, Ctrl+C is forwarded to the inside program as usual (SIGINT for shells, app-defined behavior for TUIs). An in-program selection maintained by a TUI (e.g. vim visual mode, less search highlight) is **not** a terminal selection for this purpose and does not change Ctrl+C routing.
 
 ### 4.3 Dismissing the Popup
 
@@ -186,6 +193,8 @@ While a drag is in progress, the terminal continuously examines the characters a
 - A Windows-style path (e.g. `C:\...`).
 - An error location pattern (e.g. `file.ext:line`, `file.ext:line:col`).
 
+Trailing characters that are unlikely to be part of the token — `.`, `,`, `;`, `:`, `!`, `?`, and single/double quotes — are stripped from the detected token's end before it is offered for extension. Unmatched closing brackets (`)`, `]`, `}`, `>`) are also stripped, but matched pairs are preserved (e.g. `https://en.wikipedia.org/wiki/Foo_(bar)` keeps its trailing `)`).
+
 A token qualifies for extension only if it is not already fully covered by the current selection.
 
 ### 5.2 Mid-Drag Hint
@@ -202,7 +211,9 @@ The hint appears and disappears live as the drag moves into and out of qualifyin
 - Pressing **e** during a drag, while the hint is visible, immediately extends the selection to cover the full detected token.
 - After extension, the drag continues normally: further mouse movement updates the selection from the extended boundary, and the Alt modifier continues to toggle block-selection shape.
 - If **e** is pressed when no qualifying token is present, the keypress is ignored.
+- Pressing **e** a second time when the same token is already fully covered by the selection is a no-op (per §5.1's qualification rule).
 - Pressing **e** has no effect after the drag has ended (i.e. once the popup has appeared, §4). Extension is a mid-drag action only.
+- Per §3.6, the `e` keystroke (and all others) is consumed by the terminal during a terminal-handled drag and is not forwarded to the inside program.
 
 ### 5.4 Interaction with Selection Completion
 
@@ -245,17 +256,17 @@ The initial implementation offers only the single extension step described above
 
 ---
 
-## 9. Paste Behavior
+## 8. Paste Behavior
 
-### 9.1 Overview
+### 8.1 Overview
 
-Paste is the inverse of copy: the terminal reads the system clipboard and writes the content to the PTY as if it had been typed. Paste keystrokes are **intercepted by the terminal**, not forwarded to the inside program. The inside program only receives the pasted bytes (optionally wrapped in bracketed-paste markers; see §9.5).
+Paste is the inverse of copy: the terminal reads the system clipboard and writes the content to the PTY as if it had been typed. Paste keystrokes are **intercepted by the terminal**, not forwarded to the inside program. The inside program only receives the pasted bytes (optionally wrapped in bracketed-paste markers; see §8.5).
 
 Paste behavior differs by platform to match each OS's native convention.
 
-### 9.2 Paste Keybindings
+### 8.2 Paste Keybindings
 
-#### 9.2.1 macOS
+#### 8.2.1 macOS
 
 | Keystroke      | Behavior                                           |
 |----------------|----------------------------------------------------|
@@ -265,26 +276,26 @@ Paste behavior differs by platform to match each OS's native convention.
 
 macOS users have a clean separation: Cmd is the paste modifier, Ctrl is passed through to the program. No escape hatch is needed.
 
-#### 9.2.2 Windows and Linux
+#### 8.2.2 Windows and Linux
 
 | Keystroke       | Behavior                                           |
 |-----------------|----------------------------------------------------|
 | **Ctrl+V**      | Terminal intercepts and performs a bracketed paste (default). |
 | **Ctrl+Shift+V**| Terminal intercepts and performs a bracketed paste. (Alias for Ctrl+V, matches convention from Linux terminals and Windows Terminal.) |
 
-Because Ctrl+V is needed as both the paste shortcut (user expectation from every other app) and as the raw control byte `0x16` (for shell `quoted-insert`, vim literal-next, etc.), Ctrl+V is always intercepted and the raw byte is not sent to the inside program by this key. Users needing to send `0x16` can use the mechanism in §9.3.
+Because Ctrl+V is needed as both the paste shortcut (user expectation from every other app) and as the raw control byte `0x16` (for shell `quoted-insert`, vim literal-next, etc.), Ctrl+V is always intercepted and the raw byte is not sent to the inside program by this key. Users needing to send `0x16` can use the mechanism in §8.3.
 
-### 9.3 Sending `0x16` on Windows and Linux (Ctrl+Q)
+### 8.3 Sending `0x16` on Windows and Linux (Ctrl+Q)
 
 Users needing to insert a literal control character at a shell prompt can use the existing readline feature: press **Ctrl+Q**, then the desired key. This is a feature of bash, zsh, fish, and other readline-aware shells; the terminal does nothing special to enable it. This handles the most common occasional use case (inserting a literal Tab, Esc, or other control byte in the shell) without requiring any terminal-level escape hatch.
 
-This mechanism is documentation-only from the terminal's perspective: it works because the shell already supports it. No equivalent is provided for programs that do not support Ctrl+Q-style `quoted-insert` (e.g. vim insert mode, where `0x16` is the default literal-next key and has been taken over by paste). See §10.2 for deferred alternatives.
+This mechanism is documentation-only from the terminal's perspective: it works because the shell already supports it. No equivalent is provided for programs that do not support Ctrl+Q-style `quoted-insert` (e.g. vim insert mode, where `0x16` is the default literal-next key and has been taken over by paste). See §9.2 for deferred alternatives.
 
-### 9.4 Platform Detection
+### 8.4 Platform Detection
 
 The terminal detects its platform at startup and configures paste keybindings accordingly. There is no "pretend to be macOS on Linux" mode or equivalent; each platform gets its native convention by default.
 
-### 9.5 Bracketed Paste
+### 8.5 Bracketed Paste
 
 All pastes performed by the terminal are **bracketed** when the inside program has opted in via `\e[?2004h`:
 
@@ -293,7 +304,7 @@ All pastes performed by the terminal are **bracketed** when the inside program h
 
 This is standard xterm behavior and is mandatory. It allows shells and TUIs to distinguish pasted content from typed input (e.g. to not execute newlines immediately, to highlight pasted text, or to confirm before running pasted commands).
 
-### 9.6 Paste Content
+### 8.6 Paste Content
 
 The initial implementation pastes plain text only:
 
@@ -301,9 +312,9 @@ The initial implementation pastes plain text only:
 - If the clipboard contains a file URL (e.g. from Finder or Explorer), the path is written to the PTY as text. This is the standard behavior across terminals and enables the file-attachment workflows used by Claude Code and similar tools.
 - If the clipboard contains non-text content with no text or file-URL representation (e.g. a raw screenshot image from the system screenshot tool), the paste is a no-op. A brief notification may be shown: `Clipboard contains no pasteable content.`
 
-Richer paste behavior — such as image/file detection with a paste popup, content-aware transformations (strip trailing whitespace, normalize line endings, convert smart quotes), paste history, credential detection, and preview thumbnails — is out of scope for the initial implementation. See §10.
+Richer paste behavior — such as image/file detection with a paste popup, content-aware transformations (strip trailing whitespace, normalize line endings, convert smart quotes), paste history, credential detection, and preview thumbnails — is out of scope for the initial implementation. See §9.
 
-### 9.7 Right-Click and Menu Paste
+### 8.7 Right-Click and Menu Paste
 
 - **Right-click menu:** the terminal's context menu includes a **Paste** item that performs the same bracketed paste as the keyboard shortcut.
 - **Edit menu:** on macOS, the standard **Edit → Paste** menu item is wired to the same action.
@@ -312,11 +323,11 @@ These provide a mouse-driven path for users who don't know or don't remember the
 
 ---
 
-## 10. Out of Scope for Initial Implementation
+## 9. Out of Scope for Initial Implementation
 
 The following were considered and explicitly deferred:
 
-### 10.1 Mouse and Selection
+### 9.1 Mouse and Selection
 
 - Additional copy modes beyond Raw and Rewrapped (strip ANSI, strip line numbers, strip prompts, join hyphenated line-breaks).
 - Contextual actions in the popup (Open URL, Open in $EDITOR, Copy hash).
@@ -326,8 +337,10 @@ The following were considered and explicitly deferred:
 - Content-matching selection tracking when the underlying content changes (current behavior is cancel-on-change).
 - Keyboard activation of the mouse icon and banner buttons.
 - Timeout behavior when a temporary override is activated but never used.
+- Double-click to select word and triple-click to select line. These are standard terminal conventions and will almost certainly be added in a follow-up; they are deferred from the initial implementation to keep the first cut minimal.
+- Concrete rules for Copy Rewrapped's unwrap / box-drawing-strip heuristics (§4.1.2). The spec intentionally leaves these implementation-defined; finalizing a first-cut ruleset and its test cases is tracked as a follow-up rather than open-ended work.
 
-### 10.2 Paste
+### 9.2 Paste
 
 - A settings toggle to disable Ctrl+V interception on Windows and Linux (making Ctrl+V send `0x16` to the inside program and leaving Ctrl+Shift+V as the sole paste shortcut). Intended for power users who work predominantly in vim, Emacs, or other programs where `0x16`-as-literal-next is a frequent action. Deferred from the initial implementation.
 - A paste popup (parallel to the copy popup) for previewing or transforming paste content before it is committed.
@@ -339,5 +352,6 @@ The following were considered and explicitly deferred:
 - Multi-line paste confirmation dialogs ("this paste contains newlines and will execute immediately").
 - A "literal next keystroke" terminal-level shortcut (Ctrl+Alt+V or similar) to send `0x16` or other control bytes in programs that don't support Ctrl+Q-style `quoted-insert`.
 - A Ctrl+V-pastes toggle on macOS (macOS users almost never want this, so it is not exposed unless requested).
+- Middle-click paste / X11 PRIMARY selection integration on Linux (auto-copy on selection and middle-click paste of PRIMARY, distinct from the CLIPBOARD used by Ctrl+C / Ctrl+V). Standard on many Linux terminals and frequently expected by Linux power users, but deferred to keep the initial clipboard model single-buffer and cross-platform consistent.
 
 These may be revisited based on user feedback after the initial implementation ships.
