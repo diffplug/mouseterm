@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import SiteHeader from "../components/SiteHeader";
-import { PlaygroundToolbar } from "../components/PlaygroundToolbar";
-import { ThemePicker } from "../components/ThemePicker";
+import { ThemePicker } from "mouseterm-lib/components/ThemePicker";
 import { TutorialShell } from "../lib/tutorial-shell";
 import { TutorialDetector } from "../lib/tutorial-detection";
 
@@ -90,18 +89,11 @@ function Playground() {
     <>
       <SiteHeader
         activePath="/playground"
-        style={{
-          backgroundColor: "rgba(0, 0, 0, 0.6)",
-          backdropFilter: "blur(4px)",
-          WebkitBackdropFilter: "blur(4px)",
-        }}
+        themeAware
+        controls={<ThemePicker variant="playground-header" />}
       />
 
-      <PlaygroundToolbar>
-        <ThemePicker />
-      </PlaygroundToolbar>
-
-      <main className="fixed top-[100px] left-0 right-0 bottom-0">
+      <main className="fixed top-24 right-0 bottom-0 left-0 flex min-h-0 md:top-28">
         {PondModule ? (
           <PondModule.Pond
             initialPaneIds={[PANE_MAIN]}

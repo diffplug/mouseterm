@@ -144,12 +144,13 @@ All types defined in `message-types.ts`. Webview-side handling in `vscode-adapte
 
 | Message | Purpose |
 |---------|---------|
-| `pty:spawn` | Create new PTY (id, optional cols/rows/cwd) |
+| `pty:spawn` | Create new PTY (id, optional cols/rows/cwd/shell/args) |
 | `pty:input` | Write data to PTY |
 | `pty:resize` | Resize PTY dimensions |
 | `pty:kill` | Kill PTY and release ownership |
 | `pty:getCwd` | Query PTY working directory (request-response via requestId) |
 | `pty:getScrollback` | Query PTY scrollback buffer (request-response via requestId) |
+| `pty:getShells` | Query available shells (request-response via requestId) |
 | `mouseterm:init` | Trigger reconnection: get PTY list + replay data |
 | `mouseterm:saveState` | Frontend persisting session state |
 | `mouseterm:flushSessionSaveDone` | Ack for deactivate-triggered flush (matched by requestId) |
@@ -175,6 +176,7 @@ All types defined in `message-types.ts`. Webview-side handling in `vscode-adapte
 | `pty:replay` | Buffered output since spawn (response to `mouseterm:init`) |
 | `pty:cwd` | CWD query response (matched by requestId) |
 | `pty:scrollback` | Scrollback query response (matched by requestId) |
+| `pty:shells` | Available shells list response (matched by requestId) |
 | `mouseterm:flushSessionSave` | Request webview to save state now (deactivate trigger, matched by requestId) |
 | `alarm:state` | Alarm state change (status, todo, attentionDismissedRing) |
 
@@ -229,7 +231,7 @@ Example of the pattern:
 --color-surface: var(--mt-surface);
 ```
 
-Full mapping in `lib/src/theme.css` covers: surfaces (3), text (2), accent/borders (4), tabs (6), terminal bg/fg/cursor/selection (4), all 16 ANSI colors + bright variants, badges (2), semantic status (3), inputs (2), buttons (3), and selection (2). Dark mode fallbacks (VS Code Dark+ defaults) are in `:root`; light mode overrides (VS Code Light+ defaults) are in `body.vscode-light`; a standalone fallback uses `@media (prefers-color-scheme: light)` for non-VS Code contexts.
+Full mapping in `lib/src/theme.css` covers: surfaces (3), text (2), accent/borders (4), tabs (6), terminal bg/fg/cursor/selection (4), all 16 ANSI colors + bright variants, badges (2), semantic status (3), inputs (2), buttons (3), and selection (2). Dark mode fallbacks are in `:root`; light mode overrides are in `body.vscode-light`; a standalone fallback uses `@media (prefers-color-scheme: light)` for non-VS Code contexts.
 
 A `MutationObserver` in `terminal-registry.ts` watches for VS Code theme changes on `body`/`html` (class and style attribute mutations) and live-updates all xterm.js instances.
 

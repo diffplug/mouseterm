@@ -18,7 +18,7 @@ function SelectionOverlayDemo({ initialMode = 'command' as PondMode }) {
     return () => ro.disconnect();
   }, []);
 
-  const color = getComputedStyle(document.documentElement).getPropertyValue('--mt-selection-terminal').trim() || '#007fd4';
+  const color = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || '#007fd4';
 
   const overlayStyle: React.CSSProperties = {
     position: 'absolute',

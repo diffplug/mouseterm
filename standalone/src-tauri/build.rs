@@ -2,7 +2,7 @@ use std::{
     env,
     error::Error,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
 };
 
@@ -22,6 +22,7 @@ fn bundle_node_runtime() -> Result<(), Box<dyn Error>> {
     let node_source = resolve_node_binary(&host, &target)?;
 
     println!("cargo:rerun-if-changed={}", node_source.display());
+    validate_node_binary(&node_source, &target)?;
 
     let binaries_dir = manifest_dir.join("binaries");
     fs::create_dir_all(&binaries_dir)?;
@@ -36,6 +37,43 @@ fn bundle_node_runtime() -> Result<(), Box<dyn Error>> {
         let mut perms = fs::metadata(&node_dest)?.permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&node_dest, perms)?;
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn validate_node_binary(node_source: &Path, target: &str) -> Result<(), Box<dyn Error>> {
+    if target.contains("apple-darwin") {
+        reject_macos_dynamic_node(node_source)?;
+    }
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn validate_node_binary(_node_source: &Path, _target: &str) -> Result<(), Box<dyn Error>> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn reject_macos_dynamic_node(node_source: &Path) -> Result<(), Box<dyn Error>> {
+    let output = Command::new("otool").arg("-L").arg(node_source).output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "failed to inspect Node.js runtime at {}",
+            node_source.display()
+        )
+        .into());
+    }
+
+    let deps = String::from_utf8_lossy(&output.stdout);
+    if deps.contains("@rpath/libnode.") {
+        return Err(format!(
+            "{} depends on @rpath/libnode*.dylib and cannot be copied as a self-contained Tauri sidecar. Use a standalone Node.js binary, or set MOUSETERM_NODE_BINARY to one.",
+            node_source.display()
+        )
+        .into());
     }
 
     Ok(())

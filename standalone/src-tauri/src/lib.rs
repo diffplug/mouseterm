@@ -1,12 +1,17 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Emitter, Manager};
+use std::{
+    collections::HashMap,
+    env,
+    fs::{create_dir_all, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+    sync::mpsc,
+    sync::{Arc, Mutex},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+use tauri::{AppHandle, Emitter, Manager, RunEvent};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 enum SidecarMsg {
@@ -21,6 +26,63 @@ struct SidecarState {
     tx: SidecarSender,
     pending_requests: PendingRequests,
     next_request_id: AtomicU64,
+    child_pid: u32,
+}
+
+const LOG_FILE_ENV: &str = "MOUSETERM_LOG_FILE";
+
+fn log_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default()
+}
+
+fn default_log_path() -> PathBuf {
+    if let Some(path) = env::var_os(LOG_FILE_ENV) {
+        return PathBuf::from(path);
+    }
+
+    #[cfg(target_os = "windows")]
+    if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
+        return PathBuf::from(local_app_data)
+            .join("MouseTerm")
+            .join("mouseterm.log");
+    }
+
+    env::temp_dir().join("mouseterm.log")
+}
+
+fn init_log() {
+    let path = default_log_path();
+    if let Some(parent) = path.parent() {
+        let _ = create_dir_all(parent);
+    }
+
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&path)
+    {
+        let _ = writeln!(
+            file,
+            "[{}] MouseTerm log started at {}",
+            log_timestamp(),
+            path.display()
+        );
+    }
+}
+
+fn append_log(message: impl AsRef<str>) {
+    let path = default_log_path();
+    if let Some(parent) = path.parent() {
+        let _ = create_dir_all(parent);
+    }
+
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "[{}] {}", log_timestamp(), message.as_ref());
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -28,6 +90,8 @@ struct PtySpawnOptions {
     cols: Option<u16>,
     rows: Option<u16>,
     cwd: Option<String>,
+    shell: Option<String>,
+    args: Option<Vec<String>>,
 }
 
 fn send_to_sidecar(state: &SidecarState, line: String) {
@@ -39,7 +103,19 @@ fn request_from_sidecar(
     event: &str,
     data: JsonValue,
 ) -> Result<JsonValue, String> {
-    let request_id = format!("req-{}", state.next_request_id.fetch_add(1, Ordering::Relaxed));
+    request_from_sidecar_timeout(state, event, data, Duration::from_secs(1))
+}
+
+fn request_from_sidecar_timeout(
+    state: &SidecarState,
+    event: &str,
+    data: JsonValue,
+    timeout: Duration,
+) -> Result<JsonValue, String> {
+    let request_id = format!(
+        "req-{}",
+        state.next_request_id.fetch_add(1, Ordering::Relaxed)
+    );
     let (tx, rx) = mpsc::channel();
     state
         .pending_requests
@@ -59,7 +135,7 @@ fn request_from_sidecar(
     });
     send_to_sidecar(state, msg.to_string());
 
-    match rx.recv_timeout(Duration::from_secs(1)) {
+    match rx.recv_timeout(timeout) {
         Ok(response) => Ok(response),
         Err(_) => {
             if let Ok(mut pending) = state.pending_requests.lock() {
@@ -73,11 +149,7 @@ fn request_from_sidecar(
 // ── Tauri commands ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn pty_spawn(
-    state: tauri::State<'_, SidecarState>,
-    id: String,
-    options: Option<PtySpawnOptions>,
-) {
+fn pty_spawn(state: tauri::State<'_, SidecarState>, id: String, options: Option<PtySpawnOptions>) {
     let msg = serde_json::json!({
         "event": "pty:spawn",
         "data": { "id": id, "options": options }
@@ -95,12 +167,7 @@ fn pty_write(state: tauri::State<'_, SidecarState>, id: String, data: String) {
 }
 
 #[tauri::command]
-fn pty_resize(
-    state: tauri::State<'_, SidecarState>,
-    id: String,
-    cols: u16,
-    rows: u16,
-) {
+fn pty_resize(state: tauri::State<'_, SidecarState>, id: String, cols: u16, rows: u16) {
     let msg = serde_json::json!({
         "event": "pty:resize",
         "data": { "id": id, "cols": cols, "rows": rows }
@@ -124,7 +191,10 @@ fn pty_request_init(state: tauri::State<'_, SidecarState>) {
 }
 
 #[tauri::command]
-fn pty_get_cwd(state: tauri::State<'_, SidecarState>, id: String) -> Result<Option<String>, String> {
+fn pty_get_cwd(
+    state: tauri::State<'_, SidecarState>,
+    id: String,
+) -> Result<Option<String>, String> {
     let response = request_from_sidecar(&state, "pty:getCwd", serde_json::json!({ "id": id }))?;
     Ok(response
         .get("cwd")
@@ -132,8 +202,12 @@ fn pty_get_cwd(state: tauri::State<'_, SidecarState>, id: String) -> Result<Opti
 }
 
 #[tauri::command]
-fn pty_get_scrollback(state: tauri::State<'_, SidecarState>, id: String) -> Result<Option<String>, String> {
-    let response = request_from_sidecar(&state, "pty:getScrollback", serde_json::json!({ "id": id }))?;
+fn pty_get_scrollback(
+    state: tauri::State<'_, SidecarState>,
+    id: String,
+) -> Result<Option<String>, String> {
+    let response =
+        request_from_sidecar(&state, "pty:getScrollback", serde_json::json!({ "id": id }))?;
     Ok(response
         .get("data")
         .and_then(|data| data.as_str().map(String::from)))
@@ -142,33 +216,113 @@ fn pty_get_scrollback(state: tauri::State<'_, SidecarState>, id: String) -> Resu
 #[tauri::command]
 fn shutdown_sidecar(state: tauri::State<'_, SidecarState>) {
     let _ = state.tx.send(SidecarMsg::Shutdown);
+    kill_process_tree(state.child_pid);
+}
+
+/// Kill the sidecar process. On Windows, `taskkill /T` kills the entire
+/// process tree so that child shell processes don't outlive the sidecar.
+/// On Unix, a single SIGTERM to the sidecar is sufficient because node-pty
+/// manages its own child processes and cleans them up on exit.
+fn kill_process_tree(pid: u32) {
+    append_log(format!("[sidecar] killing process tree (pid={pid})"));
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+    }
+    #[cfg(unix)]
+    {
+        unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+    }
+}
+
+#[tauri::command]
+fn get_project_dir() -> String {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default()
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ShellInfo {
+    name: String,
+    path: String,
+    #[serde(default)]
+    args: Vec<String>,
+}
+
+#[tauri::command]
+fn get_available_shells(state: tauri::State<'_, SidecarState>) -> Result<Vec<ShellInfo>, String> {
+    let response = request_from_sidecar_timeout(&state, "pty:getShells", serde_json::json!({}), Duration::from_secs(10))?;
+    let shells: Vec<ShellInfo> = response
+        .get("shells")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    Ok(shells)
 }
 
 fn resolve_sidecar_path(resource_dir: Option<PathBuf>, manifest_dir: &Path) -> PathBuf {
-    if let Some(sidecar_path) = resource_dir
-        .map(|dir| dir.join("sidecar").join("main.js"))
-        .filter(|path| path.is_file())
-    {
-        return sidecar_path;
+    if let Some(ref dir) = resource_dir {
+        // Tauri maps `../sidecar` to `_up_/sidecar` when bundling resources
+        for prefix in &["sidecar", "_up_/sidecar"] {
+            let path = dir.join(prefix).join("main.js");
+            if path.is_file() {
+                return path;
+            }
+        }
     }
 
     manifest_dir.join("..").join("sidecar").join("main.js")
 }
 
-fn start_sidecar(app: &AppHandle) -> SidecarState {
+fn strip_windows_verbatim_prefix(path_string: &str) -> Option<PathBuf> {
+    if let Some(stripped) = path_string.strip_prefix(r"\\?\UNC\") {
+        return Some(PathBuf::from(format!(r"\\{stripped}")));
+    }
+    if let Some(stripped) = path_string.strip_prefix(r"\\?\") {
+        return Some(PathBuf::from(stripped));
+    }
+
+    None
+}
+
+fn sidecar_script_arg_path(path: &Path) -> PathBuf {
+    if let Some(path) = strip_windows_verbatim_prefix(&path.to_string_lossy()) {
+        return path;
+    }
+
+    path.to_path_buf()
+}
+
+fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
     let sidecar_path = resolve_sidecar_path(
         app.path().resource_dir().ok(),
         Path::new(env!("CARGO_MANIFEST_DIR")),
     );
+    let sidecar_arg_path = sidecar_script_arg_path(&sidecar_path);
+    append_log(format!(
+        "[sidecar] resolved script: {}",
+        sidecar_path.display()
+    ));
+    append_log(format!(
+        "[sidecar] script argument: {}",
+        sidecar_arg_path.display()
+    ));
 
     let (mut rx, mut child) = app
         .shell()
         .sidecar("node")
-        .expect("failed to resolve bundled Node.js runtime")
-        .arg(&sidecar_path)
+        .map_err(|err| format!("failed to resolve bundled Node.js runtime: {err}"))?
+        .arg(&sidecar_arg_path)
         .set_raw_out(false)
         .spawn()
-        .expect("failed to start Node.js sidecar");
+        .map_err(|err| format!("failed to start Node.js sidecar: {err}"))?;
+    let child_pid = child.pid();
+    append_log(format!("[sidecar] spawned Node.js runtime (pid={child_pid})"));
 
     let handle = app.clone();
     let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
@@ -179,14 +333,21 @@ fn start_sidecar(app: &AppHandle) -> SidecarState {
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
-                    let Ok(line) = String::from_utf8(line) else { continue };
+                    let Ok(line) = String::from_utf8(line) else {
+                        append_log("[sidecar stdout] invalid UTF-8");
+                        continue;
+                    };
                     let Ok(mut msg) = serde_json::from_str::<serde_json::Value>(&line) else {
+                        append_log(format!("[sidecar stdout] {}", line.trim_end()));
                         continue;
                     };
-                    let Some(event) = msg.get("event").and_then(|e| e.as_str()).map(String::from) else {
+                    let Some(event) = msg.get("event").and_then(|e| e.as_str()).map(String::from)
+                    else {
+                        append_log("[sidecar stdout] JSON line missing event");
                         continue;
                     };
-                    let data = msg.as_object_mut()
+                    let data = msg
+                        .as_object_mut()
                         .and_then(|m| m.remove("data"))
                         .unwrap_or(serde_json::Value::Null);
 
@@ -206,18 +367,23 @@ fn start_sidecar(app: &AppHandle) -> SidecarState {
                 }
                 CommandEvent::Stderr(line) => {
                     if let Ok(line) = String::from_utf8(line) {
-                        eprintln!("[sidecar] {}", line.trim_end());
+                        let message = format!("[sidecar] {}", line.trim_end());
+                        eprintln!("{message}");
+                        append_log(message);
                     }
                 }
                 CommandEvent::Error(err) => {
-                    eprintln!("[sidecar] {}", err);
+                    let message = format!("[sidecar] {err}");
+                    eprintln!("{message}");
+                    append_log(message);
                 }
                 CommandEvent::Terminated(payload) => {
-                    eprintln!(
+                    let message = format!(
                         "[sidecar] exited (code: {:?}, signal: {:?})",
-                        payload.code,
-                        payload.signal
+                        payload.code, payload.signal
                     );
+                    eprintln!("{message}");
+                    append_log(message);
                     break;
                 }
                 _ => {}
@@ -231,10 +397,14 @@ fn start_sidecar(app: &AppHandle) -> SidecarState {
     std::thread::spawn(move || {
         while let Ok(msg) = writer_rx.recv() {
             match msg {
-                SidecarMsg::Shutdown => break,
+                SidecarMsg::Shutdown => {
+                    append_log("[sidecar] shutdown requested");
+                    break;
+                }
                 SidecarMsg::Json(line) => {
                     let payload = format!("{}\n", line);
                     if child.write(payload.as_bytes()).is_err() {
+                        append_log("[sidecar] stdin write failed");
                         break;
                     }
                 }
@@ -242,11 +412,12 @@ fn start_sidecar(app: &AppHandle) -> SidecarState {
         }
     });
 
-    SidecarState {
+    Ok(SidecarState {
         tx,
         pending_requests,
         next_request_id: AtomicU64::new(0),
-    }
+        child_pid,
+    })
 }
 
 // ── App entry point ─────────────────────────────────────────────────────────
@@ -255,9 +426,28 @@ fn start_sidecar(app: &AppHandle) -> SidecarState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            let sidecar_state = start_sidecar(app.handle());
+            init_log();
+            append_log("[app] setup started");
+
+            let sidecar_state = start_sidecar(app.handle()).map_err(|err| {
+                append_log(format!("[sidecar] {err}"));
+                std::io::Error::new(std::io::ErrorKind::Other, err)
+            })?;
             app.manage(sidecar_state);
+            append_log("[app] sidecar state registered");
+
+            // On non-macOS, remove native decorations for a fully custom title bar.
+            // macOS uses titleBarStyle "Overlay" from config instead, which preserves
+            // rounded corners and native traffic-light buttons.
+            #[cfg(not(target_os = "macos"))]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_decorations(false);
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -269,14 +459,25 @@ pub fn run() {
             pty_get_scrollback,
             pty_request_init,
             shutdown_sidecar,
+            get_project_dir,
+            get_available_shells,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running MouseTerm");
+        .build(tauri::generate_context!())
+        .expect("error while building MouseTerm")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<SidecarState>() {
+                    append_log("[app] exit — killing sidecar");
+                    let _ = state.tx.send(SidecarMsg::Shutdown);
+                    kill_process_tree(state.child_pid);
+                }
+            }
+        });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_sidecar_path;
+    use super::{resolve_sidecar_path, strip_windows_verbatim_prefix};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -308,11 +509,56 @@ mod tests {
     }
 
     #[test]
+    fn finds_sidecar_under_up_prefix() {
+        let resource_dir = unique_temp_dir("resource-up");
+        let sidecar_dir = resource_dir.join("_up_").join("sidecar");
+        let sidecar_path = sidecar_dir.join("main.js");
+
+        fs::create_dir_all(&sidecar_dir).expect("failed to create sidecar dir");
+        fs::write(&sidecar_path, "console.log('packaged');").expect("failed to create sidecar");
+
+        let resolved = resolve_sidecar_path(
+            Some(resource_dir.clone()),
+            Path::new("/repo/standalone/src-tauri"),
+        );
+
+        assert_eq!(resolved, sidecar_path);
+        fs::remove_dir_all(&resource_dir).expect("failed to clean temp dir");
+    }
+
+    #[test]
     fn falls_back_to_repo_sidecar_when_resource_is_missing() {
         let manifest_dir = Path::new("/repo/standalone/src-tauri");
 
         let resolved = resolve_sidecar_path(None, manifest_dir);
 
-        assert_eq!(resolved, manifest_dir.join("..").join("sidecar").join("main.js"));
+        assert_eq!(
+            resolved,
+            manifest_dir.join("..").join("sidecar").join("main.js")
+        );
+    }
+
+    #[test]
+    fn strips_windows_verbatim_prefix_for_node_main_script() {
+        let path = strip_windows_verbatim_prefix(
+            r"\\?\C:\Users\EdgarTwigg\AppData\Local\MouseTerm\_up_\sidecar\main.js",
+        )
+        .expect("expected verbatim path to be stripped");
+
+        assert_eq!(
+            path,
+            PathBuf::from(r"C:\Users\EdgarTwigg\AppData\Local\MouseTerm\_up_\sidecar\main.js")
+        );
+    }
+
+    #[test]
+    fn strips_windows_verbatim_unc_prefix_for_node_main_script() {
+        let path = strip_windows_verbatim_prefix(r"\\?\UNC\server\share\MouseTerm\sidecar\main.js")
+            .expect("expected verbatim UNC path to be stripped");
+
+        assert_eq!(
+            path,
+            PathBuf::from(r"\\server\share\MouseTerm\sidecar\main.js")
+        );
     }
 }

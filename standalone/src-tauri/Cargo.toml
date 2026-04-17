@@ -1,10 +1,13 @@
 [package]
 name = "mouseterm"
-version = "0.1.0"
+version = "0.6.2"
 description = "Mouse-friendly multitasking terminal"
 authors = ["DiffPlug"]
 license = "FSL-1.1-MIT"
 edition = "2021"
+
+[registry]
+global-min-publish-age = "14 days"
 
 [lib]
 name = "mouseterm_lib"
@@ -16,8 +19,12 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [profile.release]
 strip = true

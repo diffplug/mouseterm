@@ -5,6 +5,7 @@ export interface DoorProps {
   doorId?: string;
   title: string;
   isActive?: boolean;
+  windowFocused?: boolean;
   status?: SessionStatus;
   todo?: TodoState;
   onClick?: () => void;
@@ -14,6 +15,7 @@ export function Door({
   doorId,
   title,
   isActive = false,
+  windowFocused = true,
   status = 'ALARM_DISABLED',
   todo = TODO_OFF,
   onClick,
@@ -40,13 +42,13 @@ export function Door({
         'transition-colors hover:bg-surface-raised',
       ].join(' ')}
       style={{
-        border: '2px solid var(--mt-border)',
+        border: '2px solid var(--color-border)',
         borderBottom: '2px solid transparent',
       }}
       onClick={onClick}
       title={title}
     >
-      <span className={['min-w-0 flex-1 truncate', isActive ? 'text-foreground' : 'text-muted'].join(' ')}>
+      <span className={['min-w-0 flex-1 truncate', (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
         {title}
       </span>
       {(hasTodo(todo) || alarmEnabled) && (
@@ -67,7 +69,7 @@ export function Door({
             </span>
           )}
           {alarmEnabled && (
-            <span className={['relative', alarmRinging ? 'text-warning' : isActive ? 'text-foreground' : 'text-muted'].join(' ')}>
+            <span className={['relative', alarmRinging ? 'text-warning' : (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
               <BellIcon size={11} weight="fill" />
               {(status === 'MIGHT_BE_BUSY' || status === 'BUSY' || status === 'MIGHT_NEED_ATTENTION') && (
                 <span className={[

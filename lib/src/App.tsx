@@ -25,14 +25,16 @@ export default function App({
   initialPaneIds,
   restoredLayout,
   initialDetached,
+  baseboardNotice,
 }: {
   initialPaneIds?: string[];
   restoredLayout?: unknown;
   initialDetached?: PersistedDetachedItem[];
+  baseboardNotice?: ReactNode;
 }) {
   return (
     <ErrorBoundary>
-      <Pond initialPaneIds={initialPaneIds} restoredLayout={restoredLayout} initialDetached={initialDetached} />
+      <Pond initialPaneIds={initialPaneIds} restoredLayout={restoredLayout} initialDetached={initialDetached} baseboardNotice={baseboardNotice} />
     </ErrorBoundary>
   );
 }

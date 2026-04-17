@@ -10,6 +10,12 @@ body {
   font-family: var(--mt-font-family);
 }
 
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
 /* --- Dockview overrides: flatten tab bar into a pane header --- */
 
 /* Each group has exactly one panel (tab stacking is disabled),
@@ -20,17 +26,17 @@ body {
 .dockview-theme-abyss {
   --dv-tabs-and-actions-container-height: 30px !important;
   --dv-tabs-and-actions-container-font-size: var(--mt-font-size) !important;
-  --dv-group-view-background-color: var(--mt-surface) !important;
-  --dv-tabs-and-actions-container-background-color: var(--mt-surface-alt) !important;
-  --dv-activegroup-visiblepanel-tab-background-color: var(--mt-tab-active-bg) !important;
-  --dv-activegroup-hiddenpanel-tab-background-color: var(--mt-tab-inactive-bg) !important;
-  --dv-inactivegroup-visiblepanel-tab-background-color: var(--mt-tab-active-bg) !important;
-  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--mt-tab-inactive-bg) !important;
-  --dv-activegroup-visiblepanel-tab-color: var(--mt-tab-active-fg) !important;
-  --dv-activegroup-hiddenpanel-tab-color: var(--mt-tab-inactive-fg) !important;
-  --dv-inactivegroup-visiblepanel-tab-color: var(--mt-tab-active-fg) !important;
-  --dv-inactivegroup-hiddenpanel-tab-color: var(--mt-tab-inactive-fg) !important;
-  --dv-tab-divider-color: var(--mt-border) !important;
+  --dv-group-view-background-color: var(--color-surface) !important;
+  --dv-tabs-and-actions-container-background-color: var(--color-surface-alt) !important;
+  --dv-activegroup-visiblepanel-tab-background-color: var(--color-tab-active-bg) !important;
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--color-tab-inactive-bg) !important;
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--color-tab-active-bg) !important;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--color-tab-inactive-bg) !important;
+  --dv-activegroup-visiblepanel-tab-color: var(--color-tab-active-fg) !important;
+  --dv-activegroup-hiddenpanel-tab-color: var(--color-tab-inactive-fg) !important;
+  --dv-inactivegroup-visiblepanel-tab-color: var(--color-tab-active-fg) !important;
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--color-tab-inactive-fg) !important;
+  --dv-tab-divider-color: var(--color-border) !important;
   --dv-separator-border: transparent !important;
   --dv-active-sash-color: transparent !important;
 }
@@ -39,7 +45,7 @@ body {
 .dockview-theme-abyss .dv-groupview,
 .dockview-theme-abyss .dv-split-view-container,
 .dockview-theme-abyss .dv-split-view-container .dv-view-container {
-  background-color: var(--mt-surface) !important;
+  background-color: var(--color-surface) !important;
 }
 
 /* Remove tab-bar background/border — the tab itself provides the bg */

@@ -1,232 +1,205 @@
 /* MouseTerm Theme System
  *
  * Two-layer CSS variable strategy:
- *   Tailwind tokens -> --mt-* (our semantic layer) -> var(--vscode-*, <fallback>)
+ *   @theme --color-* tokens → var(--vscode-*, <fallback>)
  *
  * In VSCode: --vscode-* variables are auto-injected and take precedence.
- *   VSCode adds body classes: vscode-light, vscode-dark, vscode-high-contrast.
- * In Neutralino/standalone: fallback values apply, with prefers-color-scheme
- *   used to pick dark vs light defaults.
+ * In standalone/website: applyTheme() sets --vscode-* on document.body.
+ *   Also sets body class vscode-light for light themes.
+ * For standalone without explicit theme: prefers-color-scheme picks
+ *   dark vs light defaults.
+ *
+ * Two consumers read --vscode-* variables:
+ *   1. @theme fallbacks below — for UI colors (surfaces, tabs, etc.)
+ *   2. getTerminalTheme() in terminal-registry.ts — reads ANSI colors,
+ *      cursor, and selection directly as --vscode-* for xterm.js
  */
 
-/* --- Dark mode fallbacks (VSCode Dark+ defaults) --- */
+/* --- Font tokens (not Tailwind colors) --- */
 :root {
-  /* Typography */
   --mt-font-size: var(--vscode-font-size, 13px);
   --mt-font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
-  --mt-editor-font-size: var(--vscode-editor-font-size, 12px);
-  --mt-editor-font-family: var(--vscode-editor-font-family, 'SF Mono', Menlo, Monaco, monospace);
+}
 
+/* --- Dark mode fallback defaults --- */
+@theme {
   /* Surfaces */
-  --mt-surface: var(--vscode-editor-background, #1e1e1e);
-  --mt-surface-alt: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #252526));
-  --mt-surface-raised: var(--vscode-editorWidget-background, #252526);
+  --color-surface: var(--vscode-editor-background, #1e1e1e);
+  --color-surface-alt: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #252526));
+  --color-surface-raised: var(--vscode-editorWidget-background, #252526);
 
   /* Text */
-  --mt-foreground: var(--vscode-editor-foreground, #cccccc);
-  --mt-muted: var(--vscode-descriptionForeground, #858585);
+  --color-foreground: var(--vscode-editor-foreground, #cccccc);
+  --color-muted: var(--vscode-descriptionForeground, #858585);
 
   /* Accent & borders */
-  --mt-accent: var(--vscode-focusBorder, #007fd4);
-  --mt-border: var(--vscode-panel-border, #2b2b2b);
-  --mt-gutter: var(--vscode-panel-border, #2b2b2b);
-  --mt-gutter-active: var(--vscode-focusBorder, #007fd4);
+  --color-accent: var(--vscode-focusBorder, #007fd4);
+  --color-border: var(--vscode-panel-border, #2b2b2b);
 
   /* Tabs */
-  --mt-tab-active-bg: var(--vscode-tab-activeBackground, #1e1e1e);
-  --mt-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #2d2d2d);
-  --mt-tab-active-fg: var(--vscode-tab-activeForeground, #ffffff);
-  --mt-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #969696);
-  --mt-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #094771);
-  --mt-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #ffffff);
+  --color-tab-active-bg: var(--vscode-tab-activeBackground, #1e1e1e);
+  --color-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #2d2d2d);
+  --color-tab-active-fg: var(--vscode-tab-activeForeground, #ffffff);
+  --color-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #969696);
+  --color-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #094771);
+  --color-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #ffffff);
 
   /* Terminal */
-  --mt-terminal-bg: var(--vscode-terminal-background, #1e1e1e);
-  --mt-terminal-fg: var(--vscode-terminal-foreground, #cccccc);
+  --color-terminal-bg: var(--vscode-terminal-background, #1e1e1e);
+  --color-terminal-fg: var(--vscode-terminal-foreground, #cccccc);
 
   /* Badges */
-  --mt-badge-bg: var(--vscode-badge-background, #007acc);
-  --mt-badge-fg: var(--vscode-badge-foreground, #ffffff);
+  --color-badge-bg: var(--vscode-badge-background, #007acc);
+  --color-badge-fg: var(--vscode-badge-foreground, #ffffff);
 
   /* Semantic status */
-  --mt-error-fg: var(--vscode-errorForeground, #f48771);
-  --mt-success-fg: var(--vscode-testing-iconPassed, #73c991);
-  --mt-warning-fg: var(--vscode-editorWarning-foreground, #cca700);
+  --color-error: var(--vscode-errorForeground, #f48771);
+  --color-success: #73c991;
+  --color-warning: var(--vscode-editorWarning-foreground, #cca700);
 
   /* Inputs */
-  --mt-input-bg: var(--vscode-input-background, #3c3c3c);
-  --mt-input-border: var(--vscode-input-border, #3c3c3c);
+  --color-input-bg: var(--vscode-input-background, #3c3c3c);
+  --color-input-border: var(--vscode-input-border, #3c3c3c);
 
   /* Buttons */
-  --mt-button-bg: var(--vscode-button-background, #0e639c);
-  --mt-button-fg: var(--vscode-button-foreground, #ffffff);
-  --mt-button-hover-bg: var(--vscode-button-hoverBackground, #1177bb);
+  --color-button-bg: var(--vscode-button-background, #0e639c);
+  --color-button-fg: var(--vscode-button-foreground, #ffffff);
+  --color-button-hover-bg: var(--vscode-button-hoverBackground, #1177bb);
 
-  /* Selection overlay */
-  --mt-selection-terminal: var(--vscode-focusBorder, #007fd4);
-  --mt-selection-workspace: var(--vscode-textLink-foreground, #3794ff);
-
-  /* Terminal ANSI colors */
-  --mt-ansi-black: var(--vscode-terminal-ansiBlack, #000000);
-  --mt-ansi-red: var(--vscode-terminal-ansiRed, #cd3131);
-  --mt-ansi-green: var(--vscode-terminal-ansiGreen, #0dbc79);
-  --mt-ansi-yellow: var(--vscode-terminal-ansiYellow, #e5e510);
-  --mt-ansi-blue: var(--vscode-terminal-ansiBlue, #2472c8);
-  --mt-ansi-magenta: var(--vscode-terminal-ansiMagenta, #bc3fbc);
-  --mt-ansi-cyan: var(--vscode-terminal-ansiCyan, #11a8cd);
-  --mt-ansi-white: var(--vscode-terminal-ansiWhite, #e5e5e5);
-  --mt-ansi-bright-black: var(--vscode-terminal-ansiBrightBlack, #666666);
-  --mt-ansi-bright-red: var(--vscode-terminal-ansiBrightRed, #f14c4c);
-  --mt-ansi-bright-green: var(--vscode-terminal-ansiBrightGreen, #23d18b);
-  --mt-ansi-bright-yellow: var(--vscode-terminal-ansiBrightYellow, #f5f543);
-  --mt-ansi-bright-blue: var(--vscode-terminal-ansiBrightBlue, #3b8eea);
-  --mt-ansi-bright-magenta: var(--vscode-terminal-ansiBrightMagenta, #d670d6);
-  --mt-ansi-bright-cyan: var(--vscode-terminal-ansiBrightCyan, #29b8db);
-  --mt-ansi-bright-white: var(--vscode-terminal-ansiBrightWhite, #e5e5e5);
-  --mt-terminal-cursor: var(--vscode-terminalCursor-foreground, #aeafad);
-  --mt-terminal-selection: var(--vscode-terminal-selectionBackground, #264f7840);
+  /* Animation */
+  --animate-alarm-dot: alarm-dot 2s ease-in-out infinite;
+  --animate-shake-x: shake-x 400ms ease-out;
 }
 
-/* --- Light mode fallbacks (VSCode Light+ defaults) ---
+/* --- Light mode fallback defaults ---
  * VSCode adds body.vscode-light for light themes.
- * Also respect prefers-color-scheme for Neutralino/standalone. */
+ * applyTheme() also sets this class for imported light themes. */
 body.vscode-light {
-  --mt-surface: var(--vscode-editor-background, #ffffff);
-  --mt-surface-alt: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #f3f3f3));
-  --mt-surface-raised: var(--vscode-editorWidget-background, #f3f3f3);
-  --mt-foreground: var(--vscode-editor-foreground, #333333);
-  --mt-muted: var(--vscode-descriptionForeground, #717171);
-  --mt-accent: var(--vscode-focusBorder, #0090f1);
-  --mt-border: var(--vscode-panel-border, #e5e5e5);
-  --mt-gutter: var(--vscode-panel-border, #d9d9d9);
-  --mt-gutter-active: var(--vscode-focusBorder, #0090f1);
-  --mt-tab-active-bg: var(--vscode-tab-activeBackground, #ffffff);
-  --mt-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #ececec);
-  --mt-tab-active-fg: var(--vscode-tab-activeForeground, #333333);
-  --mt-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #8e8e8e);
-  --mt-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
-  --mt-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #000000);
-  --mt-terminal-bg: var(--vscode-terminal-background, #ffffff);
-  --mt-terminal-fg: var(--vscode-terminal-foreground, #333333);
-  --mt-badge-bg: var(--vscode-badge-background, #007acc);
-  --mt-badge-fg: var(--vscode-badge-foreground, #ffffff);
-  --mt-error-fg: var(--vscode-errorForeground, #a1260d);
-  --mt-success-fg: var(--vscode-testing-iconPassed, #388a34);
-  --mt-warning-fg: var(--vscode-editorWarning-foreground, #bf8803);
-  --mt-input-bg: var(--vscode-input-background, #ffffff);
-  --mt-input-border: var(--vscode-input-border, #cecece);
-  --mt-button-bg: var(--vscode-button-background, #007acc);
-  --mt-button-fg: var(--vscode-button-foreground, #ffffff);
-  --mt-button-hover-bg: var(--vscode-button-hoverBackground, #0062a3);
-  --mt-selection-terminal: var(--vscode-focusBorder, #0090f1);
-  --mt-selection-workspace: var(--vscode-textLink-foreground, #006ab1);
-
-  --mt-ansi-black: var(--vscode-terminal-ansiBlack, #000000);
-  --mt-ansi-red: var(--vscode-terminal-ansiRed, #cd3131);
-  --mt-ansi-green: var(--vscode-terminal-ansiGreen, #00bc00);
-  --mt-ansi-yellow: var(--vscode-terminal-ansiYellow, #949800);
-  --mt-ansi-blue: var(--vscode-terminal-ansiBlue, #0451a5);
-  --mt-ansi-magenta: var(--vscode-terminal-ansiMagenta, #bc05bc);
-  --mt-ansi-cyan: var(--vscode-terminal-ansiCyan, #0598bc);
-  --mt-ansi-white: var(--vscode-terminal-ansiWhite, #555555);
-  --mt-ansi-bright-black: var(--vscode-terminal-ansiBrightBlack, #666666);
-  --mt-ansi-bright-red: var(--vscode-terminal-ansiBrightRed, #cd3131);
-  --mt-ansi-bright-green: var(--vscode-terminal-ansiBrightGreen, #14ce14);
-  --mt-ansi-bright-yellow: var(--vscode-terminal-ansiBrightYellow, #b5ba00);
-  --mt-ansi-bright-blue: var(--vscode-terminal-ansiBrightBlue, #0451a5);
-  --mt-ansi-bright-magenta: var(--vscode-terminal-ansiBrightMagenta, #bc05bc);
-  --mt-ansi-bright-cyan: var(--vscode-terminal-ansiBrightCyan, #0598bc);
-  --mt-ansi-bright-white: var(--vscode-terminal-ansiBrightWhite, #a5a5a5);
-  --mt-terminal-cursor: var(--vscode-terminalCursor-foreground, #000000);
-  --mt-terminal-selection: var(--vscode-terminal-selectionBackground, #add6ff80);
+  --color-surface: var(--vscode-editor-background, #ffffff);
+  --color-surface-alt: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #f3f3f3));
+  --color-surface-raised: var(--vscode-editorWidget-background, #f3f3f3);
+  --color-foreground: var(--vscode-editor-foreground, #333333);
+  --color-muted: var(--vscode-descriptionForeground, #717171);
+  --color-accent: var(--vscode-focusBorder, #0090f1);
+  --color-border: var(--vscode-panel-border, #e5e5e5);
+  --color-tab-active-bg: var(--vscode-tab-activeBackground, #ffffff);
+  --color-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #ececec);
+  --color-tab-active-fg: var(--vscode-tab-activeForeground, #333333);
+  --color-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #8e8e8e);
+  --color-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
+  --color-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #000000);
+  --color-terminal-bg: var(--vscode-terminal-background, #ffffff);
+  --color-terminal-fg: var(--vscode-terminal-foreground, #333333);
+  --color-badge-bg: var(--vscode-badge-background, #007acc);
+  --color-badge-fg: var(--vscode-badge-foreground, #ffffff);
+  --color-error: var(--vscode-errorForeground, #a1260d);
+  --color-success: #388a34;
+  --color-warning: var(--vscode-editorWarning-foreground, #bf8803);
+  --color-input-bg: var(--vscode-input-background, #ffffff);
+  --color-input-border: var(--vscode-input-border, #cecece);
+  --color-button-bg: var(--vscode-button-background, #007acc);
+  --color-button-fg: var(--vscode-button-foreground, #ffffff);
+  --color-button-hover-bg: var(--vscode-button-hoverBackground, #0062a3);
 }
 
-/* Neutralino/standalone: use OS preference when no VSCode body class */
+/* Standalone: use OS preference when no VSCode body class */
 @media (prefers-color-scheme: light) {
   body:not(.vscode-light):not(.vscode-dark) {
-    --mt-surface: var(--vscode-editor-background, #ffffff);
-    --mt-surface-alt: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #f3f3f3));
-    --mt-surface-raised: var(--vscode-editorWidget-background, #f3f3f3);
-    --mt-foreground: var(--vscode-editor-foreground, #333333);
-    --mt-muted: var(--vscode-descriptionForeground, #717171);
-    --mt-accent: var(--vscode-focusBorder, #0090f1);
-    --mt-border: var(--vscode-panel-border, #e5e5e5);
-    --mt-gutter: var(--vscode-panel-border, #d9d9d9);
-    --mt-gutter-active: var(--vscode-focusBorder, #0090f1);
-    --mt-tab-active-bg: var(--vscode-tab-activeBackground, #ffffff);
-    --mt-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #ececec);
-    --mt-tab-active-fg: var(--vscode-tab-activeForeground, #333333);
-    --mt-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #8e8e8e);
-    --mt-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
-    --mt-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #000000);
-    --mt-terminal-bg: var(--vscode-terminal-background, #ffffff);
-    --mt-terminal-fg: var(--vscode-terminal-foreground, #333333);
-    --mt-badge-bg: var(--vscode-badge-background, #007acc);
-    --mt-badge-fg: var(--vscode-badge-foreground, #ffffff);
-    --mt-error-fg: var(--vscode-errorForeground, #a1260d);
-    --mt-success-fg: var(--vscode-testing-iconPassed, #388a34);
-    --mt-warning-fg: var(--vscode-editorWarning-foreground, #bf8803);
-    --mt-input-bg: var(--vscode-input-background, #ffffff);
-    --mt-input-border: var(--vscode-input-border, #cecece);
-    --mt-button-bg: var(--vscode-button-background, #007acc);
-    --mt-button-fg: var(--vscode-button-foreground, #ffffff);
-    --mt-button-hover-bg: var(--vscode-button-hoverBackground, #0062a3);
-    --mt-selection-terminal: var(--vscode-focusBorder, #0090f1);
-    --mt-selection-workspace: var(--vscode-textLink-foreground, #006ab1);
-
-    --mt-ansi-black: var(--vscode-terminal-ansiBlack, #000000);
-    --mt-ansi-red: var(--vscode-terminal-ansiRed, #cd3131);
-    --mt-ansi-green: var(--vscode-terminal-ansiGreen, #00bc00);
-    --mt-ansi-yellow: var(--vscode-terminal-ansiYellow, #949800);
-    --mt-ansi-blue: var(--vscode-terminal-ansiBlue, #0451a5);
-    --mt-ansi-magenta: var(--vscode-terminal-ansiMagenta, #bc05bc);
-    --mt-ansi-cyan: var(--vscode-terminal-ansiCyan, #0598bc);
-    --mt-ansi-white: var(--vscode-terminal-ansiWhite, #555555);
-    --mt-ansi-bright-black: var(--vscode-terminal-ansiBrightBlack, #666666);
-    --mt-ansi-bright-red: var(--vscode-terminal-ansiBrightRed, #cd3131);
-    --mt-ansi-bright-green: var(--vscode-terminal-ansiBrightGreen, #14ce14);
-    --mt-ansi-bright-yellow: var(--vscode-terminal-ansiBrightYellow, #b5ba00);
-    --mt-ansi-bright-blue: var(--vscode-terminal-ansiBrightBlue, #0451a5);
-    --mt-ansi-bright-magenta: var(--vscode-terminal-ansiBrightMagenta, #bc05bc);
-    --mt-ansi-bright-cyan: var(--vscode-terminal-ansiBrightCyan, #0598bc);
-    --mt-ansi-bright-white: var(--vscode-terminal-ansiBrightWhite, #a5a5a5);
-    --mt-terminal-cursor: var(--vscode-terminalCursor-foreground, #000000);
-    --mt-terminal-selection: var(--vscode-terminal-selectionBackground, #add6ff80);
+    --color-surface: var(--vscode-editor-background, #ffffff);
+    --color-surface-alt: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #f3f3f3));
+    --color-surface-raised: var(--vscode-editorWidget-background, #f3f3f3);
+    --color-foreground: var(--vscode-editor-foreground, #333333);
+    --color-muted: var(--vscode-descriptionForeground, #717171);
+    --color-accent: var(--vscode-focusBorder, #0090f1);
+    --color-border: var(--vscode-panel-border, #e5e5e5);
+    --color-tab-active-bg: var(--vscode-tab-activeBackground, #ffffff);
+    --color-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #ececec);
+    --color-tab-active-fg: var(--vscode-tab-activeForeground, #333333);
+    --color-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #8e8e8e);
+    --color-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
+    --color-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #000000);
+    --color-terminal-bg: var(--vscode-terminal-background, #ffffff);
+    --color-terminal-fg: var(--vscode-terminal-foreground, #333333);
+    --color-badge-bg: var(--vscode-badge-background, #007acc);
+    --color-badge-fg: var(--vscode-badge-foreground, #ffffff);
+    --color-error: var(--vscode-errorForeground, #a1260d);
+    --color-success: #388a34;
+    --color-warning: var(--vscode-editorWarning-foreground, #bf8803);
+    --color-input-bg: var(--vscode-input-background, #ffffff);
+    --color-input-border: var(--vscode-input-border, #cecece);
+    --color-button-bg: var(--vscode-button-background, #007acc);
+    --color-button-fg: var(--vscode-button-foreground, #ffffff);
+    --color-button-hover-bg: var(--vscode-button-hoverBackground, #0062a3);
   }
-}
-
-/* --- Register semantic tokens with Tailwind v4 --- */
-@theme {
-  --color-surface: var(--mt-surface);
-  --color-surface-alt: var(--mt-surface-alt);
-  --color-surface-raised: var(--mt-surface-raised);
-  --color-foreground: var(--mt-foreground);
-  --color-muted: var(--mt-muted);
-  --color-accent: var(--mt-accent);
-  --color-border: var(--mt-border);
-  --color-tab-active-bg: var(--mt-tab-active-bg);
-  --color-tab-inactive-bg: var(--mt-tab-inactive-bg);
-  --color-tab-active-fg: var(--mt-tab-active-fg);
-  --color-tab-inactive-fg: var(--mt-tab-inactive-fg);
-  --color-tab-selected-bg: var(--mt-tab-selected-bg);
-  --color-tab-selected-fg: var(--mt-tab-selected-fg);
-  --color-terminal-bg: var(--mt-terminal-bg);
-  --color-terminal-fg: var(--mt-terminal-fg);
-  --color-badge-bg: var(--mt-badge-bg);
-  --color-badge-fg: var(--mt-badge-fg);
-  --color-error: var(--mt-error-fg);
-  --color-success: var(--mt-success-fg);
-  --color-warning: var(--mt-warning-fg);
-  --color-input-bg: var(--mt-input-bg);
-  --color-input-border: var(--mt-input-border);
-  --color-button-bg: var(--mt-button-bg);
-  --color-button-fg: var(--mt-button-fg);
-  --color-button-hover-bg: var(--mt-button-hover-bg);
-
-  --animate-alarm-dot: alarm-dot 2s ease-in-out infinite;
 }
 
 @keyframes alarm-dot {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+@keyframes shake-x {
+  0%, 100% { translate: 0; }
+  20% { translate: -6px; }
+  40% { translate: 5px; }
+  60% { translate: -3px; }
+  80% { translate: 2px; }
+}
+
+/* Pane spawn — directional clip-path reveal applied to the dockview group element.
+ * clip-path (not transform) keeps getBoundingClientRect accurate so the selection
+ * overlay measures the real post-animation bounds during the animation. */
+
+@keyframes pane-spawn-from-left {
+  from { opacity: 0; clip-path: inset(0 100% 0 0); }
+  to   { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+@keyframes pane-spawn-from-top {
+  from { opacity: 0; clip-path: inset(0 0 100% 0); }
+  to   { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+@keyframes pane-spawn-from-top-left {
+  from { opacity: 0; clip-path: inset(0 100% 100% 0); }
+  to   { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+
+.pane-spawning-from-left     { animation: pane-spawn-from-left     440ms cubic-bezier(0.22, 1, 0.36, 1); }
+.pane-spawning-from-top      { animation: pane-spawn-from-top      440ms cubic-bezier(0.22, 1, 0.36, 1); }
+.pane-spawning-from-top-left { animation: pane-spawn-from-top-left 440ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* Pane kill — fade the real pane element out. Opacity only is enough for edge
+ * and middle kills: the grower reveal beside the fading pane already carries
+ * the directional cue. For a last-pane kill there is no grower, so we also
+ * shrink the pane toward its bottom-right corner — a visible disappearance
+ * that also pairs diagonally with the auto-spawn's top-left reveal. */
+
+@keyframes pane-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes pane-fade-and-shrink-to-br {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0); }
+}
+
+/* Matches the pane shrink so the focus ring stays visually glued to its pane. */
+@keyframes ring-shrink-to-br {
+  from { transform: scale(1); }
+  to   { transform: scale(0); }
+}
+
+.pane-fading-out                 { animation: pane-fade-out               440ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.pane-fading-and-shrinking-to-br { animation: pane-fade-and-shrink-to-br  440ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+                                   transform-origin: 100% 100%; }
+.ring-shrinking-to-br            { animation: ring-shrink-to-br           440ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+                                   transform-origin: 100% 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-spawning-from-left,
+  .pane-spawning-from-top,
+  .pane-spawning-from-top-left,
+  .pane-fading-out,
+  .pane-fading-and-shrinking-to-br,
+  .ring-shrinking-to-br { animation: none; }
 }

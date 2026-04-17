@@ -17,14 +17,21 @@
     "name": "@tauri-apps/api",
     "version": "2.10.1",
     "license": "Apache-2.0 OR MIT",
-    "author": null,
+    "author": "Tauri Apps Contributors",
     "homepage": "https://github.com/tauri-apps/tauri#readme"
   },
   {
     "name": "@tauri-apps/plugin-shell",
     "version": "2.3.5",
     "license": "MIT OR Apache-2.0",
-    "author": null,
+    "author": "Tauri Apps Contributors",
+    "homepage": "https://github.com/tauri-apps/plugins-workspace#readme"
+  },
+  {
+    "name": "@tauri-apps/plugin-updater",
+    "version": "2.10.1",
+    "license": "MIT OR Apache-2.0",
+    "author": "Tauri Apps Contributors",
     "homepage": "https://github.com/tauri-apps/plugins-workspace#readme"
   },
   {
@@ -38,7 +45,7 @@
     "name": "@xterm/xterm",
     "version": "6.0.0",
     "license": "MIT",
-    "author": null,
+    "author": "Christopher Jeffrey, SourceLair Private Company, xterm.js authors",
     "homepage": "https://github.com/xtermjs/xterm.js#readme"
   },
   {
@@ -70,10 +77,45 @@
     "homepage": "https://github.com/mathuo/dockview"
   },
   {
+    "name": "fflate",
+    "version": "0.8.2",
+    "license": "MIT",
+    "author": "Arjun Barrett",
+    "homepage": "https://101arrowz.github.io/fflate"
+  },
+  {
+    "name": "GitHub Theme",
+    "version": "6.3.5",
+    "license": "MIT",
+    "author": "open-vsx",
+    "homepage": "https://github.com/primer/github-vscode-theme#readme"
+  },
+  {
+    "name": "Gruvbox Theme",
+    "version": "1.29.1",
+    "license": "MIT",
+    "author": "jdinhify",
+    "homepage": "https://github.com/jdinhify/vscode-theme-gruvbox"
+  },
+  {
+    "name": "Iceberg Theme",
+    "version": "2.0.5",
+    "license": "MIT",
+    "author": "cocopon",
+    "homepage": "https://cocopon.github.io/iceberg.vim/"
+  },
+  {
+    "name": "jsonc-parser",
+    "version": "3.3.1",
+    "license": "MIT",
+    "author": "Microsoft Corporation",
+    "homepage": "https://github.com/microsoft/node-jsonc-parser#readme"
+  },
+  {
     "name": "node-addon-api",
     "version": "7.1.1",
     "license": "MIT",
-    "author": null,
+    "author": "Node.js API collaborators",
     "homepage": "https://github.com/nodejs/node-addon-api"
   },
   {
@@ -87,14 +129,14 @@
     "name": "react",
     "version": "19.2.4",
     "license": "MIT",
-    "author": null,
+    "author": "Meta Platforms, Inc. and affiliates",
     "homepage": "https://react.dev/"
   },
   {
     "name": "react-dom",
     "version": "19.2.4",
     "license": "MIT",
-    "author": null,
+    "author": "Meta Platforms, Inc. and affiliates",
     "homepage": "https://react.dev/"
   },
   {
@@ -115,8 +157,15 @@
     "name": "scheduler",
     "version": "0.27.0",
     "license": "MIT",
-    "author": null,
+    "author": "Meta Platforms, Inc. and affiliates",
     "homepage": "https://react.dev/"
+  },
+  {
+    "name": "Solarized & Selenized",
+    "version": "0.3.18",
+    "license": "MIT",
+    "author": "santoso-wijaya",
+    "homepage": "https://github.com/santoso-wijaya/vscode-helios-selene"
   },
   {
     "name": "tailwind-merge",
@@ -136,7 +185,7 @@
     "name": "tailwindcss",
     "version": "4.2.2",
     "license": "MIT",
-    "author": null,
+    "author": "Tailwind Labs, Inc.",
     "homepage": "https://tailwindcss.com"
   }
 ]

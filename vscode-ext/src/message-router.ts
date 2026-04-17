@@ -173,6 +173,13 @@ export function attachRouter(
           requestId: msg.requestId,
         } satisfies ExtensionMessage);
         break;
+      case 'pty:getShells':
+        ptyManager.getAvailableShells().then((shells) => {
+          webview.postMessage({
+            type: 'pty:shells', shells, requestId: msg.requestId,
+          } satisfies ExtensionMessage);
+        });
+        break;
       case 'mouseterm:init': {
         // Webview has (re-)initialized — subscribe to live events.
         // Tear down previous subscriptions first (webview was destroyed and recreated).

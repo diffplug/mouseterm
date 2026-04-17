@@ -14,3 +14,13 @@ html {
   color: var(--color-text);
   font-kerning: normal;
 }
+
+/* Override lib's terminal-app styles (body overflow:hidden, #root height:100vh)
+   which Vite loads globally. The Playground page re-applies them when it mounts. */
+body {
+  overflow: auto;
+}
+
+#root {
+  height: auto;
+}

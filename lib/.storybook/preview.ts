@@ -43,7 +43,7 @@ const preview: Preview = {
     },
   },
   initialGlobals: {
-    theme: 'Dark+',
+    theme: 'GitHub Dark Default',
   },
   decorators: [
     // Theme switcher: inject --vscode-* CSS variables
@@ -61,7 +61,7 @@ const preview: Preview = {
         }
       }
       // Force remount on theme change so terminals pick up new colors
-      return createElement('div', { key: themeName }, createElement(Story));
+      return createElement('div', { key: themeName, style: { display: 'flex', flexDirection: 'column' as const, height: '100vh' } }, createElement(Story));
     },
     // FakePty: set scenario from parameters, clean up on unmount
     (Story, context) => {

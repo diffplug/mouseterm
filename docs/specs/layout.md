@@ -22,7 +22,7 @@ The user can navigate between all elements using the mouse, or by entering `comm
 
 ```
 Pond
-├── Context providers (Mode, SelectedId, PondActions, PanelElements, DoorElements, RenamingId, Zoomed)
+├── Context providers (Mode, SelectedId, PondActions, PanelElements, DoorElements, RenamingId, Zoomed, WindowFocused)
 │   └── div (h-screen, flex col)
 │       ├── Dockview wrapper (flex-1, 6px padding around edges)
 │       │   ├── DockviewReact (tiling layout engine, singleTabMode="fullwidth")
@@ -68,7 +68,7 @@ The content area is a tiling layout of panes, powered by dockview. Each pane occ
 
 ### Pane header
 
-Each pane has a 30px header that doubles as a drag handle. The header uses `cursor-grab` / `active:cursor-grabbing` and `select-none`. Background uses `--mt-tab-*` theme tokens (adapts to VSCode host theme). Dockview's default close button and right-actions container are hidden via CSS.
+Each pane has a 30px header that doubles as a drag handle. The header uses `cursor-grab` / `active:cursor-grabbing` and `select-none`. Background uses `--color-tab-*` theme tokens (adapts to VSCode host theme). Dockview's default close button and right-actions container are hidden via CSS.
 
 Elements from left to right:
 
@@ -167,7 +167,7 @@ All handled in a single capture-phase `keydown` listener on `window`. Every hand
 
 ### Kill confirmation
 
-Pressing `x` shows a pane-centered semi-transparent overlay (`KillConfirmOverlay` → `KillConfirmCard`) with a random uppercase letter (A-Z, excluding X). Typing that letter confirms the kill (destroys session, removes pane). Escape cancels.
+Pressing `x` (or clicking the kill button) enters command mode and shows a pane-centered semi-transparent overlay (`KillConfirmOverlay` → `KillConfirmCard`) with a random uppercase letter (A-Z, excluding X). Typing that letter confirms the kill (destroys session, removes pane). Cancel with Escape key, clicking the `[ESC] to cancel` button, or clicking another panel. Any other key triggers a shake animation (400ms `shake-x` keyframe) then auto-dismisses the confirmation.
 
 ## Selection overlay
 
@@ -279,9 +279,41 @@ Custom `mousetermTheme` extends dockview's `themeAbyss`:
 - Pane header height: `--dv-tabs-and-actions-container-height: 30px`
 - 6px padding around the dockview area (`p-1.5` on wrapper, `inset-1.5` on container)
 
-Colors use a two-layer CSS variable strategy: `--mt-*` semantic tokens → `var(--vscode-*, <fallback>)`. In VSCode, host theme variables take precedence. In standalone mode, fallback values apply (Dark+ defaults with `prefers-color-scheme: light` overrides). Tailwind v4 `@theme` block registers `--mt-*` tokens as Tailwind colors (e.g., `bg-surface`, `text-foreground`, `border-border`). See `theme.css` for the full token map.
+Colors use a two-layer CSS variable strategy: `@theme --color-*` tokens → `var(--vscode-*, <fallback>)`. In VSCode, host theme variables take precedence. In standalone mode, fallback values apply with `prefers-color-scheme: light` overrides. Tailwind v4 `@theme` block registers `--color-*` tokens as Tailwind colors (e.g., `bg-surface`, `text-foreground`, `border-border`). See `theme.css` for the full token map.
 
-Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. All dockview container backgrounds are flattened to `var(--mt-surface)`.
+Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. All dockview container backgrounds are flattened to `var(--color-surface)`.
+
+## Animations
+
+All pane-related motion is 440ms with `cubic-bezier(0.22, 1, 0.36, 1)` and uses `clip-path` (not `transform`) so `getBoundingClientRect` remains accurate during animation — the selection overlay measures the real post-animation bounds without lag. Reduced-motion users skip every animation described below.
+
+### Spawn (new pane reveal)
+
+When a pane is added, its dockview group element gets a directional `.pane-spawning-from-{left,top,top-left}` class. The clip-path starts fully closed from the opposite edge(s) and reveals to `inset(0)`. Direction is chosen by how the pane was born:
+
+- **Horizontal split** (new pane on the right) → reveal from the left edge.
+- **Vertical split** (new pane below) → reveal from the top edge.
+- **Auto-spawn after last-pane kill/detach** → reveal from the top-left corner.
+
+The direction is carried via `FreshlySpawnedContext` — a `Map<paneId, SpawnDirection>` written by the spawn call site and consumed once by `TerminalPanel`'s `useLayoutEffect` on first mount.
+
+### Kill (ghost fade + FLIP reclaim)
+
+`orchestrateKill(api, killedId)` in `Pond.tsx` runs on kill confirmation:
+
+1. Snapshot `getBoundingClientRect` for every other panel's group element.
+2. `destroyTerminal` + `api.removePanel`; dockview snaps the layout.
+3. Measure post-rects. Any panel whose rect grew is a "grower."
+4. Mount a solid `var(--color-surface)` ghost overlay at the killed rect (`position: fixed`, `z-index: 55`) with the `.pane-fading-out` class; it removes itself on `animationend` with a 1s timeout safety net. A uniform fade works for every case (edge/middle/last-pane kill) because the directional cue is already carried by the grower's FLIP reveal.
+5. For each grower, apply an inline `clip-path: inset(...)` with the newly-claimed territory clipped off, force a reflow, then transition to `inset(0)`. This reveals the grower into the vacated space without affecting `getBoundingClientRect`. Clears on `transitionend`.
+
+Case handling is purely rect-based (measure before and after removal), so 2-pane splits, linear 3+ rows/columns, and nested splits all fall through the same code path with no per-case branching.
+
+### Auto-spawn delay
+
+When `onDidRemovePanel` triggers the "always keep one pane visible" auto-spawn (see corner case #10), the `api.addPanel` call is deferred by 440ms. This lets the outgoing animation (kill ghost crush, or detach's selection-overlay slide to the door) complete before the replacement's reveal starts — they play sequentially in the same screen region instead of fighting each other. The deferred spawn re-checks `totalPanels` at fire time and becomes a no-op if anything repopulated the pane area during the delay (e.g. a door reattach).
+
+The deferred spawn also only calls `selectPanel` if selection is null. The kill handler clears selection to null, so the new pane takes focus. The detach flow sets selection to the just-created door; preserving that door focus across the delay is the point.
 
 ## Corner cases
 
@@ -294,7 +326,8 @@ Dockview's separator borders, sash handles, and groupview borders are all set to
 7. **Asymmetric back-navigation**: breadcrumb tracks last direction + origin for opposite-direction return.
 8. **Center drop merges panels**: intercepted at group-level `model.onWillDrop` and converted to a swap.
 9. **Group drag has null panelId**: falls back to `api.getGroup(groupId).activePanel.id`.
-10. **Auto-spawn on empty**: `onDidRemovePanel` creates a new session when the last pane is removed and no doors exist.
+10. **Auto-spawn on empty**: `onDidRemovePanel` creates a new session whenever the last visible pane is removed, whether or not doors exist — there is always a pane visible. The new pane receives the just-removed pane's id as `paneToCopy` for future cwd/terminal-kind inheritance. The `addPanel` call is delayed 440ms (see "Auto-spawn delay" under Animations) so the outgoing kill/detach animation finishes first.
+11. **Door focus survives auto-spawn**: `api.addPanel` auto-activates the new panel, firing `onDidActivePanelChange`. When the current selection is a door (e.g., just-detached last pane), that listener must not flip `selectedId` to the new pane — otherwise `selectedType === 'door'` + `selectedId === newPaneId` desyncs and the door loses its highlight while the SelectionOverlay is stuck on the stale door rect. The listener early-returns when `selectedType === 'door'`.
 
 ## Files
 
@@ -315,4 +348,4 @@ Dockview's separator borders, sash handles, and groupview borders are all set to
 | `lib/src/lib/reconnect.ts` | Priority-based recovery: live PTYs first, then saved session, then empty |
 | `lib/src/lib/resume-patterns.ts` | Detects resumable commands (`claude --resume`, etc.) in scrollback |
 | `lib/src/index.css` | Dockview theme overrides — separator/sash/border removal, background flattening |
-| `lib/src/theme.css` | Two-layer VSCode theme token system (`--mt-*` → `--vscode-*`) and Tailwind v4 `@theme` integration |
+| `lib/src/theme.css` | Two-layer VSCode theme token system (`@theme --color-*` → `--vscode-*`) and Tailwind v4 `@theme` integration |
