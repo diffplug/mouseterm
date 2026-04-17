@@ -61,28 +61,18 @@ export function activate(context: vscode.ExtensionContext) {
 
   const provider = new MouseTermViewProvider(context);
 
-  // Text+icon button in the status bar — VSCode's view/title navigation is
-  // icon-only, so this is the native way to show the current shell name.
-  const shellStatus = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Left,
-    100,
-  );
-  shellStatus.command = 'mouseterm.selectShell';
-  shellStatus.tooltip = 'MouseTerm: Select Shell';
-  shellStatus.show();
-  context.subscriptions.push(shellStatus);
-
+  // Updates the shell-derived state in one place: the view header (shell
+  // name appears next to the title via description) and the webview's
+  // default-shell slot that split-spawns read from.
   const applyShell = (shell: { name: string; path: string; args: string[] } | undefined) => {
     provider.setDescription(shell?.name);
     provider.setSelectedShell(shell ? { shell: shell.path, args: shell.args } : null);
-    shellStatus.text = shell ? `$(terminal) ${shell.name}` : '$(terminal) Select Shell';
   };
-  applyShell(undefined);
 
   // Warm up shell detection in the background so the picker/+ buttons
   // don't pay the cold-start cost (child fork + WSL probe) when the user
-  // first clicks them. Also seeds the view description / status-bar / webview
-  // state with the current shell.
+  // first clicks them. Also seeds the view description / webview state
+  // with the current shell.
   void ptyManager.getAvailableShells().then((shells) => {
     applyShell(resolveSelectedShell(context, shells));
   });
