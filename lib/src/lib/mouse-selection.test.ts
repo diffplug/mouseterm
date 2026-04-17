@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
   __resetMouseSelectionForTests,
+  beginDrag,
+  endDrag,
   getMouseSelectionSnapshot,
   getMouseSelectionState,
+  isDragging,
   removeMouseSelectionState,
   setBracketedPaste,
   setHintToken,
@@ -11,6 +14,7 @@ import {
   setOverride,
   setSelection,
   subscribeToMouseSelection,
+  updateDrag,
   type Selection,
   type TokenHint,
 } from './mouse-selection';
@@ -52,7 +56,7 @@ describe('mouse-selection: state setters', () => {
   });
 
   it('setSelection stores a selection', () => {
-    const sel: Selection = { startRow: 5, startCol: 3, endRow: 5, endCol: 10, shape: 'linewise', dragging: false };
+    const sel: Selection = { startRow: 5, startCol: 3, endRow: 5, endCol: 10, shape: 'linewise', dragging: false, startedInScrollback: false };
     setSelection('a', sel);
     expect(getMouseSelectionState('a').selection).toBe(sel);
 
@@ -71,7 +75,7 @@ describe('mouse-selection: state setters', () => {
 
   it('removeMouseSelectionState drops all state for an id', () => {
     setMouseReporting('a', 'vt200');
-    setSelection('a', { startRow: 0, startCol: 0, endRow: 0, endCol: 5, shape: 'linewise', dragging: false });
+    setSelection('a', { startRow: 0, startCol: 0, endRow: 0, endCol: 5, shape: 'linewise', dragging: false, startedInScrollback: false });
     removeMouseSelectionState('a');
     expect(getMouseSelectionState('a')).toEqual(DEFAULT_MOUSE_SELECTION_STATE);
   });
@@ -139,7 +143,7 @@ describe('mouse-selection: subscription', () => {
 
     setBracketedPaste('a', true);
     setOverride('a', 'temporary');
-    setSelection('a', { startRow: 0, startCol: 0, endRow: 0, endCol: 1, shape: 'linewise', dragging: true });
+    setSelection('a', { startRow: 0, startCol: 0, endRow: 0, endCol: 1, shape: 'linewise', dragging: true, startedInScrollback: false });
     setHintToken('a', { kind: 'path', row: 0, startCol: 0, endCol: 5, text: '/tmp' });
 
     expect(listener).toHaveBeenCalledTimes(4);
@@ -166,6 +170,104 @@ describe('mouse-selection: subscription', () => {
     subscribeToMouseSelection(listener);
     removeMouseSelectionState('never-existed');
     expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+describe('mouse-selection: drag lifecycle', () => {
+  it('beginDrag creates a selection anchored at the starting cell', () => {
+    beginDrag('a', { row: 5, col: 10, altKey: false, startedInScrollback: false });
+    const sel = getMouseSelectionState('a').selection;
+    expect(sel).not.toBeNull();
+    expect(sel).toMatchObject({
+      startRow: 5,
+      startCol: 10,
+      endRow: 5,
+      endCol: 10,
+      shape: 'linewise',
+      dragging: true,
+      startedInScrollback: false,
+    });
+  });
+
+  it('beginDrag with altKey starts in block shape', () => {
+    beginDrag('a', { row: 0, col: 0, altKey: true, startedInScrollback: false });
+    expect(getMouseSelectionState('a').selection?.shape).toBe('block');
+  });
+
+  it('beginDrag replaces an existing selection (spec §3.7)', () => {
+    beginDrag('a', { row: 0, col: 0, altKey: false, startedInScrollback: false });
+    updateDrag('a', { row: 2, col: 5, altKey: false });
+    endDrag('a');
+
+    beginDrag('a', { row: 8, col: 3, altKey: false, startedInScrollback: false });
+    const sel = getMouseSelectionState('a').selection;
+    expect(sel?.startRow).toBe(8);
+    expect(sel?.dragging).toBe(true);
+  });
+
+  it('updateDrag moves the end of an active drag', () => {
+    beginDrag('a', { row: 0, col: 0, altKey: false, startedInScrollback: false });
+    updateDrag('a', { row: 4, col: 12, altKey: false });
+    const sel = getMouseSelectionState('a').selection;
+    expect(sel?.endRow).toBe(4);
+    expect(sel?.endCol).toBe(12);
+  });
+
+  it('updateDrag flips shape live as Alt is pressed / released (spec §3.2)', () => {
+    beginDrag('a', { row: 0, col: 0, altKey: false, startedInScrollback: false });
+    updateDrag('a', { row: 4, col: 12, altKey: true });
+    expect(getMouseSelectionState('a').selection?.shape).toBe('block');
+    updateDrag('a', { row: 4, col: 12, altKey: false });
+    expect(getMouseSelectionState('a').selection?.shape).toBe('linewise');
+  });
+
+  it('updateDrag is a no-op after endDrag', () => {
+    beginDrag('a', { row: 0, col: 0, altKey: false, startedInScrollback: false });
+    endDrag('a');
+    updateDrag('a', { row: 9, col: 9, altKey: false });
+    const sel = getMouseSelectionState('a').selection;
+    expect(sel?.endRow).toBe(0);
+    expect(sel?.endCol).toBe(0);
+    expect(sel?.dragging).toBe(false);
+  });
+
+  it('updateDrag with no change does not notify', () => {
+    beginDrag('a', { row: 0, col: 0, altKey: false, startedInScrollback: false });
+    updateDrag('a', { row: 3, col: 5, altKey: false });
+    const listener = vi.fn();
+    subscribeToMouseSelection(listener);
+    updateDrag('a', { row: 3, col: 5, altKey: false });
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('endDrag freezes the selection but does not clear it', () => {
+    beginDrag('a', { row: 0, col: 0, altKey: false, startedInScrollback: false });
+    updateDrag('a', { row: 3, col: 5, altKey: false });
+    endDrag('a');
+    const sel = getMouseSelectionState('a').selection;
+    expect(sel?.dragging).toBe(false);
+    expect(sel?.endRow).toBe(3);
+    expect(sel?.endCol).toBe(5);
+  });
+
+  it('endDrag is a no-op when no drag is active', () => {
+    const listener = vi.fn();
+    subscribeToMouseSelection(listener);
+    endDrag('a');
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('isDragging reflects the drag state', () => {
+    expect(isDragging('a')).toBe(false);
+    beginDrag('a', { row: 0, col: 0, altKey: false, startedInScrollback: false });
+    expect(isDragging('a')).toBe(true);
+    endDrag('a');
+    expect(isDragging('a')).toBe(false);
+  });
+
+  it('beginDrag with startedInScrollback=true preserves the flag', () => {
+    beginDrag('a', { row: 2, col: 0, altKey: false, startedInScrollback: true });
+    expect(getMouseSelectionState('a').selection?.startedInScrollback).toBe(true);
   });
 });
 

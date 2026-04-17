@@ -6,7 +6,14 @@ import { TODO_OFF, isSoftTodo, type TodoState, type AlarmButtonActionResult } fr
 import type { AlarmStateDetail } from './platform/types';
 import type { PersistedAlarmState } from './session-types';
 import { attachMouseModeObserver } from './mouse-mode-observer';
-import { removeMouseSelectionState } from './mouse-selection';
+import {
+  beginDrag,
+  endDrag,
+  getMouseSelectionState,
+  isDragging,
+  removeMouseSelectionState,
+  updateDrag,
+} from './mouse-selection';
 
 export type { SessionStatus } from './activity-monitor';
 export { TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo, isHardTodo, hasTodo, type TodoState, type AlarmButtonActionResult } from './alarm-manager';
@@ -365,12 +372,66 @@ function setupTerminalEntry(id: string): TerminalEntry {
   // Observe DECSET/DECRST for mouse-reporting and bracketed-paste modes.
   const mouseModeObserver = attachMouseModeObserver(id, terminal);
 
+  // Mouse event router. Capture phase so we see events before xterm's own
+  // handlers. For now we only OBSERVE — we update our selection state but
+  // don't stopPropagation, so xterm's default selection still shows. Once
+  // the overlay lands (story C.2) we'll fully take over by stopping events.
+  const computeCell = (ev: MouseEvent): { row: number; col: number; startedInScrollback: boolean } => {
+    const rect = element.getBoundingClientRect();
+    const cellWidth = rect.width / terminal.cols;
+    const cellHeight = rect.height / terminal.rows;
+    const offsetX = Math.max(0, ev.clientX - rect.left);
+    const offsetY = Math.max(0, ev.clientY - rect.top);
+    const col = Math.min(terminal.cols - 1, Math.max(0, Math.floor(offsetX / cellWidth)));
+    const viewportRow = Math.min(terminal.rows - 1, Math.floor(offsetY / cellHeight));
+    const absRow = terminal.buffer.active.viewportY + viewportRow;
+    const startedInScrollback = absRow < terminal.buffer.active.baseY;
+    return { row: absRow, col, startedInScrollback };
+  };
+
+  const onMouseDown = (ev: MouseEvent) => {
+    if (ev.button !== 0) return; // only left-click starts a selection
+    const state = getMouseSelectionState(id);
+    const cell = computeCell(ev);
+    // Per spec §3.5 and §6.1:
+    //  - reporting off: terminal handles
+    //  - reporting on + override active: terminal handles
+    //  - reporting on + no override + scrollback-origin: terminal handles
+    //  - reporting on + no override + live region: inside program handles
+    const terminalOwns =
+      state.mouseReporting === 'none'
+      || state.override !== 'off'
+      || cell.startedInScrollback;
+    if (!terminalOwns) return;
+    beginDrag(id, {
+      row: cell.row,
+      col: cell.col,
+      altKey: ev.altKey,
+      startedInScrollback: cell.startedInScrollback,
+    });
+  };
+  const onWindowMouseMove = (ev: MouseEvent) => {
+    if (!isDragging(id)) return;
+    const cell = computeCell(ev);
+    updateDrag(id, { row: cell.row, col: cell.col, altKey: ev.altKey });
+  };
+  const onWindowMouseUp = (_ev: MouseEvent) => {
+    if (!isDragging(id)) return;
+    endDrag(id);
+  };
+  element.addEventListener('mousedown', onMouseDown, true);
+  window.addEventListener('mousemove', onWindowMouseMove, true);
+  window.addEventListener('mouseup', onWindowMouseUp, true);
+
   const cleanup = () => {
     getPlatform().offPtyData(handleData);
     getPlatform().offPtyExit(handleExit);
     inputDisposable.dispose();
     resizeDisposable.dispose();
     mouseModeObserver.dispose();
+    element.removeEventListener('mousedown', onMouseDown, true);
+    window.removeEventListener('mousemove', onWindowMouseMove, true);
+    window.removeEventListener('mouseup', onWindowMouseUp, true);
   };
 
   const entry: TerminalEntry = {

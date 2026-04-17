@@ -27,6 +27,12 @@ export interface Selection {
   shape: SelectionShape;
   /** True while the user is still dragging; false once the mouse is released. */
   dragging: boolean;
+  /**
+   * True when the drag originated in scrollback. Scrollback-origin drags are
+   * always handled by the terminal regardless of the inside program's mouse
+   * reporting (spec §3.5).
+   */
+  startedInScrollback: boolean;
 }
 
 export interface TokenHint {
@@ -124,6 +130,64 @@ export function setSelection(id: string, selection: Selection | null): void {
   if (s.selection === null && selection === null) return;
   s.selection = selection;
   notify();
+}
+
+/**
+ * Begin a new drag. Replaces any existing selection (spec §3.7: starting a
+ * new drag in the terminal content area replaces the existing selection).
+ */
+export function beginDrag(
+  id: string,
+  args: { row: number; col: number; altKey: boolean; startedInScrollback: boolean },
+): void {
+  const s = ensure(id);
+  s.selection = {
+    startRow: args.row,
+    startCol: args.col,
+    endRow: args.row,
+    endCol: args.col,
+    shape: args.altKey ? 'block' : 'linewise',
+    dragging: true,
+    startedInScrollback: args.startedInScrollback,
+  };
+  notify();
+}
+
+/**
+ * Update an in-progress drag. No-op if no drag is active or the drag has
+ * already been released. The shape can flip live as Alt is pressed / released
+ * (spec §3.2).
+ */
+export function updateDrag(
+  id: string,
+  args: { row: number; col: number; altKey: boolean },
+): void {
+  const s = ensure(id);
+  const sel = s.selection;
+  if (!sel || !sel.dragging) return;
+  const shape: SelectionShape = args.altKey ? 'block' : 'linewise';
+  if (sel.endRow === args.row && sel.endCol === args.col && sel.shape === shape) return;
+  s.selection = { ...sel, endRow: args.row, endCol: args.col, shape };
+  notify();
+}
+
+/**
+ * Finalize the drag. Selection remains but is no longer in the dragging
+ * state. Subsequent mouse moves are ignored until a new drag starts. No-op
+ * if no drag is active.
+ */
+export function endDrag(id: string): void {
+  const s = ensure(id);
+  const sel = s.selection;
+  if (!sel || !sel.dragging) return;
+  s.selection = { ...sel, dragging: false };
+  notify();
+}
+
+/** True if a drag is currently in progress. */
+export function isDragging(id: string): boolean {
+  const s = states.get(id);
+  return !!s?.selection?.dragging;
 }
 
 export function setHintToken(id: string, hint: TokenHint | null): void {
