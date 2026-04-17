@@ -264,7 +264,7 @@ Layout, scrollback, cwd, detached items, and alarm state are saved to persistent
 
 On startup, recovery is priority-based:
 1. **Live PTYs** (webview hidden/shown): request PTY list + replay data from platform, `reconnectTerminal()` for each (500ms timeout). If the saved session covers every live PTY, restore the saved dockview layout when its visible panel set matches and restore saved detached items as doors.
-2. **Saved session** (app restart): restore layout from serialized dockview state, `restoreTerminal()` for each pane with saved cwd + scrollback
+2. **Saved session** (app restart): restore layout from serialized dockview state, `restoreTerminal()` for each pane with saved cwd + scrollback, and spawn each PTY with the current default shell selection
 3. **Fallback/manual pane creation**: when no saved layout can be safely applied, add multiple panes as splits from the previous pane rather than tabs
 4. **Empty state**: create a single new pane
 

@@ -136,7 +136,7 @@ Both are capped at 1M chars per PTY. When the cap is reached, oldest chunks are 
 5. If the saved session covers those live PTYs, the frontend uses the saved dockview layout when its visible panels match and restores saved detached doors; detached PTYs reconnect into the registry but remain doors instead of visible panes
 ```
 
-For cold-start restore (no live PTYs), the webview falls back to saved session state: spawns new PTYs in saved CWDs, injects saved scrollback (with trailing newline to avoid zsh `%` artifact), and restores dockview layout. The reconnect module (`reconnect.ts`) uses a 500ms timeout when waiting for the PTY list.
+For cold-start restore (no live PTYs), the webview falls back to saved session state: spawns new PTYs in saved CWDs using the currently selected MouseTerm shell, injects saved scrollback (with trailing newline to avoid zsh `%` artifact), and restores dockview layout. The reconnect module (`reconnect.ts`) uses a 500ms timeout when waiting for the PTY list.
 
 ### Message protocol
 

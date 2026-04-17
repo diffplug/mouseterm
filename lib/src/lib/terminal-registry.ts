@@ -467,7 +467,7 @@ export function reconnectTerminal(
  */
 export function restoreTerminal(
   id: string,
-  opts: { cwd?: string | null; scrollback?: string | null; title?: string; cwdWarning?: string | null },
+  opts: { cwd?: string | null; scrollback?: string | null; title?: string; cwdWarning?: string | null; shell?: string; args?: string[] },
 ): TerminalEntry {
   const existing = registry.get(id);
   if (existing) return existing;
@@ -493,6 +493,8 @@ export function restoreTerminal(
     cols: dims?.cols || 80,
     rows: dims?.rows || 30,
     cwd: opts.cwd ?? undefined,
+    shell: opts.shell,
+    args: opts.args,
   });
 
   return entry;
