@@ -1491,7 +1491,7 @@ export function Pond({
     // don't overlap — the outgoing pane crushes/fades first, then the new pane
     // reveals from the top-left. If anything restores a pane in the meantime
     // (e.g. door reattach), the delayed spawn becomes a no-op.
-    e.api.onDidRemovePanel((removed) => {
+    e.api.onDidRemovePanel(() => {
       if (e.api.totalPanels !== 0) return;
       const reduceMotion = typeof window !== 'undefined'
         && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
