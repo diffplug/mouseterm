@@ -14,7 +14,13 @@ import { createPortal } from 'react-dom';
 import { TerminalPane } from './TerminalPane';
 import { Baseboard } from './Baseboard';
 import { tv } from 'tailwind-variants';
-import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon } from '@phosphor-icons/react';
+import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, ProhibitIcon } from '@phosphor-icons/react';
+import {
+  DEFAULT_MOUSE_SELECTION_STATE,
+  getMouseSelectionSnapshot,
+  setOverride as setMouseOverride,
+  subscribeToMouseSelection,
+} from '../lib/mouse-selection';
 import {
   type AlarmButtonActionResult,
   clearSessionAttention,
@@ -529,8 +535,16 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const zoomed = useContext(ZoomedContext);
   const windowFocused = useContext(WindowFocusedContext);
   const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
+  const mouseStates = useSyncExternalStore(subscribeToMouseSelection, getMouseSelectionSnapshot);
   const actions = useContext(PondActionsContext);
   const sessionState = sessionStates.get(api.id) ?? DEFAULT_SESSION_UI_STATE;
+  const mouseState = mouseStates.get(api.id) ?? DEFAULT_MOUSE_SELECTION_STATE;
+  const showMouseIcon = mouseState.mouseReporting !== 'none';
+  const inOverride = mouseState.override !== 'off';
+  const mouseIconTooltip = inOverride
+    ? "You're overriding the TUI's mouse capture. Click to restore."
+    : 'TUI is intercepting mouse commands. Click to override.';
+  const mouseIconAriaLabel = inOverride ? 'Restore mouse capture' : 'Override mouse capture';
   const isSelected = selectedId === api.id;
   const showSelectedHeader = mode === 'passthrough' && isSelected && windowFocused;
   const isRenaming = renamingId === api.id;
@@ -609,6 +623,25 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); actions.onStartRename(api.id); }}
           >{api.title}</span>
+        )}
+        {showMouseIcon && (
+          <HeaderActionButton
+            className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 text-muted hover:bg-foreground/10 hover:text-foreground"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMouseOverride(api.id, inOverride ? 'off' : 'temporary');
+            }}
+            ariaLabel={mouseIconAriaLabel}
+            tooltip={mouseIconTooltip}
+          >
+            <span className="relative flex items-center justify-center">
+              <CursorClickIcon size={14} />
+              {inOverride && (
+                <ProhibitIcon size={14} weight="bold" className="absolute inset-0 text-accent" />
+              )}
+            </span>
+          </HeaderActionButton>
         )}
         <HeaderActionButton
           className={[
