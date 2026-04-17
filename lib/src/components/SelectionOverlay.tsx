@@ -124,6 +124,19 @@ export function SelectionOverlay({ terminalId }: Props) {
   const bg = getComputedStyle(document.body).getPropertyValue('--vscode-terminal-selectionBackground').trim()
     || 'rgba(100, 149, 237, 0.4)';
 
+  // Mid-drag hint. Positioned above the drag-end cell, clamped to the
+  // overlay bounds. Shown only while the user is dragging (spec §3.3).
+  let hint: { left: number; top: number } | null = null;
+  if (selection.dragging) {
+    const endViewportRow = selection.endRow - dims.viewportY;
+    if (endViewportRow >= 0 && endViewportRow < dims.rows) {
+      hint = {
+        left: Math.min(dims.elementWidth - 180, Math.max(4, selection.endCol * cellWidth)),
+        top: Math.max(4, endViewportRow * cellHeight - 24),
+      };
+    }
+  }
+
   return (
     <div style={style} aria-hidden="true">
       {rects.map((r, i) => (
@@ -139,6 +152,14 @@ export function SelectionOverlay({ terminalId }: Props) {
           }}
         />
       ))}
+      {hint && (
+        <div
+          className="pointer-events-none absolute rounded border border-border bg-surface-raised px-1.5 py-0.5 text-xs text-muted shadow-sm"
+          style={{ left: hint.left, top: hint.top }}
+        >
+          Hold Alt for block selection
+        </div>
+      )}
     </div>
   );
 }

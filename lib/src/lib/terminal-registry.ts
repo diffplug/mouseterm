@@ -13,6 +13,7 @@ import {
   getMouseSelectionState,
   isDragging,
   removeMouseSelectionState,
+  setDragAlt,
   updateDrag,
 } from './mouse-selection';
 
@@ -429,6 +430,15 @@ function setupTerminalEntry(id: string): TerminalEntry {
   window.addEventListener('mousemove', onWindowMouseMove, true);
   window.addEventListener('mouseup', onWindowMouseUp, true);
 
+  // Live-flip block/linewise shape when Alt is pressed/released without
+  // mouse movement (spec §3.2).
+  const onAltChange = (ev: KeyboardEvent) => {
+    if (!isDragging(id)) return;
+    setDragAlt(id, ev.altKey);
+  };
+  window.addEventListener('keydown', onAltChange, true);
+  window.addEventListener('keyup', onAltChange, true);
+
   const cleanup = () => {
     getPlatform().offPtyData(handleData);
     getPlatform().offPtyExit(handleExit);
@@ -439,6 +449,8 @@ function setupTerminalEntry(id: string): TerminalEntry {
     element.removeEventListener('mousedown', onMouseDown, true);
     window.removeEventListener('mousemove', onWindowMouseMove, true);
     window.removeEventListener('mouseup', onWindowMouseUp, true);
+    window.removeEventListener('keydown', onAltChange, true);
+    window.removeEventListener('keyup', onAltChange, true);
   };
 
   const entry: TerminalEntry = {

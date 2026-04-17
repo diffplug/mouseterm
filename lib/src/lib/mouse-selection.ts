@@ -190,6 +190,20 @@ export function isDragging(id: string): boolean {
   return !!s?.selection?.dragging;
 }
 
+/**
+ * Flip the in-progress drag's shape based on the current Alt-key state.
+ * No-op when no drag is active. Used to react to Alt press/release while
+ * the mouse is stationary (spec §3.2).
+ */
+export function setDragAlt(id: string, altKey: boolean): void {
+  const s = states.get(id);
+  if (!s?.selection?.dragging) return;
+  const shape: SelectionShape = altKey ? 'block' : 'linewise';
+  if (s.selection.shape === shape) return;
+  s.selection = { ...s.selection, shape };
+  notify();
+}
+
 export function setHintToken(id: string, hint: TokenHint | null): void {
   const s = ensure(id);
   if (s.hintToken === null && hint === null) return;
