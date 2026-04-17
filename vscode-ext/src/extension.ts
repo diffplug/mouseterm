@@ -41,7 +41,7 @@ function setupPanel(
     light: vscode.Uri.file(path.join(context.extensionPath, 'icon-tiny-light.png')),
     dark: vscode.Uri.file(path.join(context.extensionPath, 'icon-tiny-dark.png')),
   };
-  panel.webview.html = getWebviewHtml(panel.webview, mediaPath, initialState);
+  panel.webview.html = getWebviewHtml(panel.webview, mediaPath, initialState, getSelectedShell?.());
 
   const router = attachRouter(panel.webview, {
     reconnect: !!savedState,

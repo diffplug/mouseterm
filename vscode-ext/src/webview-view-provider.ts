@@ -4,6 +4,8 @@ import { attachRouter, getAlarmStates } from './message-router';
 import { getWebviewHtml } from './webview-html';
 import { getSavedSessionState, saveSessionState, mergeAlarmStates } from './session-state';
 import type { ExtensionMessage } from './message-types';
+import * as ptyManager from './pty-manager';
+import { resolveSelectedShell } from './shell-selection';
 
 export class MouseTermViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
@@ -35,11 +37,11 @@ export class MouseTermViewProvider implements vscode.WebviewViewProvider {
     return this.selectedShell;
   }
 
-  resolveWebviewView(
+  async resolveWebviewView(
     view: vscode.WebviewView,
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken,
-  ): void {
+  ): Promise<void> {
     this.view = view;
     if (this.description !== undefined) view.description = this.description;
 
@@ -50,8 +52,21 @@ export class MouseTermViewProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [vscode.Uri.file(mediaPath)],
     };
 
+    // Resolve the selected shell before serving the HTML so Pond's
+    // first-terminal spawn on mount uses the right shell. getAvailableShells
+    // is cached; this blocks only on a true cold start.
+    if (!this.selectedShell) {
+      const shells = await ptyManager.getAvailableShells();
+      const shell = resolveSelectedShell(this.context, shells);
+      this.selectedShell = shell ? { shell: shell.path, args: shell.args } : null;
+      if (shell) {
+        this.description = shell.name;
+        view.description = shell.name;
+      }
+    }
+
     const savedSession = getSavedSessionState(this.context);
-    view.webview.html = getWebviewHtml(view.webview, mediaPath, savedSession);
+    view.webview.html = getWebviewHtml(view.webview, mediaPath, savedSession, this.selectedShell);
 
     this.routerDisposable?.dispose();
     this.routerDisposable = attachRouter(view.webview, {

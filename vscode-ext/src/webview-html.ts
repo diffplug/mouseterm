@@ -9,7 +9,12 @@ function serializeForInlineScript(value: unknown): string {
     .replace(/\u2029/g, '\\u2029');
 }
 
-export function getWebviewHtml(webview: vscode.Webview, mediaPath: string, initialState?: unknown): string {
+export function getWebviewHtml(
+  webview: vscode.Webview,
+  mediaPath: string,
+  initialState?: unknown,
+  selectedShell?: { shell?: string; args?: string[] } | null,
+): string {
   const indexPath = path.join(mediaPath, 'index.html');
   let html = fs.readFileSync(indexPath, 'utf-8');
 
@@ -40,7 +45,7 @@ export function getWebviewHtml(webview: vscode.Webview, mediaPath: string, initi
   // get a duplicate nonce attribute from the regex above.
   html = html.replace(
     '</head>',
-    `    <script nonce="${nonce}">globalThis.__MOUSETERM_HOST_STATE__ = ${serializeForInlineScript(initialState)};</script>\n  </head>`,
+    `    <script nonce="${nonce}">globalThis.__MOUSETERM_HOST_STATE__ = ${serializeForInlineScript(initialState)};\nglobalThis.__MOUSETERM_SELECTED_SHELL__ = ${serializeForInlineScript(selectedShell ?? null)};</script>\n  </head>`,
   );
 
   return html;

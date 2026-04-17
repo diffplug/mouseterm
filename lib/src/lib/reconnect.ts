@@ -1,6 +1,6 @@
 import type { PlatformAdapter, PtyInfo } from './platform/types';
 import { reconnectTerminal } from './terminal-registry';
-import type { PersistedDetachedItem } from './session-types';
+import type { PersistedDetachedItem, PersistedSession } from './session-types';
 import { restoreSession } from './session-restore';
 
 export interface ReconnectResult {
@@ -71,7 +71,20 @@ function reconnectLivePtys(platform: PlatformAdapter): Promise<ReconnectResult> 
         });
         ids.push(pty.id);
       }
-      resolve({ paneIds: ids, detached: [] });
+      // Pull the saved layout so reconnect (e.g. after panel close/reopen)
+      // restores splits instead of stacking every pane into one tab group.
+      // Only use it if the pane set matches — otherwise dockview would
+      // create ghost panels for killed PTYs.
+      const saved = platform.getState() as PersistedSession | null;
+      const liveSet = new Set(ids);
+      const savedIds = saved?.panes?.map((p) => p.id) ?? [];
+      const layoutMatches =
+        savedIds.length === ids.length && savedIds.every((id) => liveSet.has(id));
+      resolve({
+        paneIds: ids,
+        detached: [],
+        layout: layoutMatches ? saved?.layout : undefined,
+      });
     }
 
     platform.onPtyList(handleList);
