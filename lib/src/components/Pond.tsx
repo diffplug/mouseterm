@@ -1133,10 +1133,6 @@ export function Pond({
     return `pane-${(++paneCounterRef.current).toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
   }, []);
 
-  // newPaneId -> sourcePaneId for panes born from a split or the empty-state auto-spawn.
-  // Nothing reads this yet; it exists so future work can copy cwd / terminal kind from the source.
-  const paneToCopyByIdRef = useRef(new Map<string, string>());
-
   // Ids of panes that were just spawned, keyed by id with the direction the spawn
   // should reveal from. TerminalPanel consumes its id on first mount to play the
   // matching directional entrance animation.
@@ -1475,9 +1471,7 @@ export function Pond({
     });
 
     // Always keep one pane visible: when the last visible pane is removed (killed
-    // or detached), spawn a fresh one — regardless of whether doors exist. Carry
-    // the just-removed pane's id forward as paneToCopy so future work can copy
-    // cwd / terminal kind from it.
+    // or detached), spawn a fresh one — regardless of whether doors exist.
     //
     // Delay the spawn by the kill/detach animation duration so the two animations
     // don't overlap — the outgoing pane crushes/fades first, then the new pane
@@ -1492,7 +1486,6 @@ export function Pond({
       const spawn = () => {
         if (e.api.totalPanels > 0) return;
         const id = generatePaneId();
-        paneToCopyByIdRef.current.set(id, removed.id);
         freshlySpawnedRef.current.set(id, 'top-left');
         e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
         // Only steal focus if nothing is selected (i.e., the kill path, which
@@ -1941,7 +1934,6 @@ export function Pond({
     if (!api) return;
     const newId = generatePaneId();
     const ref = id && api.getPanel(id) ? id : null;
-    if (ref) paneToCopyByIdRef.current.set(newId, ref);
     // Horizontal split places the new pane to the right → reveal from its left edge.
     // Vertical split places it below → reveal from its top edge.
     freshlySpawnedRef.current.set(newId, direction === 'right' ? 'left' : 'top');
