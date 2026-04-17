@@ -685,6 +685,15 @@ export interface TerminalOverlayDims {
   elementHeight: number;
 }
 
+/**
+ * Get the raw xterm Terminal instance for a pane id. Used by features that
+ * need to read the buffer directly (selection extraction). Returns null
+ * when the terminal isn't live.
+ */
+export function getTerminalInstance(id: string): Terminal | null {
+  return registry.get(id)?.terminal ?? null;
+}
+
 export function getTerminalOverlayDims(id: string): TerminalOverlayDims | null {
   const entry = registry.get(id);
   if (!entry) return null;
