@@ -1490,7 +1490,12 @@ export function Pond({
         paneToCopyByIdRef.current.set(id, removed.id);
         freshlySpawnedRef.current.set(id, 'top-left');
         e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
-        selectPanel(id);
+        // Only steal focus if nothing is selected (i.e., the kill path, which
+        // clears selection). On detach the just-detached door is selected and we
+        // must not override that — the door retains focus per the detach UX.
+        if (selectedIdRef.current === null) {
+          selectPanel(id);
+        }
       };
       if (delay === 0) spawn();
       else setTimeout(spawn, delay);
