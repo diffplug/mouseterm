@@ -191,6 +191,28 @@ export function isDragging(id: string): boolean {
 }
 
 /**
+ * Extend the in-progress selection to fully cover a detected token (spec §5.3).
+ * No-op when no drag is active. Preserves the drag anchor; adjusts the end
+ * toward whichever token boundary is farther from the anchor so the drag
+ * direction is respected.
+ */
+export function extendSelectionToToken(id: string, token: TokenHint): void {
+  const s = states.get(id);
+  if (!s?.selection?.dragging) return;
+  const sel = s.selection;
+  const anchorOnTokenRow = sel.startRow === token.row;
+  const forward = anchorOnTokenRow
+    ? sel.startCol <= token.startCol
+    : sel.startRow < token.row;
+  s.selection = {
+    ...sel,
+    endRow: token.row,
+    endCol: forward ? token.endCol : token.startCol,
+  };
+  notify();
+}
+
+/**
  * Flip the in-progress drag's shape based on the current Alt-key state.
  * No-op when no drag is active. Used to react to Alt press/release while
  * the mouse is stationary (spec §3.2).

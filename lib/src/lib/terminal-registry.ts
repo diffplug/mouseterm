@@ -14,8 +14,10 @@ import {
   isDragging,
   removeMouseSelectionState,
   setDragAlt,
+  setHintToken,
   updateDrag,
 } from './mouse-selection';
+import { detectTokenAt } from './smart-token';
 
 export type { SessionStatus } from './activity-monitor';
 export { TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo, isHardTodo, hasTodo, type TodoState, type AlarmButtonActionResult } from './alarm-manager';
@@ -421,10 +423,31 @@ function setupTerminalEntry(id: string): TerminalEntry {
     if (!isDragging(id)) return;
     const cell = computeCell(ev);
     updateDrag(id, { row: cell.row, col: cell.col, altKey: ev.altKey });
+    // Smart-extension hint (spec §5): scan the line under the current drag
+    // cursor for a URL/path token.
+    const line = terminal.buffer.active.getLine(cell.row);
+    if (!line) {
+      setHintToken(id, null);
+      return;
+    }
+    const text = line.translateToString(false, 0, terminal.cols);
+    const token = detectTokenAt(text, cell.col);
+    if (token) {
+      setHintToken(id, {
+        kind: token.kind,
+        row: cell.row,
+        startCol: token.start,
+        endCol: token.end,
+        text: token.text,
+      });
+    } else {
+      setHintToken(id, null);
+    }
   };
   const onWindowMouseUp = (_ev: MouseEvent) => {
     if (!isDragging(id)) return;
     endDrag(id);
+    setHintToken(id, null);
   };
   element.addEventListener('mousedown', onMouseDown, true);
   window.addEventListener('mousemove', onWindowMouseMove, true);

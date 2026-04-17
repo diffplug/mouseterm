@@ -157,7 +157,13 @@ export function SelectionOverlay({ terminalId }: Props) {
           className="pointer-events-none absolute rounded border border-border bg-surface-raised px-1.5 py-0.5 text-xs text-muted shadow-sm"
           style={{ left: hint.left, top: hint.top }}
         >
-          Hold Alt for block selection
+          <div>Hold Alt for block selection</div>
+          {state.hintToken && (
+            <div>
+              Press <span className="text-foreground">e</span> to select the full{' '}
+              {state.hintToken.kind === 'url' ? 'URL' : 'path'}
+            </div>
+          )}
         </div>
       )}
     </div>

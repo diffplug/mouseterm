@@ -17,6 +17,7 @@ import { tv } from 'tailwind-variants';
 import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, ProhibitIcon } from '@phosphor-icons/react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
+  extendSelectionToToken,
   getMouseSelectionSnapshot,
   getMouseSelectionState,
   setOverride as setMouseOverride,
@@ -1696,6 +1697,31 @@ export function Pond({
         lastCmdSide.current = side;
         lastCmdTime.current = now;
         return;
+      }
+
+      // Mid-drag keystrokes (spec §5.3 / §3.6). When a terminal-owned drag
+      // is in flight, `e` extends to the detected token and Esc cancels the
+      // drag. These are consumed so they don't reach the inside program.
+      {
+        const sid = selectedIdRef.current;
+        if (sid) {
+          const mouseState = getMouseSelectionState(sid);
+          const sel = mouseState.selection;
+          if (sel?.dragging) {
+            if (e.key === 'e' && mouseState.hintToken) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              extendSelectionToToken(sid, mouseState.hintToken);
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              setMouseSelection(sid, null);
+              return;
+            }
+          }
+        }
       }
 
       // Copy and paste shortcuts fire in both modes. Spec §4.2 / §8.2.
