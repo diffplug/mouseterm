@@ -97,6 +97,15 @@ let cachedNodePath: string | null = null;
 function findSystemNode(): string {
   if (cachedNodePath) return cachedNodePath;
 
+  // On Windows, use the host's execPath (Electron's Node). VSCode's own
+  // integrated terminal uses node-pty against Electron, so this works for us
+  // too — and avoids the bogus Unix-path fallback below that was causing
+  // multi-second fork stalls.
+  if (process.platform === 'win32') {
+    cachedNodePath = process.execPath;
+    return cachedNodePath;
+  }
+
   // Try common locations first (avoids shell invocation)
   const candidates = [
     process.env.NVM_BIN && path.join(process.env.NVM_BIN, 'node'),
@@ -167,6 +176,7 @@ function ensureChild(extensionPath: string): ChildProcess {
     child = null;
     childReady = false;
     pendingMessages = [];
+    shellsCache = null;
   });
 
   child.stderr?.on('data', (data: Buffer) => {
@@ -207,8 +217,11 @@ export interface ShellEntry {
   args: string[];
 }
 
+let shellsCache: Promise<ShellEntry[]> | null = null;
+
 export function getAvailableShells(): Promise<ShellEntry[]> {
-  return new Promise((resolve) => {
+  if (shellsCache) return shellsCache;
+  const pending = new Promise<ShellEntry[]>((resolve) => {
     const requestId = `shells-${Date.now()}`;
     // Ensure the child process is forked before attaching the listener —
     // otherwise `child` is null on the cold path and the handler is never
@@ -217,7 +230,7 @@ export function getAvailableShells(): Promise<ShellEntry[]> {
     const timeout = setTimeout(() => {
       child?.off('message', handler);
       resolve([]);
-    }, 5000);
+    }, 15000);
     const handler = (msg: any) => {
       if (msg.type === 'shells' && msg.requestId === requestId) {
         clearTimeout(timeout);
@@ -227,6 +240,13 @@ export function getAvailableShells(): Promise<ShellEntry[]> {
     };
     child?.on('message', handler);
   });
+  shellsCache = pending;
+  // Don't pin an empty result in the cache — lets a subsequent call retry
+  // if the first one timed out or the child was still warming up.
+  void pending.then((shells) => {
+    if (shells.length === 0 && shellsCache === pending) shellsCache = null;
+  });
+  return pending;
 }
 
 export function getCwd(id: string): Promise<string | null> {

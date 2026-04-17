@@ -59,7 +59,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   const provider = new MouseTermViewProvider(context);
 
-  // Seed the view description with the currently selected shell name.
+  // Warm up shell detection in the background so the picker/+ buttons
+  // don't pay the cold-start cost (child fork + WSL probe) when the user
+  // first clicks them. Also seeds the view description with the current
+  // shell name.
   void ptyManager.getAvailableShells().then((shells) => {
     provider.setDescription(resolveSelectedShell(context, shells)?.name);
   });
