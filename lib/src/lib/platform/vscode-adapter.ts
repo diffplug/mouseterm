@@ -203,10 +203,6 @@ export class VSCodeAdapter implements PlatformAdapter {
     this.vscode.postMessage({ type: 'alarm:markTodo', id });
   }
 
-  alarmPromoteTodo(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:promoteTodo', id });
-  }
-
   alarmClearTodo(id: string): void {
     this.vscode.postMessage({ type: 'alarm:clearTodo', id });
   }

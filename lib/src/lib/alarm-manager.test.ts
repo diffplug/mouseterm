@@ -266,7 +266,7 @@ describe('AlarmManager in isolation', () => {
     expect(manager.getState(id).todo).toBeCloseTo(0.5);
   });
 
-  it('promoting a partially-struck soft-TODO resets to hard', () => {
+  it('marking a partially-struck soft-TODO as hard resets to hard', () => {
     const id = 'bucket-promote';
     createSoftTodo(id);
 
@@ -274,7 +274,7 @@ describe('AlarmManager in isolation', () => {
     manager.drainTodoBucket(id);
     expect(manager.getState(id).todo).toBeCloseTo(0.5);
 
-    manager.promoteTodo(id);
+    manager.markTodo(id);
     expect(manager.getState(id).todo).toBe(TODO_HARD);
   });
 
@@ -347,7 +347,7 @@ describe('AlarmManager in isolation', () => {
     createSoftTodo(id);
 
     // Promote to hard
-    manager.promoteTodo(id);
+    manager.markTodo(id);
     expect(manager.getState(id).todo).toBe(TODO_HARD);
 
     // Drive to ALARM_RINGING again

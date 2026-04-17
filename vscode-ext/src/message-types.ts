@@ -23,7 +23,6 @@ export type WebviewMessage =
   | { type: 'alarm:clearAttention'; id?: string }
   | { type: 'alarm:toggleTodo'; id: string }
   | { type: 'alarm:markTodo'; id: string }
-  | { type: 'alarm:promoteTodo'; id: string }
   | { type: 'alarm:clearTodo'; id: string }
   | { type: 'alarm:drainTodoBucket'; id: string };
 

@@ -237,12 +237,11 @@ export class AlarmManager {
   /** Toggle: off → hard, soft → hard, hard → off */
   toggleTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
+    this.clearRecoveryTimer(entry);
     if (entry.todo === TODO_HARD) {
-      this.clearRecoveryTimer(entry);
       entry.todo = TODO_OFF;
       this.notify(id);
     } else {
-      this.clearRecoveryTimer(entry);
       entry.todo = TODO_HARD;
       if (entry.monitor?.getStatus() === 'ALARM_RINGING') {
         entry.monitor.attend();
@@ -263,15 +262,6 @@ export class AlarmManager {
       entry.monitor!.attend();
       return; // onChange fires → notify
     }
-    this.notify(id);
-  }
-
-  /** Promote soft TODO to hard */
-  promoteTodo(id: string): void {
-    const entry = this.getOrCreateEntry(id);
-    if (!isSoftTodo(entry.todo)) return;
-    this.clearRecoveryTimer(entry);
-    entry.todo = TODO_HARD;
     this.notify(id);
   }
 
