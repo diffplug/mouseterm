@@ -1474,14 +1474,26 @@ export function Pond({
     // or detached), spawn a fresh one — regardless of whether doors exist. Carry
     // the just-removed pane's id forward as paneToCopy so future work can copy
     // cwd / terminal kind from it.
+    //
+    // Delay the spawn by the kill/detach animation duration so the two animations
+    // don't overlap — the outgoing pane crushes/fades first, then the new pane
+    // reveals from the top-left. If anything restores a pane in the meantime
+    // (e.g. door reattach), the delayed spawn becomes a no-op.
     e.api.onDidRemovePanel((removed) => {
-      if (e.api.totalPanels === 0) {
+      if (e.api.totalPanels !== 0) return;
+      const reduceMotion = typeof window !== 'undefined'
+        && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      const delay = reduceMotion ? 0 : 440;
+      const spawn = () => {
+        if (e.api.totalPanels > 0) return;
         const id = generatePaneId();
         paneToCopyByIdRef.current.set(id, removed.id);
         freshlySpawnedRef.current.set(id, 'top-left');
         e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
         selectPanel(id);
-      }
+      };
+      if (delay === 0) spawn();
+      else setTimeout(spawn, delay);
     });
 
     onApiReady?.(e.api);
