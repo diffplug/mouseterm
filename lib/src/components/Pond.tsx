@@ -840,11 +840,12 @@ export function MarchingAntsRect({ width, height, isDoor, color, paused }: {
   );
 }
 
-function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
+function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef }: {
   apiRef: React.RefObject<DockviewApi | null>;
   selectedId: string | null;
   selectedType: 'pane' | 'door';
   mode: PondMode;
+  overlayElRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   const { elements: panelElements, version: panelVersion } = useContext(PanelElementsContext);
   const { elements: doorElements, version: doorVersion } = useContext(DoorElementsContext);
@@ -907,11 +908,11 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
   if (mode === 'passthrough') {
     style.borderRadius = isDoor ? '0.375rem 0.375rem 0 0' : '0.5rem';
     style.border = `1px solid ${selectionColor}`;
-    return <div style={style} />;
+    return <div ref={overlayElRef} style={style} />;
   }
 
   return (
-    <div style={style}>
+    <div ref={overlayElRef} style={style}>
       <MarchingAntsRect
         width={rect.width}
         height={rect.height}
@@ -1007,6 +1008,7 @@ function orchestrateKill(
   selectPanel: (id: string) => void,
   setSelectedId: (id: string | null) => void,
   killInProgressRef: { current: boolean },
+  overlayElRef: { current: HTMLElement | null },
 ): void {
   const panel = api.getPanel(killedId);
   if (!panel) return;
@@ -1029,8 +1031,19 @@ function orchestrateKill(
   }
 
   // Fade the killed pane in place. Block input on it during the fade.
+  // For a last-pane kill (auto-spawn will create a replacement), also shrink
+  // the pane toward the bottom-right so the disappearance is visible — a plain
+  // fade offers no visual cue since the pane's space is reclaimed by a new one
+  // appearing in exactly the same rect from the opposite corner. The focus
+  // ring (SelectionOverlay element) gets a matching shrink animation so it
+  // scales with the pane rather than sitting over empty space.
+  const isLastPane = api.panels.length === 1;
+  const fadeClass = isLastPane ? 'pane-fading-and-shrinking-to-br' : 'pane-fading-out';
+  const fadeAnimationName = isLastPane ? 'pane-fade-and-shrink-to-br' : 'pane-fade-out';
   killedGroupEl.style.pointerEvents = 'none';
-  killedGroupEl.classList.add('pane-fading-out');
+  killedGroupEl.classList.add(fadeClass);
+  const overlayEl = isLastPane ? overlayElRef.current : null;
+  if (overlayEl) overlayEl.classList.add('ring-shrinking-to-br');
 
   let finalized = false;
   const finalize = () => {
@@ -1077,10 +1090,15 @@ function orchestrateKill(
       pre.el.addEventListener('transitionend', cleanup, { once: true });
       setTimeout(cleanup, 1000);
     }
+
+    // Peel the ring-shrink class so the next selection's overlay renders at
+    // full scale. The element may have been reused by React for the next
+    // selected pane's overlay by the time the animation finishes.
+    if (overlayEl) overlayEl.classList.remove('ring-shrinking-to-br');
   };
 
   killedGroupEl.addEventListener('animationend', (ev) => {
-    if ((ev as AnimationEvent).animationName !== 'pane-fade-out') return;
+    if ((ev as AnimationEvent).animationName !== fadeAnimationName) return;
     finalize();
   });
   // Safety: if animationend never fires, still finalize.
@@ -1128,6 +1146,10 @@ export function Pond({
   // onDidRemovePanel know the kill path already paid the animation delay (via
   // the in-place fade) so the auto-spawn shouldn't re-delay another 440ms.
   const killInProgressRef = useRef(false);
+
+  // Ref to the SelectionOverlay's root element. orchestrateKill uses it to
+  // animate the focus ring in sync with the killed pane's shrink (last-pane case).
+  const overlayElRef = useRef<HTMLDivElement | null>(null);
 
   // Consumed once in handleReady to restore existing sessions
   const initialPaneIdsRef = useRef(initialPaneIds);
@@ -1480,8 +1502,10 @@ export function Pond({
           selectPanel(id);
         }
       };
-      if (delay === 0) spawn();
-      else setTimeout(spawn, delay);
+      // Always defer via setTimeout — even when delay is 0 — so api.addPanel is
+      // not called re-entrantly from inside the onDidRemovePanel handler (dockview
+      // silently drops the spawn in that case).
+      setTimeout(spawn, delay);
     });
 
     onApiReady?.(e.api);
@@ -1591,7 +1615,7 @@ export function Pond({
           // survivors, handling selection updates itself (since the fade is
           // async and selection must wait until the actual removal fires).
           setConfirmKill(null);
-          orchestrateKill(api, ck.id, selectPanel, setSelectedId, killInProgressRef);
+          orchestrateKill(api, ck.id, selectPanel, setSelectedId, killInProgressRef, overlayElRef);
           return;
         }
         // Wrong key — shake then dismiss
@@ -2010,7 +2034,7 @@ export function Pond({
                   theme={mousetermTheme}
                   singleTabMode="fullwidth"
                 />
-                <SelectionOverlay apiRef={apiRef} selectedId={selectedId} selectedType={selectedType} mode={mode} />
+                <SelectionOverlay apiRef={apiRef} selectedId={selectedId} selectedType={selectedType} mode={mode} overlayElRef={overlayElRef} />
               </div>
             </div>
 
