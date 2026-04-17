@@ -56,18 +56,18 @@
       {
         "command": "mouseterm.selectShell",
         "title": "MouseTerm: Select Shell",
-        "icon": "$(list-unordered)"
+        "icon": "$(terminal)"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "mouseterm.newTerminal",
+          "command": "mouseterm.selectShell",
           "group": "navigation@1",
           "when": "view == mouseterm.view"
         },
         {
-          "command": "mouseterm.selectShell",
+          "command": "mouseterm.newTerminal",
           "group": "navigation@2",
           "when": "view == mouseterm.view"
         }

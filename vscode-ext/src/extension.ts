@@ -59,6 +59,11 @@ export function activate(context: vscode.ExtensionContext) {
 
   const provider = new MouseTermViewProvider(context);
 
+  // Seed the view description with the currently selected shell name.
+  void ptyManager.getAvailableShells().then((shells) => {
+    provider.setDescription(resolveSelectedShell(context, shells)?.name);
+  });
+
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('mouseterm.view', provider),
     vscode.window.registerWebviewPanelSerializer('mouseterm', {
@@ -127,6 +132,7 @@ export function activate(context: vscode.ExtensionContext) {
         scope = scopeChoice.value;
       }
       await setSelectedShellPath(context, picked.path, scope);
+      provider.setDescription(picked.label);
     }),
   );
 }

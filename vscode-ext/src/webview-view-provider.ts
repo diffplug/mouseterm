@@ -8,11 +8,17 @@ import type { ExtensionMessage } from './message-types';
 export class MouseTermViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private routerDisposable: vscode.Disposable | undefined;
+  private description: string | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
   postMessage(msg: ExtensionMessage): Thenable<boolean> {
     return this.view?.webview.postMessage(msg) ?? Promise.resolve(false);
+  }
+
+  setDescription(text: string | undefined): void {
+    this.description = text;
+    if (this.view) this.view.description = text;
   }
 
   resolveWebviewView(
@@ -21,6 +27,7 @@ export class MouseTermViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ): void {
     this.view = view;
+    if (this.description !== undefined) view.description = this.description;
 
     const mediaPath = path.join(this.context.extensionPath, 'media');
 
