@@ -23,7 +23,7 @@ import {
   setSelection as setMouseSelection,
   subscribeToMouseSelection,
 } from '../lib/mouse-selection';
-import { copyRaw, copyRewrapped } from '../lib/clipboard';
+import { copyRaw, copyRewrapped, doPaste } from '../lib/clipboard';
 import { IS_MAC } from '../lib/platform';
 import {
   type AlarmButtonActionResult,
@@ -1698,16 +1698,21 @@ export function Pond({
         return;
       }
 
-      // Copy shortcuts fire in both modes when the terminal has an active
-      // selection (spec §4.2). Intercept before xterm would see Ctrl+C as SIGINT.
+      // Copy and paste shortcuts fire in both modes. Spec §4.2 / §8.2.
+      //
+      // Copy is narrow: only when the terminal has an active selection.
+      // Paste is broad: always intercepted on the platform's paste chord.
+      //   macOS: Cmd+V, Cmd+Shift+V. Ctrl+V passes through to the program.
+      //   Other: Ctrl+V, Ctrl+Shift+V. Both always intercepted.
       {
         const sid = selectedIdRef.current;
         if (sid) {
           const mouseState = getMouseSelectionState(sid);
           const sel = mouseState.selection;
+          const keyLower = e.key.toLowerCase();
           if (sel && !sel.dragging) {
             const mod = IS_MAC ? e.metaKey : e.ctrlKey;
-            if (mod && (e.key === 'c' || e.key === 'C')) {
+            if (mod && keyLower === 'c') {
               e.preventDefault();
               e.stopImmediatePropagation();
               const rewrapped = e.shiftKey;
@@ -1716,6 +1721,13 @@ export function Pond({
               });
               return;
             }
+          }
+          const pasteMod = IS_MAC ? e.metaKey : e.ctrlKey;
+          if (pasteMod && keyLower === 'v') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            void doPaste(sid);
+            return;
           }
         }
       }
