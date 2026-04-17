@@ -203,3 +203,61 @@ body.vscode-light {
   .pane-fading-and-shrinking-to-br,
   .ring-shrinking-to-br { animation: none; }
 }
+
+/* Soft-TODO pill: one letter per keypress gets a strike line.
+ * The line draws left-to-right on strike, retracts on un-strike. */
+.strike-letter {
+  position: relative;
+  display: inline-block;
+}
+.strike-letter::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background-color: currentColor;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 150ms ease-out;
+}
+.strike-letter[data-strike='true']::after {
+  transform: scaleX(1);
+}
+
+/* 4th-strike flourish: struck letters fade out while a ✓ pulses in, then fades. */
+@keyframes todo-flourish-letters {
+  0%   { opacity: 1; }
+  30%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+@keyframes todo-flourish-check {
+  0%   { opacity: 0; transform: scale(0.7); }
+  30%  { opacity: 1; transform: scale(1); }
+  70%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+.todo-pill-flourish {
+  display: inline-grid;
+}
+.todo-pill-flourish > * {
+  grid-column: 1;
+  grid-row: 1;
+}
+.todo-pill-flourish__letters {
+  animation: todo-flourish-letters 500ms ease-out forwards;
+}
+.todo-pill-flourish__check {
+  justify-self: center;
+  align-self: center;
+  color: var(--color-success);
+  opacity: 0;
+  animation: todo-flourish-check 500ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strike-letter::after { transition: none; }
+  .todo-pill-flourish__letters { animation: none; opacity: 0; }
+  .todo-pill-flourish__check { animation: none; opacity: 1; }
+}

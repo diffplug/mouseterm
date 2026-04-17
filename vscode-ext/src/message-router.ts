@@ -301,6 +301,9 @@ export function attachRouter(
       case 'alarm:clearTodo':
         alarmManager.clearTodo(msg.id);
         break;
+      case 'alarm:drainTodoBucket':
+        alarmManager.drainTodoBucket(msg.id);
+        break;
     }
   });
 

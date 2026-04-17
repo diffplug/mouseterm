@@ -143,8 +143,8 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
               key={item.id}
               title={item.title}
               status={sessionState.status}
-  
               todo={sessionState.todo}
+
             />
           );
         })}
@@ -179,7 +179,6 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
             isActive={activeId === item.id}
             windowFocused={windowFocused}
             status={sessionState.status}
-
             todo={sessionState.todo}
             onClick={() => onReattach(item)}
           />

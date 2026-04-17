@@ -1,5 +1,6 @@
 import { BellIcon } from '@phosphor-icons/react';
-import type { SessionStatus, TodoState } from '../lib/terminal-registry';
+import { TODO_OFF, isSoftTodo, type SessionStatus, type TodoState } from '../lib/terminal-registry';
+import { useTodoPillContent } from './TodoPillBody';
 
 export interface DoorProps {
   doorId?: string;
@@ -17,7 +18,7 @@ export function Door({
   isActive = false,
   windowFocused = true,
   status = 'ALARM_DISABLED',
-  todo = false,
+  todo = TODO_OFF,
   onClick,
 }: DoorProps) {
   // Doors can only be active in command mode (navigated to via arrow keys).
@@ -28,6 +29,7 @@ export function Door({
 
   const alarmEnabled = status !== 'ALARM_DISABLED';
   const alarmRinging = status === 'ALARM_RINGING';
+  const todoPill = useTodoPillContent(todo);
 
   return (
     <button
@@ -51,14 +53,16 @@ export function Door({
       <span className={['min-w-0 flex-1 truncate', (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
         {title}
       </span>
-      {(todo || alarmEnabled) && (
+      {(todoPill.visible || alarmEnabled) && (
         <span className="flex shrink-0 items-center gap-1.5">
-          {todo && (
-            <span className={[
-              'rounded bg-surface-raised px-1 py-px text-[8px] font-semibold tracking-[0.08em] text-foreground',
-              todo === 'soft' ? 'border border-dashed border-border' : 'border border-border',
-            ].join(' ')}>
-              TODO
+          {todoPill.visible && (
+            <span
+              className={[
+                'rounded bg-surface-raised px-1 py-px text-[8px] font-semibold tracking-[0.08em] text-foreground',
+                isSoftTodo(todo) || todoPill.flourishing ? 'border border-dashed border-border' : 'border border-border',
+              ].join(' ')}
+            >
+              {todoPill.body}
             </span>
           )}
           {alarmEnabled && (

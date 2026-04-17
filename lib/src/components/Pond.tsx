@@ -34,6 +34,9 @@ import {
   swapTerminals,
   setPendingShellOpts,
   type SessionStatus,
+  isSoftTodo,
+  isHardTodo,
+  TODO_OFF,
 } from '../lib/terminal-registry';
 import { resolvePanelElement, findPanelInDirection, findRestoreNeighbor, type DetachDirection } from '../lib/spatial-nav';
 import { cloneLayout, getLayoutStructureSignature } from '../lib/layout-snapshot';
@@ -41,6 +44,7 @@ import { getPlatform } from '../lib/platform';
 import { saveSession } from '../lib/session-save';
 import type { PersistedDetachedItem } from '../lib/session-types';
 import { cfg } from '../cfg';
+import { useTodoPillContent } from './TodoPillBody';
 
 // --- Theme ---
 
@@ -337,12 +341,12 @@ function TodoAlarmDialog({
         <span className="text-[10px] font-mono text-muted">[t]</span>
         <span className="text-[11px] text-foreground font-medium w-10">TODO</span>
         <div className="flex gap-1 ml-auto">
-          <button type="button" className={toggleBtn(sessionState.todo === 'hard')}
-            onClick={() => { if (sessionState.todo !== 'hard') markSessionTodo(sessionId); }}>
+          <button type="button" className={toggleBtn(isHardTodo(sessionState.todo))}
+            onClick={() => { if (!isHardTodo(sessionState.todo)) markSessionTodo(sessionId); }}>
             hard
           </button>
-          <button type="button" className={toggleBtn(sessionState.todo === false)}
-            onClick={() => { if (sessionState.todo !== false) clearSessionTodo(sessionId); }}>
+          <button type="button" className={toggleBtn(sessionState.todo === TODO_OFF)}
+            onClick={() => { if (sessionState.todo !== TODO_OFF) clearSessionTodo(sessionId); }}>
             off
           </button>
         </div>
@@ -368,7 +372,7 @@ function TodoAlarmDialog({
       <div className="border-t border-border pt-2 text-[9px] leading-relaxed text-muted">
         When an alarming tab is selected,<br />
         the alarm is cleared and the tab gets a soft TODO.<br />
-        Typing characters into the tab will automatically clear a soft TODO.
+        Typing drains the soft TODO; stop typing and it refills.
       </div>
     </div>,
     document.body,
@@ -534,7 +538,8 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const suppressAlarmClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
   const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number } | null>(null);
-  const showTodoPill = sessionState.todo !== false && tier !== 'minimal';
+  const todoPill = useTodoPillContent(sessionState.todo);
+  const showTodoPill = todoPill.visible && tier !== 'minimal';
   const alarmButtonAriaLabel = sessionState.status === 'ALARM_RINGING'
     ? 'Alarm ringing'
     : sessionState.status === 'ALARM_DISABLED'
@@ -649,23 +654,32 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           </span>
         </HeaderActionButton>
         {showTodoPill && (
-          <button
-            type="button"
-            data-session-todo-for={api.id}
-            className={[
-              'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10',
-              sessionState.todo === 'soft' ? 'border border-dashed border-muted' : 'border border-muted',
-            ].join(' ')}
-            aria-label="TODO settings"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              const rect = e.currentTarget.getBoundingClientRect();
-              setDialogPosition({ x: rect.left + rect.width / 2 - 140, y: rect.bottom + 6 });
-            }}
-          >
-            TODO
-          </button>
+          todoPill.flourishing ? (
+            <span
+              className="shrink-0 rounded border border-dashed border-muted px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted"
+              aria-hidden
+            >
+              {todoPill.body}
+            </span>
+          ) : (
+            <button
+              type="button"
+              data-session-todo-for={api.id}
+              className={[
+                'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10',
+                isSoftTodo(sessionState.todo) ? 'border border-dashed border-muted' : 'border border-muted',
+              ].join(' ')}
+              aria-label="TODO settings"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                const rect = e.currentTarget.getBoundingClientRect();
+                setDialogPosition({ x: rect.left + rect.width / 2 - 140, y: rect.bottom + 6 });
+              }}
+            >
+              {todoPill.body}
+            </button>
+          )
         )}
       </div>
       {!isRenaming && (
@@ -1477,7 +1491,7 @@ export function Pond({
     // don't overlap — the outgoing pane crushes/fades first, then the new pane
     // reveals from the top-left. If anything restores a pane in the meantime
     // (e.g. door reattach), the delayed spawn becomes a no-op.
-    e.api.onDidRemovePanel((removed) => {
+    e.api.onDidRemovePanel(() => {
       if (e.api.totalPanels !== 0) return;
       const reduceMotion = typeof window !== 'undefined'
         && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;

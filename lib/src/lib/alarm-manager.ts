@@ -3,7 +3,32 @@ import { cfg } from '../cfg';
 
 export { type SessionStatus } from './activity-monitor';
 
-export type TodoState = false | 'soft' | 'hard';
+/**
+ * Unified todo state as a single number.
+ *
+ *   TODO_OFF  (-1)  — no TODO
+ *   [0, 1]         — soft TODO; value is bucket fill level (1 = full, 0 = about to clear)
+ *   TODO_HARD (2)   — hard TODO (manually set, never auto-clears)
+ *
+ * Helpers: isSoftTodo(), isHardTodo(), hasTodo()
+ */
+export type TodoState = number;
+export const TODO_OFF = -1;
+export const TODO_SOFT_FULL = 1;
+export const TODO_HARD = 2;
+
+export function isSoftTodo(todo: TodoState): boolean { return todo >= 0 && todo <= 1; }
+export function isHardTodo(todo: TodoState): boolean { return todo === TODO_HARD; }
+export function hasTodo(todo: TodoState): boolean { return todo !== TODO_OFF; }
+
+/** Migrate legacy persisted TodoState values (false/'soft'/'hard') to numeric. */
+export function migrateTodoState(todo: unknown): TodoState {
+  if (typeof todo === 'number') return todo;
+  if (todo === 'hard') return TODO_HARD;
+  if (todo === 'soft') return TODO_SOFT_FULL;
+  return TODO_OFF; // false, null, undefined, or any other unexpected value
+}
+
 export type AlarmButtonActionResult = 'enabled' | 'disabled' | 'dismissed' | 'noop';
 
 export interface AlarmState {
@@ -15,7 +40,7 @@ export interface AlarmState {
 
 export const DEFAULT_ALARM_STATE: AlarmState = {
   status: 'ALARM_DISABLED',
-  todo: false,
+  todo: TODO_OFF,
   attentionDismissedRing: false,
 };
 
@@ -23,9 +48,12 @@ interface AlarmEntry {
   monitor: ActivityMonitor | null;
   todo: TodoState;
   attentionDismissedRing: boolean;
+  recoveryTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const T_USER_ATTENTION = cfg.alarm.userAttention;
+const STRIKE_RECOVERY_MS = cfg.todoBucket.recoverySecondsPerLetter * 1_000;
+const STRIKE_STEP = 0.25;
 
 /**
  * Manages ActivityMonitors, attention tracking, and todo state for PTY sessions.
@@ -100,8 +128,9 @@ export class AlarmManager {
 
     if (previousStatus === 'ALARM_RINGING') {
       entry.attentionDismissedRing = true;
-      if (entry.todo === false) {
-        entry.todo = 'soft';
+      if (!isHardTodo(entry.todo)) {
+        this.clearRecoveryTimer(entry);
+        entry.todo = TODO_SOFT_FULL;
       }
     }
     entry.monitor?.attend();
@@ -161,8 +190,9 @@ export class AlarmManager {
     const entry = this.entries.get(id);
     if (!entry?.monitor) return;
     if (entry.monitor.getStatus() !== 'ALARM_RINGING') return;
-    if (entry.todo === false) {
-      entry.todo = 'soft';
+    if (!isHardTodo(entry.todo)) {
+      this.clearRecoveryTimer(entry);
+      entry.todo = TODO_SOFT_FULL;
     }
     entry.monitor.attend();
     // onChange fires → notify
@@ -204,14 +234,15 @@ export class AlarmManager {
 
   // --- Todo controls ---
 
-  /** Toggle: false → hard, soft → hard, hard → false */
+  /** Toggle: off → hard, soft → hard, hard → off */
   toggleTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
-    if (entry.todo === 'hard') {
-      entry.todo = false;
+    this.clearRecoveryTimer(entry);
+    if (entry.todo === TODO_HARD) {
+      entry.todo = TODO_OFF;
       this.notify(id);
     } else {
-      entry.todo = 'hard';
+      entry.todo = TODO_HARD;
       if (entry.monitor?.getStatus() === 'ALARM_RINGING') {
         entry.monitor.attend();
         return; // onChange fires → notify
@@ -224,8 +255,9 @@ export class AlarmManager {
   markTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
     const isRinging = entry.monitor?.getStatus() === 'ALARM_RINGING';
-    if (entry.todo === 'hard' && !isRinging) return;
-    entry.todo = 'hard';
+    if (entry.todo === TODO_HARD && !isRinging) return;
+    this.clearRecoveryTimer(entry);
+    entry.todo = TODO_HARD;
     if (isRinging) {
       entry.monitor!.attend();
       return; // onChange fires → notify
@@ -236,9 +268,45 @@ export class AlarmManager {
   /** Clear any TODO state */
   clearTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
-    if (entry.todo === false) return;
-    entry.todo = false;
+    if (entry.todo === TODO_OFF) return;
+    this.clearRecoveryTimer(entry);
+    entry.todo = TODO_OFF;
     this.notify(id);
+  }
+
+  /**
+   * Strike one letter of the soft-TODO pill.
+   * 4 strikes clear the TODO. One letter recovers after each `recoverySecondsPerLetter`
+   * of idle (no further strikes).
+   */
+  drainTodoBucket(id: string): void {
+    const entry = this.entries.get(id);
+    if (!entry || !isSoftTodo(entry.todo)) return;
+
+    entry.todo = entry.todo - STRIKE_STEP;
+
+    if (entry.todo < 1e-9) {
+      entry.todo = TODO_OFF;
+      this.clearRecoveryTimer(entry);
+      this.notify(id);
+      return;
+    }
+
+    this.scheduleRecoveryTick(id, entry);
+    this.notify(id);
+  }
+
+  private scheduleRecoveryTick(id: string, entry: AlarmEntry): void {
+    this.clearRecoveryTimer(entry);
+    entry.recoveryTimer = setTimeout(() => {
+      entry.recoveryTimer = null;
+      if (!isSoftTodo(entry.todo)) return;
+      entry.todo = Math.min(TODO_SOFT_FULL, entry.todo + STRIKE_STEP);
+      this.notify(id);
+      if (entry.todo < TODO_SOFT_FULL) {
+        this.scheduleRecoveryTick(id, entry);
+      }
+    }, STRIKE_RECOVERY_MS);
   }
 
   // --- Query ---
@@ -265,6 +333,7 @@ export class AlarmManager {
   remove(id: string): void {
     const entry = this.entries.get(id);
     if (!entry) return;
+    this.clearRecoveryTimer(entry);
     entry.monitor?.dispose();
     this.entries.delete(id);
     if (this.attentionId === id) {
@@ -282,7 +351,7 @@ export class AlarmManager {
    */
   restore(id: string, state: { status: string; todo: TodoState }): void {
     const entry = this.getOrCreateEntry(id);
-    entry.todo = state.todo;
+    entry.todo = migrateTodoState(state.todo);
     // If the alarm was enabled (anything other than ALARM_DISABLED), create a monitor
     if (state.status !== 'ALARM_DISABLED') {
       if (!entry.monitor) {
@@ -294,6 +363,7 @@ export class AlarmManager {
 
   dispose(): void {
     for (const entry of this.entries.values()) {
+      this.clearRecoveryTimer(entry);
       entry.monitor?.dispose();
     }
     this.entries.clear();
@@ -306,10 +376,17 @@ export class AlarmManager {
   private getOrCreateEntry(id: string): AlarmEntry {
     let entry = this.entries.get(id);
     if (!entry) {
-      entry = { monitor: null, todo: false, attentionDismissedRing: false };
+      entry = { monitor: null, todo: TODO_OFF, attentionDismissedRing: false, recoveryTimer: null };
       this.entries.set(id, entry);
     }
     return entry;
+  }
+
+  private clearRecoveryTimer(entry: AlarmEntry): void {
+    if (entry.recoveryTimer !== null) {
+      clearTimeout(entry.recoveryTimer);
+      entry.recoveryTimer = null;
+    }
   }
 
   private notify(id: string): void {
