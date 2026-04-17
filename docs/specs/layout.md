@@ -283,6 +283,38 @@ Colors use a two-layer CSS variable strategy: `@theme --color-*` tokens → `var
 
 Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. All dockview container backgrounds are flattened to `var(--color-surface)`.
 
+## Animations
+
+All pane-related motion is 440ms with `cubic-bezier(0.22, 1, 0.36, 1)` and uses `clip-path` (not `transform`) so `getBoundingClientRect` remains accurate during animation — the selection overlay measures the real post-animation bounds without lag. Reduced-motion users skip every animation described below.
+
+### Spawn (new pane reveal)
+
+When a pane is added, its dockview group element gets a directional `.pane-spawning-from-{left,top,top-left}` class. The clip-path starts fully closed from the opposite edge(s) and reveals to `inset(0)`. Direction is chosen by how the pane was born:
+
+- **Horizontal split** (new pane on the right) → reveal from the left edge.
+- **Vertical split** (new pane below) → reveal from the top edge.
+- **Auto-spawn after last-pane kill/detach** → reveal from the top-left corner.
+
+The direction is carried via `FreshlySpawnedContext` — a `Map<paneId, SpawnDirection>` written by the spawn call site and consumed once by `TerminalPanel`'s `useLayoutEffect` on first mount.
+
+### Kill (in-place fade + FLIP reclaim)
+
+`orchestrateKill(api, killedId)` in `Pond.tsx` runs on kill confirmation. It fades the real pane element in place (its content dissolves against the same-colored background), then removes the panel and FLIP-reveals the survivors:
+
+1. Add `.pane-fading-out` (or `.pane-fading-and-shrinking-to-br` for a last-pane kill) to the killed pane's group element. Block pointer events during the fade.
+2. On `animationend`, snapshot `getBoundingClientRect` for every surviving panel's group element.
+3. `destroyTerminal` + `api.removePanel`; dockview snaps the layout.
+4. Measure post-rects. Any panel whose rect grew is a "grower."
+5. For each grower, apply an inline `clip-path: inset(...)` with the newly-claimed territory clipped off, force a reflow, then transition to `inset(0)`. This reveals the grower into the vacated space without affecting `getBoundingClientRect`. Clears on `transitionend`.
+
+Case handling is purely rect-based (measure before and after removal), so 2-pane splits, linear 3+ rows/columns, and nested splits all fall through the same code path with no per-case branching.
+
+### Auto-spawn delay
+
+When `onDidRemovePanel` triggers the "always keep one pane visible" auto-spawn (see corner case #10), the `api.addPanel` call is deferred by 440ms. This lets the outgoing animation (kill ghost crush, or detach's selection-overlay slide to the door) complete before the replacement's reveal starts — they play sequentially in the same screen region instead of fighting each other. The deferred spawn re-checks `totalPanels` at fire time and becomes a no-op if anything repopulated the pane area during the delay (e.g. a door reattach).
+
+The deferred spawn also only calls `selectPanel` if selection is null. The kill handler clears selection to null, so the new pane takes focus. The detach flow sets selection to the just-created door; preserving that door focus across the delay is the point.
+
 ## Corner cases
 
 1. **Dual React instance**: dockview bundles its own React. Fixed with `resolve.dedupe: ['react', 'react-dom']` in Vite config.
@@ -294,7 +326,8 @@ Dockview's separator borders, sash handles, and groupview borders are all set to
 7. **Asymmetric back-navigation**: breadcrumb tracks last direction + origin for opposite-direction return.
 8. **Center drop merges panels**: intercepted at group-level `model.onWillDrop` and converted to a swap.
 9. **Group drag has null panelId**: falls back to `api.getGroup(groupId).activePanel.id`.
-10. **Auto-spawn on empty**: `onDidRemovePanel` creates a new session when the last pane is removed and no doors exist.
+10. **Auto-spawn on empty**: `onDidRemovePanel` creates a new session whenever the last visible pane is removed, whether or not doors exist — there is always a pane visible. The `addPanel` call is delayed 440ms (see "Auto-spawn delay" under Animations) so the outgoing kill/detach animation finishes first.
+11. **Door focus survives auto-spawn**: `api.addPanel` auto-activates the new panel, firing `onDidActivePanelChange`. When the current selection is a door (e.g., just-detached last pane), that listener must not flip `selectedId` to the new pane — otherwise `selectedType === 'door'` + `selectedId === newPaneId` desyncs and the door loses its highlight while the SelectionOverlay is stuck on the stale door rect. The listener early-returns when `selectedType === 'door'`.
 
 ## Files
 
