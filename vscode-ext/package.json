@@ -56,7 +56,7 @@
       {
         "command": "mouseterm.selectShell",
         "title": "MouseTerm: Select Shell",
-        "icon": "$(terminal)"
+        "icon": "$(gear)"
       }
     ],
     "menus": {
