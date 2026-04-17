@@ -5,6 +5,8 @@ import type { SessionStatus } from './activity-monitor';
 import { TODO_OFF, isSoftTodo, type TodoState, type AlarmButtonActionResult } from './alarm-manager';
 import type { AlarmStateDetail } from './platform/types';
 import type { PersistedAlarmState } from './session-types';
+import { attachMouseModeObserver } from './mouse-mode-observer';
+import { removeMouseSelectionState } from './mouse-selection';
 
 export type { SessionStatus } from './activity-monitor';
 export { TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo, isHardTodo, hasTodo, type TodoState, type AlarmButtonActionResult } from './alarm-manager';
@@ -360,11 +362,15 @@ function setupTerminalEntry(id: string): TerminalEntry {
     getPlatform().resizePty(id, cols, rows);
   });
 
+  // Observe DECSET/DECRST for mouse-reporting and bracketed-paste modes.
+  const mouseModeObserver = attachMouseModeObserver(id, terminal);
+
   const cleanup = () => {
     getPlatform().offPtyData(handleData);
     getPlatform().offPtyExit(handleExit);
     inputDisposable.dispose();
     resizeDisposable.dispose();
+    mouseModeObserver.dispose();
   };
 
   const entry: TerminalEntry = {
@@ -528,6 +534,7 @@ export function destroyTerminal(id: string): void {
   entry.element.remove();
   entry.terminal.dispose();
   registry.delete(id);
+  removeMouseSelectionState(id);
   notifySessionStateListeners();
 }
 

@@ -18,6 +18,14 @@ vi.mock('@xterm/xterm', () => {
     private dataListeners = new Set<(data: string) => void>();
     private resizeListeners = new Set<(size: { cols: number; rows: number }) => void>();
 
+    parser = {
+      registerCsiHandler: () => ({ dispose: () => {} }),
+    };
+    modes = {
+      mouseTrackingMode: 'none' as const,
+      bracketedPasteMode: false,
+    };
+
     loadAddon(): void {}
 
     open(): void {}
