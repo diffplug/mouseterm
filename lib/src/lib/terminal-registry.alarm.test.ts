@@ -74,6 +74,9 @@ vi.mock('./platform', async () => {
 
 import * as platformModule from './platform';
 import { makeAlarmScenario, type FakePtyAdapter, type FakeScenario } from './platform';
+import { cfg } from '../cfg';
+
+const STRIKE_RECOVERY_MS = cfg.todoBucket.recoverySecondsPerLetter * 1_000;
 import {
   DEFAULT_SESSION_UI_STATE,
   attachTerminal,
@@ -526,10 +529,10 @@ describe('terminal-registry alarm behavior', () => {
     driveToRingingNeedsAttention(id);
     entry.terminal.emitInput('x');
 
-    // Typing while ringing: attend creates soft TODO, then the keypress drains the bucket by 1/5
+    // Typing while ringing: attend creates a fresh soft TODO, then the keypress strikes one letter
     expect(getSessionState(id).status).toBe('NOTHING_TO_SHOW');
     expect(isSoftTodo(getSessionState(id).todo)).toBe(true);
-    expect(getSessionState(id).todo).toBeCloseTo(0.8);
+    expect(getSessionState(id).todo).toBeCloseTo(0.75);
   });
 
   it('no monitor is created until alarm is enabled', () => {
@@ -570,7 +573,7 @@ describe('terminal-registry alarm behavior', () => {
     expect(getSessionState(id).status).toBe('BUSY');
   });
 
-  it('phantom dismiss creates soft TODO, typing 5 chars clears it', () => {
+  it('phantom dismiss creates soft TODO, typing 4 chars clears it', () => {
     const id = 'soft-todo-clear';
     const entry = createSession(id);
     toggleSessionAlarm(id);
@@ -580,18 +583,18 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id).todo).toBe(TODO_SOFT_FULL);
 
-    // 4 keypresses drain but don't clear
-    for (let i = 0; i < 4; i++) {
+    // 3 keypresses strike 3 letters but don't clear
+    for (let i = 0; i < 3; i++) {
       entry.terminal.emitInput('a');
     }
     expect(isSoftTodo(getSessionState(id).todo)).toBe(true);
 
-    // 5th keypress clears it
+    // 4th keypress clears it
     entry.terminal.emitInput('a');
     expect(getSessionState(id).todo).toBe(TODO_OFF);
   });
 
-  it('soft TODO bucket refills after idle and requires fresh keypresses', () => {
+  it('soft TODO recovers after idle and requires fresh keypresses', () => {
     const id = 'soft-todo-refill';
     const entry = createSession(id);
     toggleSessionAlarm(id);
@@ -601,18 +604,17 @@ describe('terminal-registry alarm behavior', () => {
 
     expect(getSessionState(id).todo).toBe(TODO_SOFT_FULL);
 
-    // 3 keypresses
-    for (let i = 0; i < 3; i++) {
-      entry.terminal.emitInput('a');
-    }
-    expect(isSoftTodo(getSessionState(id).todo)).toBe(true);
+    // 2 keypresses strike 2 letters
+    entry.terminal.emitInput('a');
+    entry.terminal.emitInput('a');
+    expect(getSessionState(id).todo).toBeCloseTo(0.5);
 
-    // Wait for full refill (3 seconds)
-    vi.advanceTimersByTime(3_000);
+    // 2 recovery intervals restore both letters
+    vi.advanceTimersByTime(2 * STRIKE_RECOVERY_MS);
     expect(getSessionState(id).todo).toBe(TODO_SOFT_FULL);
 
-    // Need 5 fresh keypresses to clear
-    for (let i = 0; i < 4; i++) {
+    // Need 4 fresh keypresses to clear again
+    for (let i = 0; i < 3; i++) {
       entry.terminal.emitInput('a');
     }
     expect(isSoftTodo(getSessionState(id).todo)).toBe(true);

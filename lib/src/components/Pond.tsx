@@ -36,7 +36,6 @@ import {
   type SessionStatus,
   isSoftTodo,
   isHardTodo,
-  hasTodo,
   TODO_OFF,
 } from '../lib/terminal-registry';
 import { resolvePanelElement, findPanelInDirection, findRestoreNeighbor, type DetachDirection } from '../lib/spatial-nav';
@@ -45,6 +44,7 @@ import { getPlatform } from '../lib/platform';
 import { saveSession } from '../lib/session-save';
 import type { PersistedDetachedItem } from '../lib/session-types';
 import { cfg } from '../cfg';
+import { useTodoPillContent } from './TodoPillBody';
 
 // --- Theme ---
 
@@ -538,7 +538,8 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const suppressAlarmClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
   const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number } | null>(null);
-  const showTodoPill = hasTodo(sessionState.todo) && tier !== 'minimal';
+  const todoPill = useTodoPillContent(sessionState.todo);
+  const showTodoPill = todoPill.visible && tier !== 'minimal';
   const alarmButtonAriaLabel = sessionState.status === 'ALARM_RINGING'
     ? 'Alarm ringing'
     : sessionState.status === 'ALARM_DISABLED'
@@ -653,28 +654,32 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           </span>
         </HeaderActionButton>
         {showTodoPill && (
-          <button
-            type="button"
-            data-session-todo-for={api.id}
-            className={[
-              'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10',
-              isSoftTodo(sessionState.todo) ? 'border border-dashed border-muted' : 'border border-muted',
-            ].join(' ')}
-            style={isSoftTodo(sessionState.todo) ? {
-              opacity: 0.3 + 0.7 * sessionState.todo,
-              transform: `scale(${0.7 + 0.3 * sessionState.todo})`,
-              transition: 'opacity 0.15s ease, transform 0.15s ease',
-            } : undefined}
-            aria-label="TODO settings"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              const rect = e.currentTarget.getBoundingClientRect();
-              setDialogPosition({ x: rect.left + rect.width / 2 - 140, y: rect.bottom + 6 });
-            }}
-          >
-            TODO
-          </button>
+          todoPill.flourishing ? (
+            <span
+              className="shrink-0 rounded border border-dashed border-muted px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted"
+              aria-hidden
+            >
+              {todoPill.body}
+            </span>
+          ) : (
+            <button
+              type="button"
+              data-session-todo-for={api.id}
+              className={[
+                'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10',
+                isSoftTodo(sessionState.todo) ? 'border border-dashed border-muted' : 'border border-muted',
+              ].join(' ')}
+              aria-label="TODO settings"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                const rect = e.currentTarget.getBoundingClientRect();
+                setDialogPosition({ x: rect.left + rect.width / 2 - 140, y: rect.bottom + 6 });
+              }}
+            >
+              {todoPill.body}
+            </button>
+          )
         )}
       </div>
       {!isRenaming && (

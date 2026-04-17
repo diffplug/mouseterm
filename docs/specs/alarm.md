@@ -49,11 +49,11 @@ Each Session owns:
 - `todo: TodoState` (numeric)
   - Reminder state for the Session. Default `TODO_OFF` (`-1`).
   - `TODO_OFF` (`-1`): no TODO.
-  - `[0, 1]` (soft TODO): auto-created when a ringing alarm is phantom-dismissed (any attention path). Value is the leaky-bucket fill level (`1` = full, `0` = about to clear). Dashed-outline pill. Uses a leaky-bucket mechanism: each printable keypress drains the bucket by `1/keypressesToEmpty` (default 5 keypresses to fully drain). When typing stops, the bucket refills to full over `timeToFullSeconds` (default 3 seconds). If the bucket empties completely, the soft TODO clears. Synthetic terminal reports (focus events, cursor-position responses) do not drain the bucket.
+  - `[0, 1]` (soft TODO): auto-created when a ringing alarm is phantom-dismissed (any attention path). Dashed-outline pill rendered as the word `TODO`. The value is quantized to five strike levels (`1.0` = no strikes, `0.75 / 0.5 / 0.25` = 1 / 2 / 3 letters struck, `0` = about to clear). Each printable keypress strikes exactly one letter (4 keypresses clears the TODO). After `recoverySecondsPerLetter` seconds of idle, one struck letter un-strikes; this repeats until the pill is fully un-struck. Synthetic terminal reports (focus events, cursor-position responses) do not count as keypresses.
   - `TODO_HARD` (`2`): explicitly set by the user via `t` key or context menu. Solid-outline pill. Only clears via explicit toggle.
   - Dismissing a ringing alarm when `todo` is already soft or hard does not downgrade it.
   - Helper functions: `isSoftTodo(todo)`, `isHardTodo(todo)`, `hasTodo(todo)`.
-  - Leaky-bucket tuning parameters are in `cfg.todoBucket`.
+  - Strike-timing tuning parameter is in `cfg.todoBucket.recoverySecondsPerLetter`.
 
 Each Session also owns:
 
@@ -206,7 +206,7 @@ The Session leaves `ALARM_RINGING` and returns to `NOTHING_TO_SHOW` when any of 
 - the user marks the Session as hard TODO (`t` key or context menu)
 - new output arrives while the Session has attention (starts a new `MIGHT_BE_BUSY` cycle; without attention the alarm stays ringing — see latch in transition rules)
 
-All attention-based dismissals (the first three above) create a soft TODO if `todo` is not already `TODO_HARD`. If a partially-drained soft TODO already exists, the bucket resets to full — a fresh alarm ring deserves a full drain cycle. This prevents phantom dismissals where the alarm vanishes without a trace. Printable keypresses drain the soft TODO's leaky bucket, and if the bucket empties completely the soft TODO clears — so users who engage with the output don't accumulate breadcrumbs. If the user stops typing, the bucket refills over `cfg.todoBucket.timeToFullSeconds` (default 3 s). Synthetic terminal reports (focus events, cursor-position responses) do not drain the bucket.
+All attention-based dismissals (the first three above) create a soft TODO if `todo` is not already `TODO_HARD`. If a partially-struck soft TODO already exists, the pill resets to fully un-struck — a fresh alarm ring deserves a full strike cycle. This prevents phantom dismissals where the alarm vanishes without a trace. Printable keypresses strike one letter of the `TODO` pill at a time (4 strikes clears it), so users who engage with the output don't accumulate breadcrumbs. After `cfg.todoBucket.recoverySecondsPerLetter` (default 1 s) of idle, one struck letter un-strikes; this repeats until the pill is fully un-struck. Synthetic terminal reports (focus events, cursor-position responses) do not count as keypresses.
 
 The Session leaves `ALARM_RINGING` and returns to `ALARM_DISABLED` when:
 
@@ -235,7 +235,8 @@ TODO pill:
 
 - toggled in command mode with `t` (cycles: `TODO_OFF` → `TODO_HARD`, soft → `TODO_HARD`, `TODO_HARD` → `TODO_OFF`)
 - shown when `hasTodo(todo)` is true (i.e. `todo !== TODO_OFF`)
-- soft (`isSoftTodo(todo)`): dashed-outline pill — auto-created on alarm dismiss, drains via leaky bucket on typing
+- soft (`isSoftTodo(todo)`): dashed-outline pill — auto-created on alarm dismiss; each printable keypress strikes one letter of the word `TODO` (4 keypresses clears it), and one letter un-strikes per `recoverySecondsPerLetter` of idle
+- when the 4th strike lands and the soft TODO clears, the pill briefly morphs to a `✓` glyph in the success color (~500 ms) before unmounting — this marks the moment of completion so the pill never vanishes silently
 - `TODO_HARD` (`isHardTodo(todo)`): solid-outline pill — explicitly set, only clears manually
 - clicking a soft pill shows a prompt: "Clear" / "Keep" (keep promotes to hard)
 - clicking a hard pill clears it
@@ -369,7 +370,7 @@ Consequences:
 - A Session rings.
 - User clicks into the pane to read the output.
 - The alarm clears, a soft TODO appears (dashed pill).
-- User types a command → printable keypresses drain the soft TODO's leaky bucket; if enough keypresses occur without long pauses, the soft TODO clears (they engaged).
+- User types a command → each printable keypress strikes one letter of the `TODO` pill; after 4 keypresses the pill morphs to a `✓` and clears (they engaged).
 - The Session later emits new output, progresses through `BUSY`, and eventually reaches `ALARM_RINGING` again.
 
 ### User dismisses but doesn't engage

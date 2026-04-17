@@ -1,5 +1,6 @@
 import { BellIcon } from '@phosphor-icons/react';
-import { TODO_OFF, isSoftTodo, hasTodo, type SessionStatus, type TodoState } from '../lib/terminal-registry';
+import { TODO_OFF, isSoftTodo, type SessionStatus, type TodoState } from '../lib/terminal-registry';
+import { useTodoPillContent } from './TodoPillBody';
 
 export interface DoorProps {
   doorId?: string;
@@ -28,6 +29,7 @@ export function Door({
 
   const alarmEnabled = status !== 'ALARM_DISABLED';
   const alarmRinging = status === 'ALARM_RINGING';
+  const todoPill = useTodoPillContent(todo);
 
   return (
     <button
@@ -51,21 +53,16 @@ export function Door({
       <span className={['min-w-0 flex-1 truncate', (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
         {title}
       </span>
-      {(hasTodo(todo) || alarmEnabled) && (
+      {(todoPill.visible || alarmEnabled) && (
         <span className="flex shrink-0 items-center gap-1.5">
-          {hasTodo(todo) && (
+          {todoPill.visible && (
             <span
               className={[
                 'rounded bg-surface-raised px-1 py-px text-[8px] font-semibold tracking-[0.08em] text-foreground',
-                isSoftTodo(todo) ? 'border border-dashed border-border' : 'border border-border',
+                isSoftTodo(todo) || todoPill.flourishing ? 'border border-dashed border-border' : 'border border-border',
               ].join(' ')}
-              style={isSoftTodo(todo) ? {
-                opacity: 0.3 + 0.7 * todo,
-                transform: `scale(${0.7 + 0.3 * todo})`,
-                transition: 'opacity 0.15s ease, transform 0.15s ease',
-              } : undefined}
             >
-              TODO
+              {todoPill.body}
             </span>
           )}
           {alarmEnabled && (

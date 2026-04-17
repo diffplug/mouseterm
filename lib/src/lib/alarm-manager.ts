@@ -48,13 +48,12 @@ interface AlarmEntry {
   monitor: ActivityMonitor | null;
   todo: TodoState;
   attentionDismissedRing: boolean;
-  bucketLastDrainAt: number;
-  bucketRefillTimer: ReturnType<typeof setTimeout> | null;
+  recoveryTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const T_USER_ATTENTION = cfg.alarm.userAttention;
-const BUCKET_TIME_TO_FULL_MS = cfg.todoBucket.timeToFullSeconds * 1_000;
-const BUCKET_KEYPRESSES_TO_EMPTY = cfg.todoBucket.keypressesToEmpty;
+const STRIKE_RECOVERY_MS = cfg.todoBucket.recoverySecondsPerLetter * 1_000;
+const STRIKE_STEP = 0.25;
 
 /**
  * Manages ActivityMonitors, attention tracking, and todo state for PTY sessions.
@@ -130,6 +129,7 @@ export class AlarmManager {
     if (previousStatus === 'ALARM_RINGING') {
       entry.attentionDismissedRing = true;
       if (!isHardTodo(entry.todo)) {
+        this.clearRecoveryTimer(entry);
         entry.todo = TODO_SOFT_FULL;
       }
     }
@@ -191,6 +191,7 @@ export class AlarmManager {
     if (!entry?.monitor) return;
     if (entry.monitor.getStatus() !== 'ALARM_RINGING') return;
     if (!isHardTodo(entry.todo)) {
+      this.clearRecoveryTimer(entry);
       entry.todo = TODO_SOFT_FULL;
     }
     entry.monitor.attend();
@@ -237,11 +238,11 @@ export class AlarmManager {
   toggleTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
     if (entry.todo === TODO_HARD) {
-      this.clearBucketRefillTimer(entry);
+      this.clearRecoveryTimer(entry);
       entry.todo = TODO_OFF;
       this.notify(id);
     } else {
-      this.clearBucketRefillTimer(entry);
+      this.clearRecoveryTimer(entry);
       entry.todo = TODO_HARD;
       if (entry.monitor?.getStatus() === 'ALARM_RINGING') {
         entry.monitor.attend();
@@ -256,7 +257,7 @@ export class AlarmManager {
     const entry = this.getOrCreateEntry(id);
     const isRinging = entry.monitor?.getStatus() === 'ALARM_RINGING';
     if (entry.todo === TODO_HARD && !isRinging) return;
-    this.clearBucketRefillTimer(entry);
+    this.clearRecoveryTimer(entry);
     entry.todo = TODO_HARD;
     if (isRinging) {
       entry.monitor!.attend();
@@ -269,7 +270,7 @@ export class AlarmManager {
   promoteTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
     if (!isSoftTodo(entry.todo)) return;
-    this.clearBucketRefillTimer(entry);
+    this.clearRecoveryTimer(entry);
     entry.todo = TODO_HARD;
     this.notify(id);
   }
@@ -278,47 +279,44 @@ export class AlarmManager {
   clearTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
     if (entry.todo === TODO_OFF) return;
-    this.clearBucketRefillTimer(entry);
+    this.clearRecoveryTimer(entry);
     entry.todo = TODO_OFF;
     this.notify(id);
   }
 
-  /** Drain the soft-TODO bucket by one keypress. Clears the TODO if bucket empties. */
+  /**
+   * Strike one letter of the soft-TODO pill.
+   * 4 strikes clear the TODO. One letter recovers after each `recoverySecondsPerLetter`
+   * of idle (no further strikes).
+   */
   drainTodoBucket(id: string): void {
     const entry = this.entries.get(id);
     if (!entry || !isSoftTodo(entry.todo)) return;
 
-    const now = Date.now();
-
-    // Apply refill based on time since last drain
-    if (entry.bucketLastDrainAt > 0) {
-      const elapsed = now - entry.bucketLastDrainAt;
-      entry.todo = Math.min(TODO_SOFT_FULL, entry.todo + elapsed / BUCKET_TIME_TO_FULL_MS);
-    }
-
-    // Drain by one keypress
-    entry.todo = entry.todo - 1 / BUCKET_KEYPRESSES_TO_EMPTY;
-    entry.bucketLastDrainAt = now;
+    entry.todo = entry.todo - STRIKE_STEP;
 
     if (entry.todo < 1e-9) {
       entry.todo = TODO_OFF;
-      this.clearBucketRefillTimer(entry);
+      this.clearRecoveryTimer(entry);
       this.notify(id);
       return;
     }
 
-    // Schedule refill timer
-    this.clearBucketRefillTimer(entry);
-    entry.bucketRefillTimer = setTimeout(() => {
-      entry.bucketRefillTimer = null;
-      if (isSoftTodo(entry.todo)) {
-        entry.todo = TODO_SOFT_FULL;
-        entry.bucketLastDrainAt = 0;
-        this.notify(id);
-      }
-    }, (TODO_SOFT_FULL - entry.todo) * BUCKET_TIME_TO_FULL_MS);
-
+    this.scheduleRecoveryTick(id, entry);
     this.notify(id);
+  }
+
+  private scheduleRecoveryTick(id: string, entry: AlarmEntry): void {
+    this.clearRecoveryTimer(entry);
+    entry.recoveryTimer = setTimeout(() => {
+      entry.recoveryTimer = null;
+      if (!isSoftTodo(entry.todo)) return;
+      entry.todo = Math.min(TODO_SOFT_FULL, entry.todo + STRIKE_STEP);
+      this.notify(id);
+      if (entry.todo < TODO_SOFT_FULL) {
+        this.scheduleRecoveryTick(id, entry);
+      }
+    }, STRIKE_RECOVERY_MS);
   }
 
   // --- Query ---
@@ -345,7 +343,7 @@ export class AlarmManager {
   remove(id: string): void {
     const entry = this.entries.get(id);
     if (!entry) return;
-    this.clearBucketRefillTimer(entry);
+    this.clearRecoveryTimer(entry);
     entry.monitor?.dispose();
     this.entries.delete(id);
     if (this.attentionId === id) {
@@ -375,7 +373,7 @@ export class AlarmManager {
 
   dispose(): void {
     for (const entry of this.entries.values()) {
-      this.clearBucketRefillTimer(entry);
+      this.clearRecoveryTimer(entry);
       entry.monitor?.dispose();
     }
     this.entries.clear();
@@ -388,16 +386,16 @@ export class AlarmManager {
   private getOrCreateEntry(id: string): AlarmEntry {
     let entry = this.entries.get(id);
     if (!entry) {
-      entry = { monitor: null, todo: TODO_OFF, attentionDismissedRing: false, bucketLastDrainAt: 0, bucketRefillTimer: null };
+      entry = { monitor: null, todo: TODO_OFF, attentionDismissedRing: false, recoveryTimer: null };
       this.entries.set(id, entry);
     }
     return entry;
   }
 
-  private clearBucketRefillTimer(entry: AlarmEntry): void {
-    if (entry.bucketRefillTimer !== null) {
-      clearTimeout(entry.bucketRefillTimer);
-      entry.bucketRefillTimer = null;
+  private clearRecoveryTimer(entry: AlarmEntry): void {
+    if (entry.recoveryTimer !== null) {
+      clearTimeout(entry.recoveryTimer);
+      entry.recoveryTimer = null;
     }
   }
 

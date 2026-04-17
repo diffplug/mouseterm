@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AlarmManager, TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo } from './alarm-manager';
+import { cfg } from '../cfg';
+
+const STRIKE_RECOVERY_MS = cfg.todoBucket.recoverySecondsPerLetter * 1_000;
 
 describe('AlarmManager in isolation', () => {
   let manager: AlarmManager;
@@ -178,71 +181,98 @@ describe('AlarmManager in isolation', () => {
     expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
   });
 
-  it('5 rapid keypresses drain bucket to 0 and clear soft-TODO', () => {
+  it('4 keypresses strike all letters and clear soft-TODO', () => {
     const id = 'bucket-drain';
     createSoftTodo(id);
 
-    for (let i = 0; i < 5; i++) {
-      manager.drainTodoBucket(id);
-    }
-
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.75);
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.5);
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.25);
+    manager.drainTodoBucket(id);
     expect(manager.getState(id).todo).toBe(TODO_OFF);
   });
 
-  it('4 keypresses drain but do not clear soft-TODO', () => {
+  it('3 keypresses strike 3 letters but do not clear soft-TODO', () => {
     const id = 'bucket-partial';
     createSoftTodo(id);
 
-    for (let i = 0; i < 4; i++) {
-      manager.drainTodoBucket(id);
-    }
-
-    expect(isSoftTodo(manager.getState(id).todo)).toBe(true);
-    expect(manager.getState(id).todo).toBeCloseTo(0.2);
-  });
-
-  it('bucket refills to full after timeToFull seconds of idle', () => {
-    const id = 'bucket-refill';
-    createSoftTodo(id);
-
-    manager.drainTodoBucket(id);
-    manager.drainTodoBucket(id);
-    manager.drainTodoBucket(id);
-    expect(manager.getState(id).todo).toBeCloseTo(0.4);
-
-    // Wait for full refill (3 seconds for full, but only need 0.6 * 3 = 1.8s)
-    vi.advanceTimersByTime(1_800);
-
-    expect(isSoftTodo(manager.getState(id).todo)).toBe(true);
-    expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
-  });
-
-  it('partial refill + more keypresses — correct math', () => {
-    const id = 'bucket-partial-refill';
-    createSoftTodo(id);
-
-    // Drain 3 times → level = 0.4
     for (let i = 0; i < 3; i++) {
       manager.drainTodoBucket(id);
     }
-    expect(manager.getState(id).todo).toBeCloseTo(0.4);
 
-    // Wait 1.5s → refill = 1.5/3 = 0.5, so level = min(1, 0.4 + 0.5) = 0.9
-    vi.advanceTimersByTime(1_500);
-
-    // Drain once more → refill applied first, then drain: 0.9 - 0.2 = 0.7
-    manager.drainTodoBucket(id);
-    expect(manager.getState(id).todo).toBeCloseTo(0.7);
     expect(isSoftTodo(manager.getState(id).todo)).toBe(true);
+    expect(manager.getState(id).todo).toBeCloseTo(0.25);
   });
 
-  it('promoting a partially-drained soft-TODO resets to hard', () => {
+  it('one letter recovers after recoverySecondsPerLetter of idle', () => {
+    const id = 'bucket-one-recovery';
+    createSoftTodo(id);
+
+    manager.drainTodoBucket(id);
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.5);
+
+    vi.advanceTimersByTime(STRIKE_RECOVERY_MS);
+    expect(manager.getState(id).todo).toBeCloseTo(0.75);
+  });
+
+  it('recovery ticks repeat until bucket reaches full, then stops', () => {
+    const id = 'bucket-full-recovery';
+    createSoftTodo(id);
+
+    manager.drainTodoBucket(id);
+    manager.drainTodoBucket(id);
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.25);
+
+    // Three recovery ticks bring it back to full.
+    vi.advanceTimersByTime(STRIKE_RECOVERY_MS);
+    expect(manager.getState(id).todo).toBeCloseTo(0.5);
+    vi.advanceTimersByTime(STRIKE_RECOVERY_MS);
+    expect(manager.getState(id).todo).toBeCloseTo(0.75);
+    vi.advanceTimersByTime(STRIKE_RECOVERY_MS);
+    expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
+
+    // Further time advances must not push past full or introduce drift.
+    vi.advanceTimersByTime(10 * STRIKE_RECOVERY_MS);
+    expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
+  });
+
+  it('a keypress between recovery ticks resets the recovery clock', () => {
+    const id = 'bucket-recovery-reset';
+    createSoftTodo(id);
+
+    manager.drainTodoBucket(id);
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.5);
+
+    // Almost-but-not-quite one recovery interval.
+    vi.advanceTimersByTime(STRIKE_RECOVERY_MS - 1);
+    expect(manager.getState(id).todo).toBeCloseTo(0.5);
+
+    // A fresh strike lands; the recovery clock restarts.
+    manager.drainTodoBucket(id);
+    expect(manager.getState(id).todo).toBeCloseTo(0.25);
+
+    // Another almost-interval — no tick yet.
+    vi.advanceTimersByTime(STRIKE_RECOVERY_MS - 1);
+    expect(manager.getState(id).todo).toBeCloseTo(0.25);
+
+    // Crossing the threshold finally restores one letter.
+    vi.advanceTimersByTime(2);
+    expect(manager.getState(id).todo).toBeCloseTo(0.5);
+  });
+
+  it('promoting a partially-struck soft-TODO resets to hard', () => {
     const id = 'bucket-promote';
     createSoftTodo(id);
 
     manager.drainTodoBucket(id);
     manager.drainTodoBucket(id);
-    expect(manager.getState(id).todo).toBeCloseTo(0.6);
+    expect(manager.getState(id).todo).toBeCloseTo(0.5);
 
     manager.promoteTodo(id);
     expect(manager.getState(id).todo).toBe(TODO_HARD);
@@ -254,15 +284,15 @@ describe('AlarmManager in isolation', () => {
     expect(manager.getState(id).todo).toBe(TODO_HARD);
   });
 
-  it('re-attending a ringing alarm resets a partially-drained soft-TODO bucket to full', () => {
+  it('re-attending a ringing alarm resets a partially-struck soft-TODO to full and clears its recovery timer', () => {
     const id = 'bucket-reset-on-reattend';
     createSoftTodo(id);
 
-    // Drain the bucket partially (3 out of 5 keypresses)
+    // Strike 3 of 4 letters.
     manager.drainTodoBucket(id);
     manager.drainTodoBucket(id);
     manager.drainTodoBucket(id);
-    expect(manager.getState(id).todo).toBeCloseTo(0.4);
+    expect(manager.getState(id).todo).toBeCloseTo(0.25);
 
     // Drive to ALARM_RINGING again
     manager.clearAttention(id);
@@ -277,16 +307,22 @@ describe('AlarmManager in isolation', () => {
     // Re-attend should reset the bucket to full
     manager.attend(id);
     expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
+
+    // The pending recovery timer from before the re-attend must not fire now
+    // that we're already at full (it would be a no-op but would still schedule
+    // further ticks in the old code path).
+    vi.advanceTimersByTime(10 * STRIKE_RECOVERY_MS);
+    expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
   });
 
-  it('dismissing a ringing alarm resets a partially-drained soft-TODO bucket to full', () => {
+  it('dismissing a ringing alarm resets a partially-struck soft-TODO to full and clears its recovery timer', () => {
     const id = 'bucket-reset-on-dismiss';
     createSoftTodo(id);
 
-    // Drain the bucket partially
+    // Strike 2 of 4 letters.
     manager.drainTodoBucket(id);
     manager.drainTodoBucket(id);
-    expect(manager.getState(id).todo).toBeCloseTo(0.6);
+    expect(manager.getState(id).todo).toBeCloseTo(0.5);
 
     // Drive to ALARM_RINGING again
     manager.clearAttention(id);
@@ -300,6 +336,9 @@ describe('AlarmManager in isolation', () => {
 
     // Dismiss should reset the bucket to full
     manager.dismissAlarm(id);
+    expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
+
+    vi.advanceTimersByTime(10 * STRIKE_RECOVERY_MS);
     expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
   });
 

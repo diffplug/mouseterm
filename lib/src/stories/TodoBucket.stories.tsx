@@ -1,73 +1,77 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import { Door } from '../components/Door';
 import { TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo } from '../lib/terminal-registry';
 import { cfg } from '../cfg';
 
-const BUCKET_TIME_TO_FULL_MS = cfg.todoBucket.timeToFullSeconds * 1_000;
-const BUCKET_KEYPRESSES_TO_EMPTY = cfg.todoBucket.keypressesToEmpty;
+const STRIKE_RECOVERY_MS = cfg.todoBucket.recoverySecondsPerLetter * 1_000;
+const STRIKE_STEP = 0.25;
 
 /**
- * Interactive story to test the soft-TODO bucket feel.
- * Type in the input to drain the bucket. Stop typing to let it refill.
+ * Interactive story to test the soft-TODO strike feel.
+ * Type in the input to strike one letter per printable keypress.
+ * Stop typing and one letter recovers every `recoverySecondsPerLetter` seconds.
  */
 function TodoBucketDemo({ width = 300 }: { width?: number }) {
   const [todo, setTodo] = useState(TODO_SOFT_FULL);
-  const [lastDrainAt, setLastDrainAt] = useState(0);
-  const [refillTimer, setRefillTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const drain = useCallback(() => {
+  const clearRecoveryTimer = useCallback(() => {
+    if (recoveryTimerRef.current !== null) {
+      clearTimeout(recoveryTimerRef.current);
+      recoveryTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleRecoveryTick = useCallback(() => {
+    clearRecoveryTimer();
+    const tick = () => {
+      recoveryTimerRef.current = null;
+      setTodo((prev) => {
+        if (!isSoftTodo(prev)) return prev;
+        const next = Math.min(TODO_SOFT_FULL, prev + STRIKE_STEP);
+        if (next < TODO_SOFT_FULL) {
+          recoveryTimerRef.current = setTimeout(tick, STRIKE_RECOVERY_MS);
+        }
+        return next;
+      });
+    };
+    recoveryTimerRef.current = setTimeout(tick, STRIKE_RECOVERY_MS);
+  }, [clearRecoveryTimer]);
+
+  const strike = useCallback(() => {
     setTodo((prev) => {
       if (!isSoftTodo(prev)) return prev;
-
-      const now = Date.now();
-      let level = prev;
-
-      // Apply refill based on time since last drain
-      if (lastDrainAt > 0) {
-        const elapsed = now - lastDrainAt;
-        level = Math.min(TODO_SOFT_FULL, level + elapsed / BUCKET_TIME_TO_FULL_MS);
-      }
-
-      // Drain by one keypress
-      level = level - 1 / BUCKET_KEYPRESSES_TO_EMPTY;
-      setLastDrainAt(now);
-
-      if (level < 1e-9) {
-        if (refillTimer) clearTimeout(refillTimer);
-        setRefillTimer(null);
+      const next = prev - STRIKE_STEP;
+      if (next < 1e-9) {
+        clearRecoveryTimer();
         return TODO_OFF;
       }
-
-      // Schedule refill
-      if (refillTimer) clearTimeout(refillTimer);
-      const timer = setTimeout(() => {
-        setTodo(TODO_SOFT_FULL);
-        setLastDrainAt(0);
-        setRefillTimer(null);
-      }, (TODO_SOFT_FULL - level) * BUCKET_TIME_TO_FULL_MS);
-      setRefillTimer(timer);
-
-      return level;
+      scheduleRecoveryTick();
+      return next;
     });
-  }, [lastDrainAt, refillTimer]);
+  }, [clearRecoveryTimer, scheduleRecoveryTick]);
+
+  useEffect(() => clearRecoveryTimer, [clearRecoveryTimer]);
 
   const reset = useCallback(() => {
-    if (refillTimer) clearTimeout(refillTimer);
-    setRefillTimer(null);
-    setTodo(1);
-    setLastDrainAt(0);
-  }, [refillTimer]);
+    clearRecoveryTimer();
+    setTodo(TODO_SOFT_FULL);
+  }, [clearRecoveryTimer]);
 
-  const bucketPercent = isSoftTodo(todo) ? Math.round(todo * 100) : todo === TODO_HARD ? 100 : 0;
-  const label = todo === TODO_OFF ? 'OFF' : todo === TODO_HARD ? 'HARD' : `SOFT (${bucketPercent}%)`;
+  const strikes = isSoftTodo(todo) ? Math.round((1 - todo) * 4) : 0;
+  const label = todo === TODO_OFF
+    ? 'OFF'
+    : todo === TODO_HARD
+      ? 'HARD'
+      : `SOFT (${strikes}/4 strikes)`;
 
   return (
     <div style={{ width, padding: 24 }}>
-      <div className="mb-4 text-[11px] text-muted">
-        Type in the box below to drain the soft-TODO bucket.
-        Stop typing and it will refill over {cfg.todoBucket.timeToFullSeconds}s.
-        Takes {cfg.todoBucket.keypressesToEmpty} rapid keypresses to empty.
+      <div className="mb-4 text-xs text-muted">
+        Type in the box below — each printable keypress strikes one letter of TODO.
+        Stop typing and one letter recovers every {cfg.todoBucket.recoverySecondsPerLetter}s.
+        4 strikes clears the TODO (watch for the ✓ flourish).
       </div>
 
       <div className="mb-4">
@@ -81,23 +85,23 @@ function TodoBucketDemo({ width = 300 }: { width?: number }) {
           <div
             className="h-full rounded-full transition-all duration-150 ease-out"
             style={{
-              width: `${bucketPercent}%`,
+              width: `${isSoftTodo(todo) ? todo * 100 : todo === TODO_HARD ? 100 : 0}%`,
               backgroundColor: isSoftTodo(todo)
                 ? `hsl(${120 * todo}, 60%, 50%)`
                 : todo === TODO_HARD ? 'hsl(220, 60%, 50%)' : 'transparent',
             }}
           />
         </div>
-        <span className="text-[10px] font-mono text-muted w-20 text-right">{label}</span>
+        <span className="text-[10px] font-mono text-muted w-24 text-right">{label}</span>
       </div>
 
       <div className="flex gap-2 mb-4">
         <input
           type="text"
-          className="flex-1 rounded border border-border bg-surface px-2 py-1 text-[12px] font-mono text-foreground outline-none focus:border-accent"
-          placeholder="Type here to drain..."
+          className="flex-1 rounded border border-border bg-surface px-2 py-1 text-xs font-mono text-foreground outline-none focus:border-accent"
+          placeholder="Type here to strike letters..."
           onKeyDown={(e) => {
-            if (e.key.length === 1) drain();
+            if (e.key.length === 1) strike();
           }}
           autoFocus
         />
@@ -105,20 +109,20 @@ function TodoBucketDemo({ width = 300 }: { width?: number }) {
 
       <div className="flex gap-2">
         <button
-          className="rounded border border-border px-3 py-1 text-[11px] text-foreground hover:bg-foreground/10"
+          className="rounded border border-border px-3 py-1 text-xs text-foreground hover:bg-foreground/10"
           onClick={reset}
         >
           Reset to soft
         </button>
         <button
-          className="rounded border border-border px-3 py-1 text-[11px] text-foreground hover:bg-foreground/10"
-          onClick={() => { if (refillTimer) clearTimeout(refillTimer); setRefillTimer(null); setTodo(TODO_HARD); }}
+          className="rounded border border-border px-3 py-1 text-xs text-foreground hover:bg-foreground/10"
+          onClick={() => { clearRecoveryTimer(); setTodo(TODO_HARD); }}
         >
           Set hard
         </button>
         <button
-          className="rounded border border-border px-3 py-1 text-[11px] text-foreground hover:bg-foreground/10"
-          onClick={() => { if (refillTimer) clearTimeout(refillTimer); setRefillTimer(null); setTodo(TODO_OFF); }}
+          className="rounded border border-border px-3 py-1 text-xs text-foreground hover:bg-foreground/10"
+          onClick={() => { clearRecoveryTimer(); setTodo(TODO_OFF); }}
         >
           Set off
         </button>

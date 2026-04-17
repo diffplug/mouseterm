@@ -28,9 +28,9 @@ export const cfg = {
     userAttention: 15_000,
   },
   todoBucket: {
-    /** Seconds for a fully-drained soft-TODO bucket to refill to full when idle. */
-    timeToFullSeconds: 3,
-    /** Number of printable keypresses to drain a full bucket to zero. */
-    keypressesToEmpty: 5,
+    /** Seconds of idle time needed to un-strike one letter of the soft-TODO pill.
+     *  The word TODO has 4 letters; each printable keypress strikes one letter,
+     *  and each `recoverySecondsPerLetter` of idle time un-strikes one. */
+    recoverySecondsPerLetter: 1,
   },
 };
