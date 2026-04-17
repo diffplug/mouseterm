@@ -110,8 +110,9 @@ Extension Host (always running while extension is active)
 This means:
 - Hiding the MouseTerm panel doesn't kill its PTYs.
 - VS Code toggling the panel visibility doesn't destroy sessions.
-- When the view becomes visible again, the webview reconnects to still-alive PTYs.
+- When the view becomes visible again, the webview reconnects to still-owned PTYs and reapplies the saved visible-pane layout when the saved session covers the live PTY set and the layout's visible panels match.
 - Each message router tracks which PTYs it owns; PTYs cannot be stolen by another router.
+- Explicitly killed PTYs are tombstoned in the extension host so a late child-process `exit` event cannot recreate their buffer and make them reconnectable.
 - Multiple VS Code windows each get their own extension host process, and therefore their own pty-host child process.
 
 #### PTY buffering
@@ -132,6 +133,7 @@ Both are capped at 1M chars per PTY. When the cap is reached, oldest chunks are 
    - { type: 'pty:list', ptys: [{ id, alive, exitCode }] }   // all owned PTYs
    - { type: 'pty:replay', id, data }                         // buffered output per PTY
 4. Webview restores terminals from replay data, resumes live stream
+5. If the saved session covers those live PTYs, the frontend uses the saved dockview layout when its visible panels match and restores saved detached doors; detached PTYs reconnect into the registry but remain doors instead of visible panes
 ```
 
 For cold-start restore (no live PTYs), the webview falls back to saved session state: spawns new PTYs in saved CWDs, injects saved scrollback (with trailing newline to avoid zsh `%` artifact), and restores dockview layout. The reconnect module (`reconnect.ts`) uses a 500ms timeout when waiting for the PTY list.

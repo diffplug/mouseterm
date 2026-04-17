@@ -19,6 +19,7 @@ interface PtyBufferEntry {
 
 const MAX_BUFFER_CHARS = 1_000_000;
 const ptyBuffers = new Map<string, PtyBufferEntry>();
+const killedPtyIds = new Set<string>();
 
 function trimChunks(chunks: string[], totalChars: number): number {
   while (totalChars > MAX_BUFFER_CHARS && chunks.length > 1) {
@@ -40,6 +41,7 @@ function createBufferEntry(alive: boolean, exitCode?: number): PtyBufferEntry {
 }
 
 function bufferData(id: string, data: string): void {
+  if (killedPtyIds.has(id)) return;
   let entry = ptyBuffers.get(id);
   if (!entry) {
     entry = createBufferEntry(true);
@@ -55,6 +57,7 @@ function bufferData(id: string, data: string): void {
 }
 
 function bufferExit(id: string, exitCode: number): void {
+  if (killedPtyIds.has(id)) return;
   let entry = ptyBuffers.get(id);
   if (!entry) {
     entry = createBufferEntry(false, exitCode);
@@ -207,6 +210,7 @@ function sendToChild(msg: any): void {
 }
 
 export function spawn(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void {
+  killedPtyIds.delete(id);
   ptyBuffers.set(id, createBufferEntry(true));
   sendToChild({ type: 'spawn', id, cols: options?.cols || 80, rows: options?.rows || 30, cwd: options?.cwd, shell: options?.shell, args: options?.args });
 }
@@ -276,6 +280,7 @@ export function resize(id: string, cols: number, rows: number): void {
 }
 
 export function kill(id: string): void {
+  killedPtyIds.add(id);
   ptyBuffers.delete(id);
   sendToChild({ type: 'kill', id });
 }
@@ -301,6 +306,7 @@ export function gracefulKillAll(timeoutMs = 2000): Promise<void> {
 
 export function killAll(): void {
   ptyBuffers.clear();
+  killedPtyIds.clear();
   if (child?.connected) {
     child.send({ type: 'killAll' });
     child.kill();

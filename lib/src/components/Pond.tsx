@@ -1219,7 +1219,15 @@ export function Pond({
       if (defaults?.shell) {
         setPendingShellOpts(id, { shell: defaults.shell, args: defaults.args });
       }
-      e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
+      const referencePanel = e.api.panels[e.api.panels.length - 1] ?? null;
+      const direction = referencePanel && referencePanel.api.width - referencePanel.api.height > 0 ? 'right' : 'below';
+      e.api.addPanel({
+        id,
+        component: 'terminal',
+        tabComponent: 'terminal',
+        title: '<unnamed>',
+        position: referencePanel ? { referencePanel: referencePanel.id, direction } : undefined,
+      });
     };
 
     if (layout && restored && restored.length > 0) {
