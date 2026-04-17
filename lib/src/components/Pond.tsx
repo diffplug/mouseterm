@@ -432,9 +432,13 @@ export const RenamingIdContext = createContext<string | null>(null);
 export const ZoomedContext = createContext(false);
 export const WindowFocusedContext = createContext(true);
 
-// Transient set of pane ids that were just created (split or empty-state auto-spawn).
-// TerminalPanel consumes (and removes) its id on first mount to trigger a spawn animation.
-export const FreshlySpawnedContext = createContext<Set<string>>(new Set());
+// Transient map of pane ids that were just created → their spawn direction.
+// TerminalPanel consumes (and removes) its id on first mount to trigger a directional spawn animation.
+//   'left'     — born from horizontal split (new pane appeared to the right of the source)
+//   'top'      — born from vertical split (new pane appeared below the source)
+//   'top-left' — auto-spawned after last-pane kill (diagonal counterpoint to the killed pane's crush to bottom-right)
+export type SpawnDirection = 'left' | 'top' | 'top-left';
+export const FreshlySpawnedContext = createContext<Map<string, SpawnDirection>>(new Map());
 
 const ARROW_OPPOSITES: Record<string, string> = {
   ArrowLeft: 'ArrowRight', ArrowRight: 'ArrowLeft',
@@ -477,26 +481,29 @@ function TerminalPanel({ api }: IDockviewPanelProps) {
     };
   }, [api.id, panelElements, bumpVersion]);
 
-  // Freshly spawned: animate the whole dockview group (header + body) as one unit.
-  // We target api.group.element instead of elRef so the tab header animates too.
-  // Using clip-path (not transform) is deliberate — transforms would make
-  // SelectionOverlay's getBoundingClientRect capture the scaled rect and lag
-  // behind the pane until the animation ends.
+  // Freshly spawned: animate the whole dockview group (header + body) as one unit
+  // via a directional clip-path reveal. We target api.group.element instead of elRef
+  // so the tab header animates too. clip-path (not transform) is deliberate —
+  // transforms affect getBoundingClientRect, which would make the selection overlay
+  // lag the pane until the animation ends.
   useLayoutEffect(() => {
-    if (!freshlySpawned.has(api.id)) return;
+    const direction = freshlySpawned.get(api.id);
+    if (!direction) return;
     freshlySpawned.delete(api.id);
     const groupEl = api.group?.element;
     if (!groupEl) return;
-    groupEl.classList.add('pane-spawning');
+    const className = `pane-spawning-from-${direction}`;
+    const animationName = `pane-spawn-from-${direction}`;
+    groupEl.classList.add(className);
     const onEnd = (ev: AnimationEvent) => {
-      if (ev.animationName !== 'pane-spawn') return;
-      groupEl.classList.remove('pane-spawning');
+      if (ev.animationName !== animationName) return;
+      groupEl.classList.remove(className);
       groupEl.removeEventListener('animationend', onEnd);
     };
     groupEl.addEventListener('animationend', onEnd);
     return () => {
       groupEl.removeEventListener('animationend', onEnd);
-      groupEl.classList.remove('pane-spawning');
+      groupEl.classList.remove(className);
     };
   }, [api, freshlySpawned]);
 
@@ -940,7 +947,10 @@ function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
 }) {
   const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so the initial measurement + re-render happens
+  // before the browser paints. Otherwise the centered-in-viewport fallback below
+  // flashes for one frame before the overlay snaps to the panel.
+  useLayoutEffect(() => {
     const panelEl = resolvePanelElement(panelElements.get(confirmKill.id));
     if (!panelEl) { setRect(null); return; }
 
@@ -976,6 +986,137 @@ function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
 }
 
 
+// --- Kill animation ---
+//
+// Orchestrates the visual reclaim when a pane is killed. Captures pre-rects of
+// every surviving pane's group element, removes the panel (dockview snaps the
+// layout), then:
+//   - Renders a ghost overlay at the killed pane's position with a clip-path
+//     crush animation (direction chosen from how the layout actually changed).
+//   - Applies a FLIP-style clip-path reveal on each grower so its newly claimed
+//     territory is hidden at start and swept in by the animation. We use
+//     clip-path (not transform) because transform would corrupt the grower's
+//     getBoundingClientRect and make SelectionOverlay lag.
+//
+// For the "no surviving panes" case (Case C), we only render the ghost crushing
+// to the bottom-right corner; the auto-spawn handler (onDidRemovePanel) will
+// create a fresh pane tagged with 'top-left' spawn direction.
+function orchestrateKill(api: DockviewApi, killedId: string): void {
+  const panel = api.getPanel(killedId);
+  if (!panel) return;
+
+  // Respect reduced-motion: do the bare removal with no ghost / no FLIP so
+  // reduced-motion users aren't left staring at a static surface-colored rect.
+  const reduceMotion = typeof window !== 'undefined'
+    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) {
+    destroyTerminal(killedId);
+    api.removePanel(panel);
+    return;
+  }
+
+  const killedGroupEl = panel.api.group?.element;
+  const killedRect = killedGroupEl?.getBoundingClientRect();
+
+  // Capture pre-rects of every OTHER panel.
+  const preRects = new Map<string, { el: HTMLElement; rect: DOMRect }>();
+  for (const p of api.panels) {
+    if (p.id === killedId) continue;
+    const el = p.api.group?.element;
+    if (el) preRects.set(p.id, { el, rect: el.getBoundingClientRect() });
+  }
+
+  // Remove the panel. Dockview snaps the layout synchronously.
+  destroyTerminal(killedId);
+  api.removePanel(panel);
+
+  // Classify growers (panes whose rect changed) and pick the crush direction.
+  interface Grower { el: HTMLElement; preRect: DOMRect; postRect: DOMRect; }
+  const growers: Grower[] = [];
+  for (const p of api.panels) {
+    const pre = preRects.get(p.id);
+    if (!pre) continue;
+    const postRect = pre.el.getBoundingClientRect();
+    const dw = postRect.width - pre.rect.width;
+    const dh = postRect.height - pre.rect.height;
+    if (Math.abs(dw) < 0.5 && Math.abs(dh) < 0.5) continue;
+    growers.push({ el: pre.el, preRect: pre.rect, postRect });
+  }
+
+  let crushClass = 'pane-crushing-to-br';
+  if (killedRect && growers.length > 0) {
+    const horizontal = growers.some(g =>
+      Math.abs(g.postRect.width - g.preRect.width) > Math.abs(g.postRect.height - g.preRect.height)
+    );
+    const killedCenterX = (killedRect.left + killedRect.right) / 2;
+    const killedCenterY = (killedRect.top + killedRect.bottom) / 2;
+    if (horizontal) {
+      const hasLeft = growers.some(g => (g.postRect.left + g.postRect.right) / 2 < killedCenterX);
+      const hasRight = growers.some(g => (g.postRect.left + g.postRect.right) / 2 > killedCenterX);
+      if (hasLeft && hasRight) crushClass = 'pane-crushing-to-hcenter';
+      else if (hasLeft) crushClass = 'pane-crushing-to-right';
+      else crushClass = 'pane-crushing-to-left';
+    } else {
+      const hasAbove = growers.some(g => (g.postRect.top + g.postRect.bottom) / 2 < killedCenterY);
+      const hasBelow = growers.some(g => (g.postRect.top + g.postRect.bottom) / 2 > killedCenterY);
+      if (hasAbove && hasBelow) crushClass = 'pane-crushing-to-vcenter';
+      else if (hasAbove) crushClass = 'pane-crushing-down';
+      else crushClass = 'pane-crushing-up';
+    }
+  }
+
+  // Mount ghost overlay at the killed pane's pre-removal rect.
+  if (killedRect) {
+    const ghost = document.createElement('div');
+    Object.assign(ghost.style, {
+      position: 'fixed',
+      top: `${killedRect.top}px`,
+      left: `${killedRect.left}px`,
+      width: `${killedRect.width}px`,
+      height: `${killedRect.height}px`,
+      background: 'var(--color-surface)',
+      zIndex: '55',
+      pointerEvents: 'none',
+    });
+    ghost.classList.add(crushClass);
+    document.body.appendChild(ghost);
+    const cleanup = () => {
+      if (ghost.isConnected) ghost.remove();
+    };
+    ghost.addEventListener('animationend', cleanup, { once: true });
+    // Safety: reduced-motion + forwards fill mode still fires animationend, but
+    // if the browser ever elides the event (or the element is detached early),
+    // a timeout ensures the ghost doesn't linger.
+    setTimeout(cleanup, 1000);
+  }
+
+  // FLIP each grower via clip-path: start with the new territory clipped away,
+  // transition to no clip so the territory sweeps in.
+  for (const { el, preRect, postRect } of growers) {
+    // Clear any in-progress spawn animation on this grower before applying FLIP.
+    el.classList.remove('pane-spawning-from-left', 'pane-spawning-from-top', 'pane-spawning-from-top-left');
+
+    const clipTop    = Math.max(0, (preRect.top - postRect.top)       / postRect.height * 100);
+    const clipBottom = Math.max(0, (postRect.bottom - preRect.bottom) / postRect.height * 100);
+    const clipLeft   = Math.max(0, (preRect.left - postRect.left)     / postRect.width  * 100);
+    const clipRight  = Math.max(0, (postRect.right - preRect.right)   / postRect.width  * 100);
+
+    el.style.transition = 'none';
+    el.style.clipPath = `inset(${clipTop}% ${clipRight}% ${clipBottom}% ${clipLeft}%)`;
+    // Force reflow so the starting clip is committed before we transition.
+    void el.offsetHeight;
+    el.style.transition = 'clip-path 440ms cubic-bezier(0.22, 1, 0.36, 1)';
+    el.style.clipPath = 'inset(0)';
+    const cleanup = () => {
+      el.style.transition = '';
+      el.style.clipPath = '';
+    };
+    el.addEventListener('transitionend', cleanup, { once: true });
+    setTimeout(cleanup, 1000);
+  }
+}
+
+
 // --- Main component ---
 
 export function Pond({
@@ -1007,9 +1148,10 @@ export function Pond({
   // Nothing reads this yet; it exists so future work can copy cwd / terminal kind from the source.
   const paneToCopyByIdRef = useRef(new Map<string, string>());
 
-  // Ids of panes that were just spawned (split or empty-state auto-spawn). TerminalPanel
-  // consumes its id on first mount to play an entrance animation.
-  const freshlySpawnedRef = useRef(new Set<string>());
+  // Ids of panes that were just spawned, keyed by id with the direction the spawn
+  // should reveal from. TerminalPanel consumes its id on first mount to play the
+  // matching directional entrance animation.
+  const freshlySpawnedRef = useRef(new Map<string, SpawnDirection>());
 
   // Consumed once in handleReady to restore existing sessions
   const initialPaneIdsRef = useRef(initialPaneIds);
@@ -1336,7 +1478,7 @@ export function Pond({
       if (e.api.totalPanels === 0) {
         const id = generatePaneId();
         paneToCopyByIdRef.current.set(id, removed.id);
-        freshlySpawnedRef.current.add(id);
+        freshlySpawnedRef.current.set(id, 'top-left');
         e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
         selectPanel(id);
       }
@@ -1444,18 +1586,16 @@ export function Pond({
           return;
         }
         if (e.key.toLowerCase() === ck.char.toLowerCase()) {
-          const panel = api.getPanel(ck.id);
-          if (panel) {
-            destroyTerminal(ck.id);
-            api.removePanel(panel);
-          }
-          // Select next panel
+          // Dismiss the modal first so it doesn't hover over the kill animation,
+          // then orchestrate the ghost-crush + FLIP reveal on survivors.
+          setConfirmKill(null);
+          orchestrateKill(api, ck.id);
+          // Select next panel (or null while the auto-spawn is about to fire).
           if (api.panels.length > 0) {
             selectPanel(api.panels[0].id);
           } else {
             setSelectedId(null);
           }
-          setConfirmKill(null);
           return;
         }
         // Wrong key — shake then dismiss
@@ -1782,7 +1922,9 @@ export function Pond({
     const newId = generatePaneId();
     const ref = id && api.getPanel(id) ? id : null;
     if (ref) paneToCopyByIdRef.current.set(newId, ref);
-    freshlySpawnedRef.current.add(newId);
+    // Horizontal split places the new pane to the right → reveal from its left edge.
+    // Vertical split places it below → reveal from its top edge.
+    freshlySpawnedRef.current.set(newId, direction === 'right' ? 'left' : 'top');
     api.addPanel({
       id: newId,
       component: 'terminal',
