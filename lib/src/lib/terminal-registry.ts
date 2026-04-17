@@ -441,11 +441,17 @@ function setupTerminalEntry(id: string): TerminalEntry {
       altKey: ev.altKey,
       startedInScrollback: cell.startedInScrollback,
     });
+    // Prevent xterm's own selection from starting, and its text-selection
+    // default from engaging.
+    ev.preventDefault();
+    ev.stopPropagation();
   };
   const onWindowMouseMove = (ev: MouseEvent) => {
     if (!isDragging(id)) return;
     const cell = computeCell(ev);
     updateDrag(id, { row: cell.row, col: cell.col, altKey: ev.altKey });
+    ev.preventDefault();
+    ev.stopPropagation();
     // Smart-extension hint (spec §5): scan the line under the current drag
     // cursor for a URL/path token.
     const line = terminal.buffer.active.getLine(cell.row);
@@ -467,13 +473,15 @@ function setupTerminalEntry(id: string): TerminalEntry {
       setHintToken(id, null);
     }
   };
-  const onWindowMouseUp = (_ev: MouseEvent) => {
+  const onWindowMouseUp = (ev: MouseEvent) => {
     if (!isDragging(id)) return;
     endDrag(id);
     setHintToken(id, null);
     // Take a text snapshot of the finalized selection for cancel-on-change.
     const sel = getMouseSelectionState(id).selection;
     selectionBaseline = sel ? extractSelectionText(terminal, sel) : null;
+    ev.preventDefault();
+    ev.stopPropagation();
   };
   element.addEventListener('mousedown', onMouseDown, true);
   window.addEventListener('mousemove', onWindowMouseMove, true);
