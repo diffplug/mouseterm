@@ -41,6 +41,10 @@ export class VSCodeAdapter implements PlatformAdapter {
         for (const handler of this.alarmStateHandlers) {
           handler({ id: msg.id, status: msg.status, todo: msg.todo, attentionDismissedRing: msg.attentionDismissedRing });
         }
+      } else if (msg.type === 'mouseterm:newTerminal') {
+        window.dispatchEvent(new CustomEvent('mouseterm:new-terminal', {
+          detail: { shell: msg.shell, args: msg.args },
+        }));
       }
     });
   }

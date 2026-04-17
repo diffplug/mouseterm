@@ -6,6 +6,7 @@ import { attachRouter, flushAllSessions, getAlarmStates } from './message-router
 import { getWebviewHtml } from './webview-html';
 import { log } from './log';
 import { getSavedSessionState, isPersistedSession, mergeAlarmStates, refreshSavedSessionStateFromPtys, saveSessionState } from './session-state';
+import { resolveSelectedShell, setSelectedShellPath, getSelectedShellPath } from './shell-selection';
 
 let extensionContext: vscode.ExtensionContext | null = null;
 
@@ -81,6 +82,51 @@ export function activate(context: vscode.ExtensionContext) {
         },
       );
       setupPanel(context, panel);
+    }),
+    vscode.commands.registerCommand('mouseterm.newTerminal', async () => {
+      await vscode.commands.executeCommand('mouseterm.view.focus');
+      const shells = await ptyManager.getAvailableShells();
+      const shell = resolveSelectedShell(context, shells);
+      await provider.postMessage({
+        type: 'mouseterm:newTerminal',
+        shell: shell?.path,
+        args: shell?.args,
+      });
+    }),
+    vscode.commands.registerCommand('mouseterm.selectShell', async () => {
+      const shells = await ptyManager.getAvailableShells();
+      if (shells.length === 0) {
+        void vscode.window.showWarningMessage('MouseTerm: no shells detected.');
+        return;
+      }
+      const currentPath = getSelectedShellPath(context) ?? shells[0].path;
+      const items: (vscode.QuickPickItem & { path: string; args: string[] })[] = shells.map((s) => ({
+        label: s.name,
+        description: s.path,
+        picked: s.path === currentPath,
+        path: s.path,
+        args: s.args,
+      }));
+      const picked = await vscode.window.showQuickPick(items, {
+        title: 'Select default shell for MouseTerm',
+        placeHolder: 'The [+] button will spawn a terminal with this shell.',
+      });
+      if (!picked) return;
+
+      const hasWorkspace = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
+      let scope: 'workspace' | 'global' = 'global';
+      if (hasWorkspace) {
+        const scopeChoice = await vscode.window.showQuickPick(
+          [
+            { label: 'Apply globally (default)', value: 'global' as const },
+            { label: 'Apply to this workspace only', value: 'workspace' as const },
+          ],
+          { title: 'Where should this apply?' },
+        );
+        if (!scopeChoice) return;
+        scope = scopeChoice.value;
+      }
+      await setSelectedShellPath(context, picked.path, scope);
     }),
   );
 }

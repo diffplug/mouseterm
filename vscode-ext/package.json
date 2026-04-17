@@ -47,8 +47,32 @@
       {
         "command": "mouseterm.open",
         "title": "MouseTerm: Open in Editor"
+      },
+      {
+        "command": "mouseterm.newTerminal",
+        "title": "MouseTerm: New Terminal",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mouseterm.selectShell",
+        "title": "MouseTerm: Select Shell",
+        "icon": "$(list-unordered)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "mouseterm.newTerminal",
+          "group": "navigation@1",
+          "when": "view == mouseterm.view"
+        },
+        {
+          "command": "mouseterm.selectShell",
+          "group": "navigation@2",
+          "when": "view == mouseterm.view"
+        }
+      ]
+    },
     "viewsContainers": {
       "panel": [
         {

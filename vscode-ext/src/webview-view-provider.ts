@@ -3,12 +3,17 @@ import * as path from 'path';
 import { attachRouter, getAlarmStates } from './message-router';
 import { getWebviewHtml } from './webview-html';
 import { getSavedSessionState, saveSessionState, mergeAlarmStates } from './session-state';
+import type { ExtensionMessage } from './message-types';
 
 export class MouseTermViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private routerDisposable: vscode.Disposable | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
+
+  postMessage(msg: ExtensionMessage): Thenable<boolean> {
+    return this.view?.webview.postMessage(msg) ?? Promise.resolve(false);
+  }
 
   resolveWebviewView(
     view: vscode.WebviewView,
