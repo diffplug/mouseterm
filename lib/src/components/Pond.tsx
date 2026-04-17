@@ -208,6 +208,61 @@ function HeaderActionButton({
 
 // --- Alarm context menu (right-click on bell) ---
 
+/**
+ * Portal banner shown while a temporary mouse-capture override is active.
+ * Positioned below a given anchor element (the No-Mouse icon) and kept in
+ * sync with scroll/resize. Spec §2.1 / §2.4: mouse-only, no keyboard.
+ */
+function MouseOverrideBanner({
+  anchor,
+  onMakePermanent,
+  onCancel,
+}: {
+  anchor: HTMLElement;
+  onMakePermanent: () => void;
+  onCancel: () => void;
+}) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const update = () => {
+      const r = anchor.getBoundingClientRect();
+      setPos({ x: r.left, y: r.bottom + 4 });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [anchor]);
+
+  if (!pos) return null;
+
+  return createPortal(
+    <div
+      className="z-[9999] flex items-center gap-2 rounded border border-border bg-surface-raised px-2 py-1 text-xs text-foreground shadow-md"
+      style={clampOverlayPosition({ left: pos.x, top: pos.y, width: 340, height: 32 })}
+      onMouseDown={(e) => e.stopPropagation()}
+      role="status"
+    >
+      <span>Temporary mouse override until mouse-up.</span>
+      <button
+        type="button"
+        className="rounded border border-border px-1.5 py-0.5 text-xs text-foreground hover:bg-foreground/10"
+        onClick={onMakePermanent}
+      >Make permanent</button>
+      <button
+        type="button"
+        className="rounded border border-border px-1.5 py-0.5 text-xs text-muted hover:bg-foreground/10 hover:text-foreground"
+        onClick={onCancel}
+      >Cancel</button>
+    </div>,
+    document.body,
+  );
+}
+
 function clampOverlayPosition({ left, top, width, height }: {
   left: number;
   top: number;
@@ -549,6 +604,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const showSelectedHeader = mode === 'passthrough' && isSelected && windowFocused;
   const isRenaming = renamingId === api.id;
   const tabRef = useRef<HTMLDivElement>(null);
+  const [mouseIconAnchor, setMouseIconAnchor] = useState<HTMLDivElement | null>(null);
   const suppressAlarmClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
   const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number } | null>(null);
@@ -625,23 +681,32 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           >{api.title}</span>
         )}
         {showMouseIcon && (
-          <HeaderActionButton
-            className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 text-muted hover:bg-foreground/10 hover:text-foreground"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              setMouseOverride(api.id, inOverride ? 'off' : 'temporary');
-            }}
-            ariaLabel={mouseIconAriaLabel}
-            tooltip={mouseIconTooltip}
-          >
-            <span className="relative flex items-center justify-center">
-              <CursorClickIcon size={14} />
-              {inOverride && (
-                <ProhibitIcon size={14} weight="bold" className="absolute inset-0 text-accent" />
-              )}
-            </span>
-          </HeaderActionButton>
+          <div ref={setMouseIconAnchor} className="shrink-0">
+            <HeaderActionButton
+              className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 text-muted hover:bg-foreground/10 hover:text-foreground"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMouseOverride(api.id, inOverride ? 'off' : 'temporary');
+              }}
+              ariaLabel={mouseIconAriaLabel}
+              tooltip={mouseIconTooltip}
+            >
+              <span className="relative flex items-center justify-center">
+                <CursorClickIcon size={14} />
+                {inOverride && (
+                  <ProhibitIcon size={14} weight="bold" className="absolute inset-0 text-accent" />
+                )}
+              </span>
+            </HeaderActionButton>
+          </div>
+        )}
+        {mouseIconAnchor && mouseState.override === 'temporary' && (
+          <MouseOverrideBanner
+            anchor={mouseIconAnchor}
+            onMakePermanent={() => setMouseOverride(api.id, 'permanent')}
+            onCancel={() => setMouseOverride(api.id, 'off')}
+          />
         )}
         <HeaderActionButton
           className={[
