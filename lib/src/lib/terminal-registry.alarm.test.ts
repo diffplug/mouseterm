@@ -52,6 +52,10 @@ vi.mock('@xterm/xterm', () => {
       };
     }
 
+    onRender(): { dispose: () => void } {
+      return { dispose: () => {} };
+    }
+
     focus(): void {}
 
     blur(): void {}

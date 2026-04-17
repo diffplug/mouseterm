@@ -203,9 +203,37 @@ export function removeMouseSelectionState(id: string): void {
   notify();
 }
 
+// --- Render tick ---
+//
+// A tiny counter that terminal-registry bumps whenever xterm renders (scroll,
+// resize, output arrives). The selection overlay subscribes to this so it
+// re-measures and re-positions its rectangles whenever anything that could
+// affect cell layout happens.
+
+let renderTick = 0;
+const renderTickListeners = new Set<() => void>();
+
+export function subscribeToRenderTick(listener: () => void): () => void {
+  renderTickListeners.add(listener);
+  return () => {
+    renderTickListeners.delete(listener);
+  };
+}
+
+export function getRenderTick(): number {
+  return renderTick;
+}
+
+export function bumpRenderTick(): void {
+  renderTick++;
+  renderTickListeners.forEach((l) => l());
+}
+
 /** Test-only helper. Do not use in application code. */
 export function __resetMouseSelectionForTests(): void {
   states.clear();
   listeners.clear();
   cachedSnapshot = null;
+  renderTick = 0;
+  renderTickListeners.clear();
 }

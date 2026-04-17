@@ -8,6 +8,7 @@ import type { PersistedAlarmState } from './session-types';
 import { attachMouseModeObserver } from './mouse-mode-observer';
 import {
   beginDrag,
+  bumpRenderTick,
   endDrag,
   getMouseSelectionState,
   isDragging,
@@ -367,7 +368,12 @@ function setupTerminalEntry(id: string): TerminalEntry {
   const resizeDisposable = terminal.onResize(({ cols, rows }) => {
     getPlatform().alarmResize(id);
     getPlatform().resizePty(id, cols, rows);
+    bumpRenderTick();
   });
+
+  // Selection overlay needs to re-measure on scroll/render. One shared tick
+  // (not per-terminal) is fine because each overlay subscribes individually.
+  const renderDisposable = terminal.onRender(() => bumpRenderTick());
 
   // Observe DECSET/DECRST for mouse-reporting and bracketed-paste modes.
   const mouseModeObserver = attachMouseModeObserver(id, terminal);
@@ -428,6 +434,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
     getPlatform().offPtyExit(handleExit);
     inputDisposable.dispose();
     resizeDisposable.dispose();
+    renderDisposable.dispose();
     mouseModeObserver.dispose();
     element.removeEventListener('mousedown', onMouseDown, true);
     window.removeEventListener('mousemove', onWindowMouseMove, true);
@@ -649,6 +656,35 @@ export function refitTerminal(id: string): void {
   const entry = registry.get(id);
   if (!entry) return;
   entry.fit.fit();
+}
+
+/**
+ * Dimensions the selection overlay needs to position its highlight rectangles.
+ * Returns null if the terminal isn't live.
+ */
+export interface TerminalOverlayDims {
+  cols: number;
+  rows: number;
+  viewportY: number;
+  baseY: number;
+  /** Pixel width of the persistent terminal element (container for the canvas). */
+  elementWidth: number;
+  /** Pixel height of the persistent terminal element. */
+  elementHeight: number;
+}
+
+export function getTerminalOverlayDims(id: string): TerminalOverlayDims | null {
+  const entry = registry.get(id);
+  if (!entry) return null;
+  const rect = entry.element.getBoundingClientRect();
+  return {
+    cols: entry.terminal.cols,
+    rows: entry.terminal.rows,
+    viewportY: entry.terminal.buffer.active.viewportY,
+    baseY: entry.terminal.buffer.active.baseY,
+    elementWidth: rect.width,
+    elementHeight: rect.height,
+  };
 }
 
 /**

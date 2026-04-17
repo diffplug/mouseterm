@@ -7,6 +7,7 @@ import {
   refitTerminal,
   focusTerminal,
 } from '../lib/terminal-registry';
+import { SelectionOverlay } from './SelectionOverlay';
 
 interface TerminalPaneProps {
   id: string;
@@ -47,5 +48,9 @@ export function TerminalPane({ id, isFocused = true }: TerminalPaneProps) {
     focusTerminal(id, isFocused);
   }, [id, isFocused]);
 
-  return <div ref={containerRef} className="h-full w-full overflow-hidden bg-terminal-bg" />;
+  return (
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-terminal-bg">
+      <SelectionOverlay terminalId={id} />
+    </div>
+  );
 }
