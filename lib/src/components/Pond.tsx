@@ -1210,6 +1210,18 @@ export function Pond({
     detachedRef.current = restoredDetached;
     setDetached(restoredDetached);
 
+    // Apply the currently-selected shell to a freshly-added panel. Panels
+    // that are reconnecting to an existing PTY already have a running shell,
+    // so their pendingShellOpts are never consumed — only first-time spawns
+    // use this.
+    const addTerminalPanel = (id: string) => {
+      const defaults = getDefaultShellOpts();
+      if (defaults?.shell) {
+        setPendingShellOpts(id, { shell: defaults.shell, args: defaults.args });
+      }
+      e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
+    };
+
     if (layout && restored && restored.length > 0) {
       // Cold-start restore: apply saved dockview layout (includes panel arrangement)
       try {
@@ -1218,7 +1230,7 @@ export function Pond({
       } catch {
         // Layout restore failed — fall back to creating panels manually
         for (const id of restored) {
-          e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
+          addTerminalPanel(id);
         }
         setSelectedId(restored[0]);
       }
@@ -1228,7 +1240,7 @@ export function Pond({
         ? restored
         : [generatePaneId()];
       for (const id of paneIds) {
-        e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
+        addTerminalPanel(id);
       }
       setSelectedId(paneIds[0]);
     }
@@ -1297,7 +1309,7 @@ export function Pond({
     e.api.onDidRemovePanel(() => {
       if (e.api.totalPanels === 0 && detachedRef.current.length === 0) {
         const id = generatePaneId();
-        e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
+        addTerminalPanel(id);
         selectPanel(id);
       }
     });

@@ -61,15 +61,30 @@ export function activate(context: vscode.ExtensionContext) {
 
   const provider = new MouseTermViewProvider(context);
 
-  // Warm up shell detection in the background so the picker/+ buttons
-  // don't pay the cold-start cost (child fork + WSL probe) when the user
-  // first clicks them. Also seeds the view description with the current
-  // shell name and publishes it to the webview so split-spawn paths can
-  // pick it up.
-  void ptyManager.getAvailableShells().then((shells) => {
-    const shell = resolveSelectedShell(context, shells);
+  // Text+icon button in the status bar — VSCode's view/title navigation is
+  // icon-only, so this is the native way to show the current shell name.
+  const shellStatus = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    100,
+  );
+  shellStatus.command = 'mouseterm.selectShell';
+  shellStatus.tooltip = 'MouseTerm: Select Shell';
+  shellStatus.show();
+  context.subscriptions.push(shellStatus);
+
+  const applyShell = (shell: { name: string; path: string; args: string[] } | undefined) => {
     provider.setDescription(shell?.name);
     provider.setSelectedShell(shell ? { shell: shell.path, args: shell.args } : null);
+    shellStatus.text = shell ? `$(terminal) ${shell.name}` : '$(terminal) Select Shell';
+  };
+  applyShell(undefined);
+
+  // Warm up shell detection in the background so the picker/+ buttons
+  // don't pay the cold-start cost (child fork + WSL probe) when the user
+  // first clicks them. Also seeds the view description / status-bar / webview
+  // state with the current shell.
+  void ptyManager.getAvailableShells().then((shells) => {
+    applyShell(resolveSelectedShell(context, shells));
   });
 
   context.subscriptions.push(
@@ -140,8 +155,7 @@ export function activate(context: vscode.ExtensionContext) {
         scope = scopeChoice.value;
       }
       await setSelectedShellPath(context, picked.path, scope);
-      provider.setDescription(picked.label);
-      provider.setSelectedShell({ shell: picked.path, args: picked.args });
+      applyShell({ name: picked.label, path: picked.path, args: picked.args });
     }),
   );
 }
