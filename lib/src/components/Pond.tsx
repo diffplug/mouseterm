@@ -988,108 +988,103 @@ function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
 
 // --- Kill animation ---
 //
-// Orchestrates the visual reclaim when a pane is killed. Captures pre-rects of
-// every surviving pane's group element, removes the panel (dockview snaps the
-// layout), then:
-//   - Renders a ghost overlay at the killed pane's position and fades it out.
-//   - Applies a FLIP-style clip-path reveal on each grower so its newly claimed
-//     territory is hidden at start and swept in by the animation. We use
-//     clip-path (not transform) because transform would corrupt the grower's
-//     getBoundingClientRect and make SelectionOverlay lag.
+// Orchestrates the visual reclaim when a pane is killed:
+//   1. Fade the real killed pane's group element in place (its actual content
+//      dissolves — a solid-color ghost over a same-colored background would be
+//      invisible).
+//   2. After the fade completes, capture pre-rects of surviving panes, remove
+//      the panel (dockview snaps the layout), and FLIP each grower via
+//      clip-path so its newly claimed territory is hidden at start and swept
+//      in by the transition. clip-path (not transform) keeps
+//      getBoundingClientRect accurate so the SelectionOverlay doesn't lag.
 //
-// For the "no surviving panes" case (last-pane kill), only the ghost fade runs;
-// the delayed auto-spawn (see onDidRemovePanel) creates a fresh pane after the
-// fade, tagged with 'top-left' spawn direction.
-function orchestrateKill(api: DockviewApi, killedId: string): void {
+// killInProgressRef is set across api.removePanel so the onDidRemovePanel
+// auto-spawn handler knows we already waited for our own fade and can skip
+// its own 440ms delay (avoids stacking 440ms + 440ms on last-pane kill).
+function orchestrateKill(
+  api: DockviewApi,
+  killedId: string,
+  selectPanel: (id: string) => void,
+  setSelectedId: (id: string | null) => void,
+  killInProgressRef: { current: boolean },
+): void {
   const panel = api.getPanel(killedId);
   if (!panel) return;
 
-  // Respect reduced-motion: do the bare removal with no ghost / no FLIP so
-  // reduced-motion users aren't left staring at a static surface-colored rect.
-  const reduceMotion = typeof window !== 'undefined'
-    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  if (reduceMotion) {
+  const bareRemove = () => {
+    killInProgressRef.current = true;
     destroyTerminal(killedId);
     api.removePanel(panel);
+    killInProgressRef.current = false;
+    if (api.panels.length > 0) selectPanel(api.panels[0].id);
+    else setSelectedId(null);
+  };
+
+  const reduceMotion = typeof window !== 'undefined'
+    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const killedGroupEl = panel.api.group?.element;
+  if (reduceMotion || !killedGroupEl) {
+    bareRemove();
     return;
   }
 
-  const killedGroupEl = panel.api.group?.element;
-  const killedRect = killedGroupEl?.getBoundingClientRect();
+  // Fade the killed pane in place. Block input on it during the fade.
+  killedGroupEl.style.pointerEvents = 'none';
+  killedGroupEl.classList.add('pane-fading-out');
 
-  // Capture pre-rects of every OTHER panel.
-  const preRects = new Map<string, { el: HTMLElement; rect: DOMRect }>();
-  for (const p of api.panels) {
-    if (p.id === killedId) continue;
-    const el = p.api.group?.element;
-    if (el) preRects.set(p.id, { el, rect: el.getBoundingClientRect() });
-  }
+  let finalized = false;
+  const finalize = () => {
+    if (finalized) return;
+    finalized = true;
 
-  // Remove the panel. Dockview snaps the layout synchronously.
-  destroyTerminal(killedId);
-  api.removePanel(panel);
+    // Snapshot pre-rects just before removal.
+    interface Pre { el: HTMLElement; rect: DOMRect; }
+    const preRects = new Map<string, Pre>();
+    for (const p of api.panels) {
+      if (p.id === killedId) continue;
+      const el = p.api.group?.element;
+      if (el) preRects.set(p.id, { el, rect: el.getBoundingClientRect() });
+    }
 
-  // Collect growers (panes whose rect changed) for the FLIP reveal below.
-  interface Grower { el: HTMLElement; preRect: DOMRect; postRect: DOMRect; }
-  const growers: Grower[] = [];
-  for (const p of api.panels) {
-    const pre = preRects.get(p.id);
-    if (!pre) continue;
-    const postRect = pre.el.getBoundingClientRect();
-    const dw = postRect.width - pre.rect.width;
-    const dh = postRect.height - pre.rect.height;
-    if (Math.abs(dw) < 0.5 && Math.abs(dh) < 0.5) continue;
-    growers.push({ el: pre.el, preRect: pre.rect, postRect });
-  }
+    bareRemove();
 
-  // Mount ghost overlay at the killed pane's pre-removal rect and fade it out.
-  if (killedRect) {
-    const ghost = document.createElement('div');
-    Object.assign(ghost.style, {
-      position: 'fixed',
-      top: `${killedRect.top}px`,
-      left: `${killedRect.left}px`,
-      width: `${killedRect.width}px`,
-      height: `${killedRect.height}px`,
-      background: 'var(--color-surface)',
-      zIndex: '55',
-      pointerEvents: 'none',
-    });
-    ghost.classList.add('pane-fading-out');
-    document.body.appendChild(ghost);
-    const cleanup = () => {
-      if (ghost.isConnected) ghost.remove();
-    };
-    ghost.addEventListener('animationend', cleanup, { once: true });
-    // Safety: if the browser ever elides animationend (or the element is
-    // detached early), a timeout ensures the ghost doesn't linger.
-    setTimeout(cleanup, 1000);
-  }
+    // FLIP each grower.
+    for (const p of api.panels) {
+      const pre = preRects.get(p.id);
+      if (!pre) continue;
+      const postRect = pre.el.getBoundingClientRect();
+      const dw = postRect.width - pre.rect.width;
+      const dh = postRect.height - pre.rect.height;
+      if (Math.abs(dw) < 0.5 && Math.abs(dh) < 0.5) continue;
 
-  // FLIP each grower via clip-path: start with the new territory clipped away,
-  // transition to no clip so the territory sweeps in.
-  for (const { el, preRect, postRect } of growers) {
-    // Clear any in-progress spawn animation on this grower before applying FLIP.
-    el.classList.remove('pane-spawning-from-left', 'pane-spawning-from-top', 'pane-spawning-from-top-left');
+      // Clear any in-progress spawn animation before applying FLIP.
+      pre.el.classList.remove('pane-spawning-from-left', 'pane-spawning-from-top', 'pane-spawning-from-top-left');
 
-    const clipTop    = Math.max(0, (preRect.top - postRect.top)       / postRect.height * 100);
-    const clipBottom = Math.max(0, (postRect.bottom - preRect.bottom) / postRect.height * 100);
-    const clipLeft   = Math.max(0, (preRect.left - postRect.left)     / postRect.width  * 100);
-    const clipRight  = Math.max(0, (postRect.right - preRect.right)   / postRect.width  * 100);
+      const clipTop    = Math.max(0, (pre.rect.top - postRect.top)       / postRect.height * 100);
+      const clipBottom = Math.max(0, (postRect.bottom - pre.rect.bottom) / postRect.height * 100);
+      const clipLeft   = Math.max(0, (pre.rect.left - postRect.left)     / postRect.width  * 100);
+      const clipRight  = Math.max(0, (postRect.right - pre.rect.right)   / postRect.width  * 100);
 
-    el.style.transition = 'none';
-    el.style.clipPath = `inset(${clipTop}% ${clipRight}% ${clipBottom}% ${clipLeft}%)`;
-    // Force reflow so the starting clip is committed before we transition.
-    void el.offsetHeight;
-    el.style.transition = 'clip-path 440ms cubic-bezier(0.22, 1, 0.36, 1)';
-    el.style.clipPath = 'inset(0)';
-    const cleanup = () => {
-      el.style.transition = '';
-      el.style.clipPath = '';
-    };
-    el.addEventListener('transitionend', cleanup, { once: true });
-    setTimeout(cleanup, 1000);
-  }
+      pre.el.style.transition = 'none';
+      pre.el.style.clipPath = `inset(${clipTop}% ${clipRight}% ${clipBottom}% ${clipLeft}%)`;
+      void pre.el.offsetHeight;
+      pre.el.style.transition = 'clip-path 440ms cubic-bezier(0.22, 1, 0.36, 1)';
+      pre.el.style.clipPath = 'inset(0)';
+      const cleanup = () => {
+        pre.el.style.transition = '';
+        pre.el.style.clipPath = '';
+      };
+      pre.el.addEventListener('transitionend', cleanup, { once: true });
+      setTimeout(cleanup, 1000);
+    }
+  };
+
+  killedGroupEl.addEventListener('animationend', (ev) => {
+    if ((ev as AnimationEvent).animationName !== 'pane-fade-out') return;
+    finalize();
+  });
+  // Safety: if animationend never fires, still finalize.
+  setTimeout(finalize, 1000);
 }
 
 
@@ -1128,6 +1123,11 @@ export function Pond({
   // should reveal from. TerminalPanel consumes its id on first mount to play the
   // matching directional entrance animation.
   const freshlySpawnedRef = useRef(new Map<string, SpawnDirection>());
+
+  // True only across the api.removePanel() call inside orchestrateKill. Lets
+  // onDidRemovePanel know the kill path already paid the animation delay (via
+  // the in-place fade) so the auto-spawn shouldn't re-delay another 440ms.
+  const killInProgressRef = useRef(false);
 
   // Consumed once in handleReady to restore existing sessions
   const initialPaneIdsRef = useRef(initialPaneIds);
@@ -1465,7 +1465,8 @@ export function Pond({
       if (e.api.totalPanels !== 0) return;
       const reduceMotion = typeof window !== 'undefined'
         && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-      const delay = reduceMotion ? 0 : 440;
+      // Kill path already waited during the in-place fade; no extra delay.
+      const delay = (reduceMotion || killInProgressRef.current) ? 0 : 440;
       const spawn = () => {
         if (e.api.totalPanels > 0) return;
         const id = generatePaneId();
@@ -1585,16 +1586,12 @@ export function Pond({
           return;
         }
         if (e.key.toLowerCase() === ck.char.toLowerCase()) {
-          // Dismiss the modal first so it doesn't hover over the kill animation,
-          // then orchestrate the ghost-crush + FLIP reveal on survivors.
+          // Dismiss the modal first so it doesn't hover over the kill animation.
+          // orchestrateKill fades the pane in place, then removes + FLIPs the
+          // survivors, handling selection updates itself (since the fade is
+          // async and selection must wait until the actual removal fires).
           setConfirmKill(null);
-          orchestrateKill(api, ck.id);
-          // Select next panel (or null while the auto-spawn is about to fire).
-          if (api.panels.length > 0) {
-            selectPanel(api.panels[0].id);
-          } else {
-            setSelectedId(null);
-          }
+          orchestrateKill(api, ck.id, selectPanel, setSelectedId, killInProgressRef);
           return;
         }
         // Wrong key — shake then dismiss
