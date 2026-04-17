@@ -15,9 +15,11 @@ import {
   removeMouseSelectionState,
   setDragAlt,
   setHintToken,
+  setSelection as setMouseSelection,
   updateDrag,
 } from './mouse-selection';
 import { detectTokenAt } from './smart-token';
+import { extractSelectionText } from './selection-text';
 
 export type { SessionStatus } from './activity-monitor';
 export { TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo, isHardTodo, hasTodo, type TodoState, type AlarmButtonActionResult } from './alarm-manager';
@@ -367,16 +369,37 @@ function setupTerminalEntry(id: string): TerminalEntry {
     getPlatform().writePty(id, data);
   });
 
-  // Resize → PTY
+  // Resize → PTY. Also cancel any finalized selection (spec §3.4: resize
+  // counts as a content change).
   const resizeDisposable = terminal.onResize(({ cols, rows }) => {
     getPlatform().alarmResize(id);
     getPlatform().resizePty(id, cols, rows);
     bumpRenderTick();
+    if (getMouseSelectionState(id).selection) {
+      setMouseSelection(id, null);
+    }
+    selectionBaseline = null;
   });
 
-  // Selection overlay needs to re-measure on scroll/render. One shared tick
-  // (not per-terminal) is fine because each overlay subscribes individually.
-  const renderDisposable = terminal.onRender(() => bumpRenderTick());
+  // Cancel-on-change: snapshot the selected text when the drag ends, then
+  // on every subsequent render check whether any covered cell has changed.
+  // If so, cancel the selection (spec §3.4).
+  let selectionBaseline: string | null = null;
+
+  const renderDisposable = terminal.onRender(() => {
+    bumpRenderTick();
+    if (selectionBaseline === null) return;
+    const sel = getMouseSelectionState(id).selection;
+    if (!sel || sel.dragging) {
+      selectionBaseline = null;
+      return;
+    }
+    const current = extractSelectionText(terminal, sel);
+    if (current !== selectionBaseline) {
+      setMouseSelection(id, null);
+      selectionBaseline = null;
+    }
+  });
 
   // Observe DECSET/DECRST for mouse-reporting and bracketed-paste modes.
   const mouseModeObserver = attachMouseModeObserver(id, terminal);
@@ -448,6 +471,9 @@ function setupTerminalEntry(id: string): TerminalEntry {
     if (!isDragging(id)) return;
     endDrag(id);
     setHintToken(id, null);
+    // Take a text snapshot of the finalized selection for cancel-on-change.
+    const sel = getMouseSelectionState(id).selection;
+    selectionBaseline = sel ? extractSelectionText(terminal, sel) : null;
   };
   element.addEventListener('mousedown', onMouseDown, true);
   window.addEventListener('mousemove', onWindowMouseMove, true);
