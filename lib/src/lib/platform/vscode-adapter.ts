@@ -231,6 +231,12 @@ export class VSCodeAdapter implements PlatformAdapter {
   }
 
   getState(): unknown {
-    return this.hostState ?? this.vscode.getState();
+    // vscode.getState() is VSCode's own per-webview storage and persists
+    // across re-mount (e.g. panel collapsed then re-expanded). Prefer it
+    // so splits made after initial resolve aren't lost — the injected
+    // hostState only reflects what the extension put in the HTML at the
+    // first resolveWebviewView call. Fall back to hostState on the very
+    // first load, before any setState has run.
+    return this.vscode.getState() ?? this.hostState;
   }
 }
