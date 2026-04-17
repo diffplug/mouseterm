@@ -167,35 +167,21 @@ body.vscode-light {
 .pane-spawning-from-top      { animation: pane-spawn-from-top      440ms cubic-bezier(0.22, 1, 0.36, 1); }
 .pane-spawning-from-top-left { animation: pane-spawn-from-top-left 440ms cubic-bezier(0.22, 1, 0.36, 1); }
 
-/* Pane kill — crush the ghost overlay in the direction of the replacing neighbor
- * (or to the centerline for a middle kill, or to the bottom-right corner when no
- * replacer exists and the auto-spawn takes over). */
+/* Pane kill — fade the ghost overlay out. Directional crushing read as noisy
+ * relative to the grower reveal already carrying the directional cue; a
+ * uniform fade is cleaner and works for every case (edge kill, middle kill,
+ * last-pane kill) with one rule. */
 
-@keyframes pane-crush-to-left    { from { clip-path: inset(0 0 0 0); }        to { clip-path: inset(0 100% 0 0); } }
-@keyframes pane-crush-to-right   { from { clip-path: inset(0 0 0 0); }        to { clip-path: inset(0 0 0 100%); } }
-@keyframes pane-crush-up         { from { clip-path: inset(0 0 0 0); }        to { clip-path: inset(0 0 100% 0); } }
-@keyframes pane-crush-down       { from { clip-path: inset(0 0 0 0); }        to { clip-path: inset(100% 0 0 0); } }
-@keyframes pane-crush-to-hcenter { from { clip-path: inset(0 0 0 0); }        to { clip-path: inset(0 50% 0 50%); } }
-@keyframes pane-crush-to-vcenter { from { clip-path: inset(0 0 0 0); }        to { clip-path: inset(50% 0 50% 0); } }
-@keyframes pane-crush-to-br      { from { clip-path: inset(0 0 0 0); opacity: 1; } to { clip-path: inset(100% 0 0 100%); opacity: 0; } }
+@keyframes pane-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
 
-.pane-crushing-to-left    { animation: pane-crush-to-left    440ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-.pane-crushing-to-right   { animation: pane-crush-to-right   440ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-.pane-crushing-up         { animation: pane-crush-up         440ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-.pane-crushing-down       { animation: pane-crush-down       440ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-.pane-crushing-to-hcenter { animation: pane-crush-to-hcenter 440ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-.pane-crushing-to-vcenter { animation: pane-crush-to-vcenter 440ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-.pane-crushing-to-br      { animation: pane-crush-to-br      440ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.pane-fading-out { animation: pane-fade-out 440ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 
 @media (prefers-reduced-motion: reduce) {
   .pane-spawning-from-left,
   .pane-spawning-from-top,
   .pane-spawning-from-top-left,
-  .pane-crushing-to-left,
-  .pane-crushing-to-right,
-  .pane-crushing-up,
-  .pane-crushing-down,
-  .pane-crushing-to-hcenter,
-  .pane-crushing-to-vcenter,
-  .pane-crushing-to-br { animation: none; }
+  .pane-fading-out { animation: none; }
 }

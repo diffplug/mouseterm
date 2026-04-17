@@ -991,16 +991,15 @@ function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
 // Orchestrates the visual reclaim when a pane is killed. Captures pre-rects of
 // every surviving pane's group element, removes the panel (dockview snaps the
 // layout), then:
-//   - Renders a ghost overlay at the killed pane's position with a clip-path
-//     crush animation (direction chosen from how the layout actually changed).
+//   - Renders a ghost overlay at the killed pane's position and fades it out.
 //   - Applies a FLIP-style clip-path reveal on each grower so its newly claimed
 //     territory is hidden at start and swept in by the animation. We use
 //     clip-path (not transform) because transform would corrupt the grower's
 //     getBoundingClientRect and make SelectionOverlay lag.
 //
-// For the "no surviving panes" case (Case C), we only render the ghost crushing
-// to the bottom-right corner; the auto-spawn handler (onDidRemovePanel) will
-// create a fresh pane tagged with 'top-left' spawn direction.
+// For the "no surviving panes" case (last-pane kill), only the ghost fade runs;
+// the delayed auto-spawn (see onDidRemovePanel) creates a fresh pane after the
+// fade, tagged with 'top-left' spawn direction.
 function orchestrateKill(api: DockviewApi, killedId: string): void {
   const panel = api.getPanel(killedId);
   if (!panel) return;
@@ -1030,7 +1029,7 @@ function orchestrateKill(api: DockviewApi, killedId: string): void {
   destroyTerminal(killedId);
   api.removePanel(panel);
 
-  // Classify growers (panes whose rect changed) and pick the crush direction.
+  // Collect growers (panes whose rect changed) for the FLIP reveal below.
   interface Grower { el: HTMLElement; preRect: DOMRect; postRect: DOMRect; }
   const growers: Grower[] = [];
   for (const p of api.panels) {
@@ -1043,29 +1042,7 @@ function orchestrateKill(api: DockviewApi, killedId: string): void {
     growers.push({ el: pre.el, preRect: pre.rect, postRect });
   }
 
-  let crushClass = 'pane-crushing-to-br';
-  if (killedRect && growers.length > 0) {
-    const horizontal = growers.some(g =>
-      Math.abs(g.postRect.width - g.preRect.width) > Math.abs(g.postRect.height - g.preRect.height)
-    );
-    const killedCenterX = (killedRect.left + killedRect.right) / 2;
-    const killedCenterY = (killedRect.top + killedRect.bottom) / 2;
-    if (horizontal) {
-      const hasLeft = growers.some(g => (g.postRect.left + g.postRect.right) / 2 < killedCenterX);
-      const hasRight = growers.some(g => (g.postRect.left + g.postRect.right) / 2 > killedCenterX);
-      if (hasLeft && hasRight) crushClass = 'pane-crushing-to-hcenter';
-      else if (hasLeft) crushClass = 'pane-crushing-to-right';
-      else crushClass = 'pane-crushing-to-left';
-    } else {
-      const hasAbove = growers.some(g => (g.postRect.top + g.postRect.bottom) / 2 < killedCenterY);
-      const hasBelow = growers.some(g => (g.postRect.top + g.postRect.bottom) / 2 > killedCenterY);
-      if (hasAbove && hasBelow) crushClass = 'pane-crushing-to-vcenter';
-      else if (hasAbove) crushClass = 'pane-crushing-down';
-      else crushClass = 'pane-crushing-up';
-    }
-  }
-
-  // Mount ghost overlay at the killed pane's pre-removal rect.
+  // Mount ghost overlay at the killed pane's pre-removal rect and fade it out.
   if (killedRect) {
     const ghost = document.createElement('div');
     Object.assign(ghost.style, {
@@ -1078,15 +1055,14 @@ function orchestrateKill(api: DockviewApi, killedId: string): void {
       zIndex: '55',
       pointerEvents: 'none',
     });
-    ghost.classList.add(crushClass);
+    ghost.classList.add('pane-fading-out');
     document.body.appendChild(ghost);
     const cleanup = () => {
       if (ghost.isConnected) ghost.remove();
     };
     ghost.addEventListener('animationend', cleanup, { once: true });
-    // Safety: reduced-motion + forwards fill mode still fires animationend, but
-    // if the browser ever elides the event (or the element is detached early),
-    // a timeout ensures the ghost doesn't linger.
+    // Safety: if the browser ever elides animationend (or the element is
+    // detached early), a timeout ensures the ghost doesn't linger.
     setTimeout(cleanup, 1000);
   }
 

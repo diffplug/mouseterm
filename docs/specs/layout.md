@@ -297,22 +297,17 @@ When a pane is added, its dockview group element gets a directional `.pane-spawn
 
 The direction is carried via `FreshlySpawnedContext` — a `Map<paneId, SpawnDirection>` written by the spawn call site and consumed once by `TerminalPanel`'s `useLayoutEffect` on first mount.
 
-### Kill (ghost crush + FLIP reclaim)
+### Kill (ghost fade + FLIP reclaim)
 
 `orchestrateKill(api, killedId)` in `Pond.tsx` runs on kill confirmation:
 
 1. Snapshot `getBoundingClientRect` for every other panel's group element.
 2. `destroyTerminal` + `api.removePanel`; dockview snaps the layout.
 3. Measure post-rects. Any panel whose rect grew is a "grower."
-4. Pick a crush direction by comparing growers' post-rect centers against the killed rect's center:
-   - Growers to one side only (horizontal axis) → `.pane-crushing-to-{left,right}`.
-   - Growers to one side only (vertical axis) → `.pane-crushing-{up,down}`.
-   - Growers on both sides of the killed pane's center (horizontal or vertical) → `.pane-crushing-to-{hcenter,vcenter}` (middle-kill crush).
-   - No growers (last-pane kill) → `.pane-crushing-to-br` (crushes toward bottom-right corner, opposite of where the auto-spawned replacement reveals from).
-5. Mount a solid `var(--color-surface)` ghost overlay at the killed rect (`position: fixed`, `z-index: 55`) with that class; it removes itself on `animationend` with a 1s timeout safety net.
-6. For each grower, apply an inline `clip-path: inset(...)` with the newly-claimed territory clipped off, force a reflow, then transition to `inset(0)`. This reveals the grower into the vacated space without affecting `getBoundingClientRect`. Clears on `transitionend`.
+4. Mount a solid `var(--color-surface)` ghost overlay at the killed rect (`position: fixed`, `z-index: 55`) with the `.pane-fading-out` class; it removes itself on `animationend` with a 1s timeout safety net. A uniform fade works for every case (edge/middle/last-pane kill) because the directional cue is already carried by the grower's FLIP reveal.
+5. For each grower, apply an inline `clip-path: inset(...)` with the newly-claimed territory clipped off, force a reflow, then transition to `inset(0)`. This reveals the grower into the vacated space without affecting `getBoundingClientRect`. Clears on `transitionend`.
 
-Case detection is purely rect-based (measure before and after removal), so 2-pane splits, linear 3+ rows/columns, and nested splits all fall through the same code path.
+Case handling is purely rect-based (measure before and after removal), so 2-pane splits, linear 3+ rows/columns, and nested splits all fall through the same code path with no per-case branching.
 
 ### Auto-spawn delay
 
