@@ -1,4 +1,5 @@
 import type { AlarmStateDetail, PlatformAdapter, PtyInfo } from './types';
+import { setDefaultShellOpts } from '../terminal-registry';
 
 export class VSCodeAdapter implements PlatformAdapter {
   private vscode: ReturnType<typeof acquireVsCodeApi>;
@@ -45,6 +46,8 @@ export class VSCodeAdapter implements PlatformAdapter {
         window.dispatchEvent(new CustomEvent('mouseterm:new-terminal', {
           detail: { shell: msg.shell, args: msg.args },
         }));
+      } else if (msg.type === 'mouseterm:selectedShell') {
+        setDefaultShellOpts(msg.shell ? { shell: msg.shell, args: msg.args } : null);
       }
     });
   }

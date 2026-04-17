@@ -40,6 +40,19 @@ const registry = new Map<string, TerminalEntry>();
 const pendingShellOpts = new Map<string, { shell?: string; args?: string[] }>();
 const primedSessionStates = new Map<string, Partial<SessionUiState>>();
 
+// Shared "currently selected" shell, used when spawning without an explicit
+// choice (e.g. a keyboard-driven split). Updated by AppBar's ShellDropdown in
+// standalone and by the VSCode extension pushing mouseterm:selectedShell.
+let defaultShellOpts: { shell?: string; args?: string[] } | null = null;
+
+export function setDefaultShellOpts(opts: { shell?: string; args?: string[] } | null): void {
+  defaultShellOpts = opts;
+}
+
+export function getDefaultShellOpts(): { shell?: string; args?: string[] } | null {
+  return defaultShellOpts;
+}
+
 // --- Watch for VSCode theme changes and re-apply xterm themes ---
 // VSCode signals theme changes by updating CSS variables and body classes.
 let themeObserverStarted = false;

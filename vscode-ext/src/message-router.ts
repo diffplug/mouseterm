@@ -52,6 +52,7 @@ export function attachRouter(
     killOnDispose?: boolean;
     onSaveState?: (state: unknown) => void;
     savedSession?: PersistedSession | null;
+    getSelectedShell?: () => { shell?: string; args?: string[] } | null;
   },
 ): vscode.Disposable {
   const reconnect = options?.reconnect ?? false;
@@ -185,6 +186,17 @@ export function attachRouter(
         // Tear down previous subscriptions first (webview was destroyed and recreated).
         disconnectWebview?.();
         disconnectWebview = connectWebview();
+
+        // Re-publish the currently-selected shell so split-spawns in the
+        // freshly-mounted webview know what to use.
+        const selected = options?.getSelectedShell?.();
+        if (selected) {
+          webview.postMessage({
+            type: 'mouseterm:selectedShell',
+            shell: selected.shell,
+            args: selected.args,
+          } satisfies ExtensionMessage);
+        }
 
         if (!reconnect) {
           // Fresh instance — no existing PTYs to restore

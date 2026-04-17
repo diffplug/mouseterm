@@ -33,6 +33,7 @@ import {
   destroyTerminal,
   swapTerminals,
   setPendingShellOpts,
+  getDefaultShellOpts,
   type SessionStatus,
 } from '../lib/terminal-registry';
 import { resolvePanelElement, findPanelInDirection, findRestoreNeighbor, type DetachDirection } from '../lib/spatial-nav';
@@ -1740,6 +1741,11 @@ export function Pond({
     if (!api) return;
     const newId = generatePaneId();
     const ref = id && api.getPanel(id) ? id : null;
+    // Carry the currently-selected shell into the split, same as [+].
+    const defaults = getDefaultShellOpts();
+    if (defaults?.shell) {
+      setPendingShellOpts(newId, { shell: defaults.shell, args: defaults.args });
+    }
     api.addPanel({
       id: newId,
       component: 'terminal',
@@ -1749,7 +1755,7 @@ export function Pond({
     });
     selectPanel(newId);
     onEventRef.current?.({ type: 'split', direction: splitDirection, source });
-  }, [selectPanel]);
+  }, [selectPanel, generatePaneId]);
 
   // --- Pond actions (for tab buttons) ---
 

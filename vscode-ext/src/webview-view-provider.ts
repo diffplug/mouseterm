@@ -9,6 +9,7 @@ export class MouseTermViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private routerDisposable: vscode.Disposable | undefined;
   private description: string | undefined;
+  private selectedShell: { shell?: string; args?: string[] } | null = null;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -19,6 +20,19 @@ export class MouseTermViewProvider implements vscode.WebviewViewProvider {
   setDescription(text: string | undefined): void {
     this.description = text;
     if (this.view) this.view.description = text;
+  }
+
+  setSelectedShell(opts: { shell?: string; args?: string[] } | null): void {
+    this.selectedShell = opts;
+    void this.postMessage({
+      type: 'mouseterm:selectedShell',
+      shell: opts?.shell,
+      args: opts?.args,
+    });
+  }
+
+  getSelectedShell(): { shell?: string; args?: string[] } | null {
+    return this.selectedShell;
   }
 
   resolveWebviewView(
@@ -46,6 +60,7 @@ export class MouseTermViewProvider implements vscode.WebviewViewProvider {
       onSaveState: (state) => {
         void saveSessionState(this.context, mergeAlarmStates(state, getAlarmStates()));
       },
+      getSelectedShell: () => this.selectedShell,
     });
 
     view.onDidDispose(() => {

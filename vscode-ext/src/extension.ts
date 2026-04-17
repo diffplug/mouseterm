@@ -21,6 +21,7 @@ function setupPanel(
   context: vscode.ExtensionContext,
   panel: vscode.WebviewPanel,
   savedState?: unknown,
+  getSelectedShell?: () => { shell?: string; args?: string[] } | null,
 ) {
   const mediaPath = path.join(context.extensionPath, 'media');
 
@@ -46,6 +47,7 @@ function setupPanel(
     reconnect: !!savedState,
     killOnDispose: true,
     savedSession: isPersistedSession(initialState) ? initialState : null,
+    getSelectedShell,
     // Panels persist via vscode.setState() (per-panel, managed by VS Code).
     // Don't write to workspaceState — that's for the WebviewView only.
   });
@@ -62,16 +64,19 @@ export function activate(context: vscode.ExtensionContext) {
   // Warm up shell detection in the background so the picker/+ buttons
   // don't pay the cold-start cost (child fork + WSL probe) when the user
   // first clicks them. Also seeds the view description with the current
-  // shell name.
+  // shell name and publishes it to the webview so split-spawn paths can
+  // pick it up.
   void ptyManager.getAvailableShells().then((shells) => {
-    provider.setDescription(resolveSelectedShell(context, shells)?.name);
+    const shell = resolveSelectedShell(context, shells);
+    provider.setDescription(shell?.name);
+    provider.setSelectedShell(shell ? { shell: shell.path, args: shell.args } : null);
   });
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('mouseterm.view', provider),
     vscode.window.registerWebviewPanelSerializer('mouseterm', {
       async deserializeWebviewPanel(panel: vscode.WebviewPanel, state: unknown) {
-        setupPanel(context, panel, state);
+        setupPanel(context, panel, state, () => provider.getSelectedShell());
       },
     }),
     vscode.commands.registerCommand('mouseterm.focus', () => {
@@ -89,7 +94,7 @@ export function activate(context: vscode.ExtensionContext) {
           localResourceRoots: [vscode.Uri.file(mediaPath)],
         },
       );
-      setupPanel(context, panel);
+      setupPanel(context, panel, undefined, () => provider.getSelectedShell());
     }),
     vscode.commands.registerCommand('mouseterm.newTerminal', async () => {
       await vscode.commands.executeCommand('mouseterm.view.focus');
@@ -136,6 +141,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
       await setSelectedShellPath(context, picked.path, scope);
       provider.setDescription(picked.label);
+      provider.setSelectedShell({ shell: picked.path, args: picked.args });
     }),
   );
 }

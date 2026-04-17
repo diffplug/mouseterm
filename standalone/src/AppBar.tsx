@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { CaretDownIcon, MinusIcon, CornersOutIcon, CornersInIcon, XIcon, PlusIcon, CheckIcon } from '@phosphor-icons/react';
 import { ThemePicker } from '../../lib/src/components/ThemePicker';
+import { setDefaultShellOpts } from '../../lib/src/lib/terminal-registry';
 
 export interface ShellEntry {
   name: string;
@@ -85,6 +86,11 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<ShellEntry | undefined>(shells[0]);
   const ref = useRef<HTMLDivElement>(null);
+
+  // Publish the selection so splits (and other spawn paths) can reuse it.
+  useEffect(() => {
+    setDefaultShellOpts(selected ? { shell: selected.path, args: selected.args } : null);
+  }, [selected]);
 
   const spawn = useCallback((shell: ShellEntry) => {
     window.dispatchEvent(new CustomEvent('mouseterm:new-terminal', { detail: { shell: shell.path, args: shell.args } }));

@@ -41,6 +41,7 @@ export type ExtensionMessage =
   | { type: 'pty:scrollback'; id: string; data: string | null; requestId?: string }
   | { type: 'pty:shells'; shells: Array<{ name: string; path: string; args: string[] }>; requestId?: string }
   | { type: 'mouseterm:newTerminal'; shell?: string; args?: string[] }
+  | { type: 'mouseterm:selectedShell'; shell?: string; args?: string[] }
   | { type: 'mouseterm:flushSessionSave'; requestId: string }
   // Alarm state updates
   | { type: 'alarm:state'; id: string; status: SessionStatus; todo: TodoState; attentionDismissedRing: boolean };
