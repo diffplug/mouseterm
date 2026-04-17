@@ -294,7 +294,7 @@ Dockview's separator borders, sash handles, and groupview borders are all set to
 7. **Asymmetric back-navigation**: breadcrumb tracks last direction + origin for opposite-direction return.
 8. **Center drop merges panels**: intercepted at group-level `model.onWillDrop` and converted to a swap.
 9. **Group drag has null panelId**: falls back to `api.getGroup(groupId).activePanel.id`.
-10. **Auto-spawn on empty**: `onDidRemovePanel` creates a new session when the last pane is removed and no doors exist.
+10. **Auto-spawn on empty**: `onDidRemovePanel` creates a new session whenever the last visible pane is removed, whether or not doors exist — there is always a pane visible. The new pane receives the just-removed pane's id as `paneToCopy` for future cwd/terminal-kind inheritance.
 
 ## Files
 

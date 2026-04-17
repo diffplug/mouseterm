@@ -432,6 +432,10 @@ export const RenamingIdContext = createContext<string | null>(null);
 export const ZoomedContext = createContext(false);
 export const WindowFocusedContext = createContext(true);
 
+// Transient set of pane ids that were just created (split or empty-state auto-spawn).
+// TerminalPanel consumes (and removes) its id on first mount to trigger a spawn animation.
+export const FreshlySpawnedContext = createContext<Set<string>>(new Set());
+
 const ARROW_OPPOSITES: Record<string, string> = {
   ArrowLeft: 'ArrowRight', ArrowRight: 'ArrowLeft',
   ArrowUp: 'ArrowDown', ArrowDown: 'ArrowUp',
@@ -459,6 +463,7 @@ function TerminalPanel({ api }: IDockviewPanelProps) {
   const selectedId = useContext(SelectedIdContext);
   const actions = useContext(PondActionsContext);
   const { elements: panelElements, bumpVersion } = useContext(PanelElementsContext);
+  const freshlySpawned = useContext(FreshlySpawnedContext);
   const isFocused = mode === 'passthrough' && selectedId === api.id;
   const elRef = useRef<HTMLDivElement>(null);
 
@@ -471,6 +476,29 @@ function TerminalPanel({ api }: IDockviewPanelProps) {
       bumpVersion();
     };
   }, [api.id, panelElements, bumpVersion]);
+
+  // Freshly spawned: animate the whole dockview group (header + body) as one unit.
+  // We target api.group.element instead of elRef so the tab header animates too.
+  // Using clip-path (not transform) is deliberate — transforms would make
+  // SelectionOverlay's getBoundingClientRect capture the scaled rect and lag
+  // behind the pane until the animation ends.
+  useLayoutEffect(() => {
+    if (!freshlySpawned.has(api.id)) return;
+    freshlySpawned.delete(api.id);
+    const groupEl = api.group?.element;
+    if (!groupEl) return;
+    groupEl.classList.add('pane-spawning');
+    const onEnd = (ev: AnimationEvent) => {
+      if (ev.animationName !== 'pane-spawn') return;
+      groupEl.classList.remove('pane-spawning');
+      groupEl.removeEventListener('animationend', onEnd);
+    };
+    groupEl.addEventListener('animationend', onEnd);
+    return () => {
+      groupEl.removeEventListener('animationend', onEnd);
+      groupEl.classList.remove('pane-spawning');
+    };
+  }, [api, freshlySpawned]);
 
   return (
     <div ref={elRef} className="h-full w-full" onMouseDown={() => actions.onClickPanel(api.id)}>
@@ -975,6 +1003,14 @@ export function Pond({
     return `pane-${(++paneCounterRef.current).toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
   }, []);
 
+  // newPaneId -> sourcePaneId for panes born from a split or the empty-state auto-spawn.
+  // Nothing reads this yet; it exists so future work can copy cwd / terminal kind from the source.
+  const paneToCopyByIdRef = useRef(new Map<string, string>());
+
+  // Ids of panes that were just spawned (split or empty-state auto-spawn). TerminalPanel
+  // consumes its id on first mount to play an entrance animation.
+  const freshlySpawnedRef = useRef(new Set<string>());
+
   // Consumed once in handleReady to restore existing sessions
   const initialPaneIdsRef = useRef(initialPaneIds);
   const restoredLayoutRef = useRef(restoredLayout);
@@ -1292,14 +1328,15 @@ export function Pond({
       }
     });
 
-    // Auto-create a pane when all panes are killed/detached.
-    // Note: this fires synchronously from api.removePanel(). During detachPanel,
-    // detachedRef is updated AFTER removePanel returns, so detachedRef.current.length
-    // is still 0 here — which is correct: we want a new pane when the last visible
-    // pane is detached (the door isn't a pane).
-    e.api.onDidRemovePanel(() => {
-      if (e.api.totalPanels === 0 && detachedRef.current.length === 0) {
+    // Always keep one pane visible: when the last visible pane is removed (killed
+    // or detached), spawn a fresh one — regardless of whether doors exist. Carry
+    // the just-removed pane's id forward as paneToCopy so future work can copy
+    // cwd / terminal kind from it.
+    e.api.onDidRemovePanel((removed) => {
+      if (e.api.totalPanels === 0) {
         const id = generatePaneId();
+        paneToCopyByIdRef.current.set(id, removed.id);
+        freshlySpawnedRef.current.add(id);
         e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
         selectPanel(id);
       }
@@ -1744,6 +1781,8 @@ export function Pond({
     if (!api) return;
     const newId = generatePaneId();
     const ref = id && api.getPanel(id) ? id : null;
+    if (ref) paneToCopyByIdRef.current.set(newId, ref);
+    freshlySpawnedRef.current.add(newId);
     api.addPanel({
       id: newId,
       component: 'terminal',
@@ -1821,6 +1860,7 @@ export function Pond({
           <RenamingIdContext.Provider value={renamingPaneId}>
           <ZoomedContext.Provider value={zoomed}>
           <WindowFocusedContext.Provider value={windowFocused}>
+          <FreshlySpawnedContext.Provider value={freshlySpawnedRef.current}>
           <div className="flex-1 min-h-0 flex flex-col bg-surface text-foreground font-sans overflow-hidden">
             {/* Dockview */}
             <div className="flex-1 min-h-0 relative p-1.5">
@@ -1849,6 +1889,7 @@ export function Pond({
             )}
 
           </div>
+          </FreshlySpawnedContext.Provider>
           </WindowFocusedContext.Provider>
           </ZoomedContext.Provider>
           </RenamingIdContext.Provider>
