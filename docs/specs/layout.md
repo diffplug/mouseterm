@@ -297,14 +297,14 @@ When a pane is added, its dockview group element gets a directional `.pane-spawn
 
 The direction is carried via `FreshlySpawnedContext` — a `Map<paneId, SpawnDirection>` written by the spawn call site and consumed once by `TerminalPanel`'s `useLayoutEffect` on first mount.
 
-### Kill (ghost fade + FLIP reclaim)
+### Kill (in-place fade + FLIP reclaim)
 
-`orchestrateKill(api, killedId)` in `Pond.tsx` runs on kill confirmation:
+`orchestrateKill(api, killedId)` in `Pond.tsx` runs on kill confirmation. It fades the real pane element in place (its content dissolves against the same-colored background), then removes the panel and FLIP-reveals the survivors:
 
-1. Snapshot `getBoundingClientRect` for every other panel's group element.
-2. `destroyTerminal` + `api.removePanel`; dockview snaps the layout.
-3. Measure post-rects. Any panel whose rect grew is a "grower."
-4. Mount a solid `var(--color-surface)` ghost overlay at the killed rect (`position: fixed`, `z-index: 55`) with the `.pane-fading-out` class; it removes itself on `animationend` with a 1s timeout safety net. A uniform fade works for every case (edge/middle/last-pane kill) because the directional cue is already carried by the grower's FLIP reveal.
+1. Add `.pane-fading-out` (or `.pane-fading-and-shrinking-to-br` for a last-pane kill) to the killed pane's group element. Block pointer events during the fade.
+2. On `animationend`, snapshot `getBoundingClientRect` for every surviving panel's group element.
+3. `destroyTerminal` + `api.removePanel`; dockview snaps the layout.
+4. Measure post-rects. Any panel whose rect grew is a "grower."
 5. For each grower, apply an inline `clip-path: inset(...)` with the newly-claimed territory clipped off, force a reflow, then transition to `inset(0)`. This reveals the grower into the vacated space without affecting `getBoundingClientRect`. Clears on `transitionend`.
 
 Case handling is purely rect-based (measure before and after removal), so 2-pane splits, linear 3+ rows/columns, and nested splits all fall through the same code path with no per-case branching.
@@ -326,7 +326,7 @@ The deferred spawn also only calls `selectPanel` if selection is null. The kill 
 7. **Asymmetric back-navigation**: breadcrumb tracks last direction + origin for opposite-direction return.
 8. **Center drop merges panels**: intercepted at group-level `model.onWillDrop` and converted to a swap.
 9. **Group drag has null panelId**: falls back to `api.getGroup(groupId).activePanel.id`.
-10. **Auto-spawn on empty**: `onDidRemovePanel` creates a new session whenever the last visible pane is removed, whether or not doors exist — there is always a pane visible. The new pane receives the just-removed pane's id as `paneToCopy` for future cwd/terminal-kind inheritance. The `addPanel` call is delayed 440ms (see "Auto-spawn delay" under Animations) so the outgoing kill/detach animation finishes first.
+10. **Auto-spawn on empty**: `onDidRemovePanel` creates a new session whenever the last visible pane is removed, whether or not doors exist — there is always a pane visible. The `addPanel` call is delayed 440ms (see "Auto-spawn delay" under Animations) so the outgoing kill/detach animation finishes first.
 11. **Door focus survives auto-spawn**: `api.addPanel` auto-activates the new panel, firing `onDidActivePanelChange`. When the current selection is a door (e.g., just-detached last pane), that listener must not flip `selectedId` to the new pane — otherwise `selectedType === 'door'` + `selectedId === newPaneId` desyncs and the door loses its highlight while the SelectionOverlay is stuck on the stale door rect. The listener early-returns when `selectedType === 'door'`.
 
 ## Files
