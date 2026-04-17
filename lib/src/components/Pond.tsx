@@ -18,9 +18,13 @@ import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, Arrows
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
   getMouseSelectionSnapshot,
+  getMouseSelectionState,
   setOverride as setMouseOverride,
+  setSelection as setMouseSelection,
   subscribeToMouseSelection,
 } from '../lib/mouse-selection';
+import { copyRaw, copyRewrapped } from '../lib/clipboard';
+import { IS_MAC } from '../lib/platform';
 import {
   type AlarmButtonActionResult,
   clearSessionAttention,
@@ -1692,6 +1696,28 @@ export function Pond({
         lastCmdSide.current = side;
         lastCmdTime.current = now;
         return;
+      }
+
+      // Copy shortcuts fire in both modes when the terminal has an active
+      // selection (spec §4.2). Intercept before xterm would see Ctrl+C as SIGINT.
+      {
+        const sid = selectedIdRef.current;
+        if (sid) {
+          const mouseState = getMouseSelectionState(sid);
+          const sel = mouseState.selection;
+          if (sel && !sel.dragging) {
+            const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+            if (mod && (e.key === 'c' || e.key === 'C')) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              const rewrapped = e.shiftKey;
+              void (rewrapped ? copyRewrapped(sid) : copyRaw(sid)).then(() => {
+                setMouseSelection(sid, null);
+              });
+              return;
+            }
+          }
+        }
       }
 
       // In terminal mode, only the Meta gesture above matters — everything else goes to xterm
