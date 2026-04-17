@@ -1462,6 +1462,12 @@ export function Pond({
     // Sync our selection when dockview activates a panel (e.g. after DnD rearrangement)
     e.api.onDidActivePanelChange((panel) => {
       if (panel) {
+        // Dockview auto-activates a panel on addPanel. Don't let that steal
+        // selection away from a currently-selected door (happens when the last
+        // pane is detached: selectDoor runs, then the delayed auto-spawn's
+        // addPanel would otherwise flip selectedId to the new pane's id while
+        // selectedType is still 'door', desyncing the door's highlight).
+        if (selectedTypeRef.current === 'door') return;
         if (modeRef.current === 'passthrough' && selectedIdRef.current !== panel.id) {
           enterTerminalModeRef.current(panel.id);
           return;
