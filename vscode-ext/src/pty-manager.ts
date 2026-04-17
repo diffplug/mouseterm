@@ -210,6 +210,10 @@ export interface ShellEntry {
 export function getAvailableShells(): Promise<ShellEntry[]> {
   return new Promise((resolve) => {
     const requestId = `shells-${Date.now()}`;
+    // Ensure the child process is forked before attaching the listener —
+    // otherwise `child` is null on the cold path and the handler is never
+    // registered, causing the timeout to fire with an empty list.
+    sendToChild({ type: 'getShells', requestId });
     const timeout = setTimeout(() => {
       child?.off('message', handler);
       resolve([]);
@@ -222,12 +226,12 @@ export function getAvailableShells(): Promise<ShellEntry[]> {
       }
     };
     child?.on('message', handler);
-    sendToChild({ type: 'getShells', requestId });
   });
 }
 
 export function getCwd(id: string): Promise<string | null> {
   return new Promise((resolve) => {
+    sendToChild({ type: 'getCwd', id });
     const timeout = setTimeout(() => {
       child?.off('message', handler);
       resolve(null);
@@ -240,7 +244,6 @@ export function getCwd(id: string): Promise<string | null> {
       }
     };
     child?.on('message', handler);
-    sendToChild({ type: 'getCwd', id });
   });
 }
 
