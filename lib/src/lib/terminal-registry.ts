@@ -465,6 +465,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
     } : null);
   };
   const onWindowMouseUp = (ev: MouseEvent) => {
+    if (ev.button !== 0) return; // only left-button release ends a drag
     if (!isDragging(id)) return;
     endDrag(id);
     setHintToken(id, null);
