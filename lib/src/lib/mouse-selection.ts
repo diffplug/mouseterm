@@ -207,7 +207,7 @@ export function extendSelectionToToken(id: string, token: TokenHint): void {
   s.selection = {
     ...sel,
     endRow: token.row,
-    endCol: forward ? token.endCol : token.startCol,
+    endCol: forward ? token.endCol - 1 : token.startCol,
   };
   notify();
 }
