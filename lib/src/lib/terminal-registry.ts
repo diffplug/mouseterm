@@ -15,6 +15,7 @@ import {
   removeMouseSelectionState,
   setDragAlt,
   setHintToken,
+  setOverride,
   setSelection as setMouseSelection,
   updateDrag,
 } from './mouse-selection';
@@ -405,9 +406,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
   const mouseModeObserver = attachMouseModeObserver(id, terminal);
 
   // Mouse event router. Capture phase so we see events before xterm's own
-  // handlers. For now we only OBSERVE — we update our selection state but
-  // don't stopPropagation, so xterm's default selection still shows. Once
-  // the overlay lands (story C.2) we'll fully take over by stopping events.
+  // handlers. We preventDefault + stopPropagation to fully own the selection.
   const computeCell = (ev: MouseEvent): { row: number; col: number; startedInScrollback: boolean } => {
     const rect = element.getBoundingClientRect();
     const cellWidth = rect.width / terminal.cols;
@@ -472,6 +471,11 @@ function setupTerminalEntry(id: string): TerminalEntry {
     // Take a text snapshot of the finalized selection for cancel-on-change.
     const sel = getMouseSelectionState(id).selection;
     selectionBaseline = sel ? extractSelectionText(terminal, sel) : null;
+    // Per spec §2.1: a temporary override ends on the mouse-up that
+    // finalizes the drag. The drag we just ended is that mouse-up.
+    if (getMouseSelectionState(id).override === 'temporary') {
+      setOverride(id, 'off');
+    }
     ev.preventDefault();
     ev.stopPropagation();
   };
