@@ -16,7 +16,6 @@
 // (U+2550..U+256C) fall in 2500..257F and heavy blocks (2588 etc.) are often
 // used for the same visual effect.
 const BOX_CHAR = /[\u2500-\u259F]/;
-const BOX_RUN_GLOBAL = /[\u2500-\u259F]+/g;
 const FRAME_ONLY = /^[\u2500-\u259F\s]+$/;
 
 function isFrameOnlyLine(line: string): boolean {
@@ -69,4 +68,4 @@ export function rewrap(text: string): string {
 }
 
 // Exported for targeted unit tests.
-export const __testing = { isFrameOnlyLine, stripLeadingAndTrailingFrame, BOX_RUN_GLOBAL };
+export const __testing = { isFrameOnlyLine, stripLeadingAndTrailingFrame };

@@ -455,23 +455,15 @@ function setupTerminalEntry(id: string): TerminalEntry {
     // Smart-extension hint (spec §5): scan the line under the current drag
     // cursor for a URL/path token.
     const line = terminal.buffer.active.getLine(cell.row);
-    if (!line) {
-      setHintToken(id, null);
-      return;
-    }
-    const text = line.translateToString(false, 0, terminal.cols);
-    const token = detectTokenAt(text, cell.col);
-    if (token) {
-      setHintToken(id, {
-        kind: token.kind,
-        row: cell.row,
-        startCol: token.start,
-        endCol: token.end,
-        text: token.text,
-      });
-    } else {
-      setHintToken(id, null);
-    }
+    const text = line?.translateToString(false, 0, terminal.cols);
+    const token = text ? detectTokenAt(text, cell.col) : null;
+    setHintToken(id, token ? {
+      kind: token.kind,
+      row: cell.row,
+      startCol: token.start,
+      endCol: token.end,
+      text: token.text,
+    } : null);
   };
   const onWindowMouseUp = (ev: MouseEvent) => {
     if (!isDragging(id)) return;

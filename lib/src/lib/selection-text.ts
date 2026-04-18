@@ -1,7 +1,18 @@
 import type { Terminal } from '@xterm/xterm';
 import type { Selection } from './mouse-selection';
 
-function normalize(sel: Selection) {
+export interface NormalizedSelection {
+  r0: number;
+  c0: number;
+  r1: number;
+  c1: number;
+}
+
+/**
+ * Normalize a selection so start comes before end in reading order.
+ * For block shape we normalize min/max on both axes independently.
+ */
+export function normalizeSelection(sel: Selection): NormalizedSelection {
   if (sel.shape === 'block') {
     return {
       r0: Math.min(sel.startRow, sel.endRow),
@@ -25,7 +36,7 @@ function normalize(sel: Selection) {
  * are rectangular slabs; linewise shapes follow reading order.
  */
 export function extractSelectionText(terminal: Terminal, sel: Selection): string {
-  const n = normalize(sel);
+  const n = normalizeSelection(sel);
   const buf = terminal.buffer.active;
   const lines: string[] = [];
 

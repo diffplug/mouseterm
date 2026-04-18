@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { __testing } from './SelectionOverlay';
+import { normalizeSelection } from '../lib/selection-text';
 import type { Selection } from '../lib/mouse-selection';
 
-const { normalize, computeRects } = __testing;
+const { computeRects } = __testing;
 
 function sel(overrides: Partial<Selection>): Selection {
   return {
@@ -17,22 +18,22 @@ function sel(overrides: Partial<Selection>): Selection {
   };
 }
 
-describe('normalize', () => {
+describe('normalizeSelection', () => {
   it('forward linewise selection passes through', () => {
-    const n = normalize(sel({ startRow: 2, startCol: 3, endRow: 5, endCol: 8 }));
-    expect(n).toEqual({ r0: 2, c0: 3, r1: 5, c1: 8, shape: 'linewise' });
+    const n = normalizeSelection(sel({ startRow: 2, startCol: 3, endRow: 5, endCol: 8 }));
+    expect(n).toEqual({ r0: 2, c0: 3, r1: 5, c1: 8 });
   });
 
   it('reversed linewise selection swaps start/end', () => {
-    const n = normalize(sel({ startRow: 5, startCol: 8, endRow: 2, endCol: 3 }));
-    expect(n).toEqual({ r0: 2, c0: 3, r1: 5, c1: 8, shape: 'linewise' });
+    const n = normalizeSelection(sel({ startRow: 5, startCol: 8, endRow: 2, endCol: 3 }));
+    expect(n).toEqual({ r0: 2, c0: 3, r1: 5, c1: 8 });
   });
 
   it('block selection normalizes min/max independently', () => {
-    const n = normalize(sel({
+    const n = normalizeSelection(sel({
       startRow: 5, startCol: 8, endRow: 2, endCol: 3, shape: 'block',
     }));
-    expect(n).toEqual({ r0: 2, c0: 3, r1: 5, c1: 8, shape: 'block' });
+    expect(n).toEqual({ r0: 2, c0: 3, r1: 5, c1: 8 });
   });
 });
 

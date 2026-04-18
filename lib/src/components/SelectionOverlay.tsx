@@ -7,6 +7,7 @@ import {
   subscribeToRenderTick,
   type Selection,
 } from '../lib/mouse-selection';
+import { normalizeSelection } from '../lib/selection-text';
 import { getTerminalOverlayDims } from '../lib/terminal-registry';
 
 interface Rect {
@@ -14,32 +15,6 @@ interface Rect {
   left: number;
   width: number;
   height: number;
-}
-
-/**
- * Normalize a selection so start comes before end in reading order.
- * For block shape we normalize min/max on both axes.
- */
-function normalize(sel: Selection): { r0: number; c0: number; r1: number; c1: number; shape: Selection['shape'] } {
-  if (sel.shape === 'block') {
-    return {
-      r0: Math.min(sel.startRow, sel.endRow),
-      c0: Math.min(sel.startCol, sel.endCol),
-      r1: Math.max(sel.startRow, sel.endRow),
-      c1: Math.max(sel.startCol, sel.endCol),
-      shape: 'block',
-    };
-  }
-  // Linewise: compare in reading order.
-  const before =
-    sel.startRow < sel.endRow || (sel.startRow === sel.endRow && sel.startCol <= sel.endCol);
-  return {
-    r0: before ? sel.startRow : sel.endRow,
-    c0: before ? sel.startCol : sel.endCol,
-    r1: before ? sel.endRow : sel.startRow,
-    c1: before ? sel.endCol : sel.startCol,
-    shape: 'linewise',
-  };
 }
 
 function computeRects(
@@ -50,12 +25,12 @@ function computeRects(
   cellWidth: number,
   cellHeight: number,
 ): Rect[] {
-  const n = normalize(sel);
+  const n = normalizeSelection(sel);
 
   const viewportStart = viewportY;
   const viewportEnd = viewportY + rows;
 
-  if (n.shape === 'block') {
+  if (sel.shape === 'block') {
     const top = Math.max(viewportStart, n.r0);
     const bottom = Math.min(viewportEnd - 1, n.r1);
     if (top > bottom) return [];
@@ -171,4 +146,4 @@ export function SelectionOverlay({ terminalId }: Props) {
 }
 
 // Exported for unit tests.
-export const __testing = { normalize, computeRects };
+export const __testing = { computeRects };

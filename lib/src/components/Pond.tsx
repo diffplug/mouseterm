@@ -1699,14 +1699,16 @@ export function Pond({
         return;
       }
 
-      // Mid-drag keystrokes (spec §5.3 / §3.6). When a terminal-owned drag
-      // is in flight, `e` extends to the detected token and Esc cancels the
-      // drag. These are consumed so they don't reach the inside program.
+      // Mid-drag keystrokes and copy/paste shortcuts. Spec §5.3, §3.6, §4.2, §8.2.
       {
         const sid = selectedIdRef.current;
         if (sid) {
           const mouseState = getMouseSelectionState(sid);
           const sel = mouseState.selection;
+
+          // During a terminal-owned drag, `e` extends to the detected token
+          // and Esc cancels. These are consumed so they don't reach the
+          // inside program.
           if (sel?.dragging) {
             if (e.key === 'e' && mouseState.hintToken) {
               e.preventDefault();
@@ -1721,35 +1723,23 @@ export function Pond({
               return;
             }
           }
-        }
-      }
 
-      // Copy and paste shortcuts fire in both modes. Spec §4.2 / §8.2.
-      //
-      // Copy is narrow: only when the terminal has an active selection.
-      // Paste is broad: always intercepted on the platform's paste chord.
-      //   macOS: Cmd+V, Cmd+Shift+V. Ctrl+V passes through to the program.
-      //   Other: Ctrl+V, Ctrl+Shift+V. Both always intercepted.
-      {
-        const sid = selectedIdRef.current;
-        if (sid) {
-          const mouseState = getMouseSelectionState(sid);
-          const sel = mouseState.selection;
+          // Copy is narrow: only when the terminal has a finalized selection.
+          // Paste is broad: always intercepted on the platform's paste chord.
+          //   macOS: Cmd+V, Cmd+Shift+V. Ctrl+V passes through to the program.
+          //   Other: Ctrl+V, Ctrl+Shift+V. Both always intercepted.
           const keyLower = e.key.toLowerCase();
-          if (sel && !sel.dragging) {
-            const mod = IS_MAC ? e.metaKey : e.ctrlKey;
-            if (mod && keyLower === 'c') {
-              e.preventDefault();
-              e.stopImmediatePropagation();
-              const rewrapped = e.shiftKey;
-              void (rewrapped ? copyRewrapped(sid) : copyRaw(sid)).then(() => {
-                setMouseSelection(sid, null);
-              });
-              return;
-            }
+          const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+          if (sel && !sel.dragging && mod && keyLower === 'c') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            const rewrapped = e.shiftKey;
+            void (rewrapped ? copyRewrapped(sid) : copyRaw(sid)).then(() => {
+              setMouseSelection(sid, null);
+            });
+            return;
           }
-          const pasteMod = IS_MAC ? e.metaKey : e.ctrlKey;
-          if (pasteMod && keyLower === 'v') {
+          if (mod && keyLower === 'v') {
             e.preventDefault();
             e.stopImmediatePropagation();
             void doPaste(sid);
