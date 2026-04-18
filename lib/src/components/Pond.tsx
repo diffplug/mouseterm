@@ -1707,8 +1707,10 @@ export function Pond({
           const sel = mouseState.selection;
 
           // During a terminal-owned drag, `e` extends to the detected token
-          // and Esc cancels. These are consumed so they don't reach the
-          // inside program.
+          // and Esc cancels. Per spec §3.6, ALL keystrokes are consumed
+          // during a drag so they don't reach the inside program. Alt is
+          // allowed to propagate because terminal-registry's onAltChange
+          // listener uses it for block-selection shape toggling (§3.2).
           if (sel?.dragging) {
             if (e.key === 'e' && mouseState.hintToken) {
               e.preventDefault();
@@ -1722,6 +1724,13 @@ export function Pond({
               setMouseSelection(sid, null);
               return;
             }
+            // Let Alt propagate for block-selection toggling; consume
+            // everything else.
+            if (e.key !== 'Alt') {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+            }
+            return;
           }
 
           // Copy is narrow: only when the terminal has a finalized selection.
