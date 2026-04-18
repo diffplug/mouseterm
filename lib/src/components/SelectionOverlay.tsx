@@ -51,9 +51,9 @@ function computeRects(
   for (let r = firstRow; r <= lastRow; r++) {
     let c0 = 0;
     let c1 = cols;
-    if (r === n.r0) c0 = n.c0;
-    if (r === n.r1) c1 = n.c1;
-    if (c1 <= c0) continue;
+   if (r === n.r0) c0 = n.c0;
+    if (r === n.r1) c1 = n.c1 + 1;
+   if (c1 <= c0) continue;
     rects.push({
       top: (r - viewportStart) * cellHeight,
       left: c0 * cellWidth,

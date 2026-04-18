@@ -52,9 +52,9 @@ export function extractSelectionText(terminal: Terminal, sel: Selection): string
   for (let r = n.r0; r <= n.r1; r++) {
     const line = buf.getLine(r);
     if (!line) continue;
-    const c0 = r === n.r0 ? n.c0 : 0;
-    const c1 = r === n.r1 ? n.c1 : terminal.cols;
-    lines.push(line.translateToString(false, c0, c1).replace(/\s+$/, ''));
+   const c0 = r === n.r0 ? n.c0 : 0;
+    const c1 = r === n.r1 ? n.c1 + 1 : terminal.cols;
+   lines.push(line.translateToString(false, c0, c1).replace(/\s+$/, ''));
   }
   return lines.join('\n');
 }

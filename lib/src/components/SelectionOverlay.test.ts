@@ -41,19 +41,19 @@ describe('computeRects: linewise', () => {
   const cellWidth = 10;
   const cellHeight = 20;
 
-  it('single-row selection → one rect', () => {
-    const rects = computeRects(
-      sel({ startRow: 0, startCol: 5, endRow: 0, endCol: 15 }),
-      80, 0, 24, cellWidth, cellHeight,
-    );
+ it('single-row selection → one rect', () => {
+   const rects = computeRects(
+      sel({ startRow: 0, startCol: 5, endRow: 0, endCol: 14 }),
+     80, 0, 24, cellWidth, cellHeight,
+   );
     expect(rects).toEqual([{ top: 0, left: 50, width: 100, height: 20 }]);
   });
 
-  it('multi-row linewise: first row trimmed, middle rows full, last row trimmed', () => {
-    const rects = computeRects(
-      sel({ startRow: 0, startCol: 5, endRow: 2, endCol: 10 }),
-      80, 0, 24, cellWidth, cellHeight,
-    );
+ it('multi-row linewise: first row trimmed, middle rows full, last row trimmed', () => {
+   const rects = computeRects(
+      sel({ startRow: 0, startCol: 5, endRow: 2, endCol: 9 }),
+     80, 0, 24, cellWidth, cellHeight,
+   );
     expect(rects).toHaveLength(3);
     expect(rects[0]).toEqual({ top: 0, left: 50, width: (80 - 5) * 10, height: 20 });
     expect(rects[1]).toEqual({ top: 20, left: 0, width: 800, height: 20 });
@@ -63,18 +63,18 @@ describe('computeRects: linewise', () => {
   it('scrollback-only selection above viewport → no rects', () => {
     // viewportY=50 means visible rows are 50..73. Selection in rows 10..20
     // is entirely above the viewport.
-    const rects = computeRects(
-      sel({ startRow: 10, startCol: 0, endRow: 20, endCol: 10 }),
-      80, 50, 24, cellWidth, cellHeight,
+   const rects = computeRects(
+      sel({ startRow: 10, startCol: 0, endRow: 20, endCol: 9 }),
+     80, 50, 24, cellWidth, cellHeight,
     );
     expect(rects).toEqual([]);
   });
 
   it('selection clipped to viewport start', () => {
     // viewportY=10 (rows 10..33). Selection 5..15 → only rows 10..15 visible.
-    const rects = computeRects(
-      sel({ startRow: 5, startCol: 0, endRow: 15, endCol: 40 }),
-      80, 10, 24, cellWidth, cellHeight,
+   const rects = computeRects(
+      sel({ startRow: 5, startCol: 0, endRow: 15, endCol: 39 }),
+     80, 10, 24, cellWidth, cellHeight,
     );
     // First visible row is row 10 — that's a "middle" row (not the original
     // startRow), so full-width.
@@ -83,13 +83,13 @@ describe('computeRects: linewise', () => {
     expect(rects[rects.length - 1]).toEqual({ top: (15 - 10) * 20, left: 0, width: 400, height: 20 });
   });
 
-  it('selection with equal start/end columns renders nothing on that row', () => {
-    const rects = computeRects(
-      sel({ startRow: 0, startCol: 10, endRow: 0, endCol: 10 }),
-      80, 0, 24, cellWidth, cellHeight,
-    );
-    expect(rects).toEqual([]);
-  });
+  it('selection with equal start/end columns renders one cell', () => {
+   const rects = computeRects(
+     sel({ startRow: 0, startCol: 10, endRow: 0, endCol: 10 }),
+     80, 0, 24, cellWidth, cellHeight,
+   );
+    expect(rects).toEqual([{ top: 0, left: 100, width: 10, height: 20 }]);
+ });
 });
 
 describe('computeRects: block', () => {

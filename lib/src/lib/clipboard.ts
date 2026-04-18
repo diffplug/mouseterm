@@ -6,8 +6,14 @@ import { getTerminalInstance } from './terminal-registry';
 
 async function writeText(text: string): Promise<void> {
   if (!text) return;
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    }
+  } catch {
+    // Clipboard write can fail when the document lacks focus or the
+    // Permissions API denied access. Silently ignore — the user will
+    // notice the paste didn't work and can retry.
   }
 }
 
@@ -41,8 +47,15 @@ export async function copyRewrapped(terminalId: string): Promise<void> {
  * inside program's bracketed-paste mode when enabled (spec §8.5).
  */
 export async function doPaste(terminalId: string): Promise<void> {
-  if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) return;
-  const text = await navigator.clipboard.readText();
+  let text: string;
+  try {
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) return;
+    text = await navigator.clipboard.readText();
+  } catch {
+    // Clipboard read can fail when the document lacks focus or the
+    // Permissions API denied access. Silently ignore.
+    return;
+  }
   if (!text) return;
   const bracketed = getMouseSelectionState(terminalId).bracketedPaste;
   const payload = bracketed ? `\x1b[200~${text}\x1b[201~` : text;

@@ -39,19 +39,19 @@ describe('extractSelectionText', () => {
     'dog and runs away.',
   ]);
 
-  it('single-row linewise', () => {
-    const s = sel({ startRow: 0, startCol: 4, endRow: 0, endCol: 9 });
-    expect(extractSelectionText(t, s)).toBe('quick');
+ it('single-row linewise', () => {
+    const s = sel({ startRow: 0, startCol: 4, endRow: 0, endCol: 8 });
+   expect(extractSelectionText(t, s)).toBe('quick');
   });
 
-  it('multi-row linewise trims each end', () => {
-    const s = sel({ startRow: 0, startCol: 10, endRow: 2, endCol: 3 });
-    expect(extractSelectionText(t, s)).toBe('brown fox\njumps over the lazy\ndog');
+ it('multi-row linewise trims each end', () => {
+    const s = sel({ startRow: 0, startCol: 10, endRow: 2, endCol: 2 });
+   expect(extractSelectionText(t, s)).toBe('brown fox\njumps over the lazy\ndog');
   });
 
-  it('reversed linewise (user dragged right-to-left)', () => {
-    const s = sel({ startRow: 0, startCol: 9, endRow: 0, endCol: 4 });
-    expect(extractSelectionText(t, s)).toBe('quick');
+ it('reversed linewise (user dragged right-to-left)', () => {
+    const s = sel({ startRow: 0, startCol: 8, endRow: 0, endCol: 4 });
+   expect(extractSelectionText(t, s)).toBe('quick');
   });
 
   it('block shape extracts the rectangular slab', () => {
