@@ -27,7 +27,7 @@ export function SelectionPopup({ terminalId }: Props) {
   const selection = state.selection;
   const shouldRender = !!selection && !selection.dragging;
 
-  const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
+  const [anchor, setAnchor] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
 
   useLayoutEffect(() => {
     if (!shouldRender || !selection) {
@@ -41,30 +41,26 @@ export function SelectionPopup({ terminalId }: Props) {
     const { cellWidth, cellHeight, gridLeft, gridTop } = dims;
     const endViewportRow = selection.endRow - dims.viewportY;
     const endRow = Math.max(0, Math.min(dims.rows - 1, endViewportRow));
-    // Place the popup outside the selection on the side opposite the drag
-    // direction. When the preferred side would clip the viewport, clamp to
-    // the viewport edge on the SAME side — never flip, because that puts
-    // the popup inside the selection and causes it to bounce with mouse
-    // jitter at the edge.
-    const POPUP_EST_HEIGHT = 32;
+    // Place the popup on the side opposite the drag direction, matching
+    // exactly where the Alt hint sat. Drag-down anchors by `top`, drag-up
+    // anchors by `bottom` — that way both elements have their near-
+    // selection edge at the same y regardless of their heights. Without
+    // this, the popup (shorter than the hint) would appear closer to the
+    // selection than the hint did on drag-up.
     const draggedDown = selection.endRow >= selection.startRow;
-    // Leave one full cell of gap between the selection and the popup so
-    // the line adjacent to the selection stays visible. Matches the
-    // visual weight of the above-side where the popup's own height
-    // naturally extends it away from the selection.
-    const top = draggedDown
-      ? Math.min(
-          gridTop + (endRow + 2) * cellHeight + 4,
-          dims.elementHeight - POPUP_EST_HEIGHT - 4,
-        )
-      : Math.max(
-          gridTop + endRow * cellHeight - POPUP_EST_HEIGHT - 4,
-          4,
-        );
-    setAnchor({
-      left: Math.min(dims.elementWidth - 300, Math.max(0, gridLeft + selection.endCol * cellWidth)),
-      top,
-    });
+    const left = Math.min(dims.elementWidth - 300, Math.max(0, gridLeft + selection.endCol * cellWidth));
+    if (draggedDown) {
+      const top = Math.min(
+        gridTop + (endRow + 2) * cellHeight + 4,
+        dims.elementHeight - 24,
+      );
+      setAnchor({ left, top });
+    } else {
+      // Bottom-anchored one full cell above the selection — symmetric with
+      // the drag-down +2-row offset on the top-anchored side.
+      const y = Math.max(gridTop + (endRow - 1) * cellHeight - 4, 28);
+      setAnchor({ left, bottom: dims.elementHeight - y });
+    }
   }, [terminalId, shouldRender, selection]);
 
   useEffect(() => {
@@ -103,6 +99,7 @@ export function SelectionPopup({ terminalId }: Props) {
     position: 'absolute',
     left: anchor.left,
     top: anchor.top,
+    bottom: anchor.bottom,
     zIndex: 20,
   };
 

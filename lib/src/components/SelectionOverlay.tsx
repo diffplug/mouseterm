@@ -140,34 +140,32 @@ export function SelectionOverlay({ terminalId }: Props) {
 
   // Mid-drag hint. Placed outside the selection on the side opposite the
   // drag direction: below when the user drags down, above when they drag up.
-  // When the preferred side would clip the viewport, clamp to the viewport
-  // edge on the SAME side — never flip sides, because that puts the hint
-  // inside the selection and causes it to bounce as the mouse jitters near
-  // the edge. Shown only while the user is dragging (spec §3.3).
-  const HINT_EST_HEIGHT = 44;
-  let hint: { left: number; top: number } | null = null;
+  // Drag-down anchors by `top` (top edge aligned with where we want the
+  // near-selection edge); drag-up anchors by `bottom` so the near-selection
+  // edge lines up regardless of element height — this keeps the hint and
+  // the copy popup visually coincident, since the popup uses the same
+  // anchoring rules. Shown only while the user is dragging (spec §3.3).
+  let hint: { left: number; top?: number; bottom?: number } | null = null;
   if (selection.dragging) {
     const endViewportRow = selection.endRow - dims.viewportY;
     if (endViewportRow >= 0 && endViewportRow < dims.rows) {
       const draggedDown = selection.endRow >= selection.startRow;
-      // Leave one full cell of gap between the selection and the hint so
-      // the next-to-be-selected line stays visible on both sides. The
-      // drag-up side already feels like "2 lines above" because the
-      // hint's own height (~44px) extends it away from the selection;
-      // matching that on the drag-down side means skipping one extra row.
-      const top = draggedDown
-        ? Math.min(
-            gridTop + (endViewportRow + 2) * cellHeight + 4,
-            dims.elementHeight - HINT_EST_HEIGHT - 4,
-          )
-        : Math.max(
-            gridTop + endViewportRow * cellHeight - HINT_EST_HEIGHT - 4,
-            4,
-          );
-      hint = {
-        left: Math.min(dims.elementWidth - 180, Math.max(4, gridLeft + selection.endCol * cellWidth)),
-        top,
-      };
+      const left = Math.min(dims.elementWidth - 180, Math.max(4, gridLeft + selection.endCol * cellWidth));
+      if (draggedDown) {
+        const top = Math.min(
+          gridTop + (endViewportRow + 2) * cellHeight + 4,
+          dims.elementHeight - 24,
+        );
+        hint = { left, top };
+      } else {
+        // Anchor the element's bottom edge one full cell above the
+        // selection — symmetric with the drag-down +2-row offset — so the
+        // row adjacent to the selection stays visible. Clamp the anchor y
+        // so there's at least ~24px of room above it for the hint to
+        // render inside the viewport.
+        const y = Math.max(gridTop + (endViewportRow - 1) * cellHeight - 4, 28);
+        hint = { left, bottom: dims.elementHeight - y };
+      }
     }
   }
 
@@ -193,7 +191,7 @@ export function SelectionOverlay({ terminalId }: Props) {
       {hint && (
         <div
           className="pointer-events-none absolute rounded border border-border bg-surface-raised px-1.5 py-0.5 text-xs text-muted shadow-sm"
-          style={{ left: hint.left, top: hint.top }}
+          style={{ left: hint.left, top: hint.top, bottom: hint.bottom }}
         >
           <div>Hold {IS_MAC ? 'Opt' : 'Alt'} for block selection</div>
           {state.hintToken && (
