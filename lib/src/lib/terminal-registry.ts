@@ -406,7 +406,9 @@ function setupTerminalEntry(id: string): TerminalEntry {
   const mouseModeObserver = attachMouseModeObserver(id, terminal);
 
   // Mouse event router. Capture phase so we see events before xterm's own
-  // handlers. We preventDefault + stopPropagation to fully own the selection.
+  // handlers. We defer beginDrag (and stopPropagation) until the cursor has
+  // actually moved past a small threshold — a plain click stays a plain
+  // click so the pane-click handler upstream can still shift focus.
   const computeCell = (ev: MouseEvent): { row: number; col: number; startedInScrollback: boolean } => {
     const rect = element.getBoundingClientRect();
     const cellWidth = rect.width / terminal.cols;
@@ -420,8 +422,18 @@ function setupTerminalEntry(id: string): TerminalEntry {
     return { row: absRow, col, startedInScrollback };
   };
 
+  const DRAG_THRESHOLD_PX_SQ = 16; // 4px squared — typical click-vs-drag threshold
+  let pendingDrag: {
+    row: number;
+    col: number;
+    altKey: boolean;
+    startedInScrollback: boolean;
+    clientX: number;
+    clientY: number;
+  } | null = null;
+
   const onMouseDown = (ev: MouseEvent) => {
-    if (ev.button !== 0) return; // only left-click starts a selection
+    if (ev.button !== 0) return; // only left-click can start a selection
     const state = getMouseSelectionState(id);
     const cell = computeCell(ev);
     // Per spec §3.5 and §6.1:
@@ -434,18 +446,34 @@ function setupTerminalEntry(id: string): TerminalEntry {
       || state.override !== 'off'
       || cell.startedInScrollback;
     if (!terminalOwns) return;
-    beginDrag(id, {
+    // Record the anchor but don't commit — this might be a plain click. We
+    // deliberately do NOT preventDefault / stopPropagation here so pane
+    // focus-on-click (and xterm's own focus handling) still work.
+    pendingDrag = {
       row: cell.row,
       col: cell.col,
       altKey: ev.altKey,
       startedInScrollback: cell.startedInScrollback,
-    });
-    // Prevent xterm's own selection from starting, and its text-selection
-    // default from engaging.
-    ev.preventDefault();
-    ev.stopPropagation();
+      clientX: ev.clientX,
+      clientY: ev.clientY,
+    };
   };
   const onWindowMouseMove = (ev: MouseEvent) => {
+    if (pendingDrag) {
+      const dx = ev.clientX - pendingDrag.clientX;
+      const dy = ev.clientY - pendingDrag.clientY;
+      if (dx * dx + dy * dy < DRAG_THRESHOLD_PX_SQ) return;
+      // Threshold crossed — promote pending anchor into a real drag.
+      beginDrag(id, {
+        row: pendingDrag.row,
+        col: pendingDrag.col,
+        altKey: pendingDrag.altKey,
+        startedInScrollback: pendingDrag.startedInScrollback,
+      });
+      // Wipe any nascent xterm selection that started on the bare mousedown.
+      terminal.clearSelection();
+      pendingDrag = null;
+    }
     if (!isDragging(id)) return;
     const cell = computeCell(ev);
     updateDrag(id, { row: cell.row, col: cell.col, altKey: ev.altKey });
@@ -466,6 +494,15 @@ function setupTerminalEntry(id: string): TerminalEntry {
   };
   const onWindowMouseUp = (ev: MouseEvent) => {
     if (ev.button !== 0) return; // only left-button release ends a drag
+    if (pendingDrag) {
+      // Pure click — never crossed the drag threshold. Still counts as the
+      // mouse-up that terminates a temporary override (spec §2.1).
+      if (getMouseSelectionState(id).override === 'temporary') {
+        setOverride(id, 'off');
+      }
+      pendingDrag = null;
+      return;
+    }
     if (!isDragging(id)) return;
     endDrag(id);
     setHintToken(id, null);
@@ -473,7 +510,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
     const sel = getMouseSelectionState(id).selection;
     selectionBaseline = sel ? extractSelectionText(terminal, sel) : null;
     // Per spec §2.1: a temporary override ends on the mouse-up that
-    // finalizes the drag. The drag we just ended is that mouse-up.
+    // finalizes the drag.
     if (getMouseSelectionState(id).override === 'temporary') {
       setOverride(id, 'off');
     }
