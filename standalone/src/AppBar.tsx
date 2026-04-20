@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { CaretDownIcon, MinusIcon, CornersOutIcon, CornersInIcon, XIcon, PlusIcon, CheckIcon } from '@phosphor-icons/react';
 import { ThemePicker } from '../../lib/src/components/ThemePicker';
-import { setDefaultShellOpts } from '../../lib/src/lib/terminal-registry';
+import { setDefaultShellOpts } from '../../lib/src/lib/shell-defaults';
 
 export interface ShellEntry {
   name: string;

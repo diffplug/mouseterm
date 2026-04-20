@@ -1314,11 +1314,18 @@ export function Pond({
     // detachedRef is updated AFTER removePanel returns, so detachedRef.current.length
     // is still 0 here — which is correct: we want a new pane when the last visible
     // pane is detached (the door isn't a pane).
+    //
+    // Defer via setTimeout so api.addPanel is not called re-entrantly from
+    // inside the onDidRemovePanel handler — dockview silently drops the spawn
+    // in that case.
     e.api.onDidRemovePanel(() => {
       if (e.api.totalPanels === 0 && detachedRef.current.length === 0) {
-        const id = generatePaneId();
-        addTerminalPanel(id);
-        selectPanel(id);
+        setTimeout(() => {
+          if (e.api.totalPanels > 0) return;
+          const id = generatePaneId();
+          addTerminalPanel(id);
+          selectPanel(id);
+        }, 0);
       }
     });
 

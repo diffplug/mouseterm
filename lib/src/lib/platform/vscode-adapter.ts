@@ -1,5 +1,5 @@
 import type { AlarmStateDetail, PlatformAdapter, PtyInfo } from './types';
-import { setDefaultShellOpts } from '../terminal-registry';
+import { setDefaultShellOpts } from '../shell-defaults';
 
 export class VSCodeAdapter implements PlatformAdapter {
   private vscode: ReturnType<typeof acquireVsCodeApi>;

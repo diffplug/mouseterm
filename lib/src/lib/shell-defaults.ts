@@ -1,0 +1,16 @@
+// Shared "currently selected" shell, used when spawning without an explicit
+// choice (e.g. a keyboard-driven split). Updated by AppBar's ShellDropdown in
+// standalone and by the VSCode extension pushing mouseterm:selectedShell.
+//
+// Extracted into its own module to avoid circular dependencies between
+// terminal-registry and platform/vscode-adapter.
+
+let defaultShellOpts: { shell?: string; args?: string[] } | null = null;
+
+export function setDefaultShellOpts(opts: { shell?: string; args?: string[] } | null): void {
+  defaultShellOpts = opts;
+}
+
+export function getDefaultShellOpts(): { shell?: string; args?: string[] } | null {
+  return defaultShellOpts;
+}
