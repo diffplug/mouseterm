@@ -9,6 +9,7 @@ import {
 } from '../lib/mouse-selection';
 import { normalizeSelection } from '../lib/selection-text';
 import { getTerminalOverlayDims } from '../lib/terminal-registry';
+import { IS_MAC } from '../lib/platform';
 
 interface Rect {
   top: number;
@@ -137,15 +138,35 @@ export function SelectionOverlay({ terminalId }: Props) {
     || 'rgb(100, 149, 237)';
   const pathD = rectsToPath(rects);
 
-  // Mid-drag hint. Positioned above the drag-end cell, clamped to the
-  // overlay bounds. Shown only while the user is dragging (spec §3.3).
+  // Mid-drag hint. Placed outside the selection on the side opposite the
+  // drag direction: below when the user drags down, above when they drag up.
+  // When the preferred side would clip the viewport, clamp to the viewport
+  // edge on the SAME side — never flip sides, because that puts the hint
+  // inside the selection and causes it to bounce as the mouse jitters near
+  // the edge. Shown only while the user is dragging (spec §3.3).
+  const HINT_EST_HEIGHT = 44;
   let hint: { left: number; top: number } | null = null;
   if (selection.dragging) {
     const endViewportRow = selection.endRow - dims.viewportY;
     if (endViewportRow >= 0 && endViewportRow < dims.rows) {
+      const draggedDown = selection.endRow >= selection.startRow;
+      // Leave one full cell of gap between the selection and the hint so
+      // the next-to-be-selected line stays visible on both sides. The
+      // drag-up side already feels like "2 lines above" because the
+      // hint's own height (~44px) extends it away from the selection;
+      // matching that on the drag-down side means skipping one extra row.
+      const top = draggedDown
+        ? Math.min(
+            gridTop + (endViewportRow + 2) * cellHeight + 4,
+            dims.elementHeight - HINT_EST_HEIGHT - 4,
+          )
+        : Math.max(
+            gridTop + endViewportRow * cellHeight - HINT_EST_HEIGHT - 4,
+            4,
+          );
       hint = {
         left: Math.min(dims.elementWidth - 180, Math.max(4, gridLeft + selection.endCol * cellWidth)),
-        top: Math.max(4, gridTop + endViewportRow * cellHeight - 24),
+        top,
       };
     }
   }
@@ -174,7 +195,7 @@ export function SelectionOverlay({ terminalId }: Props) {
           className="pointer-events-none absolute rounded border border-border bg-surface-raised px-1.5 py-0.5 text-xs text-muted shadow-sm"
           style={{ left: hint.left, top: hint.top }}
         >
-          <div>Hold Alt for block selection</div>
+          <div>Hold {IS_MAC ? 'Opt' : 'Alt'} for block selection</div>
           {state.hintToken && (
             <div>
               Press <span className="text-foreground">e</span> to select the full{' '}

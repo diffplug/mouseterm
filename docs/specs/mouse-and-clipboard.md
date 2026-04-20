@@ -99,7 +99,8 @@ Selection is available whenever the terminal is handling mouse events — that i
 
 While a drag is in progress, a small hint is displayed above the selection:
 
-- `Hold Alt for block selection`
+- `Hold Alt for block selection` on Windows and Linux.
+- `Hold Opt for block selection` on macOS.
 
 The hint is always shown during an active drag. It does not fade with use.
 

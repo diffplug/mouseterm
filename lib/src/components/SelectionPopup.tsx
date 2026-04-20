@@ -36,13 +36,34 @@ export function SelectionPopup({ terminalId }: Props) {
     }
     const dims = getTerminalOverlayDims(terminalId);
     if (!dims || dims.cols === 0 || dims.rows === 0) return;
-    const cellWidth = dims.elementWidth / dims.cols;
-    const cellHeight = dims.elementHeight / dims.rows;
+    // Use the measured cell grid so the anchor aligns with the border
+    // outline (the overlay pulls from the same dims).
+    const { cellWidth, cellHeight, gridLeft, gridTop } = dims;
     const endViewportRow = selection.endRow - dims.viewportY;
     const endRow = Math.max(0, Math.min(dims.rows - 1, endViewportRow));
+    // Place the popup outside the selection on the side opposite the drag
+    // direction. When the preferred side would clip the viewport, clamp to
+    // the viewport edge on the SAME side — never flip, because that puts
+    // the popup inside the selection and causes it to bounce with mouse
+    // jitter at the edge.
+    const POPUP_EST_HEIGHT = 32;
+    const draggedDown = selection.endRow >= selection.startRow;
+    // Leave one full cell of gap between the selection and the popup so
+    // the line adjacent to the selection stays visible. Matches the
+    // visual weight of the above-side where the popup's own height
+    // naturally extends it away from the selection.
+    const top = draggedDown
+      ? Math.min(
+          gridTop + (endRow + 2) * cellHeight + 4,
+          dims.elementHeight - POPUP_EST_HEIGHT - 4,
+        )
+      : Math.max(
+          gridTop + endRow * cellHeight - POPUP_EST_HEIGHT - 4,
+          4,
+        );
     setAnchor({
-      left: Math.min(dims.elementWidth - 300, Math.max(0, selection.endCol * cellWidth)),
-      top: Math.min(dims.elementHeight - 32, (endRow + 1) * cellHeight + 4),
+      left: Math.min(dims.elementWidth - 300, Math.max(0, gridLeft + selection.endCol * cellWidth)),
+      top,
     });
   }, [terminalId, shouldRender, selection]);
 
