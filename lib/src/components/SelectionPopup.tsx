@@ -119,19 +119,19 @@ export function SelectionPopup({ terminalId }: Props) {
     <div
       data-selection-popup-for={terminalId}
       style={style}
-      className="flex items-center gap-1 rounded border border-border bg-surface-raised px-1.5 py-0.5 text-xs text-foreground shadow-md"
+      className="flex items-stretch overflow-hidden rounded border border-border bg-surface-raised text-xs text-foreground shadow-md"
       onMouseDown={(e) => e.stopPropagation()}
     >
       <button
         type="button"
-        className="rounded border border-border px-1.5 py-0.5 hover:bg-foreground/10"
+        className="m-0 px-1.5 py-0.5 hover:bg-foreground/10"
         onClick={() => onCopy(false)}
       >
         <span className="text-muted">[{copyShortcut}]</span> Copy Raw
       </button>
       <button
         type="button"
-        className="rounded border border-border px-1.5 py-0.5 hover:bg-foreground/10"
+        className="m-0 px-1.5 py-0.5 hover:bg-foreground/10"
         onClick={() => onCopy(true)}
       >
         <span className="text-muted">[{rewrapShortcut}]</span> Copy Rewrapped
