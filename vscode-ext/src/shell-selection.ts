@@ -20,6 +20,9 @@ export async function setSelectedShellPath(
   if (scope === 'workspace') {
     await context.workspaceState.update(KEY, path);
   } else {
+    // Clear any workspace-scoped value so it doesn't shadow the new global
+    // setting (getSelectedShellPath checks workspaceState first).
+    await context.workspaceState.update(KEY, undefined);
     await context.globalState.update(KEY, path);
   }
 }
