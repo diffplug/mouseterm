@@ -119,7 +119,7 @@ export function SelectionPopup({ terminalId }: Props) {
     <div
       data-selection-popup-for={terminalId}
       style={style}
-      className="flex items-center gap-1 rounded border border-border bg-surface-raised px-1.5 py-1 text-xs text-foreground shadow-md"
+      className="flex items-center gap-1 rounded border border-border bg-surface-raised px-1.5 py-0.5 text-xs text-foreground shadow-md"
       onMouseDown={(e) => e.stopPropagation()}
     >
       <button
