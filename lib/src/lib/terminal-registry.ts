@@ -410,15 +410,19 @@ function setupTerminalEntry(id: string): TerminalEntry {
   // actually moved past a small threshold — a plain click stays a plain
   // click so the pane-click handler upstream can still shift focus.
   const computeCell = (ev: MouseEvent): { row: number; col: number; startedInScrollback: boolean } => {
-    const rect = element.getBoundingClientRect();
-    const cellWidth = rect.width / terminal.cols;
-    const cellHeight = rect.height / terminal.rows;
-    const offsetX = Math.max(0, ev.clientX - rect.left);
-    const offsetY = Math.max(0, ev.clientY - rect.top);
-    const col = Math.min(terminal.cols - 1, Math.max(0, Math.floor(offsetX / cellWidth)));
-    const viewportRow = Math.min(terminal.rows - 1, Math.floor(offsetY / cellHeight));
-    const absRow = terminal.buffer.active.viewportY + viewportRow;
-    const startedInScrollback = absRow < terminal.buffer.active.baseY;
+    // Use the same measured cell grid as the selection overlay so mouse
+    // hit-testing and highlight rendering can never drift apart.
+    const dims = getTerminalOverlayDims(id);
+    if (!dims) {
+      return { row: 0, col: 0, startedInScrollback: false };
+    }
+    const elementRect = element.getBoundingClientRect();
+    const offsetX = ev.clientX - elementRect.left - dims.gridLeft;
+    const offsetY = ev.clientY - elementRect.top - dims.gridTop;
+    const col = Math.min(dims.cols - 1, Math.max(0, Math.floor(offsetX / dims.cellWidth)));
+    const viewportRow = Math.min(dims.rows - 1, Math.max(0, Math.floor(offsetY / dims.cellHeight)));
+    const absRow = dims.viewportY + viewportRow;
+    const startedInScrollback = absRow < dims.baseY;
     return { row: absRow, col, startedInScrollback };
   };
 
@@ -774,6 +778,14 @@ export interface TerminalOverlayDims {
   elementWidth: number;
   /** Pixel height of the persistent terminal element. */
   elementHeight: number;
+  /** Measured pixel width of a single cell. */
+  cellWidth: number;
+  /** Measured pixel height of a single cell. */
+  cellHeight: number;
+  /** Left offset of the cell grid (`.xterm-screen`) within the element. */
+  gridLeft: number;
+  /** Top offset of the cell grid within the element. */
+  gridTop: number;
 }
 
 /**
@@ -788,14 +800,40 @@ export function getTerminalInstance(id: string): Terminal | null {
 export function getTerminalOverlayDims(id: string): TerminalOverlayDims | null {
   const entry = registry.get(id);
   if (!entry) return null;
-  const rect = entry.element.getBoundingClientRect();
+  const elementRect = entry.element.getBoundingClientRect();
+  // Measure xterm's actual cell grid, not the surrounding element. xterm puts
+  // a few pixels of padding around `.xterm-screen`, so element-divided-by-
+  // cols/rows is slightly off and the error accumulates with row count.
+  const screen = entry.element.querySelector<HTMLElement>('.xterm-screen');
+  let cellWidth: number;
+  let cellHeight: number;
+  let gridLeft: number;
+  let gridTop: number;
+  if (screen) {
+    const screenRect = screen.getBoundingClientRect();
+    cellWidth = screenRect.width / entry.terminal.cols;
+    cellHeight = screenRect.height / entry.terminal.rows;
+    gridLeft = screenRect.left - elementRect.left;
+    gridTop = screenRect.top - elementRect.top;
+  } else {
+    // Before xterm has rendered, fall back to element dimensions. Not
+    // perfectly aligned but selection UI isn't usable at this point anyway.
+    cellWidth = elementRect.width / entry.terminal.cols;
+    cellHeight = elementRect.height / entry.terminal.rows;
+    gridLeft = 0;
+    gridTop = 0;
+  }
   return {
     cols: entry.terminal.cols,
     rows: entry.terminal.rows,
     viewportY: entry.terminal.buffer.active.viewportY,
     baseY: entry.terminal.buffer.active.baseY,
-    elementWidth: rect.width,
-    elementHeight: rect.height,
+    elementWidth: elementRect.width,
+    elementHeight: elementRect.height,
+    cellWidth,
+    cellHeight,
+    gridLeft,
+    gridTop,
   };
 }
 

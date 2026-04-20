@@ -112,8 +112,11 @@ export function SelectionOverlay({ terminalId }: Props) {
   const dims = getTerminalOverlayDims(terminalId);
   if (!dims || dims.cols === 0 || dims.rows === 0) return null;
 
-  const cellWidth = dims.elementWidth / dims.cols;
-  const cellHeight = dims.elementHeight / dims.rows;
+  // cellWidth / cellHeight come from measuring xterm's `.xterm-screen`, and
+  // gridLeft / gridTop are its offset within the element. Using these
+  // instead of elementWidth/cols keeps the highlight aligned even when xterm
+  // adds a few pixels of padding around the cell grid.
+  const { cellWidth, cellHeight, gridLeft, gridTop } = dims;
   const rects = computeRects(selection, dims.cols, dims.viewportY, dims.rows, cellWidth, cellHeight);
 
   const style: CSSProperties = {
@@ -141,8 +144,8 @@ export function SelectionOverlay({ terminalId }: Props) {
     const endViewportRow = selection.endRow - dims.viewportY;
     if (endViewportRow >= 0 && endViewportRow < dims.rows) {
       hint = {
-        left: Math.min(dims.elementWidth - 180, Math.max(4, selection.endCol * cellWidth)),
-        top: Math.max(4, endViewportRow * cellHeight - 24),
+        left: Math.min(dims.elementWidth - 180, Math.max(4, gridLeft + selection.endCol * cellWidth)),
+        top: Math.max(4, gridTop + endViewportRow * cellHeight - 24),
       };
     }
   }
@@ -153,15 +156,17 @@ export function SelectionOverlay({ terminalId }: Props) {
         <svg
           width={dims.elementWidth}
           height={dims.elementHeight}
-          style={{ position: 'absolute', top: 0, left: 0 }}
+          style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}
         >
-          <path
-            d={pathD}
-            fill="none"
-            stroke={borderColor}
-            strokeWidth={1.5}
-            strokeLinejoin="miter"
-          />
+          <g transform={`translate(${gridLeft} ${gridTop})`}>
+            <path
+              d={pathD}
+              fill="none"
+              stroke={borderColor}
+              strokeWidth={1.5}
+              strokeLinejoin="miter"
+            />
+          </g>
         </svg>
       )}
       {hint && (
