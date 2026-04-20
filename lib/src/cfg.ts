@@ -27,4 +27,10 @@ export const cfg = {
     /** ms — attention idle expiry. How long before "looking at this pane" wears off. */
     userAttention: 15_000,
   },
+  todoBucket: {
+    /** Seconds of idle time needed to un-strike one letter of the soft-TODO pill.
+     *  The word TODO has 4 letters; each printable keypress strikes one letter,
+     *  and each `recoverySecondsPerLetter` of idle time un-strikes one. */
+    recoverySecondsPerLetter: 1,
+  },
 };

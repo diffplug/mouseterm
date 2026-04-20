@@ -35,6 +35,9 @@ import {
   setPendingShellOpts,
   getDefaultShellOpts,
   type SessionStatus,
+  isSoftTodo,
+  isHardTodo,
+  TODO_OFF,
 } from '../lib/terminal-registry';
 import { resolvePanelElement, findPanelInDirection, findRestoreNeighbor, type DetachDirection } from '../lib/spatial-nav';
 import { cloneLayout, getLayoutStructureSignature } from '../lib/layout-snapshot';
@@ -42,6 +45,7 @@ import { getPlatform } from '../lib/platform';
 import { saveSession } from '../lib/session-save';
 import type { PersistedDetachedItem } from '../lib/session-types';
 import { cfg } from '../cfg';
+import { useTodoPillContent } from './TodoPillBody';
 
 // --- Theme ---
 
@@ -338,12 +342,12 @@ function TodoAlarmDialog({
         <span className="text-[10px] font-mono text-muted">[t]</span>
         <span className="text-[11px] text-foreground font-medium w-10">TODO</span>
         <div className="flex gap-1 ml-auto">
-          <button type="button" className={toggleBtn(sessionState.todo === 'hard')}
-            onClick={() => { if (sessionState.todo !== 'hard') markSessionTodo(sessionId); }}>
+          <button type="button" className={toggleBtn(isHardTodo(sessionState.todo))}
+            onClick={() => { if (!isHardTodo(sessionState.todo)) markSessionTodo(sessionId); }}>
             hard
           </button>
-          <button type="button" className={toggleBtn(sessionState.todo === false)}
-            onClick={() => { if (sessionState.todo !== false) clearSessionTodo(sessionId); }}>
+          <button type="button" className={toggleBtn(sessionState.todo === TODO_OFF)}
+            onClick={() => { if (sessionState.todo !== TODO_OFF) clearSessionTodo(sessionId); }}>
             off
           </button>
         </div>
@@ -369,7 +373,7 @@ function TodoAlarmDialog({
       <div className="border-t border-border pt-2 text-[9px] leading-relaxed text-muted">
         When an alarming tab is selected,<br />
         the alarm is cleared and the tab gets a soft TODO.<br />
-        Typing characters into the tab will automatically clear a soft TODO.
+        Typing drains the soft TODO; stop typing and it refills.
       </div>
     </div>,
     document.body,
@@ -431,6 +435,15 @@ export const PondActionsContext = createContext<PondActions>({
 
 export const RenamingIdContext = createContext<string | null>(null);
 export const ZoomedContext = createContext(false);
+export const WindowFocusedContext = createContext(true);
+
+// Transient map of pane ids that were just created → their spawn direction.
+// TerminalPanel consumes (and removes) its id on first mount to trigger a directional spawn animation.
+//   'left'     — born from horizontal split (new pane appeared to the right of the source)
+//   'top'      — born from vertical split (new pane appeared below the source)
+//   'top-left' — auto-spawned after last-pane kill (diagonal counterpoint to the killed pane's crush to bottom-right)
+export type SpawnDirection = 'left' | 'top' | 'top-left';
+export const FreshlySpawnedContext = createContext<Map<string, SpawnDirection>>(new Map());
 
 const ARROW_OPPOSITES: Record<string, string> = {
   ArrowLeft: 'ArrowRight', ArrowRight: 'ArrowLeft',
@@ -459,6 +472,7 @@ function TerminalPanel({ api }: IDockviewPanelProps) {
   const selectedId = useContext(SelectedIdContext);
   const actions = useContext(PondActionsContext);
   const { elements: panelElements, bumpVersion } = useContext(PanelElementsContext);
+  const freshlySpawned = useContext(FreshlySpawnedContext);
   const isFocused = mode === 'passthrough' && selectedId === api.id;
   const elRef = useRef<HTMLDivElement>(null);
 
@@ -471,6 +485,32 @@ function TerminalPanel({ api }: IDockviewPanelProps) {
       bumpVersion();
     };
   }, [api.id, panelElements, bumpVersion]);
+
+  // Freshly spawned: animate the whole dockview group (header + body) as one unit
+  // via a directional clip-path reveal. We target api.group.element instead of elRef
+  // so the tab header animates too. clip-path (not transform) is deliberate —
+  // transforms affect getBoundingClientRect, which would make the selection overlay
+  // lag the pane until the animation ends.
+  useLayoutEffect(() => {
+    const direction = freshlySpawned.get(api.id);
+    if (!direction) return;
+    freshlySpawned.delete(api.id);
+    const groupEl = api.group?.element;
+    if (!groupEl) return;
+    const className = `pane-spawning-from-${direction}`;
+    const animationName = `pane-spawn-from-${direction}`;
+    groupEl.classList.add(className);
+    const onEnd = (ev: AnimationEvent) => {
+      if (ev.animationName !== animationName) return;
+      groupEl.classList.remove(className);
+      groupEl.removeEventListener('animationend', onEnd);
+    };
+    groupEl.addEventListener('animationend', onEnd);
+    return () => {
+      groupEl.removeEventListener('animationend', onEnd);
+      groupEl.classList.remove(className);
+    };
+  }, [api, freshlySpawned]);
 
   return (
     <div ref={elRef} className="h-full w-full" onMouseDown={() => actions.onClickPanel(api.id)}>
@@ -488,17 +528,19 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const selectedId = useContext(SelectedIdContext);
   const renamingId = useContext(RenamingIdContext);
   const zoomed = useContext(ZoomedContext);
+  const windowFocused = useContext(WindowFocusedContext);
   const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
   const actions = useContext(PondActionsContext);
   const sessionState = sessionStates.get(api.id) ?? DEFAULT_SESSION_UI_STATE;
   const isSelected = selectedId === api.id;
-  const showSelectedHeader = mode === 'passthrough' && isSelected;
+  const showSelectedHeader = mode === 'passthrough' && isSelected && windowFocused;
   const isRenaming = renamingId === api.id;
   const tabRef = useRef<HTMLDivElement>(null);
   const suppressAlarmClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
   const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number } | null>(null);
-  const showTodoPill = sessionState.todo !== false && tier !== 'minimal';
+  const todoPill = useTodoPillContent(sessionState.todo);
+  const showTodoPill = todoPill.visible && tier !== 'minimal';
   const alarmButtonAriaLabel = sessionState.status === 'ALARM_RINGING'
     ? 'Alarm ringing'
     : sessionState.status === 'ALARM_DISABLED'
@@ -613,23 +655,32 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           </span>
         </HeaderActionButton>
         {showTodoPill && (
-          <button
-            type="button"
-            data-session-todo-for={api.id}
-            className={[
-              'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10',
-              sessionState.todo === 'soft' ? 'border border-dashed border-muted' : 'border border-muted',
-            ].join(' ')}
-            aria-label="TODO settings"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              const rect = e.currentTarget.getBoundingClientRect();
-              setDialogPosition({ x: rect.left + rect.width / 2 - 140, y: rect.bottom + 6 });
-            }}
-          >
-            TODO
-          </button>
+          todoPill.flourishing ? (
+            <span
+              className="shrink-0 rounded border border-dashed border-muted px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted"
+              aria-hidden
+            >
+              {todoPill.body}
+            </span>
+          ) : (
+            <button
+              type="button"
+              data-session-todo-for={api.id}
+              className={[
+                'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10',
+                isSoftTodo(sessionState.todo) ? 'border border-dashed border-muted' : 'border border-muted',
+              ].join(' ')}
+              aria-label="TODO settings"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                const rect = e.currentTarget.getBoundingClientRect();
+                setDialogPosition({ x: rect.left + rect.width / 2 - 140, y: rect.bottom + 6 });
+              }}
+            >
+              {todoPill.body}
+            </button>
+          )
         )}
       </div>
       {!isRenaming && (
@@ -804,16 +855,17 @@ export function MarchingAntsRect({ width, height, isDoor, color, paused }: {
   );
 }
 
-function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
+function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef }: {
   apiRef: React.RefObject<DockviewApi | null>;
   selectedId: string | null;
   selectedType: 'pane' | 'door';
   mode: PondMode;
+  overlayElRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   const { elements: panelElements, version: panelVersion } = useContext(PanelElementsContext);
   const { elements: doorElements, version: doorVersion } = useContext(DoorElementsContext);
   const selectionColor = useSelectionColor();
-  const windowFocused = useWindowFocused();
+  const windowFocused = useContext(WindowFocusedContext);
   const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const isDoor = selectedType === 'door';
 
@@ -871,11 +923,11 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode }: {
   if (mode === 'passthrough') {
     style.borderRadius = isDoor ? '0.375rem 0.375rem 0 0' : '0.5rem';
     style.border = `1px solid ${selectionColor}`;
-    return <div style={style} />;
+    return <div ref={overlayElRef} style={style} />;
   }
 
   return (
-    <div style={style}>
+    <div ref={overlayElRef} style={style}>
       <MarchingAntsRect
         width={rect.width}
         height={rect.height}
@@ -911,7 +963,10 @@ function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
 }) {
   const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so the initial measurement + re-render happens
+  // before the browser paints. Otherwise the centered-in-viewport fallback below
+  // flashes for one frame before the overlay snaps to the panel.
+  useLayoutEffect(() => {
     const panelEl = resolvePanelElement(panelElements.get(confirmKill.id));
     if (!panelEl) { setRect(null); return; }
 
@@ -947,6 +1002,125 @@ function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
 }
 
 
+// --- Kill animation ---
+//
+// Orchestrates the visual reclaim when a pane is killed:
+//   1. Fade the real killed pane's group element in place (its actual content
+//      dissolves — a solid-color ghost over a same-colored background would be
+//      invisible).
+//   2. After the fade completes, capture pre-rects of surviving panes, remove
+//      the panel (dockview snaps the layout), and FLIP each grower via
+//      clip-path so its newly claimed territory is hidden at start and swept
+//      in by the transition. clip-path (not transform) keeps
+//      getBoundingClientRect accurate so the SelectionOverlay doesn't lag.
+//
+// killInProgressRef is set across api.removePanel so the onDidRemovePanel
+// auto-spawn handler knows we already waited for our own fade and can skip
+// its own 440ms delay (avoids stacking 440ms + 440ms on last-pane kill).
+function orchestrateKill(
+  api: DockviewApi,
+  killedId: string,
+  selectPanel: (id: string) => void,
+  setSelectedId: (id: string | null) => void,
+  killInProgressRef: { current: boolean },
+  overlayElRef: { current: HTMLElement | null },
+): void {
+  const panel = api.getPanel(killedId);
+  if (!panel) return;
+
+  const bareRemove = () => {
+    killInProgressRef.current = true;
+    destroyTerminal(killedId);
+    api.removePanel(panel);
+    killInProgressRef.current = false;
+    if (api.panels.length > 0) selectPanel(api.panels[0].id);
+    else setSelectedId(null);
+  };
+
+  const reduceMotion = typeof window !== 'undefined'
+    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const killedGroupEl = panel.api.group?.element;
+  if (reduceMotion || !killedGroupEl) {
+    bareRemove();
+    return;
+  }
+
+  // Fade the killed pane in place. Block input on it during the fade.
+  // For a last-pane kill (auto-spawn will create a replacement), also shrink
+  // the pane toward the bottom-right so the disappearance is visible — a plain
+  // fade offers no visual cue since the pane's space is reclaimed by a new one
+  // appearing in exactly the same rect from the opposite corner. The focus
+  // ring (SelectionOverlay element) gets a matching shrink animation so it
+  // scales with the pane rather than sitting over empty space.
+  const isLastPane = api.panels.length === 1;
+  const fadeClass = isLastPane ? 'pane-fading-and-shrinking-to-br' : 'pane-fading-out';
+  const fadeAnimationName = isLastPane ? 'pane-fade-and-shrink-to-br' : 'pane-fade-out';
+  killedGroupEl.style.pointerEvents = 'none';
+  killedGroupEl.classList.add(fadeClass);
+  const overlayEl = isLastPane ? overlayElRef.current : null;
+  if (overlayEl) overlayEl.classList.add('ring-shrinking-to-br');
+
+  let finalized = false;
+  const finalize = () => {
+    if (finalized) return;
+    finalized = true;
+
+    // Snapshot pre-rects just before removal.
+    interface Pre { el: HTMLElement; rect: DOMRect; }
+    const preRects = new Map<string, Pre>();
+    for (const p of api.panels) {
+      if (p.id === killedId) continue;
+      const el = p.api.group?.element;
+      if (el) preRects.set(p.id, { el, rect: el.getBoundingClientRect() });
+    }
+
+    bareRemove();
+
+    // FLIP each grower.
+    for (const p of api.panels) {
+      const pre = preRects.get(p.id);
+      if (!pre) continue;
+      const postRect = pre.el.getBoundingClientRect();
+      const dw = postRect.width - pre.rect.width;
+      const dh = postRect.height - pre.rect.height;
+      if (Math.abs(dw) < 0.5 && Math.abs(dh) < 0.5) continue;
+
+      // Clear any in-progress spawn animation before applying FLIP.
+      pre.el.classList.remove('pane-spawning-from-left', 'pane-spawning-from-top', 'pane-spawning-from-top-left');
+
+      const clipTop    = Math.max(0, (pre.rect.top - postRect.top)       / postRect.height * 100);
+      const clipBottom = Math.max(0, (postRect.bottom - pre.rect.bottom) / postRect.height * 100);
+      const clipLeft   = Math.max(0, (pre.rect.left - postRect.left)     / postRect.width  * 100);
+      const clipRight  = Math.max(0, (postRect.right - pre.rect.right)   / postRect.width  * 100);
+
+      pre.el.style.transition = 'none';
+      pre.el.style.clipPath = `inset(${clipTop}% ${clipRight}% ${clipBottom}% ${clipLeft}%)`;
+      void pre.el.offsetHeight;
+      pre.el.style.transition = 'clip-path 440ms cubic-bezier(0.22, 1, 0.36, 1)';
+      pre.el.style.clipPath = 'inset(0)';
+      const cleanup = () => {
+        pre.el.style.transition = '';
+        pre.el.style.clipPath = '';
+      };
+      pre.el.addEventListener('transitionend', cleanup, { once: true });
+      setTimeout(cleanup, 1000);
+    }
+
+    // Peel the ring-shrink class so the next selection's overlay renders at
+    // full scale. The element may have been reused by React for the next
+    // selected pane's overlay by the time the animation finishes.
+    if (overlayEl) overlayEl.classList.remove('ring-shrinking-to-br');
+  };
+
+  killedGroupEl.addEventListener('animationend', (ev) => {
+    if ((ev as AnimationEvent).animationName !== fadeAnimationName) return;
+    finalize();
+  });
+  // Safety: if animationend never fires, still finalize.
+  setTimeout(finalize, 1000);
+}
+
+
 // --- Main component ---
 
 export function Pond({
@@ -974,6 +1148,20 @@ export function Pond({
     return `pane-${(++paneCounterRef.current).toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
   }, []);
 
+  // Ids of panes that were just spawned, keyed by id with the direction the spawn
+  // should reveal from. TerminalPanel consumes its id on first mount to play the
+  // matching directional entrance animation.
+  const freshlySpawnedRef = useRef(new Map<string, SpawnDirection>());
+
+  // True only across the api.removePanel() call inside orchestrateKill. Lets
+  // onDidRemovePanel know the kill path already paid the animation delay (via
+  // the in-place fade) so the auto-spawn shouldn't re-delay another 440ms.
+  const killInProgressRef = useRef(false);
+
+  // Ref to the SelectionOverlay's root element. orchestrateKill uses it to
+  // animate the focus ring in sync with the killed pane's shrink (last-pane case).
+  const overlayElRef = useRef<HTMLDivElement | null>(null);
+
   // Consumed once in handleReady to restore existing sessions
   const initialPaneIdsRef = useRef(initialPaneIds);
   const restoredLayoutRef = useRef(restoredLayout);
@@ -998,6 +1186,8 @@ export function Pond({
   const [mode, setMode] = useState<PondMode>('command');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<'pane' | 'door'>('pane');
+
+  const windowFocused = useWindowFocused();
 
   // UI state
   const [confirmKill, setConfirmKill] = useState<ConfirmKill | null>(null);
@@ -1301,6 +1491,12 @@ export function Pond({
     // Sync our selection when dockview activates a panel (e.g. after DnD rearrangement)
     e.api.onDidActivePanelChange((panel) => {
       if (panel) {
+        // Dockview auto-activates a panel on addPanel. Don't let that steal
+        // selection away from a currently-selected door (happens when the last
+        // pane is detached: selectDoor runs, then the delayed auto-spawn's
+        // addPanel would otherwise flip selectedId to the new pane's id while
+        // selectedType is still 'door', desyncing the door's highlight).
+        if (selectedTypeRef.current === 'door') return;
         if (modeRef.current === 'passthrough' && selectedIdRef.current !== panel.id) {
           enterTerminalModeRef.current(panel.id);
           return;
@@ -1309,24 +1505,35 @@ export function Pond({
       }
     });
 
-    // Auto-create a pane when all panes are killed/detached.
-    // Note: this fires synchronously from api.removePanel(). During detachPanel,
-    // detachedRef is updated AFTER removePanel returns, so detachedRef.current.length
-    // is still 0 here — which is correct: we want a new pane when the last visible
-    // pane is detached (the door isn't a pane).
+    // Always keep one pane visible: when the last visible pane is removed (killed
+    // or detached), spawn a fresh one — regardless of whether doors exist.
     //
-    // Defer via setTimeout so api.addPanel is not called re-entrantly from
-    // inside the onDidRemovePanel handler — dockview silently drops the spawn
-    // in that case.
+    // Delay the spawn by the kill/detach animation duration so the two animations
+    // don't overlap — the outgoing pane crushes/fades first, then the new pane
+    // reveals from the top-left. If anything restores a pane in the meantime
+    // (e.g. door reattach), the delayed spawn becomes a no-op.
     e.api.onDidRemovePanel(() => {
-      if (e.api.totalPanels === 0 && detachedRef.current.length === 0) {
-        setTimeout(() => {
-          if (e.api.totalPanels > 0) return;
-          const id = generatePaneId();
-          addTerminalPanel(id);
+      if (e.api.totalPanels !== 0) return;
+      const reduceMotion = typeof window !== 'undefined'
+        && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      // Kill path already waited during the in-place fade; no extra delay.
+      const delay = (reduceMotion || killInProgressRef.current) ? 0 : 440;
+      const spawn = () => {
+        if (e.api.totalPanels > 0) return;
+        const id = generatePaneId();
+        freshlySpawnedRef.current.set(id, 'top-left');
+        e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
+        // Only steal focus if nothing is selected (i.e., the kill path, which
+        // clears selection). On detach the just-detached door is selected and we
+        // must not override that — the door retains focus per the detach UX.
+        if (selectedIdRef.current === null) {
           selectPanel(id);
-        }, 0);
-      }
+        }
+      };
+      // Always defer via setTimeout — even when delay is 0 — so api.addPanel is
+      // not called re-entrantly from inside the onDidRemovePanel handler (dockview
+      // silently drops the spawn in that case).
+      setTimeout(spawn, delay);
     });
 
     onApiReady?.(e.api);
@@ -1431,18 +1638,12 @@ export function Pond({
           return;
         }
         if (e.key.toLowerCase() === ck.char.toLowerCase()) {
-          const panel = api.getPanel(ck.id);
-          if (panel) {
-            destroyTerminal(ck.id);
-            api.removePanel(panel);
-          }
-          // Select next panel
-          if (api.panels.length > 0) {
-            selectPanel(api.panels[0].id);
-          } else {
-            setSelectedId(null);
-          }
+          // Dismiss the modal first so it doesn't hover over the kill animation.
+          // orchestrateKill fades the pane in place, then removes + FLIPs the
+          // survivors, handling selection updates itself (since the fade is
+          // async and selection must wait until the actual removal fires).
           setConfirmKill(null);
+          orchestrateKill(api, ck.id, selectPanel, setSelectedId, killInProgressRef, overlayElRef);
           return;
         }
         // Wrong key — shake then dismiss
@@ -1773,6 +1974,9 @@ export function Pond({
     if (defaults?.shell) {
       setPendingShellOpts(newId, { shell: defaults.shell, args: defaults.args });
     }
+    // Horizontal split places the new pane to the right → reveal from its left edge.
+    // Vertical split places it below → reveal from its top edge.
+    freshlySpawnedRef.current.set(newId, direction === 'right' ? 'left' : 'top');
     api.addPanel({
       id: newId,
       component: 'terminal',
@@ -1849,6 +2053,8 @@ export function Pond({
           <DoorElementsContext.Provider value={{ elements: doorElements, version: doorElementsVersion, bumpVersion: bumpDoorElementsVersion }}>
           <RenamingIdContext.Provider value={renamingPaneId}>
           <ZoomedContext.Provider value={zoomed}>
+          <WindowFocusedContext.Provider value={windowFocused}>
+          <FreshlySpawnedContext.Provider value={freshlySpawnedRef.current}>
           <div className="flex-1 min-h-0 flex flex-col bg-surface text-foreground font-sans overflow-hidden">
             {/* Dockview */}
             <div className="flex-1 min-h-0 relative p-1.5">
@@ -1860,7 +2066,7 @@ export function Pond({
                   theme={mousetermTheme}
                   singleTabMode="fullwidth"
                 />
-                <SelectionOverlay apiRef={apiRef} selectedId={selectedId} selectedType={selectedType} mode={mode} />
+                <SelectionOverlay apiRef={apiRef} selectedId={selectedId} selectedType={selectedType} mode={mode} overlayElRef={overlayElRef} />
               </div>
             </div>
 
@@ -1877,6 +2083,8 @@ export function Pond({
             )}
 
           </div>
+          </FreshlySpawnedContext.Provider>
+          </WindowFocusedContext.Provider>
           </ZoomedContext.Provider>
           </RenamingIdContext.Provider>
           </DoorElementsContext.Provider>

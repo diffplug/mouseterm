@@ -56,6 +56,7 @@ export interface PlatformAdapter {
   alarmToggleTodo(id: string): void;
   alarmMarkTodo(id: string): void;
   alarmClearTodo(id: string): void;
+  alarmDrainTodoBucket(id: string): void;
   onAlarmState(handler: (detail: AlarmStateDetail) => void): void;
   offAlarmState(handler: (detail: AlarmStateDetail) => void): void;
 

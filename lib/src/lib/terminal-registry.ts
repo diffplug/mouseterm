@@ -2,12 +2,12 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { getPlatform } from './platform';
 import type { SessionStatus } from './activity-monitor';
-import type { TodoState, AlarmButtonActionResult } from './alarm-manager';
+import { TODO_OFF, isSoftTodo, type TodoState, type AlarmButtonActionResult } from './alarm-manager';
 import type { AlarmStateDetail } from './platform/types';
 import type { PersistedAlarmState } from './session-types';
 
 export type { SessionStatus } from './activity-monitor';
-export type { TodoState, AlarmButtonActionResult } from './alarm-manager';
+export { TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo, isHardTodo, hasTodo, type TodoState, type AlarmButtonActionResult } from './alarm-manager';
 
 export interface SessionUiState {
   status: SessionStatus;
@@ -16,7 +16,7 @@ export interface SessionUiState {
 
 export const DEFAULT_SESSION_UI_STATE: SessionUiState = {
   status: 'ALARM_DISABLED',
-  todo: false,
+  todo: TODO_OFF,
 };
 
 interface TerminalEntry {
@@ -351,8 +351,8 @@ function setupTerminalEntry(id: string): TerminalEntry {
     if (!isSyntheticTerminalReport) {
       getPlatform().alarmAttend(id);
       const entry = registry.get(id);
-      if (entry?.todo === 'soft' && inputContainsPrintableText(data)) {
-        getPlatform().alarmClearTodo(id);
+      if (entry && isSoftTodo(entry.todo) && inputContainsPrintableText(data)) {
+        getPlatform().alarmDrainTodoBucket(id);
       }
     }
 
@@ -379,7 +379,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
     element,
     cleanup,
     alarmStatus: 'ALARM_DISABLED',
-    todo: false,
+    todo: TODO_OFF,
     attentionDismissedRing: false,
   };
 

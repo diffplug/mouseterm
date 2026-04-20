@@ -8,6 +8,7 @@ import {
   type PondMode,
   type PondActions,
 } from '../components/Pond';
+import { TODO_OFF, TODO_SOFT_FULL, TODO_HARD } from '../lib/terminal-registry';
 
 const SESSION_ID = 'tab-story';
 
@@ -127,7 +128,7 @@ export const AlarmDisabled: Story = {
   parameters: primedState({
     status: 'ALARM_DISABLED',
 
-    todo: false,
+    todo: TODO_OFF,
   }),
 };
 
@@ -135,7 +136,7 @@ export const AlarmEnabled: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
 
-    todo: false,
+    todo: TODO_OFF,
   }),
 };
 
@@ -143,7 +144,7 @@ export const AlarmMightBeBusy: Story = {
   parameters: primedState({
     status: 'MIGHT_BE_BUSY',
 
-    todo: false,
+    todo: TODO_OFF,
   }),
 };
 
@@ -151,7 +152,7 @@ export const AlarmBusy: Story = {
   parameters: primedState({
     status: 'BUSY',
 
-    todo: false,
+    todo: TODO_OFF,
   }),
 };
 
@@ -159,7 +160,7 @@ export const AlarmMightNeedAttention: Story = {
   parameters: primedState({
     status: 'MIGHT_NEED_ATTENTION',
 
-    todo: false,
+    todo: TODO_OFF,
   }),
 };
 
@@ -167,21 +168,21 @@ export const AlarmRinging: Story = {
   parameters: primedState({
     status: 'ALARM_RINGING',
 
-    todo: false,
+    todo: TODO_OFF,
   }),
 };
 
 export const SoftTodo: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
-    todo: 'soft',
+    todo: TODO_SOFT_FULL,
   }),
 };
 
 export const AlarmRightClickDialog: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
-    todo: false,
+    todo: TODO_OFF,
   }),
   play: openAlarmRightClickDialog,
 };
@@ -189,7 +190,7 @@ export const AlarmRightClickDialog: Story = {
 export const SoftTodoPrompt: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
-    todo: 'soft',
+    todo: TODO_SOFT_FULL,
   }),
   play: clickSoftTodo,
 };
@@ -197,7 +198,7 @@ export const SoftTodoPrompt: Story = {
 export const TodoOnly: Story = {
   parameters: primedState({
     status: 'ALARM_DISABLED',
-    todo: 'hard',
+    todo: TODO_HARD,
   }),
 };
 
@@ -205,7 +206,7 @@ export const TodoAndAlarmEnabled: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
 
-    todo: 'hard',
+    todo: TODO_HARD,
   }),
 };
 
@@ -213,7 +214,7 @@ export const TodoAndAlarmRinging: Story = {
   parameters: primedState({
     status: 'ALARM_RINGING',
 
-    todo: 'hard',
+    todo: TODO_HARD,
   }),
 };
 
@@ -224,7 +225,7 @@ export const CompactWidthWithAlarm: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
 
-    todo: false,
+    todo: TODO_OFF,
   }),
 };
 
@@ -235,7 +236,7 @@ export const MinimalWidthWithAlarm: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
 
-    todo: false,
+    todo: TODO_OFF,
   }),
 };
 
@@ -247,7 +248,7 @@ export const LongTitleWithAlarmAndTodo: Story = {
   parameters: primedState({
     status: 'ALARM_RINGING',
 
-    todo: 'hard',
+    todo: TODO_HARD,
   }),
 };
 
@@ -258,6 +259,6 @@ export const ReducedMotionRinging: Story = {
   parameters: primedState({
     status: 'ALARM_RINGING',
 
-    todo: false,
+    todo: TODO_OFF,
   }),
 };

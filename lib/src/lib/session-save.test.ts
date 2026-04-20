@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlatformAdapter } from './platform/types';
 import type { PersistedSession } from './session-types';
+import { TODO_HARD } from './alarm-manager';
 
 const terminalRegistryMocks = vi.hoisted(() => ({
   getLivePersistedAlarmState: vi.fn(),
@@ -50,6 +51,7 @@ function createPlatform(savedState: PersistedSession | null): PlatformAdapter {
     alarmToggleTodo: () => {},
     alarmMarkTodo: () => {},
     alarmClearTodo: () => {},
+    alarmDrainTodoBucket: () => {},
     onAlarmState: () => {},
     offAlarmState: () => {},
     saveState: vi.fn((state: unknown) => {
@@ -73,7 +75,7 @@ describe('saveSession', () => {
       panes: [{ id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null, alarm: null }],
     });
 
-    terminalRegistryMocks.getLivePersistedAlarmState.mockReturnValue({ status: 'NOTHING_TO_SHOW', todo: 'hard' });
+    terminalRegistryMocks.getLivePersistedAlarmState.mockReturnValue({ status: 'NOTHING_TO_SHOW', todo: TODO_HARD });
 
     await saveSession(platform, { root: true }, [{ id: 'pane-a', title: 'Pane A' }]);
 
@@ -84,7 +86,7 @@ describe('saveSession', () => {
       panes: [
         expect.objectContaining({
           id: 'pane-a',
-          alarm: { status: 'NOTHING_TO_SHOW', todo: 'hard' },
+          alarm: { status: 'NOTHING_TO_SHOW', todo: TODO_HARD },
         }),
       ],
     });

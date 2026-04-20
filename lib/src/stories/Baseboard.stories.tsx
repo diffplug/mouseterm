@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { Baseboard } from '../components/Baseboard';
 import type { DetachedItem } from '../components/Pond';
+import { TODO_OFF, TODO_HARD } from '../lib/terminal-registry';
 
 const makeItem = (id: string, title: string): DetachedItem => ({
   id,
@@ -48,7 +49,7 @@ export const OneRingingDoor: Story = {
     p1: {
       status: 'ALARM_RINGING',
 
-      todo: false,
+      todo: TODO_OFF,
     },
   }),
 };
@@ -67,22 +68,22 @@ export const MixedDoorStates: Story = {
     p1: {
       status: 'NOTHING_TO_SHOW',
 
-      todo: false,
+      todo: TODO_OFF,
     },
     p2: {
       status: 'ALARM_RINGING',
 
-      todo: false,
+      todo: TODO_OFF,
     },
     p3: {
       status: 'ALARM_DISABLED',
 
-      todo: 'hard',
+      todo: TODO_HARD,
     },
     p4: {
       status: 'ALARM_RINGING',
 
-      todo: 'hard',
+      todo: TODO_HARD,
     },
   }),
 };
@@ -104,17 +105,17 @@ export const OverflowWithRingingDoor: Story = {
     p2: {
       status: 'NOTHING_TO_SHOW',
 
-      todo: false,
+      todo: TODO_OFF,
     },
     p5: {
       status: 'ALARM_RINGING',
 
-      todo: false,
+      todo: TODO_OFF,
     },
     p7: {
       status: 'ALARM_DISABLED',
 
-      todo: 'hard',
+      todo: TODO_HARD,
     },
   }),
   decorators: [
@@ -138,7 +139,7 @@ export const ExtremeTitleWithBothIndicators: Story = {
     p2: {
       status: 'ALARM_RINGING',
 
-      todo: 'hard',
+      todo: TODO_HARD,
     },
   }),
   decorators: [
