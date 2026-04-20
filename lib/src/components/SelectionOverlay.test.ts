@@ -3,7 +3,7 @@ import { __testing } from './SelectionOverlay';
 import { normalizeSelection } from '../lib/selection-text';
 import type { Selection } from '../lib/mouse-selection';
 
-const { computeRects } = __testing;
+const { computeRects, rectsToPath } = __testing;
 
 function sel(overrides: Partial<Selection>): Selection {
   return {
@@ -120,5 +120,70 @@ describe('computeRects: block', () => {
       80, 100, 24, cellWidth, cellHeight,
     );
     expect(rects).toEqual([]);
+  });
+});
+
+describe('rectsToPath', () => {
+  it('empty rect list → empty path', () => {
+    expect(rectsToPath([])).toBe('');
+  });
+
+  it('single rect traces four corners', () => {
+    // 20x10 rect at origin
+    const path = rectsToPath([{ top: 0, left: 0, width: 20, height: 10 }]);
+    // Right side going down, then left side going up (reversed).
+    expect(path).toBe('M 20 0 L 20 10 L 0 10 L 0 0 Z');
+  });
+
+  it('two-row linewise "Z" shape — first row narrower, second wider', () => {
+    // Row 0 is a tail: left=50, right=80 (narrower)
+    // Row 1 starts at col 0: left=0, right=30 (head)
+    const path = rectsToPath([
+      { top: 0, left: 50, width: 30, height: 10 },
+      { top: 10, left: 0, width: 30, height: 10 },
+    ]);
+    // Expected vertex walk:
+    //   top-right of row 0 → bottom-right of row 0 (= top-right of connector)
+    //   top-right of row 1 → bottom-right of row 1
+    //   bottom-left of row 1 → top-left of row 1 (= bottom-left of connector)
+    //   bottom-left of row 0 → top-left of row 0 → close
+    expect(path).toBe(
+      'M 80 0 L 80 10 L 30 10 L 30 20 L 0 20 L 0 10 L 50 10 L 50 0 Z',
+    );
+  });
+
+  it('three-row linewise with full-width middle row', () => {
+    const path = rectsToPath([
+      { top: 0, left: 40, width: 40, height: 10 },   // row 0: tail, 40..80
+      { top: 10, left: 0, width: 80, height: 10 },   // row 1: full, 0..80
+      { top: 20, left: 0, width: 20, height: 10 },   // row 2: head, 0..20
+    ]);
+    expect(path).toBe(
+      [
+        'M 80 0',   // top-right of row 0
+        'L 80 10',  // bottom-right of row 0
+        'L 80 10',  // top-right of row 1 (same point, 0-length connector)
+        'L 80 20',  // bottom-right of row 1
+        'L 20 20',  // top-right of row 2
+        'L 20 30',  // bottom-right of row 2
+        'L 0 30',   // bottom-left of row 2
+        'L 0 20',   // top-left of row 2
+        'L 0 20',   // bottom-left of row 1 (same point)
+        'L 0 10',   // top-left of row 1
+        'L 40 10',  // bottom-left of row 0
+        'L 40 0',   // top-left of row 0
+        'Z',
+      ].join(' '),
+    );
+  });
+
+  it('block selection (single rect) — same as single rectangle', () => {
+    const rects = computeRects(
+      sel({ startRow: 0, startCol: 3, endRow: 2, endCol: 8, shape: 'block' }),
+      80, 0, 24, 10, 20,
+    );
+    const path = rectsToPath(rects);
+    // Rect: top=0, left=30, width=60, height=60 → right=90, bottom=60
+    expect(path).toBe('M 90 0 L 90 60 L 30 60 L 30 0 Z');
   });
 });

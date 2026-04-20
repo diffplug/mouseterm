@@ -17,6 +17,34 @@ interface Rect {
   height: number;
 }
 
+/**
+ * Trace the perimeter of a linewise/block selection's visible rects as a
+ * single closed SVG path.
+ *
+ * Rects are row-adjacent and in top-to-bottom order (guaranteed by
+ * `computeRects`). We walk the right edges going down, the bottom edge of
+ * the last rect, the left edges going up, then the top edge of the first
+ * rect. Horizontal connector segments between rows of different widths
+ * naturally fall out of the vertex sequence.
+ */
+function rectsToPath(rects: Rect[]): string {
+  if (rects.length === 0) return '';
+  const pts: Array<[number, number]> = [];
+  // Right side going down — each rect contributes (top-right, bottom-right).
+  for (const r of rects) {
+    pts.push([r.left + r.width, r.top]);
+    pts.push([r.left + r.width, r.top + r.height]);
+  }
+  // Left side going up — walk the rects in reverse, contributing
+  // (bottom-left, top-left) each.
+  for (let i = rects.length - 1; i >= 0; i--) {
+    const r = rects[i];
+    pts.push([r.left, r.top + r.height]);
+    pts.push([r.left, r.top]);
+  }
+  return 'M ' + pts.map(([x, y]) => `${x} ${y}`).join(' L ') + ' Z';
+}
+
 function computeRects(
   sel: Selection,
   cols: number,
@@ -95,9 +123,16 @@ export function SelectionOverlay({ terminalId }: Props) {
     zIndex: 10,
   };
 
-  // Use the xterm-terminal's selection color from CSS vars set on <body>.
-  const bg = getComputedStyle(document.body).getPropertyValue('--vscode-terminal-selectionBackground').trim()
-    || 'rgba(100, 149, 237, 0.4)';
+  // Border-only highlight. Pick a color with reliable contrast across themes:
+  // prefer focusBorder (typically fully opaque accent), fall back to the
+  // terminal foreground, then selectionBackground, then a hard-coded cornflower.
+  const styles = getComputedStyle(document.body);
+  const borderColor =
+    styles.getPropertyValue('--vscode-focusBorder').trim()
+    || styles.getPropertyValue('--vscode-terminal-foreground').trim()
+    || styles.getPropertyValue('--vscode-terminal-selectionBackground').trim()
+    || 'rgb(100, 149, 237)';
+  const pathD = rectsToPath(rects);
 
   // Mid-drag hint. Positioned above the drag-end cell, clamped to the
   // overlay bounds. Shown only while the user is dragging (spec §3.3).
@@ -114,19 +149,21 @@ export function SelectionOverlay({ terminalId }: Props) {
 
   return (
     <div style={style} aria-hidden="true">
-      {rects.map((r, i) => (
-        <div
-          key={i}
-          style={{
-            position: 'absolute',
-            top: r.top,
-            left: r.left,
-            width: r.width,
-            height: r.height,
-            background: bg,
-          }}
-        />
-      ))}
+      {pathD && (
+        <svg
+          width={dims.elementWidth}
+          height={dims.elementHeight}
+          style={{ position: 'absolute', top: 0, left: 0 }}
+        >
+          <path
+            d={pathD}
+            fill="none"
+            stroke={borderColor}
+            strokeWidth={1.5}
+            strokeLinejoin="miter"
+          />
+        </svg>
+      )}
       {hint && (
         <div
           className="pointer-events-none absolute rounded border border-border bg-surface-raised px-1.5 py-0.5 text-xs text-muted shadow-sm"
@@ -146,4 +183,4 @@ export function SelectionOverlay({ terminalId }: Props) {
 }
 
 // Exported for unit tests.
-export const __testing = { computeRects };
+export const __testing = { computeRects, rectsToPath };
