@@ -119,3 +119,18 @@ body {
 @keyframes marching-ants {
   to { stroke-dashoffset: var(--march-offset); }
 }
+
+/* --- Copy-confirmation flash for the selection popup button --- */
+
+@keyframes copy-flash {
+  0%   { transform: scale(1);    }
+  45%  { transform: scale(1.08); }
+  100% { transform: scale(1);    }
+}
+.animate-copy-flash {
+  animation: copy-flash 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-copy-flash { animation: none; }
+}

@@ -35,6 +35,7 @@ describe('mouse-selection: default state', () => {
       override: 'off',
       selection: null,
       hintToken: null,
+      copyFlash: null,
     });
   });
 });

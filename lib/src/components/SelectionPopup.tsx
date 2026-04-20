@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState, useEffect, useSyncExternalStore, type CSSProperties } from 'react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
+  flashCopy,
   getMouseSelectionSnapshot,
   getRenderTick,
   setSelection,
@@ -8,6 +9,7 @@ import {
   subscribeToRenderTick,
 } from '../lib/mouse-selection';
 import { copyRaw, copyRewrapped } from '../lib/clipboard';
+import { CheckIcon } from '@phosphor-icons/react';
 import { IS_MAC } from '../lib/platform';
 import { getTerminalOverlayDims } from '../lib/terminal-registry';
 
@@ -25,7 +27,7 @@ export function SelectionPopup({ terminalId }: Props) {
 
   const state = states.get(terminalId) ?? DEFAULT_MOUSE_SELECTION_STATE;
   const selection = state.selection;
-  const shouldRender = !!selection && !selection.dragging;
+  const shouldRender = (!!selection && !selection.dragging) || !!state.copyFlash;
 
   const [anchor, setAnchor] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
 
@@ -109,8 +111,16 @@ export function SelectionPopup({ terminalId }: Props) {
     } else {
       await copyRaw(terminalId);
     }
-    setSelection(terminalId, null);
+    flashCopy(terminalId, rewrapped ? 'rewrapped' : 'raw');
   };
+
+  const flashed = (kind: 'raw' | 'rewrapped') => state.copyFlash === kind;
+  const buttonClass = (kind: 'raw' | 'rewrapped') =>
+    flashed(kind)
+      ? 'animate-copy-flash m-0 px-1.5 py-0.5 bg-accent/25 text-accent'
+      : 'm-0 px-1.5 py-0.5 hover:bg-foreground/10';
+  const shortcutClass = (kind: 'raw' | 'rewrapped') =>
+    flashed(kind) ? 'text-accent/70' : 'text-muted';
 
   return (
     <div
@@ -121,17 +131,27 @@ export function SelectionPopup({ terminalId }: Props) {
     >
       <button
         type="button"
-        className="m-0 px-1.5 py-0.5 hover:bg-foreground/10"
+        className={buttonClass('raw')}
         onClick={() => onCopy(false)}
       >
-        <span className="text-muted">[{copyShortcut}]</span> Copy Raw
+        {flashed('raw') ? (
+          <CheckIcon size={12} weight="bold" className="inline align-[-2px]" />
+        ) : (
+          <span className={shortcutClass('raw')}>[{copyShortcut}]</span>
+        )}{' '}
+        Copy Raw
       </button>
       <button
         type="button"
-        className="m-0 px-1.5 py-0.5 hover:bg-foreground/10"
+        className={buttonClass('rewrapped')}
         onClick={() => onCopy(true)}
       >
-        <span className="text-muted">[{rewrapShortcut}]</span> Copy Rewrapped
+        {flashed('rewrapped') ? (
+          <CheckIcon size={12} weight="bold" className="inline align-[-2px]" />
+        ) : (
+          <span className={shortcutClass('rewrapped')}>[{rewrapShortcut}]</span>
+        )}{' '}
+        Copy Rewrapped
       </button>
     </div>
   );

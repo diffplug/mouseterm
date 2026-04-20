@@ -18,6 +18,7 @@ import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, Arrows
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
   extendSelectionToToken,
+  flashCopy,
   getMouseSelectionSnapshot,
   getMouseSelectionState,
   setOverride as setMouseOverride,
@@ -1744,7 +1745,7 @@ export function Pond({
             e.stopImmediatePropagation();
             const rewrapped = e.shiftKey;
             void (rewrapped ? copyRewrapped(sid) : copyRaw(sid)).then(() => {
-              setMouseSelection(sid, null);
+              flashCopy(sid, rewrapped ? 'rewrapped' : 'raw');
             });
             return;
           }

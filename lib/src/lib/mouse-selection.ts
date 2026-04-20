@@ -45,12 +45,19 @@ export interface TokenHint {
   text: string;
 }
 
+export type CopyFlashKind = 'raw' | 'rewrapped';
+
 export interface MouseSelectionState {
   mouseReporting: MouseTrackingMode;
   bracketedPaste: boolean;
   override: OverrideState;
   selection: Selection | null;
   hintToken: TokenHint | null;
+  /**
+   * Set briefly after Cmd+C / Cmd+Shift+C or a popup-button click, so the
+   * popup can flash a "Copied!" confirmation before everything clears.
+   */
+  copyFlash: CopyFlashKind | null;
 }
 
 export const DEFAULT_MOUSE_SELECTION_STATE: MouseSelectionState = Object.freeze({
@@ -59,6 +66,7 @@ export const DEFAULT_MOUSE_SELECTION_STATE: MouseSelectionState = Object.freeze(
   override: 'off',
   selection: null,
   hintToken: null,
+  copyFlash: null,
 }) as MouseSelectionState;
 
 const states = new Map<string, MouseSelectionState>();
@@ -224,6 +232,24 @@ export function setDragAlt(id: string, altKey: boolean): void {
   if (s.selection.shape === shape) return;
   s.selection = { ...s.selection, shape };
   notify();
+}
+
+/**
+ * Trigger the "Copied!" flash. The popup reads `copyFlash` and renders a
+ * confirmation state; after `durationMs` the flash clears along with the
+ * selection, dismissing the popup.
+ */
+export function flashCopy(id: string, kind: CopyFlashKind, durationMs = 700): void {
+  const s = ensure(id);
+  s.copyFlash = kind;
+  notify();
+  setTimeout(() => {
+    const current = states.get(id);
+    if (!current || current.copyFlash !== kind) return;
+    current.copyFlash = null;
+    current.selection = null;
+    notify();
+  }, durationMs);
 }
 
 export function setHintToken(id: string, hint: TokenHint | null): void {
