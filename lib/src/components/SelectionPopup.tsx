@@ -134,11 +134,16 @@ export function SelectionPopup({ terminalId }: Props) {
         className={buttonClass('raw')}
         onClick={() => onCopy(false)}
       >
-        {flashed('raw') ? (
-          <CheckIcon size={12} weight="bold" className="inline align-[-2px]" />
-        ) : (
-          <span className={shortcutClass('raw')}>[{copyShortcut}]</span>
-        )}{' '}
+        <span className="relative inline-block">
+          <span className={flashed('raw') ? 'invisible' : shortcutClass('raw')}>
+            [{copyShortcut}]
+          </span>
+          {flashed('raw') && (
+            <span className="absolute inset-0 flex items-center justify-center">
+              <CheckIcon size={12} weight="bold" />
+            </span>
+          )}
+        </span>{' '}
         Copy Raw
       </button>
       <button
@@ -146,11 +151,16 @@ export function SelectionPopup({ terminalId }: Props) {
         className={buttonClass('rewrapped')}
         onClick={() => onCopy(true)}
       >
-        {flashed('rewrapped') ? (
-          <CheckIcon size={12} weight="bold" className="inline align-[-2px]" />
-        ) : (
-          <span className={shortcutClass('rewrapped')}>[{rewrapShortcut}]</span>
-        )}{' '}
+        <span className="relative inline-block">
+          <span className={flashed('rewrapped') ? 'invisible' : shortcutClass('rewrapped')}>
+            [{rewrapShortcut}]
+          </span>
+          {flashed('rewrapped') && (
+            <span className="absolute inset-0 flex items-center justify-center">
+              <CheckIcon size={12} weight="bold" />
+            </span>
+          )}
+        </span>{' '}
         Copy Rewrapped
       </button>
     </div>
