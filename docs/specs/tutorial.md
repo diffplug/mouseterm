@@ -144,3 +144,60 @@ The picker restores the persisted active theme on mount. The playground header i
 - `FakePtyAdapter` extensions: `setInputHandler(id, fn)` routes `writePty` calls to a custom handler; `sendOutput(id, data)` writes to a terminal's output stream.
 - `Pond` extensions: `initialPaneIds` prop seeds the first pane(s); `onApiReady` callback prop exposes `DockviewApi`; `onEvent` callback prop fires `PondEvent` for mode/zoom/detach/selection/split changes (types: `modeChange`, `zoomChange`, `detachChange`, `split`, `selectionChange`).
 - `SCENARIO_TUTORIAL_MOTD` scenario added to `lib/src/lib/platform/fake-scenarios.ts`.
+
+## Mouse and Clipboard Feature Coverage
+
+The Playground is the primary dogfood surface for the features in `docs/specs/mouse-and-clipboard.md`. As of the current three-pane layout (tutorial MOTD, `npm install`, `ls -la`) most of those features are not reachable from the Playground — the scenarios don't emit the relevant escape sequences or the right kinds of text.
+
+### Current state
+
+Legend: ✅ exercisable today, ⚠️ partial, ❌ not exercisable.
+
+| Spec § | Feature | Status | Why |
+|---|---|---|---|
+| §1 | Mouse icon visible when program requests reporting | ❌ | No scenario emits `\x1b[?1000h` / `?1002h` / `?1003h` / `?1006h`. |
+| §2 | Temporary/permanent override, banner, Make-permanent / Cancel | ❌ | Blocked on §1. |
+| §3.1–§3.3 | Drag, Alt-block shape, "Hold Alt" hint | ✅ | Works on any visible text. |
+| §3.3 | "Press e to select the full URL/path" hint | ❌ | No qualifying tokens; bare filenames like `package.json` don't match the patterns in `lib/src/lib/smart-token.ts`. |
+| §3.4 | Pure-scroll follows, cancel-on-change, cancel-on-resize | ⚠️ | Scenarios are too short to scroll; nothing emits additional output after the initial burst; resize cancel works. |
+| §3.5 | Scrollback-origin / cross-boundary drags | ⚠️ | Scrollback is too short to exercise. |
+| §3.6 | Keyboard routing during drag | ⚠️ | Works, but hard to observe — no program in Playground reacts to dropped keystrokes. |
+| §3.7 | Popup on mouse-up, new-drag-replaces | ✅ | Any selection. |
+| §4.1.1 | Copy Raw | ✅ | Any selection. |
+| §4.1.2 | Copy Rewrapped (box-strip + paragraph unwrap) | ❌ | No box-drawing characters anywhere; no multi-line prose. Rewrapped output is identical to Raw. |
+| §4.2 | Cmd+C / Cmd+Shift+C | ✅ | Any selection. |
+| §4.3 | Esc / click-outside dismiss | ✅ | Any selection popup. |
+| §5 | Smart-extension (URL / abs path / rel path / Windows path / error location) | ❌ | No matching tokens in the scenarios. |
+| §5.3 | Press `e` to extend | ❌ | Blocked on §5 coverage. |
+| §8.2 | Cmd+V / Cmd+Shift+V / Ctrl+V / Ctrl+Shift+V paste | ⚠️ | The shortcut fires and writes to the fake PTY, but `TutorialShell.handleInput` (`website/src/lib/tutorial-shell.ts:77-96`) echoes characters one by one and does not interpret bracketed-paste markers. |
+| §8.5 | Bracketed paste wraps `\e[200~ … \e[201~` | ❌ | No scenario emits `\x1b[?2004h`, so `getMouseSelectionState(id).bracketedPaste` stays `false` and `doPaste` sends the raw text. |
+
+`§3.6` auto-scroll and `§8.7` right-click paste are deferred in the implementation itself — not Playground gaps.
+
+### Remediation plan
+
+Add three new scenarios in `lib/src/lib/platform/fake-scenarios.ts` and expand the Playground layout in `website/src/pages/Playground.tsx` to surface them alongside the existing tutorial pane. Each scenario closes a specific set of gaps; all three together plus the tutorial MOTD make every currently-implemented feature reachable.
+
+1. **`SCENARIO_MOUSE_TUI`** — closes §1, §2, §8.5.
+   Emits `\x1b[?1000h\x1b[?1006h\x1b[?2004h` and then draws an idle `htop`-style ANSI-framed view. A minimal input handler for this pane discards any mouse-report bytes xterm forwards. With this pane present the Mouse icon appears in its header, clicking it activates the temporary-override banner, and pastes into it are wrapped in `\x1b[200~ … \x1b[201~`.
+
+2. **`SCENARIO_SMART_TOKENS`** — closes §3.3 extension hint, §5.1–§5.3.
+   Prints one of each detectable shape so every branch in `lib/src/lib/smart-token.ts`'s `PATTERNS` list has a live example:
+
+   ```
+   ✗ src/components/Pond.tsx:1576:7 — unused import
+   ✗ ../sibling/util.rs:42 — panic here
+     see https://en.wikipedia.org/wiki/Foo_(bar)
+     docs: /usr/local/share/doc/mouseterm/README
+     cwd: ~/projects/mouseterm
+     windows: C:\Users\me\work.log
+   ```
+
+   Dragging across any of them shows "Press e to select the full URL/path" and `e` extends.
+
+3. **`SCENARIO_BOXED_OUTPUT`** — closes §4.1.2 and §3.4.
+   A short release-notes-shaped message framed in `┌─│└` so Copy Rewrapped (via `lib/src/lib/rewrap.ts`) strips the frame and joins the wrapped lines — clipboard contents visibly differ from Copy Raw. A slowly-updating ticker line at the bottom gives cancel-on-change something concrete to react to.
+
+**Playground layout:** keep `PANE_MAIN` as the tutorial entry; replace `PANE_NPM` / `PANE_LS` with `PANE_TUI` / `PANE_TOKENS` / `PANE_BOXED` (three `api.addPanel` calls in `handleApiReady`, same pattern as the existing ones at `website/src/pages/Playground.tsx:62-75`). A 2×2 grid fits on load.
+
+**Optional:** teach `TutorialShell.handleInput` to recognize `\x1b[200~ … \x1b[201~` and print `[pasted: …]` so bracketed-paste wrapping is visually distinct for users who paste into `PANE_MAIN`.
