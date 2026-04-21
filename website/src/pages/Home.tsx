@@ -278,14 +278,14 @@ function Home() {
 
           <div className="mt-10 space-y-6">
             <div>
-              <p className="text-base uppercase opacity-40 mb-2">VSCode extension</p>
+              <p className="text-lg opacity-70 mb-2">VS Code Extension</p>
               <div className="flex flex-wrap gap-2">
-                <a href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm" className={PILL}>VSCode Marketplace</a>
-                <a href="https://open-vsx.org/extension/diffplug/mouseterm" className={PILL}>OpenVSX</a>
+                <a href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm" className={PILL}>Visual Studio Marketplace</a>
+                <a href="https://open-vsx.org/extension/diffplug/mouseterm" className={PILL}>Open VSX Registry</a>
               </div>
             </div>
             <div>
-              <p className="text-base uppercase opacity-40 mb-2">Standalone app</p>
+              <p className="text-lg opacity-70 mb-2">Standalone App</p>
               <div className="flex flex-wrap gap-2">
                 {(["darwin-aarch64", "windows-x86_64", "linux-x86_64"] as const).map((key) => (
                   <a
