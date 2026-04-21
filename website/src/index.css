@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Ubuntu Sans Mono", ui-monospace, monospace;
+  --font-sans: "Ubuntu Mono", ui-monospace, monospace;
   --color-bg: oklch(10% 0.01 60);
   --color-surface: oklch(18% 0.015 60);
   --color-text: oklch(92% 0.01 60);
@@ -12,6 +13,7 @@
 html {
   background: var(--color-bg);
   color: var(--color-text);
+  font-family: var(--font-sans);
   font-kerning: normal;
 }
 

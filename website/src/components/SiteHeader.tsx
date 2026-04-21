@@ -52,7 +52,7 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
     return (
       <>
         <div
-          className={`fixed top-0 left-0 right-0 z-30 bg-[var(--color-caramel)] text-[var(--color-bg)] text-center text-sm font-display font-semibold py-1.5${themeAware ? " border-b" : ""}`}
+          className={`fixed top-0 left-0 right-0 z-30 bg-[var(--color-caramel)] text-[var(--color-bg)] text-center text-sm font-display py-1.5${themeAware ? " border-b" : ""}`}
           style={
             themeAware
               ? {
@@ -67,7 +67,7 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
         </div>
         <header
           ref={ref}
-          className={`fixed top-8 left-0 right-0 z-20 flex items-center justify-between gap-3 px-4 md:px-8 font-display text-lg font-medium${
+          className={`fixed top-8 left-0 right-0 z-20 flex items-center justify-between gap-3 px-4 md:px-8 font-display text-lg${
             themeAware ? " h-16 border-b py-0 md:h-20" : " py-4 md:py-6"
           }`}
           style={headerStyle}
@@ -77,12 +77,12 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
             href="/"
             className={
               brandVisible
-                ? `text-xl font-semibold tracking-tight transition-opacity ${
+                ? `text-xl transition-opacity ${
                     themeAware
                       ? "opacity-80 hover:opacity-100"
                       : "opacity-50 hover:opacity-100 text-[var(--color-caramel)]"
                   }`
-                : `text-xl font-semibold tracking-tight ${
+                : `text-xl ${
                     themeAware ? "" : "text-[var(--color-caramel)]"
                   }`
             }

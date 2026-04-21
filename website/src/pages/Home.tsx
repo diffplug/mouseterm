@@ -18,7 +18,7 @@ const ASTERISK_THRESHOLD = 0.50;
 const UNPIN_THRESHOLD = 0.8;
 
 const PILL =
-  "inline-block px-4 py-1.5 rounded-md border border-[var(--color-caramel)]/30 text-[var(--color-caramel)] text-sm font-display font-medium hover:bg-[var(--color-caramel)]/10 hover:border-[var(--color-caramel)]/60 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150";
+  "inline-block px-4 py-1.5 rounded-md border border-[var(--color-caramel)]/30 text-[var(--color-caramel)] text-sm font-display hover:bg-[var(--color-caramel)]/10 hover:border-[var(--color-caramel)]/60 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150";
 
 const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string[] }> = {
   "darwin-aarch64": {
@@ -184,7 +184,7 @@ function Home() {
         <div ref={heroRef} className="sticky top-0 flex flex-col items-center z-[1]" style={{ height: "100vh" }}>
           {/* Hero words — sits above the video */}
           <div className="flex-1 flex items-end text-center px-6" style={{ paddingBottom: "520px" }}>
-            <div className="flex flex-col items-center gap-1 font-display font-bold tracking-tight text-[clamp(2.5rem,5vw+0.5rem,4rem)]">
+            <div className="flex flex-col items-center gap-1 font-display text-[clamp(2.5rem,5vw+0.5rem,4rem)]">
               <span ref={word0Ref} style={{ opacity: 0, transform: "translateY(12px)" }}>
                 Multitasking
               </span>
@@ -198,7 +198,7 @@ function Home() {
               </span>
               <p
                 ref={footnoteRef}
-                className="mt-3 text-sm font-normal"
+                className="mt-3 text-sm"
                 style={{ opacity: 0 }}
               >
                 * supports (and teaches) tmux shortcuts
@@ -210,14 +210,14 @@ function Home() {
 
       {/* ── Content sections — pulled up to appear as video starts scrolling ── */}
       <div className="relative z-10 bg-[var(--color-bg)]" style={{ marginTop: `-${(1 - UNPIN_THRESHOLD) * RUNWAY_VH}vh` }}>
-        <section id="features" className="mx-auto max-w-2xl px-4 md:px-6 py-12">
-          <h2 className="font-display text-[clamp(1.75rem,3vw+0.5rem,2.5rem)] font-semibold tracking-tight mb-6">Stop watching terminals spin</h2>
-          <p className="text-base leading-relaxed opacity-70 mb-4 max-w-[60ch]">
+        <section id="features" className="mx-auto max-w-2xl px-4 md:px-6 py-20">
+          <h2 className="font-display text-[clamp(1.5rem,2.5vw+0.5rem,2.25rem)] mb-6">Stop watching terminals spin</h2>
+          <p className="text-lg leading-relaxed opacity-70 mb-4">
             MouseTerm tracks activity the same way you do — visual motion. When a
             pane stops changing for two seconds, it marks the task complete and
             alerts you.
           </p>
-          <p className="text-base leading-relaxed opacity-70 max-w-[60ch]">
+          <p className="text-lg leading-relaxed opacity-70">
             Works with any CLI tool that prints to a terminal — no plugins, no
             configuration.
           </p>
@@ -232,15 +232,15 @@ function Home() {
             <p className="text-sm opacity-40 italic">TODO: Copy/paste with line-break rewrap</p>
           </div>
           <div className="order-1 md:order-2">
-            <h2 className="font-display text-[clamp(1.75rem,3vw+0.5rem,2.5rem)] font-semibold tracking-tight mb-6">Copy paste like you meant</h2>
-            <p className="text-base leading-relaxed opacity-70 mb-4 max-w-[60ch]">
+            <h2 className="font-display text-[clamp(1.5rem,2.5vw+0.5rem,2.25rem)] mb-6">Copy paste like you meant</h2>
+            <p className="text-lg leading-relaxed opacity-70 mb-4">
               Click and drag in a "mouse conformant" terminal doesn't select text;
               it sends escape code{" "}
-              <code className="text-xs bg-[var(--color-text)]/10 px-1.5 py-0.5 rounded">{"\\e[<0;x;yM"}</code>.
-              And <code className="text-xs bg-[var(--color-text)]/10 px-1.5 py-0.5 rounded">Ctrl+C</code>{" "}
+              <code className="text-sm bg-[var(--color-text)]/10 px-1.5 py-0.5 rounded">{"\\e[<0;x;yM"}</code>.
+              And <code className="text-sm bg-[var(--color-text)]/10 px-1.5 py-0.5 rounded">Ctrl+C</code>{" "}
               doesn't copy; it asks your program to kill itself.
             </p>
-            <p className="text-base leading-relaxed opacity-70 max-w-[60ch]">
+            <p className="text-lg leading-relaxed opacity-70">
               MouseTerm lets you copy paste like a human, not a terminal.
             </p>
           </div>
@@ -249,14 +249,14 @@ function Home() {
         {/* Section 3: text left, image right */}
         <section className="mx-auto max-w-5xl px-4 md:px-6 py-12 grid md:grid-cols-2 gap-8 md:gap-12 items-center">
           <div>
-            <h2 className="font-display text-[clamp(1.75rem,3vw+0.5rem,2.5rem)] font-semibold tracking-tight mb-6">Soft as a mouse, sharp as tmux</h2>
-            <p className="text-base leading-relaxed opacity-70 mb-4 max-w-[60ch]">
+            <h2 className="font-display text-[clamp(1.5rem,2.5vw+0.5rem,2.25rem)] mb-6">Soft as a mouse, sharp as tmux</h2>
+            <p className="text-lg leading-relaxed opacity-70 mb-4">
               Run builds, agents, servers, and scripts side by side. Minimize the
               ones you're not watching to a compact status indicator. Every pane
               keeps running and every alert still fires whether you can see it or
               not.
             </p>
-            <p className="text-base leading-relaxed opacity-70 max-w-[60ch]">
+            <p className="text-lg leading-relaxed opacity-70">
               Do it all with the mouse, or keep your hands on the keyboard with
               tmux keybinds.
             </p>
@@ -266,26 +266,26 @@ function Home() {
           </div>
         </section>
 
-        <section id="download" className="mx-auto max-w-2xl px-4 md:px-6 py-12">
-          <h2 className="font-display text-[clamp(1.75rem,3vw+0.5rem,2.5rem)] font-semibold tracking-tight mb-8">Get MouseTerm</h2>
+        <section id="download" className="mx-auto max-w-2xl px-4 md:px-6 py-20">
+          <h2 className="font-display text-[clamp(1.5rem,2.5vw+0.5rem,2.25rem)] mb-8">Get MouseTerm</h2>
 
           <a
             href="/playground"
-            className="inline-block px-8 py-3 rounded-md bg-[var(--color-caramel)] text-[var(--color-bg)] font-display font-semibold text-lg hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150"
+            className="inline-block px-8 py-3 rounded-md bg-[var(--color-caramel)] text-[var(--color-bg)] font-display text-lg hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150"
           >
             Try it in the Playground
           </a>
 
-          <div className="mt-6 space-y-5">
+          <div className="mt-10 space-y-6">
             <div>
-              <p className="text-xs uppercase tracking-widest opacity-40 mb-2">VSCode extension</p>
+              <p className="text-base uppercase opacity-40 mb-2">VSCode extension</p>
               <div className="flex flex-wrap gap-2">
                 <a href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm" className={PILL}>VSCode Marketplace</a>
                 <a href="https://open-vsx.org/extension/diffplug/mouseterm" className={PILL}>OpenVSX</a>
               </div>
             </div>
             <div>
-              <p className="text-xs uppercase tracking-widest opacity-40 mb-2">Standalone app</p>
+              <p className="text-base uppercase opacity-40 mb-2">Standalone app</p>
               <div className="flex flex-wrap gap-2">
                 {(["darwin-aarch64", "windows-x86_64", "linux-x86_64"] as const).map((key) => (
                   <a
@@ -301,7 +301,7 @@ function Home() {
               </div>
               {installGuide && INSTALL_STEPS[installGuide] && (
                 <div className="mt-3 rounded-md border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 px-4 py-3">
-                  <p className="text-xs uppercase tracking-widest text-[var(--color-caramel)] mb-2">{INSTALL_STEPS[installGuide].title}</p>
+                  <p className="text-base uppercase text-[var(--color-caramel)] mb-2">{INSTALL_STEPS[installGuide].title}</p>
                   <ol className="space-y-1 text-sm opacity-70">
                     {INSTALL_STEPS[installGuide].steps.map((step, i) => (
                       <li key={i} className="flex gap-2">
