@@ -14,7 +14,8 @@ import { createPortal } from 'react-dom';
 import { TerminalPane } from './TerminalPane';
 import { Baseboard } from './Baseboard';
 import { tv } from 'tailwind-variants';
-import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, ProhibitIcon } from '@phosphor-icons/react';
+import { PopupButtonRow, popupButton } from './design';
+import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
   extendSelectionToToken,
@@ -229,6 +230,7 @@ function MouseOverrideBanner({
   onCancel: () => void;
 }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [flashed, setFlashed] = useState<'sticky' | 'cancel' | null>(null);
 
   useLayoutEffect(() => {
     const update = () => {
@@ -244,27 +246,36 @@ function MouseOverrideBanner({
     };
   }, [anchor]);
 
+  useEffect(() => {
+    if (!flashed) return;
+    const id = window.setTimeout(() => {
+      if (flashed === 'sticky') onMakePermanent();
+      else onCancel();
+    }, 260);
+    return () => window.clearTimeout(id);
+  }, [flashed, onMakePermanent, onCancel]);
+
   if (!pos) return null;
 
   return createPortal(
-    <div
-      className="z-[9999] flex items-center gap-2 rounded border border-border bg-surface-raised px-2 py-1 text-xs text-foreground shadow-md"
+    <PopupButtonRow
+      className="z-[9999]"
       style={clampOverlayPosition({ left: pos.x, top: pos.y, width: 340, height: 32 })}
       onMouseDown={(e) => e.stopPropagation()}
       role="status"
     >
-      <span>Temporary mouse override until mouse-up.</span>
+      <span className="px-1.5 py-0.5">Temporary mouse override until mouse-up.</span>
       <button
         type="button"
-        className="m-0 rounded px-1.5 py-0.5 text-xs text-muted hover:bg-foreground/10 hover:text-foreground"
-        onClick={onMakePermanent}
+        className={popupButton({ tone: 'muted', flashed: flashed === 'sticky' })}
+        onClick={() => !flashed && setFlashed('sticky')}
       >Make sticky</button>
       <button
         type="button"
-        className="m-0 rounded px-1.5 py-0.5 text-xs text-muted hover:bg-foreground/10 hover:text-foreground"
-        onClick={onCancel}
+        className={popupButton({ tone: 'muted', flashed: flashed === 'cancel' })}
+        onClick={() => !flashed && setFlashed('cancel')}
       >Cancel</button>
-    </div>,
+    </PopupButtonRow>,
     document.body,
   );
 }
@@ -773,9 +784,10 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
                 tooltip={mouseIconTooltip}
               >
                 <span className="relative flex items-center justify-center">
-                  <CursorClickIcon size={14} />
-                  {inOverride && (
-                    <ProhibitIcon size={14} weight="bold" className="absolute inset-0 text-accent" />
+                  {inOverride ? (
+                    <SelectionSlashIcon size={14} />
+                  ) : (
+                    <CursorClickIcon size={14} />
                   )}
                 </span>
               </HeaderActionButton>

@@ -12,6 +12,7 @@ import { copyRaw, copyRewrapped } from '../lib/clipboard';
 import { CheckIcon } from '@phosphor-icons/react';
 import { IS_MAC } from '../lib/platform';
 import { getTerminalOverlayDims } from '../lib/terminal-registry';
+import { PopupButtonRow, popupButton } from './design';
 
 interface Props {
   terminalId: string;
@@ -115,18 +116,14 @@ export function SelectionPopup({ terminalId }: Props) {
   };
 
   const flashed = (kind: 'raw' | 'rewrapped') => state.copyFlash === kind;
-  const buttonClass = (kind: 'raw' | 'rewrapped') =>
-    flashed(kind)
-      ? 'animate-copy-flash m-0 px-1.5 py-0.5 bg-accent/25 text-accent'
-      : 'm-0 px-1.5 py-0.5 hover:bg-foreground/10';
+  const buttonClass = (kind: 'raw' | 'rewrapped') => popupButton({ flashed: flashed(kind) });
   const shortcutClass = (kind: 'raw' | 'rewrapped') =>
     flashed(kind) ? 'text-accent/70' : 'text-muted';
 
   return (
-    <div
+    <PopupButtonRow
       data-selection-popup-for={terminalId}
       style={style}
-      className="flex items-stretch overflow-hidden rounded border border-border bg-surface-raised text-xs text-foreground shadow-md"
       onMouseDown={(e) => e.stopPropagation()}
     >
       <button
@@ -163,6 +160,6 @@ export function SelectionPopup({ terminalId }: Props) {
         </span>{' '}
         Copy Rewrapped
       </button>
-    </div>
+    </PopupButtonRow>
   );
 }
