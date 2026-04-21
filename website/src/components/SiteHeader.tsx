@@ -39,7 +39,7 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
       ? {
           color: "var(--vscode-editor-foreground, #cccccc)",
           fontFamily:
-            "var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif)",
+            "var(--vscode-font-family, var(--font-display))",
           backgroundColor:
             "color-mix(in oklab, var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #252526)) 92%, transparent)",
           borderColor: "var(--vscode-panel-border, #2b2b2b)",
