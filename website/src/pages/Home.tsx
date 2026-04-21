@@ -213,36 +213,56 @@ function Home() {
         <section id="features" className="mx-auto max-w-2xl px-4 md:px-6 py-12">
           <h2 className="font-display text-[clamp(1.75rem,3vw+0.5rem,2.5rem)] font-semibold tracking-tight mb-6">Stop watching terminals spin</h2>
           <p className="text-base leading-relaxed opacity-70 mb-4 max-w-[60ch]">
-            Run builds, agents, servers, and scripts side by side. MouseTerm
-            watches them all and tells you which ones finished — so you don't
-            have to.
+            MouseTerm tracks activity the same way you do — visual motion. When a
+            pane stops changing for two seconds, it marks the task complete and
+            alerts you.
           </p>
           <p className="text-base leading-relaxed opacity-70 max-w-[60ch]">
-            Split with a click. Resize with a drag. Minimize the ones you're not
-            watching to a compact status indicator. Every pane keeps running whether
-            you can see it or not.
+            Works with any CLI tool that prints to a terminal — no plugins, no
+            configuration.
           </p>
           <div className="mt-8 -mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 flex items-center justify-center">
-            <p className="text-sm opacity-40 italic">TODO: Split, resize, and minimize panes</p>
+            <p className="text-sm opacity-40 italic">TODO: Completion detection in action</p>
           </div>
         </section>
 
-        {/* Section 2: text left, video right */}
+        {/* Section 2: image left, text right */}
         <section className="mx-auto max-w-5xl px-4 md:px-6 py-12 grid md:grid-cols-2 gap-8 md:gap-12 items-center">
-          <div>
-            <h2 className="font-display text-[clamp(1.75rem,3vw+0.5rem,2.5rem)] font-semibold tracking-tight mb-6">You'll know when it's done.</h2>
+          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 flex items-center justify-center order-2 md:order-1">
+            <p className="text-sm opacity-40 italic">TODO: Copy/paste with line-break rewrap</p>
+          </div>
+          <div className="order-1 md:order-2">
+            <h2 className="font-display text-[clamp(1.75rem,3vw+0.5rem,2.5rem)] font-semibold tracking-tight mb-6">Copy paste like you meant</h2>
             <p className="text-base leading-relaxed opacity-70 mb-4 max-w-[60ch]">
-              MouseTerm tracks activity the same way you do — visual motion. When a
-              pane stops producing output for two seconds, MouseTerm marks it as
-              complete.
+              Click and drag in a "mouse conformant" terminal doesn't select text;
+              it sends escape code{" "}
+              <code className="text-xs bg-[var(--color-text)]/10 px-1.5 py-0.5 rounded">{"\\e[<0;x;yM"}</code>.
+              And <code className="text-xs bg-[var(--color-text)]/10 px-1.5 py-0.5 rounded">Ctrl+C</code>{" "}
+              doesn't copy; it asks your program to kill itself.
             </p>
             <p className="text-base leading-relaxed opacity-70 max-w-[60ch]">
-              Works with any CLI tool that prints to a terminal. No fragile plugins,
-              no configuration, no per-tool setup.
+              MouseTerm lets you copy paste like a human, not a terminal.
+            </p>
+          </div>
+        </section>
+
+        {/* Section 3: text left, image right */}
+        <section className="mx-auto max-w-5xl px-4 md:px-6 py-12 grid md:grid-cols-2 gap-8 md:gap-12 items-center">
+          <div>
+            <h2 className="font-display text-[clamp(1.75rem,3vw+0.5rem,2.5rem)] font-semibold tracking-tight mb-6">Soft as a mouse, sharp as tmux</h2>
+            <p className="text-base leading-relaxed opacity-70 mb-4 max-w-[60ch]">
+              Run builds, agents, servers, and scripts side by side. Minimize the
+              ones you're not watching to a compact status indicator. Every pane
+              keeps running and every alert still fires whether you can see it or
+              not.
+            </p>
+            <p className="text-base leading-relaxed opacity-70 max-w-[60ch]">
+              Do it all with the mouse, or keep your hands on the keyboard with
+              tmux keybinds.
             </p>
           </div>
           <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 flex items-center justify-center">
-            <p className="text-sm opacity-40 italic">TODO: Activity detection and completion marking</p>
+            <p className="text-sm opacity-40 italic">TODO: Tiling layout and tmux keybinds</p>
           </div>
         </section>
 
