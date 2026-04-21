@@ -56,6 +56,7 @@ function createPlatform(ptys: PtyInfo[], savedState: PersistedSession | null): P
     alarmToggleTodo: vi.fn(),
     alarmMarkTodo: vi.fn(),
     alarmClearTodo: vi.fn(),
+    alarmDrainTodoBucket: vi.fn(),
     onAlarmState: vi.fn(),
     offAlarmState: vi.fn(),
     saveState: vi.fn(),

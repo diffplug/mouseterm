@@ -48,6 +48,7 @@ function createPlatform(savedState: PersistedSession | null): PlatformAdapter {
     alarmToggleTodo: vi.fn(),
     alarmMarkTodo: vi.fn(),
     alarmClearTodo: vi.fn(),
+    alarmDrainTodoBucket: vi.fn(),
     onAlarmState: vi.fn(),
     offAlarmState: vi.fn(),
     saveState: vi.fn(),
