@@ -256,12 +256,12 @@ function MouseOverrideBanner({
       <span>Temporary mouse override until mouse-up.</span>
       <button
         type="button"
-        className="rounded border border-border px-1.5 py-0.5 text-xs text-foreground hover:bg-foreground/10"
+        className="m-0 rounded px-1.5 py-0.5 text-xs text-muted hover:bg-foreground/10 hover:text-foreground"
         onClick={onMakePermanent}
-      >Make permanent</button>
+      >Make sticky</button>
       <button
         type="button"
-        className="rounded border border-border px-1.5 py-0.5 text-xs text-muted hover:bg-foreground/10 hover:text-foreground"
+        className="m-0 rounded px-1.5 py-0.5 text-xs text-muted hover:bg-foreground/10 hover:text-foreground"
         onClick={onCancel}
       >Cancel</button>
     </div>,
@@ -686,34 +686,6 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             onClick={(e) => { e.stopPropagation(); actions.onStartRename(api.id); }}
           >{api.title}</span>
         )}
-        {showMouseIcon && (
-          <div ref={setMouseIconAnchor} className="shrink-0">
-            <HeaderActionButton
-              className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 text-muted hover:bg-foreground/10 hover:text-foreground"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                setMouseOverride(api.id, inOverride ? 'off' : 'temporary');
-              }}
-              ariaLabel={mouseIconAriaLabel}
-              tooltip={mouseIconTooltip}
-            >
-              <span className="relative flex items-center justify-center">
-                <CursorClickIcon size={14} />
-                {inOverride && (
-                  <ProhibitIcon size={14} weight="bold" className="absolute inset-0 text-accent" />
-                )}
-              </span>
-            </HeaderActionButton>
-          </div>
-        )}
-        {mouseIconAnchor && mouseState.override === 'temporary' && (
-          <MouseOverrideBanner
-            anchor={mouseIconAnchor}
-            onMakePermanent={() => setMouseOverride(api.id, 'permanent')}
-            onCancel={() => setMouseOverride(api.id, 'off')}
-          />
-        )}
         <HeaderActionButton
           className={[
             'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0',
@@ -788,6 +760,34 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
       </div>
       {!isRenaming && (
         <>
+          {showMouseIcon && (
+            <div ref={setMouseIconAnchor} className="ml-1 shrink-0">
+              <HeaderActionButton
+                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 text-muted hover:bg-foreground/10 hover:text-foreground"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMouseOverride(api.id, inOverride ? 'off' : 'temporary');
+                }}
+                ariaLabel={mouseIconAriaLabel}
+                tooltip={mouseIconTooltip}
+              >
+                <span className="relative flex items-center justify-center">
+                  <CursorClickIcon size={14} />
+                  {inOverride && (
+                    <ProhibitIcon size={14} weight="bold" className="absolute inset-0 text-accent" />
+                  )}
+                </span>
+              </HeaderActionButton>
+            </div>
+          )}
+          {mouseIconAnchor && mouseState.override === 'temporary' && (
+            <MouseOverrideBanner
+              anchor={mouseIconAnchor}
+              onMakePermanent={() => setMouseOverride(api.id, 'permanent')}
+              onCancel={() => setMouseOverride(api.id, 'off')}
+            />
+          )}
           {/* Split/Zoom controls — hidden at compact and minimal tiers */}
           {tier === 'full' && (
             <div className="ml-1 flex shrink-0 items-center gap-0.5">

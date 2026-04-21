@@ -10,7 +10,6 @@ import {
   type PondActions,
 } from '../components/Pond';
 import {
-  __resetMouseSelectionForTests,
   setMouseReporting,
   setOverride,
   type MouseTrackingMode,
@@ -47,11 +46,10 @@ function MouseIconStoryFrame({
   width?: number;
 }) {
   useEffect(() => {
-    __resetMouseSelectionForTests();
     setMouseReporting(SESSION_ID, mouseReporting);
-    if (override !== 'off') setOverride(SESSION_ID, override);
+    setOverride(SESSION_ID, override);
     return () => {
-      __resetMouseSelectionForTests();
+      setMouseReporting(SESSION_ID, 'none');
     };
   }, [mouseReporting, override]);
 
