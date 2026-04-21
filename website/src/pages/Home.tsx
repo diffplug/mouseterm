@@ -226,12 +226,9 @@ function Home() {
           </div>
         </section>
 
-        {/* Section 2: image left, text right */}
-        <section className="mx-auto max-w-5xl px-4 md:px-6 py-12 grid md:grid-cols-[3fr_2fr] gap-8 md:gap-12 items-start">
-          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 flex items-center justify-center order-2 md:order-1">
-            <p className="text-sm opacity-40 italic">TODO: Copy/paste with line-break rewrap</p>
-          </div>
-          <div className="order-1 md:order-2">
+        {/* Section 2: text left, image right */}
+        <section className="mx-auto max-w-5xl px-4 md:px-6 py-12 grid md:grid-cols-[2fr_3fr] gap-8 md:gap-12 items-start">
+          <div>
             <h2 className="font-display text-xl mb-6">Copy paste like you meant</h2>
             <p className="text-lg leading-relaxed opacity-70 mb-4">
               Click and drag in a "mouse conformant" terminal doesn't select text;
@@ -244,11 +241,17 @@ function Home() {
               MouseTerm lets you copy paste like a human, not a terminal.
             </p>
           </div>
+          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 flex items-center justify-center">
+            <p className="text-sm opacity-40 italic">TODO: Copy/paste with line-break rewrap</p>
+          </div>
         </section>
 
-        {/* Section 3: text left, image right */}
-        <section className="mx-auto max-w-5xl px-4 md:px-6 py-12 grid md:grid-cols-[2fr_3fr] gap-8 md:gap-12 items-start">
-          <div>
+        {/* Section 3: image left, text right */}
+        <section className="mx-auto max-w-5xl px-4 md:px-6 py-12 grid md:grid-cols-[3fr_2fr] gap-8 md:gap-12 items-start">
+          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 flex items-center justify-center order-2 md:order-1">
+            <p className="text-sm opacity-40 italic">TODO: Tiling layout and tmux keybinds</p>
+          </div>
+          <div className="order-1 md:order-2">
             <h2 className="font-display text-xl mb-6">Soft as a mouse, sharp as tmux</h2>
             <p className="text-lg leading-relaxed opacity-70 mb-4">
               Run builds, agents, servers, and scripts side by side. Minimize the
@@ -260,9 +263,6 @@ function Home() {
               Do it all with the mouse, or keep your hands on the keyboard with
               tmux keybinds.
             </p>
-          </div>
-          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 flex items-center justify-center">
-            <p className="text-sm opacity-40 italic">TODO: Tiling layout and tmux keybinds</p>
           </div>
         </section>
 
