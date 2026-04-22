@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { shellEscapePosix, shellEscapeWindows } from './shell-escape';
 
 describe('shellEscapePosix', () => {
@@ -76,5 +76,43 @@ describe('shellEscapeWindows', () => {
 
   it('handles empty string', () => {
     expect(shellEscapeWindows('')).toBe(`""`);
+  });
+});
+
+describe('shellEscapePath OS dispatch', () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
+    vi.resetModules();
+    vi.doUnmock('./platform');
+  });
+
+  async function importShellEscape(opts: { isMac: boolean; platform: string }) {
+    vi.doMock('./platform', () => ({ IS_MAC: opts.isMac }));
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { platform: opts.platform, userAgent: opts.platform },
+      configurable: true,
+    });
+    return import('./shell-escape');
+  }
+
+  it('uses posix escape on macOS', async () => {
+    const { shellEscapePath } = await importShellEscape({ isMac: true, platform: 'MacIntel' });
+    expect(shellEscapePath('a b.png')).toBe('a\\ b.png');
+  });
+
+  it('uses posix escape on Linux', async () => {
+    const { shellEscapePath } = await importShellEscape({ isMac: false, platform: 'Linux x86_64' });
+    expect(shellEscapePath('a b.png')).toBe('a\\ b.png');
+  });
+
+  it('uses windows escape on Windows', async () => {
+    const { shellEscapePath } = await importShellEscape({ isMac: false, platform: 'Win32' });
+    expect(shellEscapePath('a b.png')).toBe(`"a b.png"`);
   });
 });
