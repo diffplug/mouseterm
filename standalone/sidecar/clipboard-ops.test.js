@@ -6,6 +6,7 @@ const {
   readClipboardFilePaths,
   readClipboardImageAsFilePath,
   parseUriList,
+  splitNonEmptyLines,
 } = require('./clipboard-ops');
 
 function fakeOs(tmp = '/tmp/test') {
@@ -20,24 +21,37 @@ function fakeFs() {
   const writes = [];
   const files = new Map();
   const unlinks = [];
+  const chmods = [];
+  const rmdirs = [];
   return {
     writes,
     files,
     unlinks,
+    chmods,
+    rmdirs,
     module: {
       promises: {
-        async mkdir() {},
-        async writeFile(p, buf) { writes.push([p, buf]); files.set(p, buf); },
+        async mkdtemp(prefix) { return `${prefix}dir-0`; },
+        async chmod(p, mode) { chmods.push([p, mode]); },
+        async writeFile(p, buf, opts) { writes.push([p, buf, opts]); files.set(p, buf); },
         async stat(p) {
           const b = files.get(p);
           if (!b) throw new Error('ENOENT');
           return { size: b.length };
         },
         async unlink(p) { unlinks.push(p); files.delete(p); },
+        async rmdir(p) { rmdirs.push(p); },
       },
     },
   };
 }
+
+test('splitNonEmptyLines preserves leading and trailing path spaces', () => {
+  assert.deepEqual(splitNonEmptyLines(' /tmp/leading.png\n/tmp/trailing.png \n'), [
+    ' /tmp/leading.png',
+    '/tmp/trailing.png ',
+  ]);
+});
 
 test('parseUriList decodes file URIs and ignores comments/non-file', () => {
   const input = [
@@ -142,7 +156,11 @@ test('readClipboardImageAsFilePath on mac returns temp path on success', async (
       return { stdout: 'ok\n' };
     },
   });
-  assert.equal(result, path.join('/t', 'mouseterm-drops', 'uuid-I-clipboard.png'));
+  assert.equal(result, path.join('/t', 'mouseterm-drops-dir-0', 'uuid-I-clipboard.png'));
+  assert.deepEqual(fs.chmods, [
+    [path.join('/t', 'mouseterm-drops-dir-0'), 0o700],
+    [path.join('/t', 'mouseterm-drops-dir-0', 'uuid-I-clipboard.png'), 0o600],
+  ]);
 });
 
 test('readClipboardImageAsFilePath returns null when osascript returns empty', async () => {
@@ -155,6 +173,7 @@ test('readClipboardImageAsFilePath returns null when osascript returns empty', a
     exec: async () => ({ stdout: '' }),
   });
   assert.equal(result, null);
+  assert.deepEqual(fs.rmdirs, [path.join('/t', 'mouseterm-drops-dir-0')]);
 });
 
 test('readClipboardImageAsFilePath on linux writes buffer from exec stdout', async () => {
@@ -170,6 +189,7 @@ test('readClipboardImageAsFilePath on linux writes buffer from exec stdout', asy
       throw new Error('no tool');
     },
   });
-  assert.equal(result, path.join('/t', 'mouseterm-drops', 'uuid-L-clipboard.png'));
+  assert.equal(result, path.join('/t', 'mouseterm-drops-dir-0', 'uuid-L-clipboard.png'));
   assert.equal(fs.writes.length, 1);
+  assert.deepEqual(fs.writes[0][2], { mode: 0o600 });
 });

@@ -33,7 +33,7 @@ async function readFilePathsMac(runtime) {
   const exec = runtime.exec || execFileP;
   try {
     const { stdout } = await exec('osascript', ['-e', MAC_FILE_PATHS_SCRIPT], { maxBuffer: MAX_BUFFER });
-    return stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    return splitNonEmptyLines(stdout);
   } catch {
     return [];
   }
@@ -48,7 +48,7 @@ async function readFilePathsWindows(runtime) {
       ['-NoProfile', '-NonInteractive', '-Command', cmd],
       { maxBuffer: MAX_BUFFER },
     );
-    return stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    return splitNonEmptyLines(stdout);
   } catch {
     return [];
   }
@@ -153,7 +153,7 @@ async function readImageLinux(out, runtime, fsp) {
     try {
       const { stdout } = await exec(cmd, args, { encoding: 'buffer', maxBuffer: MAX_BUFFER });
       if (stdout && stdout.length > 0) {
-        await fsp.writeFile(out, stdout);
+        await fsp.writeFile(out, stdout, { mode: 0o600 });
         return true;
       }
     } catch {}
@@ -167,15 +167,26 @@ async function readClipboardImageAsFilePath(runtime = {}) {
   const cryptoModule = runtime.cryptoModule || crypto;
   const fsp = (runtime.fsModule && runtime.fsModule.promises) || fs.promises;
 
-  const out = path.join(osModule.tmpdir(), 'mouseterm-drops', `${cryptoModule.randomUUID()}-clipboard.png`);
+  let dir = null;
+  let out = null;
   try {
-    await fsp.mkdir(path.dirname(out), { recursive: true });
+    dir = await fsp.mkdtemp(path.join(osModule.tmpdir(), 'mouseterm-drops-'));
+    await fsp.chmod?.(dir, 0o700);
+    out = path.join(dir, `${cryptoModule.randomUUID()}-clipboard.png`);
     const ok = platform === 'darwin' ? await readImageMac(out, runtime)
       : platform === 'win32' ? await readImageWindows(out, runtime)
       : await readImageLinux(out, runtime, fsp);
-    if (ok && (await fsp.stat(out)).size > 0) return out;
+    if (ok && (await fsp.stat(out)).size > 0) {
+      await fsp.chmod?.(out, 0o600);
+      return out;
+    }
   } catch {}
-  try { await fsp.unlink(out); } catch {}
+  if (out) {
+    try { await fsp.unlink(out); } catch {}
+  }
+  if (dir) {
+    try { await fsp.rmdir(dir); } catch {}
+  }
   return null;
 }
 
@@ -183,4 +194,8 @@ module.exports = {
   readClipboardFilePaths,
   readClipboardImageAsFilePath,
   parseUriList,
+  splitNonEmptyLines,
 };
+function splitNonEmptyLines(stdout) {
+  return stdout.split(/\r?\n/).filter((s) => s.length > 0);
+}
