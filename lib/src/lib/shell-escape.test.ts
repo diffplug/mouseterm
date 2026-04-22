@@ -26,8 +26,16 @@ describe('shellEscapePosix', () => {
     expect(shellEscapePosix('a\\b.png')).toBe('a\\\\b.png');
   });
 
-  it('backslash-escapes carriage returns (security: prevents command injection)', () => {
-    expect(shellEscapePosix('a\rb')).toBe('a\\\rb');
+  it('single-quote-wraps paths containing newlines (cannot backslash-escape: bash swallows `\\<newline>` as line continuation)', () => {
+    expect(shellEscapePosix('a\nb')).toBe("'a\nb'");
+  });
+
+  it('single-quote-wraps paths containing carriage returns', () => {
+    expect(shellEscapePosix('a\rb')).toBe("'a\rb'");
+  });
+
+  it("single-quote-wraps with the '\\'' idiom when input mixes newlines and single quotes", () => {
+    expect(shellEscapePosix("a'b\nc")).toBe("'a'\\''b\nc'");
   });
 
   it('backslash-escapes shell metacharacters', () => {
