@@ -56,6 +56,11 @@ const registry = new Map<string, TerminalEntry>();
 const pendingShellOpts = new Map<string, { shell?: string; args?: string[] }>();
 const primedSessionStates = new Map<string, Partial<SessionUiState>>();
 
+// Re-export from shell-defaults to preserve the public API surface.
+// The actual state lives in shell-defaults.ts to avoid a circular dependency
+// (terminal-registry → platform → vscode-adapter → terminal-registry).
+export { setDefaultShellOpts, getDefaultShellOpts } from './shell-defaults';
+
 // --- Watch for VSCode theme changes and re-apply xterm themes ---
 // VSCode signals theme changes by updating CSS variables and body classes.
 let themeObserverStarted = false;
@@ -635,7 +640,7 @@ export function reconnectTerminal(
  */
 export function restoreTerminal(
   id: string,
-  opts: { cwd?: string | null; scrollback?: string | null; title?: string; cwdWarning?: string | null },
+  opts: { cwd?: string | null; scrollback?: string | null; title?: string; cwdWarning?: string | null; shell?: string; args?: string[] },
 ): TerminalEntry {
   const existing = registry.get(id);
   if (existing) return existing;
@@ -661,6 +666,8 @@ export function restoreTerminal(
     cols: dims?.cols || 80,
     rows: dims?.rows || 30,
     cwd: opts.cwd ?? undefined,
+    shell: opts.shell,
+    args: opts.args,
   });
 
   return entry;

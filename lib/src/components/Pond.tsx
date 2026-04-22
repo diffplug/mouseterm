@@ -46,6 +46,7 @@ import {
   destroyTerminal,
   swapTerminals,
   setPendingShellOpts,
+  getDefaultShellOpts,
   type SessionStatus,
   isSoftTodo,
   isHardTodo,
@@ -1515,6 +1516,26 @@ export function Pond({
     detachedRef.current = restoredDetached;
     setDetached(restoredDetached);
 
+    // Apply the currently-selected shell to a freshly-added panel. Panels
+    // that are reconnecting to an existing PTY already have a running shell,
+    // so their pendingShellOpts are never consumed — only first-time spawns
+    // use this.
+    const addTerminalPanel = (id: string) => {
+      const defaults = getDefaultShellOpts();
+      if (defaults?.shell) {
+        setPendingShellOpts(id, { shell: defaults.shell, args: defaults.args });
+      }
+      const referencePanel = e.api.panels[e.api.panels.length - 1] ?? null;
+      const direction = referencePanel && referencePanel.api.width - referencePanel.api.height > 0 ? 'right' : 'below';
+      e.api.addPanel({
+        id,
+        component: 'terminal',
+        tabComponent: 'terminal',
+        title: '<unnamed>',
+        position: referencePanel ? { referencePanel: referencePanel.id, direction } : undefined,
+      });
+    };
+
     if (layout && restored && restored.length > 0) {
       // Cold-start restore: apply saved dockview layout (includes panel arrangement)
       try {
@@ -1523,7 +1544,7 @@ export function Pond({
       } catch {
         // Layout restore failed — fall back to creating panels manually
         for (const id of restored) {
-          e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
+          addTerminalPanel(id);
         }
         setSelectedId(restored[0]);
       }
@@ -1533,7 +1554,7 @@ export function Pond({
         ? restored
         : [generatePaneId()];
       for (const id of paneIds) {
-        e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
+        addTerminalPanel(id);
       }
       setSelectedId(paneIds[0]);
     }
@@ -2122,6 +2143,11 @@ export function Pond({
     if (!api) return;
     const newId = generatePaneId();
     const ref = id && api.getPanel(id) ? id : null;
+    // Carry the currently-selected shell into the split, same as [+].
+    const defaults = getDefaultShellOpts();
+    if (defaults?.shell) {
+      setPendingShellOpts(newId, { shell: defaults.shell, args: defaults.args });
+    }
     // Horizontal split places the new pane to the right → reveal from its left edge.
     // Vertical split places it below → reveal from its top edge.
     freshlySpawnedRef.current.set(newId, direction === 'right' ? 'left' : 'top');
@@ -2134,7 +2160,7 @@ export function Pond({
     });
     selectPanel(newId);
     onEventRef.current?.({ type: 'split', direction: splitDirection, source });
-  }, [selectPanel]);
+  }, [selectPanel, generatePaneId]);
 
   // --- Pond actions (for tab buttons) ---
 
