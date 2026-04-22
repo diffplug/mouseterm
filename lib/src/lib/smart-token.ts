@@ -19,13 +19,13 @@ interface Pattern {
 }
 
 const PATTERNS: Pattern[] = [
-  { kind: 'url', re: new RegExp('^https?://\\S+$') },
-  { kind: 'url', re: new RegExp('^file://\\S+$') },
-  { kind: 'path', re: new RegExp('^\\S+:\\d+(:\\d+)?$') }, // error-location first (so it beats generic path)
-  { kind: 'path', re: new RegExp('^~/\\S*$') },
-  { kind: 'path', re: new RegExp('^/\\S+$') },
-  { kind: 'path', re: new RegExp('^\\.{1,2}/\\S*$') },
-  { kind: 'path', re: new RegExp('^[A-Za-z]:\\\\\\S*$') },
+  { kind: 'url', re: /^https?:\/\/\S+$/ },
+  { kind: 'url', re: /^file:\/\/\S+$/ },
+  { kind: 'path', re: /^\S+:\d+(:\d+)?$/ }, // error-location first (so it beats generic path)
+  { kind: 'path', re: /^~\/\S*$/ },
+  { kind: 'path', re: /^\/\S+$/ },
+  { kind: 'path', re: /^\.\.?\/\S*$/ },
+  { kind: 'path', re: /^[A-Za-z]:\\\S*$/ },
 ];
 
 const TRAILING_PUNCT = /[.,;:!?'"]+$/;
