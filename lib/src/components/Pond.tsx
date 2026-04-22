@@ -702,7 +702,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           className={[
             'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0',
             sessionState.status === 'ALARM_RINGING'
-              ? 'bg-warning/15 text-warning hover:bg-warning/20 motion-safe:animate-pulse motion-reduce:animate-none'
+              ? 'text-warning hover:bg-foreground/10'
               : 'text-muted hover:bg-foreground/10 hover:text-foreground',
           ].join(' ')}
           onMouseDownCapture={(e) => {
@@ -725,19 +725,25 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           tooltip={alarmButtonTooltip}
           dataAlarmButtonFor={api.id}
         >
-          <span className="relative flex items-center justify-center">
+          <span className="flex items-center justify-center">
             {sessionState.status === 'ALARM_DISABLED' ? (
               <BellSlashIcon size={14} />
             ) : (
-              <BellIcon size={14} weight="fill" />
-            )}
-            {(sessionState.status === 'MIGHT_BE_BUSY' || sessionState.status === 'BUSY' || sessionState.status === 'MIGHT_NEED_ATTENTION') && (
-              <span className={[
-                'absolute -top-0.5 -right-0.5 h-[6px] w-[6px] rounded-full border border-surface-alt',
-                sessionState.status === 'MIGHT_BE_BUSY' && 'bg-foreground/40',
-                sessionState.status === 'BUSY' && 'bg-accent motion-safe:animate-alarm-dot motion-reduce:animate-none',
-                sessionState.status === 'MIGHT_NEED_ATTENTION' && 'bg-warning/60 motion-safe:animate-alarm-dot motion-reduce:animate-none',
-              ].filter(Boolean).join(' ')} />
+              <BellIcon
+                size={14}
+                weight="fill"
+                className={[
+                  'transition-transform',
+                  sessionState.status === 'MIGHT_BE_BUSY' && '-rotate-[22.5deg]',
+                  sessionState.status === 'BUSY' && 'rotate-45',
+                  sessionState.status === 'MIGHT_NEED_ATTENTION' && 'rotate-[60deg]',
+                  sessionState.status === 'ALARM_RINGING' && (
+                    cfg.alarm.ringingPaused
+                      ? 'rotate-45'
+                      : 'motion-safe:animate-bell-ring motion-reduce:rotate-45'
+                  ),
+                ].filter(Boolean).join(' ')}
+              />
             )}
           </span>
         </HeaderActionButton>

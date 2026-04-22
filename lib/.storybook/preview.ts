@@ -17,9 +17,10 @@ import { cfg } from '../src/cfg';
 // Initialize fake platform once at module scope
 const fakePlatform = initPlatform('fake');
 
-// Pin marching-ants animation at T=0 for deterministic Chromatic snapshots
+// Pin animations at T=0 for deterministic Chromatic snapshots
 if (window?.navigator?.userAgent?.includes('Chromatic')) {
   cfg.marchingAnts.paused = true;
+  cfg.alarm.ringingPaused = true;
 }
 
 // Collect all CSS variable names across all themes for cleanup

@@ -67,7 +67,7 @@
   --color-button-hover-bg: var(--vscode-button-hoverBackground, #1177bb);
 
   /* Animation */
-  --animate-alarm-dot: alarm-dot 2s ease-in-out infinite;
+  --animate-bell-ring: bell-ring 800ms ease-in-out infinite;
   --animate-shake-x: shake-x 400ms ease-out;
 }
 
@@ -133,9 +133,9 @@ body.vscode-light {
   }
 }
 
-@keyframes alarm-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+@keyframes bell-ring {
+  0%, 100% { transform: rotate(45deg); }
+  50%      { transform: rotate(-45deg); }
 }
 
 @keyframes shake-x {

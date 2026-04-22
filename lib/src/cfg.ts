@@ -26,6 +26,8 @@ export const cfg = {
     resizeDebounce: 500,
     /** ms — attention idle expiry. How long before "looking at this pane" wears off. */
     userAttention: 15_000,
+    /** When true, the ALARM_RINGING bell-ring animation is frozen at T=0 (for deterministic Chromatic snapshots). */
+    ringingPaused: false,
   },
   todoBucket: {
     /** Seconds of idle time needed to un-strike one letter of the soft-TODO pill.

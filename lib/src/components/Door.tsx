@@ -1,6 +1,7 @@
 import { BellIcon } from '@phosphor-icons/react';
 import { TODO_OFF, isSoftTodo, type SessionStatus, type TodoState } from '../lib/terminal-registry';
 import { useTodoPillContent } from './TodoPillBody';
+import { cfg } from '../cfg';
 
 export interface DoorProps {
   doorId?: string;
@@ -37,9 +38,7 @@ export function Door({
       className={[
         'relative flex h-6 max-w-[220px] min-w-[68px] items-center gap-2 overflow-hidden px-2.5',
         'rounded-t-md',
-        alarmRinging
-          ? 'bg-warning/10 motion-safe:animate-pulse motion-reduce:animate-none ring-1 ring-warning/60'
-          : 'bg-surface',
+        'bg-surface',
         'text-[10px] font-medium font-mono tracking-[0.02em]',
         'transition-colors hover:bg-surface-raised',
       ].join(' ')}
@@ -66,16 +65,22 @@ export function Door({
             </span>
           )}
           {alarmEnabled && (
-            <span className={['relative', alarmRinging ? 'text-warning' : (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
-              <BellIcon size={11} weight="fill" />
-              {(status === 'MIGHT_BE_BUSY' || status === 'BUSY' || status === 'MIGHT_NEED_ATTENTION') && (
-                <span className={[
-                  'absolute -top-0.5 -right-0.5 h-1 w-1 rounded-full',
-                  status === 'MIGHT_BE_BUSY' && 'bg-foreground/40',
-                  status === 'BUSY' && 'bg-accent motion-safe:animate-alarm-dot motion-reduce:animate-none',
-                  status === 'MIGHT_NEED_ATTENTION' && 'bg-warning/60 motion-safe:animate-alarm-dot motion-reduce:animate-none',
-                ].filter(Boolean).join(' ')} />
-              )}
+            <span className={[alarmRinging ? 'text-warning' : (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
+              <BellIcon
+                size={11}
+                weight="fill"
+                className={[
+                  'transition-transform',
+                  status === 'MIGHT_BE_BUSY' && '-rotate-[22.5deg]',
+                  status === 'BUSY' && 'rotate-45',
+                  status === 'MIGHT_NEED_ATTENTION' && 'rotate-[60deg]',
+                  status === 'ALARM_RINGING' && (
+                    cfg.alarm.ringingPaused
+                      ? 'rotate-45'
+                      : 'motion-safe:animate-bell-ring motion-reduce:rotate-45'
+                  ),
+                ].filter(Boolean).join(' ')}
+              />
             </span>
           )}
         </span>
