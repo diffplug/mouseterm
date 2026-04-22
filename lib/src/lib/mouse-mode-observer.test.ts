@@ -93,21 +93,8 @@ describe('attachMouseModeObserver', () => {
   });
 
   it('dispose tears down both handlers', () => {
-    const { terminal } = buildMockTerminal();
-    const mockDispose1 = vi.fn();
-    const mockDispose2 = vi.fn();
-    const realParser = terminal.parser;
-    (terminal as unknown as { parser: unknown }).parser = {
-      registerCsiHandler(_id: unknown, _cb: unknown) {
-        return realParser === terminal.parser
-          ? { dispose: mockDispose1 }
-          : { dispose: mockDispose2 };
-      },
-    };
-
-    // Simpler: build a fresh mock with explicit disposables
     const disposables: Array<{ dispose: ReturnType<typeof vi.fn> }> = [];
-    const term2 = {
+    const terminal = {
       parser: {
         registerCsiHandler() {
           const d = { dispose: vi.fn() };
@@ -118,7 +105,7 @@ describe('attachMouseModeObserver', () => {
       modes: { mouseTrackingMode: 'none', bracketedPasteMode: false },
     } as unknown as Terminal;
 
-    const observer = attachMouseModeObserver('a', term2);
+    const observer = attachMouseModeObserver('a', terminal);
     observer.dispose();
 
     expect(disposables).toHaveLength(2);

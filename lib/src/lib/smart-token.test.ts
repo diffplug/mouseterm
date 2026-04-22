@@ -87,6 +87,11 @@ describe('detectTokenAt: path', () => {
     expect(t?.text).toBe('src/foo.ts:42:7');
   });
 
+  it('error location with trailing period is detected after stripping', () => {
+    const t = at('Error at src/foo.ts:42. See docs.', 'src/');
+    expect(t).toMatchObject({ kind: 'path', text: 'src/foo.ts:42' });
+  });
+
   it('strips trailing period on absolute path', () => {
     const t = detectTokenAt('/tmp/a.', 0);
     expect(t?.text).toBe('/tmp/a');
