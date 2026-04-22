@@ -104,8 +104,8 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
                           ? "opacity-100"
                           : "opacity-70 hover:opacity-100"
                         : isActive
-                          ? "text-[var(--color-caramel-light)]"
-                          : "hover:text-[var(--color-caramel-light)]"
+                          ? "text-[var(--color-caramel)]"
+                          : "hover:text-[var(--color-caramel)]"
                     }`}
                     style={
                       themeAware && isActive

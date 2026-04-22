@@ -6,8 +6,7 @@
   --color-bg: oklch(10% 0.01 60);
   --color-surface: oklch(18% 0.015 60);
   --color-text: oklch(92% 0.01 60);
-  --color-caramel: oklch(65% 0.14 60);
-  --color-caramel-light: oklch(75% 0.12 60);
+  --color-caramel: #d38d5f;
 }
 
 html {
