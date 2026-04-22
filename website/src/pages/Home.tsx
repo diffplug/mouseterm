@@ -245,8 +245,8 @@ function Home() {
               Terminal
             </span>
             <span ref={word2Ref} style={{ opacity: 0, transform: "translateY(12px)" }}>
-              <span className="text-[var(--color-caramel)]">
-                for Mice<sup ref={asteriskRef} style={{ opacity: 0 }}>*</sup>
+              <span className="text-[var(--color-caramel)] relative">
+                for Mice<sup ref={asteriskRef} className="absolute left-full top-0" style={{ opacity: 0 }}>*</sup>
               </span>
             </span>
             <p
