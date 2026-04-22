@@ -1,4 +1,4 @@
-import type { AlarmState } from '../alarm-manager';
+import type { AlertState } from '../alert-manager';
 
 export interface PtyInfo {
   id: string;
@@ -6,7 +6,7 @@ export interface PtyInfo {
   exitCode?: number;
 }
 
-export type AlarmStateDetail = { id: string } & AlarmState;
+export type AlertStateDetail = { id: string } & AlertState;
 
 export interface PlatformAdapter {
   // Lifecycle
@@ -44,21 +44,21 @@ export interface PlatformAdapter {
   offRequestSessionFlush(handler: (detail: { requestId: string }) => void): void;
   notifySessionFlushComplete(requestId: string): void;
 
-  // Alarm management
-  alarmRemove(id: string): void;
-  alarmToggle(id: string): void;
-  alarmDisable(id: string): void;
-  alarmDismiss(id: string): void;
-  alarmDismissOrToggle(id: string, displayedStatus: string): void;
-  alarmAttend(id: string): void;
-  alarmResize(id: string): void;
-  alarmClearAttention(id?: string): void;
-  alarmToggleTodo(id: string): void;
-  alarmMarkTodo(id: string): void;
-  alarmClearTodo(id: string): void;
-  alarmDrainTodoBucket(id: string): void;
-  onAlarmState(handler: (detail: AlarmStateDetail) => void): void;
-  offAlarmState(handler: (detail: AlarmStateDetail) => void): void;
+  // Alert management
+  alertRemove(id: string): void;
+  alertToggle(id: string): void;
+  alertDisable(id: string): void;
+  alertDismiss(id: string): void;
+  alertDismissOrToggle(id: string, displayedStatus: string): void;
+  alertAttend(id: string): void;
+  alertResize(id: string): void;
+  alertClearAttention(id?: string): void;
+  alertToggleTodo(id: string): void;
+  alertMarkTodo(id: string): void;
+  alertClearTodo(id: string): void;
+  alertDrainTodoBucket(id: string): void;
+  onAlertState(handler: (detail: AlertStateDetail) => void): void;
+  offAlertState(handler: (detail: AlertStateDetail) => void): void;
 
   // State persistence
   saveState(state: unknown): void;

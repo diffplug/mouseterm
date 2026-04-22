@@ -29,19 +29,19 @@ import {
 import { copyRaw, copyRewrapped, doPaste } from '../lib/clipboard';
 import { IS_MAC } from '../lib/platform';
 import {
-  type AlarmButtonActionResult,
+  type AlertButtonActionResult,
   clearSessionAttention,
   clearSessionTodo,
   DEFAULT_SESSION_UI_STATE,
-  disableSessionAlarm,
-  dismissOrToggleAlarm,
+  disableSessionAlert,
+  dismissOrToggleAlert,
   focusTerminal,
   getSessionState,
   getSessionStateSnapshot,
   markSessionAttention,
   markSessionTodo,
   subscribeToSessionStateChanges,
-  toggleSessionAlarm,
+  toggleSessionAlert,
   toggleSessionTodo,
   destroyTerminal,
   swapTerminals,
@@ -58,6 +58,7 @@ import { getPlatform } from '../lib/platform';
 import { saveSession } from '../lib/session-save';
 import type { PersistedDetachedItem } from '../lib/session-types';
 import { cfg } from '../cfg';
+import { bellIconClass } from './bell-icon-class';
 import { useTodoPillContent } from './TodoPillBody';
 
 // --- Theme ---
@@ -127,7 +128,7 @@ interface HeaderActionButtonProps {
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onContextMenu?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   children: React.ReactNode;
-  dataAlarmButtonFor?: string;
+  dataAlertButtonFor?: string;
 }
 
 function HeaderActionButton({
@@ -139,7 +140,7 @@ function HeaderActionButton({
   onClick,
   onContextMenu,
   children,
-  dataAlarmButtonFor,
+  dataAlertButtonFor,
 }: HeaderActionButtonProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -176,7 +177,7 @@ function HeaderActionButton({
         ref={buttonRef}
         type="button"
         className={className}
-        data-alarm-button-for={dataAlarmButtonFor}
+        data-alert-button-for={dataAlertButtonFor}
         onMouseDownCapture={onMouseDownCapture}
         onMouseDown={(e) => {
           e.preventDefault();
@@ -214,7 +215,7 @@ function HeaderActionButton({
   );
 }
 
-// --- Alarm context menu (right-click on bell) ---
+// --- Alert context menu (right-click on bell) ---
 
 /**
  * Portal banner shown while a temporary mouse-capture override is active.
@@ -354,7 +355,7 @@ function usePopoverFocusTrap(
   }, [ref, onClose, restoreFocusSelector]);
 }
 
-function TodoAlarmDialog({
+function TodoAlertDialog({
   position,
   sessionId,
   onClose,
@@ -365,10 +366,10 @@ function TodoAlarmDialog({
 }) {
   const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
   const sessionState = sessionStates.get(sessionId) ?? DEFAULT_SESSION_UI_STATE;
-  const alarmEnabled = sessionState.status !== 'ALARM_DISABLED';
+  const alertEnabled = sessionState.status !== 'ALERT_DISABLED';
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  usePopoverFocusTrap(dialogRef, onClose, `[data-alarm-button-for="${sessionId}"]`);
+  usePopoverFocusTrap(dialogRef, onClose, `[data-alert-button-for="${sessionId}"]`);
 
   useEffect(() => {
     dialogRef.current?.querySelector<HTMLElement>('button')?.focus();
@@ -384,7 +385,7 @@ function TodoAlarmDialog({
       if (e.key === 'a') {
         e.preventDefault();
         e.stopImmediatePropagation();
-        dismissOrToggleAlarm(sessionId, getSessionState(sessionId).status);
+        dismissOrToggleAlert(sessionId, getSessionState(sessionId).status);
       }
       if (e.key === 't') {
         e.preventDefault();
@@ -413,7 +414,7 @@ function TodoAlarmDialog({
       style={clampOverlayPosition({ left: position.x, top: position.y, width: 280, height: 160 })}
       role="dialog"
       aria-modal="true"
-      aria-label="TODO and alarm settings"
+      aria-label="TODO and alert settings"
     >
       {/* TODO row */}
       <div className="flex items-center gap-2 mb-2">
@@ -431,17 +432,17 @@ function TodoAlarmDialog({
         </div>
       </div>
 
-      {/* Alarm row */}
+      {/* Alert row */}
       <div className="flex items-center gap-2 mb-3">
         <span className="text-[10px] font-mono text-muted">[a]</span>
-        <span className="text-[11px] text-foreground font-medium w-10">alarm</span>
+        <span className="text-[11px] text-foreground font-medium w-10">alert</span>
         <div className="flex gap-1 ml-auto">
-          <button type="button" className={toggleBtn(alarmEnabled)}
-            onClick={() => { if (!alarmEnabled) toggleSessionAlarm(sessionId); }}>
+          <button type="button" className={toggleBtn(alertEnabled)}
+            onClick={() => { if (!alertEnabled) toggleSessionAlert(sessionId); }}>
             enabled
           </button>
-          <button type="button" className={toggleBtn(!alarmEnabled)}
-            onClick={() => { if (alarmEnabled) disableSessionAlarm(sessionId); }}>
+          <button type="button" className={toggleBtn(!alertEnabled)}
+            onClick={() => { if (alertEnabled) disableSessionAlert(sessionId); }}>
             disabled
           </button>
         </div>
@@ -449,8 +450,8 @@ function TodoAlarmDialog({
 
       {/* Help text */}
       <div className="border-t border-border pt-2 text-[9px] leading-relaxed text-muted">
-        When an alarming tab is selected,<br />
-        the alarm is cleared and the tab gets a soft TODO.<br />
+        When an alerting tab is selected,<br />
+        the alert is cleared and the tab gets a soft TODO.<br />
         Typing drains the soft TODO; stop typing and it refills.
       </div>
     </div>,
@@ -487,7 +488,7 @@ export const DoorElementsContext = createContext<PanelElementsState>({
 export interface PondActions {
   onKill: (id: string) => void;
   onDetach: (id: string) => void;
-  onAlarmButton: (id: string, displayedStatus: SessionStatus) => AlarmButtonActionResult;
+  onAlertButton: (id: string, displayedStatus: SessionStatus) => AlertButtonActionResult;
   onToggleTodo: (id: string) => void;
   onSplitH: (id: string | null, source?: 'keyboard' | 'mouse') => void;
   onSplitV: (id: string | null, source?: 'keyboard' | 'mouse') => void;
@@ -500,7 +501,7 @@ export interface PondActions {
 export const PondActionsContext = createContext<PondActions>({
   onKill: () => {},
   onDetach: () => {},
-  onAlarmButton: () => 'noop',
+  onAlertButton: () => 'noop',
   onToggleTodo: () => {},
   onSplitH: () => {},
   onSplitV: () => {},
@@ -623,21 +624,21 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const isRenaming = renamingId === api.id;
   const tabRef = useRef<HTMLDivElement>(null);
   const [mouseIconAnchor, setMouseIconAnchor] = useState<HTMLDivElement | null>(null);
-  const suppressAlarmClickRef = useRef(false);
+  const suppressAlertClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
   const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number } | null>(null);
   const todoPill = useTodoPillContent(sessionState.todo);
   const showTodoPill = todoPill.visible && tier !== 'minimal';
-  const alarmButtonAriaLabel = sessionState.status === 'ALARM_RINGING'
-    ? 'Alarm ringing'
-    : sessionState.status === 'ALARM_DISABLED'
-      ? 'Enable alarm'
-      : 'Disable alarm';
-  const alarmButtonTooltip = sessionState.status === 'ALARM_RINGING'
-    ? 'Alarm ringing - Click to dismiss and show options'
-    : sessionState.status === 'ALARM_DISABLED'
-      ? 'Enable alarm [a] - Right-click for options'
-      : 'Disable alarm [a] - Right-click for options';
+  const alertButtonAriaLabel = sessionState.status === 'ALERT_RINGING'
+    ? 'Alert ringing'
+    : sessionState.status === 'ALERT_DISABLED'
+      ? 'Enable alert'
+      : 'Disable alert';
+  const alertButtonTooltip = sessionState.status === 'ALERT_RINGING'
+    ? 'Alert ringing - Click to dismiss and show options'
+    : sessionState.status === 'ALERT_DISABLED'
+      ? 'Enable alert [a] - Right-click for options'
+      : 'Disable alert [a] - Right-click for options';
 
   const openDialogFromButton = useCallback((button: HTMLButtonElement) => {
     const rect = button.getBoundingClientRect();
@@ -647,8 +648,8 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
     });
   }, []);
 
-  const triggerAlarmButtonAction = useCallback((displayedStatus: SessionStatus, button: HTMLButtonElement) => {
-    const result = actions.onAlarmButton(api.id, displayedStatus);
+  const triggerAlertButtonAction = useCallback((displayedStatus: SessionStatus, button: HTMLButtonElement) => {
+    const result = actions.onAlertButton(api.id, displayedStatus);
     if (result === 'dismissed') {
       openDialogFromButton(button);
     }
@@ -700,44 +701,36 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         )}
         <HeaderActionButton
           className={[
-            'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0',
-            sessionState.status === 'ALARM_RINGING'
-              ? 'bg-warning/15 text-warning hover:bg-warning/20 motion-safe:animate-pulse motion-reduce:animate-none'
-              : 'text-muted hover:bg-foreground/10 hover:text-foreground',
+            'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 hover:bg-foreground/10',
+            sessionState.status === 'ALERT_RINGING'
+              ? 'text-warning'
+              : 'text-muted hover:text-foreground',
           ].join(' ')}
           onMouseDownCapture={(e) => {
             if (e.button !== 0) return;
-            suppressAlarmClickRef.current = true;
+            suppressAlertClickRef.current = true;
             e.preventDefault();
             e.stopPropagation();
             e.nativeEvent.stopImmediatePropagation?.();
-            triggerAlarmButtonAction(sessionState.status, e.currentTarget);
+            triggerAlertButtonAction(sessionState.status, e.currentTarget);
           }}
           onClick={(e) => {
-            if (suppressAlarmClickRef.current) {
-              suppressAlarmClickRef.current = false;
+            if (suppressAlertClickRef.current) {
+              suppressAlertClickRef.current = false;
               return;
             }
-            triggerAlarmButtonAction(sessionState.status, e.currentTarget);
+            triggerAlertButtonAction(sessionState.status, e.currentTarget);
           }}
           onContextMenu={(e) => { e.preventDefault(); setDialogPosition({ x: e.clientX, y: e.clientY }); }}
-          ariaLabel={alarmButtonAriaLabel}
-          tooltip={alarmButtonTooltip}
-          dataAlarmButtonFor={api.id}
+          ariaLabel={alertButtonAriaLabel}
+          tooltip={alertButtonTooltip}
+          dataAlertButtonFor={api.id}
         >
-          <span className="relative flex items-center justify-center">
-            {sessionState.status === 'ALARM_DISABLED' ? (
+          <span className="flex items-center justify-center">
+            {sessionState.status === 'ALERT_DISABLED' ? (
               <BellSlashIcon size={14} />
             ) : (
-              <BellIcon size={14} weight="fill" />
-            )}
-            {(sessionState.status === 'MIGHT_BE_BUSY' || sessionState.status === 'BUSY' || sessionState.status === 'MIGHT_NEED_ATTENTION') && (
-              <span className={[
-                'absolute -top-0.5 -right-0.5 h-[6px] w-[6px] rounded-full border border-surface-alt',
-                sessionState.status === 'MIGHT_BE_BUSY' && 'bg-foreground/40',
-                sessionState.status === 'BUSY' && 'bg-accent motion-safe:animate-alarm-dot motion-reduce:animate-none',
-                sessionState.status === 'MIGHT_NEED_ATTENTION' && 'bg-warning/60 motion-safe:animate-alarm-dot motion-reduce:animate-none',
-              ].filter(Boolean).join(' ')} />
+              <BellIcon size={14} weight="fill" className={bellIconClass(sessionState.status)} />
             )}
           </span>
         </HeaderActionButton>
@@ -842,7 +835,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         </>
       )}
       {dialogPosition && (
-        <TodoAlarmDialog
+        <TodoAlertDialog
           position={dialogPosition}
           sessionId={api.id}
           onClose={() => setDialogPosition(null)}
@@ -1941,7 +1934,7 @@ export function Pond({
         if (dialogKeyboardActive) return;
         e.preventDefault();
         e.stopPropagation();
-        dismissOrToggleAlarm(sid, getSessionState(sid).status);
+        dismissOrToggleAlert(sid, getSessionState(sid).status);
         return;
       }
 
@@ -2170,8 +2163,8 @@ export function Pond({
       const char = randomKillChar();
       setConfirmKill({ id, char });
     },
-    onAlarmButton: (id: string, displayedStatus: SessionStatus) => {
-      return dismissOrToggleAlarm(id, displayedStatus);
+    onAlertButton: (id: string, displayedStatus: SessionStatus) => {
+      return dismissOrToggleAlert(id, displayedStatus);
     },
     onToggleTodo: (id: string) => {
       toggleSessionTodo(id);

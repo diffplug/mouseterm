@@ -1,8 +1,8 @@
 import type { DetachDirection } from './spatial-nav';
 import type { SessionStatus } from './activity-monitor';
-import type { TodoState } from './alarm-manager';
+import type { TodoState } from './alert-manager';
 
-export interface PersistedAlarmState {
+export interface PersistedAlertState {
   status: SessionStatus;
   todo: TodoState;
 }
@@ -13,7 +13,7 @@ export interface PersistedPane {
   title: string;
   scrollback: string | null;
   resumeCommand: string | null;
-  alarm?: PersistedAlarmState | null;
+  alert?: PersistedAlertState | null;
 }
 
 export interface PersistedDetachedItem {

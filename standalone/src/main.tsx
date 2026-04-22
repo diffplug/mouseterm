@@ -37,8 +37,8 @@ function ConnectedUpdateBanner() {
 // Await init() first to register event listeners before reconnecting
 async function bootstrap() {
   await platform.init();
-  const { initAlarmStateReceiver } = await import("mouseterm-lib/lib/terminal-registry");
-  initAlarmStateReceiver();
+  const { initAlertStateReceiver } = await import("mouseterm-lib/lib/terminal-registry");
+  initAlertStateReceiver();
   restoreStandaloneTheme();
   const result = await reconnectFromInit(platform);
 

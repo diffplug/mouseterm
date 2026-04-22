@@ -1,5 +1,5 @@
-import type { AlarmStateDetail, PlatformAdapter, PtyInfo } from './types';
-import { AlarmManager, type SessionStatus } from '../alarm-manager';
+import type { AlertStateDetail, PlatformAdapter, PtyInfo } from './types';
+import { AlertManager, type SessionStatus } from '../alert-manager';
 
 export interface FakeScenario {
   name: string;
@@ -10,17 +10,17 @@ export interface FakeScenario {
 export class FakePtyAdapter implements PlatformAdapter {
   private dataHandlers = new Set<(detail: { id: string; data: string }) => void>();
   private exitHandlers = new Set<(detail: { id: string; exitCode: number }) => void>();
-  private alarmStateHandlers = new Set<(detail: AlarmStateDetail) => void>();
+  private alertStateHandlers = new Set<(detail: AlertStateDetail) => void>();
   private terminals = new Set<string>();
   private activeTimers = new Map<string, ReturnType<typeof setTimeout>[]>();
   private defaultScenario: FakeScenario | null = null;
   private scenarioMap = new Map<string, FakeScenario>();
   private inputHandlers = new Map<string, (data: string) => void>();
-  private alarmManager = new AlarmManager();
+  private alertManager = new AlertManager();
 
   constructor() {
-    this.alarmManager.onStateChange((id, state) => {
-      for (const handler of this.alarmStateHandlers) {
+    this.alertManager.onStateChange((id, state) => {
+      for (const handler of this.alertStateHandlers) {
         handler({ id, ...state });
       }
     });
@@ -57,10 +57,10 @@ export class FakePtyAdapter implements PlatformAdapter {
     this.scenarioMap.clear();
     this.dataHandlers.clear();
     this.exitHandlers.clear();
-    this.alarmManager.dispose();
-    this.alarmManager = new AlarmManager();
-    this.alarmManager.onStateChange((id, state) => {
-      for (const handler of this.alarmStateHandlers) {
+    this.alertManager.dispose();
+    this.alertManager = new AlertManager();
+    this.alertManager.onStateChange((id, state) => {
+      for (const handler of this.alertStateHandlers) {
         handler({ id, ...state });
       }
     });
@@ -88,7 +88,7 @@ export class FakePtyAdapter implements PlatformAdapter {
       inputHandler(data);
       return;
     }
-    this.alarmManager.onData(id);
+    this.alertManager.onData(id);
     for (const handler of this.dataHandlers) {
       handler({ id, data });
     }
@@ -136,21 +136,21 @@ export class FakePtyAdapter implements PlatformAdapter {
   offRequestSessionFlush(_handler: (detail: { requestId: string }) => void): void {}
   notifySessionFlushComplete(_requestId: string): void {}
 
-  // Alarm management (local AlarmManager, same as TauriAdapter)
-  alarmRemove(id: string): void { this.alarmManager.remove(id); }
-  alarmToggle(id: string): void { this.alarmManager.toggleAlarm(id); }
-  alarmDisable(id: string): void { this.alarmManager.disableAlarm(id); }
-  alarmDismiss(id: string): void { this.alarmManager.dismissAlarm(id); }
-  alarmDismissOrToggle(id: string, displayedStatus: string): void { this.alarmManager.dismissOrToggleAlarm(id, displayedStatus as SessionStatus); }
-  alarmAttend(id: string): void { this.alarmManager.attend(id); }
-  alarmResize(id: string): void { this.alarmManager.onResize(id); }
-  alarmClearAttention(id?: string): void { this.alarmManager.clearAttention(id); }
-  alarmToggleTodo(id: string): void { this.alarmManager.toggleTodo(id); }
-  alarmMarkTodo(id: string): void { this.alarmManager.markTodo(id); }
-  alarmClearTodo(id: string): void { this.alarmManager.clearTodo(id); }
-  alarmDrainTodoBucket(id: string): void { this.alarmManager.drainTodoBucket(id); }
-  onAlarmState(handler: (detail: AlarmStateDetail) => void): void { this.alarmStateHandlers.add(handler); }
-  offAlarmState(handler: (detail: AlarmStateDetail) => void): void { this.alarmStateHandlers.delete(handler); }
+  // Alert management (local AlertManager, same as TauriAdapter)
+  alertRemove(id: string): void { this.alertManager.remove(id); }
+  alertToggle(id: string): void { this.alertManager.toggleAlert(id); }
+  alertDisable(id: string): void { this.alertManager.disableAlert(id); }
+  alertDismiss(id: string): void { this.alertManager.dismissAlert(id); }
+  alertDismissOrToggle(id: string, displayedStatus: string): void { this.alertManager.dismissOrToggleAlert(id, displayedStatus as SessionStatus); }
+  alertAttend(id: string): void { this.alertManager.attend(id); }
+  alertResize(id: string): void { this.alertManager.onResize(id); }
+  alertClearAttention(id?: string): void { this.alertManager.clearAttention(id); }
+  alertToggleTodo(id: string): void { this.alertManager.toggleTodo(id); }
+  alertMarkTodo(id: string): void { this.alertManager.markTodo(id); }
+  alertClearTodo(id: string): void { this.alertManager.clearTodo(id); }
+  alertDrainTodoBucket(id: string): void { this.alertManager.drainTodoBucket(id); }
+  onAlertState(handler: (detail: AlertStateDetail) => void): void { this.alertStateHandlers.add(handler); }
+  offAlertState(handler: (detail: AlertStateDetail) => void): void { this.alertStateHandlers.delete(handler); }
 
   private savedState: unknown = null;
   saveState(state: unknown): void { this.savedState = state; }
@@ -183,7 +183,7 @@ export class FakePtyAdapter implements PlatformAdapter {
       cumulativeDelay += chunk.delay;
       const timer = setTimeout(() => {
         if (!this.terminals.has(id)) return;
-        this.alarmManager.onData(id);
+        this.alertManager.onData(id);
         for (const handler of this.dataHandlers) {
           handler({ id, data: chunk.data });
         }
@@ -195,7 +195,7 @@ export class FakePtyAdapter implements PlatformAdapter {
       const exitTimer = setTimeout(() => {
         if (!this.terminals.has(id)) return;
         this.activeTimers.delete(id);
-        this.alarmManager.onExit(id);
+        this.alertManager.onExit(id);
         for (const handler of this.exitHandlers) {
           handler({ id, exitCode: scenario.exitCode ?? 0 });
         }

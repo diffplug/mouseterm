@@ -2,9 +2,9 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { getPlatform } from './platform';
 import type { SessionStatus } from './activity-monitor';
-import { TODO_OFF, isSoftTodo, type TodoState, type AlarmButtonActionResult } from './alarm-manager';
-import type { AlarmStateDetail } from './platform/types';
-import type { PersistedAlarmState } from './session-types';
+import { TODO_OFF, isSoftTodo, type TodoState, type AlertButtonActionResult } from './alert-manager';
+import type { AlertStateDetail } from './platform/types';
+import type { PersistedAlertState } from './session-types';
 import { attachMouseModeObserver } from './mouse-mode-observer';
 import {
   beginDrag,
@@ -23,7 +23,7 @@ import { detectTokenAt } from './smart-token';
 import { extractSelectionText } from './selection-text';
 
 export type { SessionStatus } from './activity-monitor';
-export { TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo, isHardTodo, hasTodo, type TodoState, type AlarmButtonActionResult } from './alarm-manager';
+export { TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo, isHardTodo, hasTodo, type TodoState, type AlertButtonActionResult } from './alert-manager';
 
 export interface SessionUiState {
   status: SessionStatus;
@@ -31,7 +31,7 @@ export interface SessionUiState {
 }
 
 export const DEFAULT_SESSION_UI_STATE: SessionUiState = {
-  status: 'ALARM_DISABLED',
+  status: 'ALERT_DISABLED',
   todo: TODO_OFF,
 };
 
@@ -44,11 +44,11 @@ interface TerminalEntry {
   element: HTMLDivElement;
   /** Cleanup function for PTY event listeners */
   cleanup: () => void;
-  /** Cached alarm status from the platform's AlarmManager */
-  alarmStatus: SessionStatus;
-  /** Cached todo state from the platform's AlarmManager */
+  /** Cached alert status from the platform's AlertManager */
+  alertStatus: SessionStatus;
+  /** Cached todo state from the platform's AlertManager */
   todo: TodoState;
-  /** Cached flag from the platform's AlarmManager */
+  /** Cached flag from the platform's AlertManager */
   attentionDismissedRing: boolean;
 }
 
@@ -120,7 +120,7 @@ function readLiveSessionState(id: string): SessionUiState | null {
   if (!entry) return null;
 
   return {
-    status: entry.alarmStatus,
+    status: entry.alertStatus,
     todo: entry.todo,
   };
 }
@@ -149,7 +149,7 @@ export function resolveTerminalSessionId(id: string): string {
   return registry.get(id)?.ptyId ?? id;
 }
 
-export function getLivePersistedAlarmState(id: string): PersistedAlarmState | null {
+export function getLivePersistedAlertState(id: string): PersistedAlertState | null {
   const state = readLiveSessionState(id);
   if (!state) return null;
   return {
@@ -175,25 +175,25 @@ export function clearPrimedSessionState(id?: string): void {
   notifySessionStateListeners();
 }
 
-// --- Alarm state receiver (from platform's AlarmManager) ---
+// --- Alert state receiver (from platform's AlertManager) ---
 
-let currentAlarmHandler: ((detail: AlarmStateDetail) => void) | null = null;
+let currentAlertHandler: ((detail: AlertStateDetail) => void) | null = null;
 
 /**
- * Wire up the platform's alarm state events to the local session state store.
+ * Wire up the platform's alert state events to the local session state store.
  * Call once during startup, before reconnect. Safe to call again after platform reset.
  */
-export function initAlarmStateReceiver(): void {
+export function initAlertStateReceiver(): void {
   const platform = getPlatform();
   // Remove previous handler if re-initializing (e.g. after platform reset in tests)
-  if (currentAlarmHandler) {
-    platform.offAlarmState(currentAlarmHandler);
+  if (currentAlertHandler) {
+    platform.offAlertState(currentAlertHandler);
   }
 
-  currentAlarmHandler = (detail) => {
+  currentAlertHandler = (detail) => {
     const entry = getEntryByPtyId(detail.id);
     if (entry) {
-      entry.alarmStatus = detail.status;
+      entry.alertStatus = detail.status;
       entry.todo = detail.todo;
       entry.attentionDismissedRing = detail.attentionDismissedRing;
       // Clear any primed state now that we have live data
@@ -204,21 +204,21 @@ export function initAlarmStateReceiver(): void {
       primeSessionState(detail.id, { status: detail.status, todo: detail.todo });
     }
   };
-  platform.onAlarmState(currentAlarmHandler);
+  platform.onAlertState(currentAlertHandler);
 }
 
-// --- Alarm action delegates (thin wrappers over platform adapter) ---
+// --- Alert action delegates (thin wrappers over platform adapter) ---
 
-export function dismissOrToggleAlarm(id: string, displayedStatus: SessionStatus): AlarmButtonActionResult {
-  // Compute result locally for synchronous return (same transition table as AlarmManager).
+export function dismissOrToggleAlert(id: string, displayedStatus: SessionStatus): AlertButtonActionResult {
+  // Compute result locally for synchronous return (same transition table as AlertManager).
   // The actual state change happens via the platform.
   const entry = registry.get(id);
-  let result: AlarmButtonActionResult;
+  let result: AlertButtonActionResult;
   switch (displayedStatus) {
-    case 'ALARM_DISABLED':
+    case 'ALERT_DISABLED':
       result = 'enabled';
       break;
-    case 'ALARM_RINGING':
+    case 'ALERT_RINGING':
       result = 'dismissed';
       break;
     default:
@@ -228,40 +228,40 @@ export function dismissOrToggleAlarm(id: string, displayedStatus: SessionStatus)
       }
       result = 'disabled';
   }
-  getPlatform().alarmDismissOrToggle(resolveTerminalSessionId(id), displayedStatus);
+  getPlatform().alertDismissOrToggle(resolveTerminalSessionId(id), displayedStatus);
   return result;
 }
 
-export function toggleSessionAlarm(id: string): void {
-  getPlatform().alarmToggle(resolveTerminalSessionId(id));
+export function toggleSessionAlert(id: string): void {
+  getPlatform().alertToggle(resolveTerminalSessionId(id));
 }
 
-export function disableSessionAlarm(id: string): void {
-  getPlatform().alarmDisable(resolveTerminalSessionId(id));
+export function disableSessionAlert(id: string): void {
+  getPlatform().alertDisable(resolveTerminalSessionId(id));
 }
 
-export function dismissSessionAlarm(id: string): void {
-  getPlatform().alarmDismiss(resolveTerminalSessionId(id));
+export function dismissSessionAlert(id: string): void {
+  getPlatform().alertDismiss(resolveTerminalSessionId(id));
 }
 
 export function markSessionAttention(id: string): void {
-  getPlatform().alarmAttend(resolveTerminalSessionId(id));
+  getPlatform().alertAttend(resolveTerminalSessionId(id));
 }
 
 export function clearSessionAttention(id?: string): void {
-  getPlatform().alarmClearAttention(id === undefined ? undefined : resolveTerminalSessionId(id));
+  getPlatform().alertClearAttention(id === undefined ? undefined : resolveTerminalSessionId(id));
 }
 
 export function toggleSessionTodo(id: string): void {
-  getPlatform().alarmToggleTodo(resolveTerminalSessionId(id));
+  getPlatform().alertToggleTodo(resolveTerminalSessionId(id));
 }
 
 export function markSessionTodo(id: string): void {
-  getPlatform().alarmMarkTodo(resolveTerminalSessionId(id));
+  getPlatform().alertMarkTodo(resolveTerminalSessionId(id));
 }
 
 export function clearSessionTodo(id: string): void {
-  getPlatform().alarmClearTodo(resolveTerminalSessionId(id));
+  getPlatform().alertClearTodo(resolveTerminalSessionId(id));
 }
 
 // --- Terminal theme ---
@@ -360,15 +360,15 @@ function setupTerminalEntry(id: string): TerminalEntry {
   };
   getPlatform().onPtyExit(handleExit);
 
-  // User input → PTY + alarm actions
+  // User input → PTY + alert actions
   const inputDisposable = terminal.onData((data) => {
     const isSyntheticTerminalReport = inputIsSyntheticTerminalReport(data);
 
     if (!isSyntheticTerminalReport) {
-      getPlatform().alarmAttend(id);
+      getPlatform().alertAttend(id);
       const entry = registry.get(id);
       if (entry && isSoftTodo(entry.todo) && inputContainsPrintableText(data)) {
-        getPlatform().alarmDrainTodoBucket(id);
+        getPlatform().alertDrainTodoBucket(id);
       }
     }
 
@@ -378,7 +378,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
   // Resize → PTY. Also cancel any finalized selection (spec §3.4: resize
   // counts as a content change).
   const resizeDisposable = terminal.onResize(({ cols, rows }) => {
-    getPlatform().alarmResize(id);
+    getPlatform().alertResize(id);
     getPlatform().resizePty(id, cols, rows);
     bumpRenderTick();
     if (getMouseSelectionState(id).selection) {
@@ -559,15 +559,15 @@ function setupTerminalEntry(id: string): TerminalEntry {
     fit,
     element,
     cleanup,
-    alarmStatus: 'ALARM_DISABLED',
+    alertStatus: 'ALERT_DISABLED',
     todo: TODO_OFF,
     attentionDismissedRing: false,
   };
 
-  // Apply any primed alarm state (from platform reconnect)
+  // Apply any primed alert state (from platform reconnect)
   const primed = primedSessionStates.get(id);
   if (primed) {
-    if (primed.status !== undefined) entry.alarmStatus = primed.status;
+    if (primed.status !== undefined) entry.alertStatus = primed.status;
     if (primed.todo !== undefined) entry.todo = primed.todo;
     primedSessionStates.delete(id);
   }
@@ -710,7 +710,7 @@ export function destroyAllTerminals(): void {
 export function destroyTerminal(id: string): void {
   const entry = registry.get(id);
   if (!entry) return;
-  getPlatform().alarmRemove(entry.ptyId);
+  getPlatform().alertRemove(entry.ptyId);
   entry.cleanup();
   getPlatform().killPty(entry.ptyId);
   entry.element.remove();
@@ -855,6 +855,6 @@ export function focusTerminal(id: string, focused: boolean): void {
     entry.terminal.focus();
   } else {
     entry.terminal.blur();
-    getPlatform().alarmClearAttention(entry.ptyId);
+    getPlatform().alertClearAttention(entry.ptyId);
   }
 }

@@ -15,7 +15,7 @@ const SESSION_ID = 'tab-story';
 const noopActions: PondActions = {
   onKill: () => {},
   onDetach: () => {},
-  onAlarmButton: () => 'noop',
+  onAlertButton: () => 'noop',
   onToggleTodo: () => {},
   onSplitH: () => {},
   onSplitV: () => {},
@@ -77,13 +77,13 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function openAlarmRightClickDialog() {
+async function openAlertRightClickDialog() {
   await wait(100);
-  const alarmButton = document.querySelector<HTMLButtonElement>(`[data-alarm-button-for="${SESSION_ID}"]`);
-  if (!alarmButton) return;
+  const alertButton = document.querySelector<HTMLButtonElement>(`[data-alert-button-for="${SESSION_ID}"]`);
+  if (!alertButton) return;
 
-  const rect = alarmButton.getBoundingClientRect();
-  alarmButton.dispatchEvent(new MouseEvent('contextmenu', {
+  const rect = alertButton.getBoundingClientRect();
+  alertButton.dispatchEvent(new MouseEvent('contextmenu', {
     bubbles: true,
     cancelable: true,
     button: 2,
@@ -124,15 +124,15 @@ const meta: Meta<typeof TabStory> = {
 export default meta;
 type Story = StoryObj<typeof TabStory>;
 
-export const AlarmDisabled: Story = {
+export const AlertDisabled: Story = {
   parameters: primedState({
-    status: 'ALARM_DISABLED',
+    status: 'ALERT_DISABLED',
 
     todo: TODO_OFF,
   }),
 };
 
-export const AlarmEnabled: Story = {
+export const AlertEnabled: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
 
@@ -140,7 +140,7 @@ export const AlarmEnabled: Story = {
   }),
 };
 
-export const AlarmMightBeBusy: Story = {
+export const AlertMightBeBusy: Story = {
   parameters: primedState({
     status: 'MIGHT_BE_BUSY',
 
@@ -148,7 +148,7 @@ export const AlarmMightBeBusy: Story = {
   }),
 };
 
-export const AlarmBusy: Story = {
+export const AlertBusy: Story = {
   parameters: primedState({
     status: 'BUSY',
 
@@ -156,7 +156,7 @@ export const AlarmBusy: Story = {
   }),
 };
 
-export const AlarmMightNeedAttention: Story = {
+export const AlertMightNeedAttention: Story = {
   parameters: primedState({
     status: 'MIGHT_NEED_ATTENTION',
 
@@ -164,9 +164,9 @@ export const AlarmMightNeedAttention: Story = {
   }),
 };
 
-export const AlarmRinging: Story = {
+export const AlertRinging: Story = {
   parameters: primedState({
-    status: 'ALARM_RINGING',
+    status: 'ALERT_RINGING',
 
     todo: TODO_OFF,
   }),
@@ -179,12 +179,12 @@ export const SoftTodo: Story = {
   }),
 };
 
-export const AlarmRightClickDialog: Story = {
+export const AlertRightClickDialog: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
     todo: TODO_OFF,
   }),
-  play: openAlarmRightClickDialog,
+  play: openAlertRightClickDialog,
 };
 
 export const SoftTodoPrompt: Story = {
@@ -197,12 +197,12 @@ export const SoftTodoPrompt: Story = {
 
 export const TodoOnly: Story = {
   parameters: primedState({
-    status: 'ALARM_DISABLED',
+    status: 'ALERT_DISABLED',
     todo: TODO_HARD,
   }),
 };
 
-export const TodoAndAlarmEnabled: Story = {
+export const TodoAndAlertEnabled: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
 
@@ -210,15 +210,15 @@ export const TodoAndAlarmEnabled: Story = {
   }),
 };
 
-export const TodoAndAlarmRinging: Story = {
+export const TodoAndAlertRinging: Story = {
   parameters: primedState({
-    status: 'ALARM_RINGING',
+    status: 'ALERT_RINGING',
 
     todo: TODO_HARD,
   }),
 };
 
-export const CompactWidthWithAlarm: Story = {
+export const CompactWidthWithAlert: Story = {
   args: {
     width: 220,
   },
@@ -229,7 +229,7 @@ export const CompactWidthWithAlarm: Story = {
   }),
 };
 
-export const MinimalWidthWithAlarm: Story = {
+export const MinimalWidthWithAlert: Story = {
   args: {
     width: 150,
   },
@@ -240,13 +240,13 @@ export const MinimalWidthWithAlarm: Story = {
   }),
 };
 
-export const LongTitleWithAlarmAndTodo: Story = {
+export const LongTitleWithAlertAndTodo: Story = {
   args: {
     title: 'my-extremely-long-running-background-process-with-a-very-descriptive-name',
     width: 360,
   },
   parameters: primedState({
-    status: 'ALARM_RINGING',
+    status: 'ALERT_RINGING',
 
     todo: TODO_HARD,
   }),
@@ -257,7 +257,7 @@ export const ReducedMotionRinging: Story = {
     reducedMotion: true,
   },
   parameters: primedState({
-    status: 'ALARM_RINGING',
+    status: 'ALERT_RINGING',
 
     todo: TODO_OFF,
   }),

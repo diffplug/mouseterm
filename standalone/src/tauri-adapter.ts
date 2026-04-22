@@ -1,7 +1,7 @@
 import { invoke as rawInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { AlarmStateDetail, PlatformAdapter, PtyInfo } from "mouseterm-lib/lib/platform/types";
-import { AlarmManager, type SessionStatus } from "mouseterm-lib/lib/alarm-manager";
+import type { AlertStateDetail, PlatformAdapter, PtyInfo } from "mouseterm-lib/lib/platform/types";
+import { AlertManager, type SessionStatus } from "mouseterm-lib/lib/alert-manager";
 
 function invoke(cmd: string, args?: Record<string, unknown>): void {
   rawInvoke(cmd, args).catch((err) =>
@@ -26,14 +26,14 @@ export class TauriAdapter implements PlatformAdapter {
   private exitHandlers = new Set<(detail: { id: string; exitCode: number }) => void>();
   private listHandlers = new Set<(detail: { ptys: PtyInfo[] }) => void>();
   private replayHandlers = new Set<(detail: { id: string; data: string }) => void>();
-  private alarmStateHandlers = new Set<(detail: AlarmStateDetail) => void>();
+  private alertStateHandlers = new Set<(detail: AlertStateDetail) => void>();
   private unlistenFns: Array<() => void> = [];
-  private alarmManager = new AlarmManager();
+  private alertManager = new AlertManager();
 
   constructor() {
-    // Wire alarm manager state changes to handlers
-    this.alarmManager.onStateChange((id, state) => {
-      for (const handler of this.alarmStateHandlers) {
+    // Wire alert manager state changes to handlers
+    this.alertManager.onStateChange((id, state) => {
+      for (const handler of this.alertStateHandlers) {
         handler({ id, ...state });
       }
     });
@@ -44,8 +44,8 @@ export class TauriAdapter implements PlatformAdapter {
     // (The Rust backend manages the Node.js sidecar lifecycle via std::process::Command)
     this.unlistenFns.push(
       await listen<{ id: string; data: string }>("pty:data", (event) => {
-        // Feed data to alarm manager for activity monitoring
-        this.alarmManager.onData(event.payload.id);
+        // Feed data to alert manager for activity monitoring
+        this.alertManager.onData(event.payload.id);
         for (const handler of this.dataHandlers) {
           handler(event.payload);
         }
@@ -54,7 +54,7 @@ export class TauriAdapter implements PlatformAdapter {
 
     this.unlistenFns.push(
       await listen<{ id: string; exitCode: number }>("pty:exit", (event) => {
-        this.alarmManager.onExit(event.payload.id);
+        this.alertManager.onExit(event.payload.id);
         for (const handler of this.exitHandlers) {
           handler(event.payload);
         }
@@ -79,7 +79,7 @@ export class TauriAdapter implements PlatformAdapter {
   }
 
   shutdown(): void {
-    this.alarmManager.dispose();
+    this.alertManager.dispose();
     for (const unlisten of this.unlistenFns) {
       unlisten();
     }
@@ -163,62 +163,62 @@ export class TauriAdapter implements PlatformAdapter {
 
   notifySessionFlushComplete(_requestId: string): void {}
 
-  // --- Alarm management (local AlarmManager) ---
+  // --- Alert management (local AlertManager) ---
 
-  alarmRemove(id: string): void {
-    this.alarmManager.remove(id);
+  alertRemove(id: string): void {
+    this.alertManager.remove(id);
   }
 
-  alarmToggle(id: string): void {
-    this.alarmManager.toggleAlarm(id);
+  alertToggle(id: string): void {
+    this.alertManager.toggleAlert(id);
   }
 
-  alarmDisable(id: string): void {
-    this.alarmManager.disableAlarm(id);
+  alertDisable(id: string): void {
+    this.alertManager.disableAlert(id);
   }
 
-  alarmDismiss(id: string): void {
-    this.alarmManager.dismissAlarm(id);
+  alertDismiss(id: string): void {
+    this.alertManager.dismissAlert(id);
   }
 
-  alarmDismissOrToggle(id: string, displayedStatus: string): void {
-    this.alarmManager.dismissOrToggleAlarm(id, displayedStatus as SessionStatus);
+  alertDismissOrToggle(id: string, displayedStatus: string): void {
+    this.alertManager.dismissOrToggleAlert(id, displayedStatus as SessionStatus);
   }
 
-  alarmAttend(id: string): void {
-    this.alarmManager.attend(id);
+  alertAttend(id: string): void {
+    this.alertManager.attend(id);
   }
 
-  alarmResize(id: string): void {
-    this.alarmManager.onResize(id);
+  alertResize(id: string): void {
+    this.alertManager.onResize(id);
   }
 
-  alarmClearAttention(id?: string): void {
-    this.alarmManager.clearAttention(id);
+  alertClearAttention(id?: string): void {
+    this.alertManager.clearAttention(id);
   }
 
-  alarmToggleTodo(id: string): void {
-    this.alarmManager.toggleTodo(id);
+  alertToggleTodo(id: string): void {
+    this.alertManager.toggleTodo(id);
   }
 
-  alarmMarkTodo(id: string): void {
-    this.alarmManager.markTodo(id);
+  alertMarkTodo(id: string): void {
+    this.alertManager.markTodo(id);
   }
 
-  alarmClearTodo(id: string): void {
-    this.alarmManager.clearTodo(id);
+  alertClearTodo(id: string): void {
+    this.alertManager.clearTodo(id);
   }
 
-  alarmDrainTodoBucket(id: string): void {
-    this.alarmManager.drainTodoBucket(id);
+  alertDrainTodoBucket(id: string): void {
+    this.alertManager.drainTodoBucket(id);
   }
 
-  onAlarmState(handler: (detail: AlarmStateDetail) => void): void {
-    this.alarmStateHandlers.add(handler);
+  onAlertState(handler: (detail: AlertStateDetail) => void): void {
+    this.alertStateHandlers.add(handler);
   }
 
-  offAlarmState(handler: (detail: AlarmStateDetail) => void): void {
-    this.alarmStateHandlers.delete(handler);
+  offAlertState(handler: (detail: AlertStateDetail) => void): void {
+    this.alertStateHandlers.delete(handler);
   }
 
   // --- State persistence ---

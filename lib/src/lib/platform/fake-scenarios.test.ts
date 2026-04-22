@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   flattenScenario,
-  makeAlarmScenario,
+  makeAlertScenario,
   SCENARIO_SHELL_PROMPT,
   SCENARIO_LS_OUTPUT,
   SCENARIO_ANSI_COLORS,
@@ -95,16 +95,16 @@ describe('Fake Scenarios', () => {
     });
   });
 
-  describe('makeAlarmScenario', () => {
+  describe('makeAlertScenario', () => {
     it('converts absolute output times into relative delays', () => {
       expect(
-        makeAlarmScenario([
+        makeAlertScenario([
           { at: 0, data: 'prompt> ' },
           { at: 1_200, data: 'still working...' },
           { at: 2_400, data: 'done' },
         ]),
       ).toEqual({
-        name: 'alarm-scenario',
+        name: 'alert-scenario',
         chunks: [
           { delay: 0, data: 'prompt> ' },
           { delay: 1_200, data: 'still working...' },
@@ -116,7 +116,7 @@ describe('Fake Scenarios', () => {
 
     it('preserves name and exitCode options', () => {
       expect(
-        makeAlarmScenario(
+        makeAlertScenario(
           [{ at: 250, data: 'done' }],
           { name: 'custom', exitCode: 7 },
         ),
@@ -128,12 +128,12 @@ describe('Fake Scenarios', () => {
     });
 
     it('rejects empty chunk lists', () => {
-      expect(() => makeAlarmScenario([])).toThrow('makeAlarmScenario requires at least one chunk');
+      expect(() => makeAlertScenario([])).toThrow('makeAlertScenario requires at least one chunk');
     });
 
     it('rejects chunks that go backwards in time', () => {
       expect(() =>
-        makeAlarmScenario([
+        makeAlertScenario([
           { at: 500, data: 'first' },
           { at: 400, data: 'second' },
         ]),

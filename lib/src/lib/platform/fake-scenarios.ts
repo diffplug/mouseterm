@@ -2,12 +2,12 @@ import type { FakeScenario } from './fake-adapter';
 
 // --- Helpers for building scenarios ---
 
-export interface AlarmScenarioChunk {
+export interface AlertScenarioChunk {
   at: number;
   data: string;
 }
 
-export interface AlarmScenarioOptions {
+export interface AlertScenarioOptions {
   name?: string;
   exitCode?: number;
 }
@@ -20,18 +20,18 @@ function instant(text: string, delay = 0): { delay: number; data: string } {
   return { delay, data: text };
 }
 
-/** Build a fake scenario from absolute event times for alarm-focused tests. */
-export function makeAlarmScenario(
-  chunks: readonly AlarmScenarioChunk[],
-  options?: AlarmScenarioOptions,
+/** Build a fake scenario from absolute event times for alert-focused tests. */
+export function makeAlertScenario(
+  chunks: readonly AlertScenarioChunk[],
+  options?: AlertScenarioOptions,
 ): FakeScenario {
   if (chunks.length === 0) {
-    throw new Error('makeAlarmScenario requires at least one chunk');
+    throw new Error('makeAlertScenario requires at least one chunk');
   }
 
   let previousAt = 0;
   return {
-    name: options?.name ?? 'alarm-scenario',
+    name: options?.name ?? 'alert-scenario',
     chunks: chunks.map((chunk, index) => {
       if (!Number.isFinite(chunk.at) || chunk.at < 0) {
         throw new Error(`Chunk ${index} has an invalid "at" value`);

@@ -47,10 +47,10 @@ async function detachSelectedPane() {
   await wait(150);
 }
 
-async function openAlarmDialog() {
+async function openAlertDialog() {
   await wait(250);
-  const alarmButton = document.querySelector<HTMLButtonElement>('[data-alarm-button-for]');
-  alarmButton?.click();
+  const alertButton = document.querySelector<HTMLButtonElement>('[data-alert-button-for]');
+  alertButton?.click();
   await wait(100);
 }
 
@@ -101,7 +101,7 @@ export const MarketingDemo: Story = {
   },
 };
 
-export const AlarmEnabledIdlePane: Story = {
+export const AlertEnabledIdlePane: Story = {
   parameters: {
     fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
     primedSessionState: {
@@ -116,13 +116,13 @@ export const AlarmEnabledIdlePane: Story = {
   },
 };
 
-export const AlarmRingingPane: Story = {
+export const AlertRingingPane: Story = {
   parameters: {
     fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
     primedSessionState: {
       byIndex: [
         {
-          status: 'ALARM_RINGING',
+          status: 'ALERT_RINGING',
 
           todo: TODO_OFF,
         },
@@ -131,13 +131,13 @@ export const AlarmRingingPane: Story = {
   },
 };
 
-export const AlarmRingingDoor: Story = {
+export const AlertRingingDoor: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
   play: async () => {
     await detachSelectedPane();
     primeByIndex([
       {
-        status: 'ALARM_RINGING',
+        status: 'ALERT_RINGING',
 
         todo: TODO_OFF,
       },
@@ -146,20 +146,20 @@ export const AlarmRingingDoor: Story = {
   },
 };
 
-export const AlarmModalOpen: Story = {
+export const AlertModalOpen: Story = {
   parameters: {
     fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
     primedSessionState: {
       byIndex: [
         {
-          status: 'ALARM_RINGING',
+          status: 'ALERT_RINGING',
 
           todo: TODO_OFF,
         },
       ],
     },
   },
-  play: openAlarmDialog,
+  play: openAlertDialog,
 };
 
 export const TodoAfterDismiss: Story = {
@@ -168,7 +168,7 @@ export const TodoAfterDismiss: Story = {
     primedSessionState: {
       byIndex: [
         {
-          status: 'ALARM_RINGING',
+          status: 'ALERT_RINGING',
 
           todo: TODO_HARD,
         },
@@ -183,7 +183,7 @@ export const DetachedRingingSession: Story = {
     await detachSelectedPane();
     primeByIndex([
       {
-        status: 'ALARM_RINGING',
+        status: 'ALERT_RINGING',
 
         todo: TODO_HARD,
       },
@@ -203,12 +203,12 @@ export const MultipleRingingSessions: Story = {
     await splitPanes();
     primeByIndex([
       {
-        status: 'ALARM_RINGING',
+        status: 'ALERT_RINGING',
 
         todo: TODO_OFF,
       },
       {
-        status: 'ALARM_RINGING',
+        status: 'ALERT_RINGING',
 
         todo: TODO_HARD,
       },

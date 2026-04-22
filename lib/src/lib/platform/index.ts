@@ -8,7 +8,7 @@ export { FakePtyAdapter } from './fake-adapter';
 export type { FakeScenario } from './fake-adapter';
 export {
   flattenScenario,
-  makeAlarmScenario,
+  makeAlertScenario,
   SCENARIO_SHELL_PROMPT,
   SCENARIO_LS_OUTPUT,
   SCENARIO_ANSI_COLORS,
