@@ -222,7 +222,7 @@ function Home() {
         playsInline
         preload="auto"
         className="fixed bottom-0 left-0 w-full object-contain object-bottom z-0"
-        style={{ height: "500px" }}
+        style={{ height: "min(500px, calc(100vh - 420px))" }}
       />
 
       {/* ── Pinned scroll runway: hero text overlay ── */}
