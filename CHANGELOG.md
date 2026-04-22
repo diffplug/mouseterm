@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/). Release checklist in [deploy.md](docs/specs/deploy.md).
 
+## [0.7.0] - 2026-04-22
+- Overhaul the theming system.
+- Overhaul mouse and clipboard handling.
+- Overhaul alerting system.
+
 ## [0.6.2] - 2026-04-13
 - Fix issues with deployed Tauri on Win and Mac (Linux is working great!)
 
