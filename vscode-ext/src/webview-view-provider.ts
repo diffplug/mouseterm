@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { attachRouter, getAlarmStates } from './message-router';
+import { attachRouter, getAlertStates } from './message-router';
 import { getWebviewHtml } from './webview-html';
-import { getSavedSessionState, saveSessionState, mergeAlarmStates } from './session-state';
+import { getSavedSessionState, saveSessionState, mergeAlertStates } from './session-state';
 import type { ExtensionMessage } from './message-types';
 import * as ptyManager from './pty-manager';
 import { resolveSelectedShell } from './shell-selection';
@@ -73,7 +73,7 @@ export class MouseTermViewProvider implements vscode.WebviewViewProvider {
       reconnect: true,
       savedSession,
       onSaveState: (state) => {
-        void saveSessionState(this.context, mergeAlarmStates(state, getAlarmStates()));
+        void saveSessionState(this.context, mergeAlertStates(state, getAlertStates()));
       },
       getSelectedShell: () => this.selectedShell,
     });

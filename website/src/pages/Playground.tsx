@@ -32,7 +32,7 @@ function Playground() {
       await import("mouseterm-lib/index.css");
 
       const adapter = platform.initPlatform("fake");
-      registry.initAlarmStateReceiver();
+      registry.initAlertStateReceiver();
       adapterRef.current = adapter;
 
       // Assign scenarios to panes before Pond mounts them

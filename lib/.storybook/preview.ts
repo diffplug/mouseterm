@@ -20,7 +20,7 @@ const fakePlatform = initPlatform('fake');
 // Pin animations at T=0 for deterministic Chromatic snapshots
 if (window?.navigator?.userAgent?.includes('Chromatic')) {
   cfg.marchingAnts.paused = true;
-  cfg.alarm.ringingPaused = true;
+  cfg.alert.ringingPaused = true;
 }
 
 // Collect all CSS variable names across all themes for cleanup

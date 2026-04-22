@@ -2,16 +2,16 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as ptyManager from './pty-manager';
 import { MouseTermViewProvider } from './webview-view-provider';
-import { attachRouter, flushAllSessions, getAlarmStates } from './message-router';
+import { attachRouter, flushAllSessions, getAlertStates } from './message-router';
 import { getWebviewHtml } from './webview-html';
 import { log } from './log';
-import { getSavedSessionState, isPersistedSession, mergeAlarmStates, refreshSavedSessionStateFromPtys, saveSessionState } from './session-state';
+import { getSavedSessionState, isPersistedSession, mergeAlertStates, refreshSavedSessionStateFromPtys, saveSessionState } from './session-state';
 import { resolveSelectedShell, setSelectedShellPath, getSelectedShellPath } from './shell-selection';
 
 let extensionContext: vscode.ExtensionContext | null = null;
 
 /**
- * Wire up a WebviewPanel with session state, routing, and alarm persistence.
+ * Wire up a WebviewPanel with session state, routing, and alert persistence.
  *
  * @param savedState Per-panel state. For `deserializeWebviewPanel` this is the
  *   state VS Code preserved from the panel's `vscode.setState()`; for a fresh
@@ -32,9 +32,9 @@ function setupPanel(
     localResourceRoots: [vscode.Uri.file(mediaPath)],
   };
 
-  // Merge in current alarm states so the webview starts with correct alarm data
+  // Merge in current alert states so the webview starts with correct alert data
   const initialState = savedState
-    ? mergeAlarmStates(savedState, getAlarmStates())
+    ? mergeAlertStates(savedState, getAlertStates())
     : undefined;
 
   panel.iconPath = {
@@ -158,7 +158,7 @@ export async function deactivate() {
   log.info('[deactivate] flushing sessions from webview');
   await flushAllSessions(1000);
   log.info('[deactivate] refreshing session state from live PTYs');
-  await refreshSavedSessionStateFromPtys(extensionContext, getAlarmStates());
+  await refreshSavedSessionStateFromPtys(extensionContext, getAlertStates());
   log.info('[deactivate] graceful kill');
   // Now give PTYs time to print resume commands (SIGTERM instead of SIGHUP)
   await ptyManager.gracefulKillAll(2000);

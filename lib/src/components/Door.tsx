@@ -18,7 +18,7 @@ export function Door({
   title,
   isActive = false,
   windowFocused = true,
-  status = 'ALARM_DISABLED',
+  status = 'ALERT_DISABLED',
   todo = TODO_OFF,
   onClick,
 }: DoorProps) {
@@ -28,8 +28,8 @@ export function Door({
   // Always use a 2px border on all sides to prevent layout shift when
   // the dashed selection border appears. Inactive: bottom is transparent.
 
-  const alarmEnabled = status !== 'ALARM_DISABLED';
-  const alarmRinging = status === 'ALARM_RINGING';
+  const alertEnabled = status !== 'ALERT_DISABLED';
+  const alertRinging = status === 'ALERT_RINGING';
   const todoPill = useTodoPillContent(todo);
 
   return (
@@ -52,7 +52,7 @@ export function Door({
       <span className={['min-w-0 flex-1 truncate', (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
         {title}
       </span>
-      {(todoPill.visible || alarmEnabled) && (
+      {(todoPill.visible || alertEnabled) && (
         <span className="flex shrink-0 items-center gap-1.5">
           {todoPill.visible && (
             <span
@@ -64,8 +64,8 @@ export function Door({
               {todoPill.body}
             </span>
           )}
-          {alarmEnabled && (
-            <span className={[alarmRinging ? 'text-warning' : (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
+          {alertEnabled && (
+            <span className={[alertRinging ? 'text-warning' : (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
               <BellIcon size={11} weight="fill" className={bellIconClass(status)} />
             </span>
           )}

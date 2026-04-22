@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as ptyManager from './pty-manager';
-import type { AlarmState } from '../../lib/src/lib/alarm-manager';
-import type { PersistedAlarmState, PersistedPane, PersistedSession } from '../../lib/src/lib/session-types';
+import type { AlertState } from '../../lib/src/lib/alert-manager';
+import type { PersistedAlertState, PersistedPane, PersistedSession } from '../../lib/src/lib/session-types';
 import { log } from './log';
 
 const SESSION_STATE_KEY = 'mouseterm.session';
@@ -22,21 +22,21 @@ export function saveSessionState(context: vscode.ExtensionContext, state: unknow
 }
 
 /**
- * Merge current alarm states into a session state object from the frontend.
- * Called on every periodic save so alarm data is always current in workspaceState,
+ * Merge current alert states into a session state object from the frontend.
+ * Called on every periodic save so alert data is always current in workspaceState,
  * rather than relying on deactivate (which may not complete).
  */
-export function mergeAlarmStates(state: unknown, alarmStates: Map<string, AlarmState>): unknown {
+export function mergeAlertStates(state: unknown, alertStates: Map<string, AlertState>): unknown {
   if (!isPersistedSession(state)) return state;
   return {
     ...state,
     panes: state.panes.map((pane) => {
-      const alarm = alarmStates.get(pane.id);
+      const alert = alertStates.get(pane.id);
       return {
         ...pane,
-        alarm: alarm
-          ? { status: alarm.status, todo: alarm.todo }
-          : pane.alarm ?? null,
+        alert: alert
+          ? { status: alert.status, todo: alert.todo }
+          : pane.alert ?? null,
       };
     }),
   };
@@ -44,7 +44,7 @@ export function mergeAlarmStates(state: unknown, alarmStates: Map<string, AlarmS
 
 export async function refreshSavedSessionStateFromPtys(
   context: vscode.ExtensionContext,
-  alarmStates?: Map<string, AlarmState>,
+  alertStates?: Map<string, AlertState>,
 ): Promise<void> {
   const saved = getSavedSessionState(context);
   if (!saved) {
@@ -57,15 +57,15 @@ export async function refreshSavedSessionStateFromPtys(
 
   const panes = await Promise.all(
     saved.panes.map(async (pane) => {
-      // Capture alarm state regardless of PTY liveness
-      const alarmState = alarmStates?.get(pane.id);
-      const alarm: PersistedAlarmState | null = alarmState
-        ? { status: alarmState.status, todo: alarmState.todo }
-        : pane.alarm ?? null;
+      // Capture alert state regardless of PTY liveness
+      const alertState = alertStates?.get(pane.id);
+      const alert: PersistedAlertState | null = alertState
+        ? { status: alertState.status, todo: alertState.todo }
+        : pane.alert ?? null;
 
       if (!ptys.has(pane.id)) {
         log.info(`[session] ${pane.id}: not in live PTYs, keeping saved cwd=${pane.cwd}`);
-        return { ...pane, alarm };
+        return { ...pane, alert };
       }
 
       const [cwd, scrollback] = await Promise.all([
@@ -79,7 +79,7 @@ export async function refreshSavedSessionStateFromPtys(
         ...pane,
         cwd: cwd ?? pane.cwd ?? null,
         scrollback: scrollback ?? pane.scrollback ?? null,
-        alarm,
+        alert,
       };
     }),
   );

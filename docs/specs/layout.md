@@ -2,12 +2,12 @@
 
 ## Conceptual model
 
-A **Session** is a single PTY instance — a running shell process with its scrollback, environment, and working directory. Sessions are managed by the terminal registry and persist independently of how they are displayed. Each session also carries UI state: an alarm status (from the activity monitor) and an optional TODO flag.
+A **Session** is a single PTY instance — a running shell process with its scrollback, environment, and working directory. Sessions are managed by the terminal registry and persist independently of how they are displayed. Each session also carries UI state: an alert status (from the activity monitor) and an optional TODO flag.
 
 A Session can be in one of two containers:
 
 - **Pane** — a visible container in the content area. The session's terminal output is rendered via xterm.js. The pane has a header with controls and acts as the drag handle for layout rearrangement.
-- **Door** — a minimized container in the baseboard. The session is still alive (PTY running, output buffered) but not visible. The door shows the session's title plus alarm and TODO indicators, and looks like a mouse hole cut into the baseboard.
+- **Door** — a minimized container in the baseboard. The session is still alive (PTY running, output buffered) but not visible. The door shows the session's title plus alert and TODO indicators, and looks like a mouse hole cut into the baseboard.
 
 Transitioning between Pane and Door does not alter the Session in any way. Detaching a pane creates a door; reattaching a door creates a pane. The terminal content, scrollback, and process state are preserved across transitions.
 
@@ -47,7 +47,7 @@ Pond
 - Keyboard shortcuts and selection overlay rendering
 - Session lifecycle: detach (pane → door), reattach (door → pane), kill
 - Terminal lifecycle (via terminal-registry)
-- Activity monitoring and alarm state
+- Activity monitoring and alert state
 - TODO state management
 - Session persistence (save/restore across restarts)
 
@@ -73,7 +73,7 @@ Each pane has a 30px header that doubles as a drag handle. The header uses `curs
 Elements from left to right:
 
 - Session name (click to rename, truncates with ellipsis)
-- Alarm bell button (reflects session activity status)
+- Alert bell button (reflects session activity status)
 - TODO pill (if todo state is set; hidden in minimal tier)
 - Flexible gap
 - SplitHorizontalIcon `split horizontal ["]` (full tier only)
@@ -82,21 +82,21 @@ Elements from left to right:
 - ArrowLineDownIcon `detach [d]`
 - XIcon `kill [x]` (hover turns error-red)
 
-The alarm bell and TODO pill are defined in `docs/specs/alarm.md` (visual states, interaction, context menu, and hardening).
+The alert bell and TODO pill are defined in `docs/specs/alert.md` (visual states, interaction, context menu, and hardening).
 
 ### Pane header responsive sizing
 
 The header adapts to available width via ResizeObserver in three tiers:
 
-- **Full** (>280px): all controls visible — alarm, TODO, split, zoom, detach, kill
-- **Compact** (160–280px): SplitH/SplitV/Zoom hidden; alarm, TODO, detach, kill visible
-- **Minimal** (<160px): SplitH/SplitV/Zoom and TODO pill hidden; alarm, detach, kill visible. Session name truncates with ellipsis as needed.
+- **Full** (>280px): all controls visible — alert, TODO, split, zoom, detach, kill
+- **Compact** (160–280px): SplitH/SplitV/Zoom hidden; alert, TODO, detach, kill visible
+- **Minimal** (<160px): SplitH/SplitV/Zoom and TODO pill hidden; alert, detach, kill visible. Session name truncates with ellipsis as needed.
 
 ## Baseboard
 
 Below the content area is the baseboard (`h-8`, 32px). It is always visible — a thin strip when empty, showing keyboard shortcut hints when there are no doors and the container is wider than 350px (currently: `LCmd → RCmd to enter command mode`).
 
-When a session is detached, it becomes a **door** on the baseboard. The door displays the session's title, a TODO badge (if set), and an alarm bell icon with activity dot. It uses the bottom edge of the window as its bottom border, with left, top, and right borders with `rounded-t-md` — resembling a mouse hole. Door dimensions: `min-w-[68px] max-w-[220px] h-6`.
+When a session is detached, it becomes a **door** on the baseboard. The door displays the session's title, a TODO badge (if set), and an alert bell icon with activity dot. It uses the bottom edge of the window as its bottom border, with left, top, and right borders with `rounded-t-md` — resembling a mouse hole. Door dimensions: `min-w-[68px] max-w-[220px] h-6`.
 
 ### Door interaction
 
@@ -163,7 +163,7 @@ All handled in a single capture-phase `keydown` listener on `window`. Every hand
 | `d` | Detach to door | Restore session (stay in command) |
 | `z` | Toggle maximize/restore | — |
 | `t` | Toggle TODO flag (none/soft → hard → none) | — |
-| `a` | Dismiss or toggle alarm | — |
+| `a` | Dismiss or toggle alert | — |
 
 ### Kill confirmation
 
@@ -260,7 +260,7 @@ Pane IDs are session IDs. `TerminalPane` calls `getOrCreateTerminal(id)` on moun
 
 ### Session persistence
 
-Layout, scrollback, cwd, detached items, and alarm state are saved to persistent storage via a debounced save (500ms). Saves are triggered by layout changes, panel add/remove, and a 30s periodic interval. Saves are flushed immediately on PTY exit, `pagehide`, and extension shutdown requests.
+Layout, scrollback, cwd, detached items, and alert state are saved to persistent storage via a debounced save (500ms). Saves are triggered by layout changes, panel add/remove, and a 30s periodic interval. Saves are flushed immediately on PTY exit, `pagehide`, and extension shutdown requests.
 
 On startup, recovery is priority-based:
 1. **Live PTYs** (webview hidden/shown): request PTY list + replay data from platform, `reconnectTerminal()` for each (500ms timeout). If the saved session covers every live PTY, restore the saved dockview layout when its visible panel set matches and restore saved detached items as doors.
@@ -336,15 +336,15 @@ The deferred spawn also only calls `selectPanel` if selection is null. The kill 
 |------|------|
 | `lib/src/components/Pond.tsx` | Main layout orchestrator: modes, keyboard, selection overlay, detach/reattach. Also defines `TerminalPanel`, `TerminalPaneHeader`, `KillConfirmOverlay` |
 | `lib/src/components/Baseboard.tsx` | Always-visible bottom strip with door components, overflow arrows, and shortcut hints |
-| `lib/src/components/Door.tsx` | Individual door element — mouse-hole styled button with alarm/TODO indicators |
+| `lib/src/components/Door.tsx` | Individual door element — mouse-hole styled button with alert/TODO indicators |
 | `lib/src/components/TerminalPane.tsx` | Thin xterm.js mount point — attaches/detaches persistent session elements |
 | `lib/src/lib/terminal-registry.ts` | Session lifecycle: create, reconnect, restore, attach, detach, destroy, swap, focus, refit. Session UI state store |
 | `lib/src/lib/spatial-nav.ts` | Spatial navigation (`findPanelInDirection`) and restore-neighbor detection (`findRestoreNeighbor`) |
 | `lib/src/lib/layout-snapshot.ts` | Layout cloning (`cloneLayout`) and structural signature (`getLayoutStructureSignature`) for restore comparison |
-| `lib/src/lib/activity-monitor.ts` | Per-session activity state machine: output timing → alarm escalation |
-| `lib/src/lib/alarm-manager.ts` | Manages ActivityMonitors + attention tracking + TODO state per session |
+| `lib/src/lib/activity-monitor.ts` | Per-session activity state machine: output timing → alert escalation |
+| `lib/src/lib/alert-manager.ts` | Manages ActivityMonitors + attention tracking + TODO state per session |
 | `lib/src/lib/session-types.ts` | Type definitions for persisted sessions (`PersistedPane`, `PersistedDetachedItem`, `PersistedSession`) |
-| `lib/src/lib/session-save.ts` | Serialization: collects layout, scrollback, cwd, alarm state for persistence |
+| `lib/src/lib/session-save.ts` | Serialization: collects layout, scrollback, cwd, alert state for persistence |
 | `lib/src/lib/session-restore.ts` | Deserialization: loads saved session, calls `restoreTerminal()` for each pane |
 | `lib/src/lib/reconnect.ts` | Priority-based recovery: live PTYs first, then saved session, then empty |
 | `lib/src/lib/resume-patterns.ts` | Detects resumable commands (`claude --resume`, etc.) in scrollback |

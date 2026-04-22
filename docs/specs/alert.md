@@ -1,8 +1,8 @@
-# Alarm Spec
+# Alert Spec
 
 ## Goal
 
-The alarm system is an opt-in reminder for a **Session** that may finish work while the user is looking elsewhere. Alarm state lives on the Session itself, not on the Pane or Door that currently displays it.
+The alert system is an opt-in reminder for a **Session** that may finish work while the user is looking elsewhere. Alert state lives on the Session itself, not on the Pane or Door that currently displays it.
 
 This spec uses semantic state names that describe what the Session currently owes the user:
 
@@ -10,55 +10,55 @@ This spec uses semantic state names that describe what the Session currently owe
 - `MIGHT_BE_BUSY`
 - `BUSY`
 - `MIGHT_NEED_ATTENTION`
-- `ALARM_RINGING`
+- `ALERT_RINGING`
 
 This document is the source of truth for the naming and behavior of this state machine.
 
 ## Non-goals
 
-- No command sniffing or per-tool heuristics. We do not try to guess whether `vim`, `npm dev`, `claude`, or any other command is "appropriate" for alarms.
+- No command sniffing or per-tool heuristics. We do not try to guess whether `vim`, `npm dev`, `claude`, or any other command is "appropriate" for alerts.
 - No sound, OS notifications, or browser notifications in v1.
-- No Door-specific alarm menu that overrides the existing click-to-reattach behavior from `docs/specs/layout.md`.
+- No Door-specific alert menu that overrides the existing click-to-reattach behavior from `docs/specs/layout.md`.
 
-## When alarms are useful
+## When alerts are useful
 
-Alarms are most useful for sessions such as:
+Alerts are most useful for sessions such as:
 
 - long-running jobs that eventually finish, such as signing, notarization, deploys, or test runs
 - slow human-in-the-loop sessions, such as AI chats where the user may switch to other work
 
-Alarms are usually not useful for sessions such as:
+Alerts are usually not useful for sessions such as:
 
 - continuous background output, such as `npm dev`
 - fast local interactive tools where the user is already present
 - read-only streams that the user expects to keep changing forever
 
-This is guidance only. The system does not auto-enable or auto-disable alarms based on process name, shell command, exit code, or output patterns.
+This is guidance only. The system does not auto-enable or auto-disable alerts based on process name, shell command, exit code, or output patterns.
 
 ## Data model
 
 Each Session owns:
 
-- `status: 'ALARM_DISABLED' | 'NOTHING_TO_SHOW' | 'MIGHT_BE_BUSY' | 'BUSY' | 'MIGHT_NEED_ATTENTION' | 'ALARM_RINGING'`
-  - This is the unified alarm and activity state for the Session.
-  - `ALARM_DISABLED`: alarm is off; no activity tracking is performed. Default state.
-  - Stable states: `ALARM_DISABLED`, `NOTHING_TO_SHOW`, `BUSY`, `ALARM_RINGING`.
+- `status: 'ALERT_DISABLED' | 'NOTHING_TO_SHOW' | 'MIGHT_BE_BUSY' | 'BUSY' | 'MIGHT_NEED_ATTENTION' | 'ALERT_RINGING'`
+  - This is the unified alert and activity state for the Session.
+  - `ALERT_DISABLED`: alert is off; no activity tracking is performed. Default state.
+  - Stable states: `ALERT_DISABLED`, `NOTHING_TO_SHOW`, `BUSY`, `ALERT_RINGING`.
   - Transitional states: `MIGHT_BE_BUSY`, `MIGHT_NEED_ATTENTION`.
-  - When the user enables the alarm, status transitions from `ALARM_DISABLED` to `NOTHING_TO_SHOW` and activity tracking begins fresh from that moment.
-  - When the user disables the alarm, activity tracking stops and status returns to `ALARM_DISABLED`.
+  - When the user enables the alert, status transitions from `ALERT_DISABLED` to `NOTHING_TO_SHOW` and activity tracking begins fresh from that moment.
+  - When the user disables the alert, activity tracking stops and status returns to `ALERT_DISABLED`.
 - `todo: TodoState` (numeric)
   - Reminder state for the Session. Default `TODO_OFF` (`-1`).
   - `TODO_OFF` (`-1`): no TODO.
-  - `[0, 1]` (soft TODO): auto-created when a ringing alarm is phantom-dismissed (any attention path). Dashed-outline pill rendered as the word `TODO`. The value is quantized to five strike levels (`1.0` = no strikes, `0.75 / 0.5 / 0.25` = 1 / 2 / 3 letters struck, `0` = about to clear). Each printable keypress strikes exactly one letter (4 keypresses clears the TODO). After `recoverySecondsPerLetter` seconds of idle, one struck letter un-strikes; this repeats until the pill is fully un-struck. Synthetic terminal reports (focus events, cursor-position responses) do not count as keypresses.
+  - `[0, 1]` (soft TODO): auto-created when a ringing alert is phantom-dismissed (any attention path). Dashed-outline pill rendered as the word `TODO`. The value is quantized to five strike levels (`1.0` = no strikes, `0.75 / 0.5 / 0.25` = 1 / 2 / 3 letters struck, `0` = about to clear). Each printable keypress strikes exactly one letter (4 keypresses clears the TODO). After `recoverySecondsPerLetter` seconds of idle, one struck letter un-strikes; this repeats until the pill is fully un-struck. Synthetic terminal reports (focus events, cursor-position responses) do not count as keypresses.
   - `TODO_HARD` (`2`): explicitly set by the user via `t` key or context menu. Solid-outline pill. Only clears via explicit toggle.
-  - Dismissing a ringing alarm when `todo` is already soft or hard does not downgrade it.
+  - Dismissing a ringing alert when `todo` is already soft or hard does not downgrade it.
   - Helper functions: `isSoftTodo(todo)`, `isHardTodo(todo)`, `hasTodo(todo)`.
   - Strike-timing tuning parameter is in `cfg.todoBucket.recoverySecondsPerLetter`.
 
 Each Session also owns:
 
 - `attentionDismissedRing: boolean`
-  - True when the user attended to a ringing Session (clicked into the Pane, typed in passthrough, etc.). Cleared when the bell is next clicked or the alarm is toggled/disabled. Used by the bell button to show the context menu on the next click instead of immediately disabling.
+  - True when the user attended to a ringing Session (clicked into the Pane, typed in passthrough, etc.). Cleared when the bell is next clicked or the alert is toggled/disabled. Used by the bell button to show the context menu on the next click instead of immediately disabling.
 
 The workspace owns:
 
@@ -69,10 +69,10 @@ The workspace owns:
 
 Important invariants:
 
-- Alarm state is session-scoped and survives Pane <-> Door transitions.
+- Alert state is session-scoped and survives Pane <-> Door transitions.
 - `status` describes what the Session owes the user since the last explicit attention boundary.
 - Destroying a Session clears `todo` with it; the activity monitor is disposed.
-- Re-rendering, theme changes, resize reflow, or remounting a Pane must not create a new alarm by themselves.
+- Re-rendering, theme changes, resize reflow, or remounting a Pane must not create a new alert by themselves.
 
 ## Attention model
 
@@ -100,7 +100,7 @@ Attention is cleared when:
 - the Session is detached into a Door while it had attention
 - the Session is destroyed
 
-`T_USER_ATTENTION` is intentionally finite so a user can run a slow command, walk away, and still get a visual alarm later even if that Pane remained selected. Start with 15s and tune with real usage.
+`T_USER_ATTENTION` is intentionally finite so a user can run a slow command, walk away, and still get a visual alert later even if that Pane remained selected. Start with 15s and tune with real usage.
 
 Doors never directly hold attention. A Door can only regain attention by being restored into a Pane through an action that enters passthrough.
 
@@ -121,11 +121,11 @@ The `MIGHT_*` states exist only to absorb uncertainty. They are debounce states,
 | `T_BUSY_CANDIDATE_GAP` | 1.5 s | enough elapsed time to treat ongoing output as a possible busy transition |
 | `T_BUSY_CONFIRM_GAP` | 500 ms | window in `MIGHT_BE_BUSY` before reverting to `NOTHING_TO_SHOW` if no further output |
 | `T_MIGHT_NEED_ATTENTION` | 2 s | silence after `BUSY` before suspecting completion |
-| `T_ALARM_RINGING_CONFIRM` | 3 s | additional silence before confirming `ALARM_RINGING` |
+| `T_ALERT_RINGING_CONFIRM` | 3 s | additional silence before confirming `ALERT_RINGING` |
 | `T_RESIZE_DEBOUNCE` | 500 ms | ignore resize redraw noise |
 | `T_USER_ATTENTION` | 15 s | attention idle expiry |
 
-All values are configurable via `cfg.alarm`. Total silence from last meaningful output to `ALARM_RINGING`: 5 s (`T_MIGHT_NEED_ATTENTION` + `T_ALARM_RINGING_CONFIRM`).
+All values are configurable via `cfg.alert`. Total silence from last meaningful output to `ALERT_RINGING`: 5 s (`T_MIGHT_NEED_ATTENTION` + `T_ALERT_RINGING_CONFIRM`).
 
 ### State semantics
 
@@ -146,9 +146,9 @@ All values are configurable via `cfg.alarm`. Total silence from last meaningful 
   - Transitional state entered when a `BUSY` Session goes quiet.
   - This may be true completion, or only a pause in output.
 
-- `ALARM_RINGING`
+- `ALERT_RINGING`
   - Stable state.
-  - The Session likely completed a meaningful unit of work and the alarm is actively ringing.
+  - The Session likely completed a meaningful unit of work and the alert is actively ringing.
 
 ### Transition rules
 
@@ -162,11 +162,11 @@ All values are configurable via `cfg.alarm`. Total silence from last meaningful 
 | `BUSY` | more meaningful output | `BUSY` | Stay busy. |
 | `BUSY` | no meaningful output for `T_MIGHT_NEED_ATTENTION` | `MIGHT_NEED_ATTENTION` | The Session may have finished, or may only be pausing. |
 | `MIGHT_NEED_ATTENTION` | output resumes | `BUSY` | It was only a pause. |
-| `MIGHT_NEED_ATTENTION` | silence continues for `T_ALARM_RINGING_CONFIRM` and the Session lacks attention | `ALARM_RINGING` | This is the alarm-eligible completion transition. |
-| `MIGHT_NEED_ATTENTION` | silence continues for `T_ALARM_RINGING_CONFIRM` but the Session has attention | `NOTHING_TO_SHOW` | The user already sees it; no reminder is owed. |
-| `ALARM_RINGING` | explicit attention boundary | `NOTHING_TO_SHOW` | The user attended to the result. |
-| `ALARM_RINGING` | new meaningful output and the Session has attention | `MIGHT_BE_BUSY` | A new work cycle may be starting. |
-| `ALARM_RINGING` | new meaningful output but the Session lacks attention | `ALARM_RINGING` | Latch: new output does not silently clear the alarm without user awareness. |
+| `MIGHT_NEED_ATTENTION` | silence continues for `T_ALERT_RINGING_CONFIRM` and the Session lacks attention | `ALERT_RINGING` | This is the alert-eligible completion transition. |
+| `MIGHT_NEED_ATTENTION` | silence continues for `T_ALERT_RINGING_CONFIRM` but the Session has attention | `NOTHING_TO_SHOW` | The user already sees it; no reminder is owed. |
+| `ALERT_RINGING` | explicit attention boundary | `NOTHING_TO_SHOW` | The user attended to the result. |
+| `ALERT_RINGING` | new meaningful output and the Session has attention | `MIGHT_BE_BUSY` | A new work cycle may be starting. |
+| `ALERT_RINGING` | new meaningful output but the Session lacks attention | `ALERT_RINGING` | Latch: new output does not silently clear the alert without user awareness. |
 
 ### Meaningful output
 
@@ -178,49 +178,49 @@ All values are configurable via `cfg.alarm`. Total silence from last meaningful 
 
 The implementation may later learn additional suppressions, but this spec only requires resize churn suppression today.
 
-## Alarm trigger
+## Alert trigger
 
-Alarm logic is driven entirely by transitions in `status`.
+Alert logic is driven entirely by transitions in `status`.
 
 ### Ringing starts when all of these are true
 
-- the Session has an active activity monitor (i.e. `status !== 'ALARM_DISABLED'`)
-- the Session transitions from `MIGHT_NEED_ATTENTION` into `ALARM_RINGING`
+- the Session has an active activity monitor (i.e. `status !== 'ALERT_DISABLED'`)
+- the Session transitions from `MIGHT_NEED_ATTENTION` into `ALERT_RINGING`
 - the Session does not currently have attention
 
 ### Ringing does not start when any of these are true
 
-- the Session already has attention at the moment it would otherwise enter `ALARM_RINGING`
-- the Session is merely re-rendered or reattached while already `ALARM_RINGING`
+- the Session already has attention at the moment it would otherwise enter `ALERT_RINGING`
+- the Session is merely re-rendered or reattached while already `ALERT_RINGING`
 - the only recent output was resize noise already ignored by the completion detector
-- the alarm is disabled (`status === 'ALARM_DISABLED'`)
+- the alert is disabled (`status === 'ALERT_DISABLED'`)
 
-This "fresh transition into `ALARM_RINGING` only" rule is critical. It prevents duplicate alarms on remount, theme change, or Pane <-> Door movement.
+This "fresh transition into `ALERT_RINGING` only" rule is critical. It prevents duplicate alerts on remount, theme change, or Pane <-> Door movement.
 
-## Alarm clearing rules
+## Alert clearing rules
 
-The Session leaves `ALARM_RINGING` and returns to `NOTHING_TO_SHOW` when any of these happen:
+The Session leaves `ALERT_RINGING` and returns to `NOTHING_TO_SHOW` when any of these happen:
 
 - the user attends to the Session (clicking into the Pane, typing in passthrough, restoring a Door via click/`Enter`)
-- the user dismisses the alarm (clicking the ringing bell, pressing `a`)
+- the user dismisses the alert (clicking the ringing bell, pressing `a`)
 - the user marks the Session as hard TODO (`t` key or context menu)
-- new output arrives while the Session has attention (starts a new `MIGHT_BE_BUSY` cycle; without attention the alarm stays ringing — see latch in transition rules)
+- new output arrives while the Session has attention (starts a new `MIGHT_BE_BUSY` cycle; without attention the alert stays ringing — see latch in transition rules)
 
-All attention-based dismissals (the first three above) create a soft TODO if `todo` is not already `TODO_HARD`. If a partially-struck soft TODO already exists, the pill resets to fully un-struck — a fresh alarm ring deserves a full strike cycle. This prevents phantom dismissals where the alarm vanishes without a trace. Printable keypresses strike one letter of the `TODO` pill at a time (4 strikes clears it), so users who engage with the output don't accumulate breadcrumbs. After `cfg.todoBucket.recoverySecondsPerLetter` (default 1 s) of idle, one struck letter un-strikes; this repeats until the pill is fully un-struck. Synthetic terminal reports (focus events, cursor-position responses) do not count as keypresses.
+All attention-based dismissals (the first three above) create a soft TODO if `todo` is not already `TODO_HARD`. If a partially-struck soft TODO already exists, the pill resets to fully un-struck — a fresh alert ring deserves a full strike cycle. This prevents phantom dismissals where the alert vanishes without a trace. Printable keypresses strike one letter of the `TODO` pill at a time (4 strikes clears it), so users who engage with the output don't accumulate breadcrumbs. After `cfg.todoBucket.recoverySecondsPerLetter` (default 1 s) of idle, one struck letter un-strikes; this repeats until the pill is fully un-struck. Synthetic terminal reports (focus events, cursor-position responses) do not count as keypresses.
 
-The Session leaves `ALARM_RINGING` and returns to `ALARM_DISABLED` when:
+The Session leaves `ALERT_RINGING` and returns to `ALERT_DISABLED` when:
 
-- the user disables alarms on that Session (disposes the activity monitor)
+- the user disables alerts on that Session (disposes the activity monitor)
 
-The Session's alarm state is cleared entirely when:
+The Session's alert state is cleared entirely when:
 
 - the Session is destroyed
 
-If more output arrives later and the Session makes a fresh transition back into `ALARM_RINGING`, the alarm rings again.
+If more output arrives later and the Session makes a fresh transition back into `ALERT_RINGING`, the alert rings again.
 
-Marking a Session as hard TODO resets the alarm to `NOTHING_TO_SHOW` and sets `todo = TODO_HARD`, but it does **not** disable future alarms. `todo` and the alarm toggle are separate concerns.
+Marking a Session as hard TODO resets the alert to `NOTHING_TO_SHOW` and sets `todo = TODO_HARD`, but it does **not** disable future alerts. `todo` and the alert toggle are separate concerns.
 
-Disabling alarms disposes the activity monitor and returns `status` to `ALARM_DISABLED`.
+Disabling alerts disposes the activity monitor and returns `status` to `ALERT_DISABLED`.
 
 ## UI
 
@@ -229,65 +229,65 @@ Disabling alarms disposes the activity monitor and returns `status` to `ALARM_DI
 The Pane header exposes two independent concepts:
 
 - TODO pill
-- alarm button
+- alert button
 
 TODO pill:
 
 - toggled in command mode with `t` (cycles: `TODO_OFF` → `TODO_HARD`, soft → `TODO_HARD`, `TODO_HARD` → `TODO_OFF`)
 - shown when `hasTodo(todo)` is true (i.e. `todo !== TODO_OFF`)
-- soft (`isSoftTodo(todo)`): dashed-outline pill — auto-created on alarm dismiss; each printable keypress strikes one letter of the word `TODO` (4 keypresses clears it), and one letter un-strikes per `recoverySecondsPerLetter` of idle
+- soft (`isSoftTodo(todo)`): dashed-outline pill — auto-created on alert dismiss; each printable keypress strikes one letter of the word `TODO` (4 keypresses clears it), and one letter un-strikes per `recoverySecondsPerLetter` of idle
 - when the 4th strike lands and the soft TODO clears, the pill briefly morphs to a `✓` glyph in the success color (~500 ms) before unmounting — this marks the moment of completion so the pill never vanishes silently
 - `TODO_HARD` (`isHardTodo(todo)`): solid-outline pill — explicitly set, only clears manually
 - clicking a soft pill shows a prompt: "Clear" / "Keep" (keep promotes to hard)
 - clicking a hard pill clears it
 - no empty placeholder when off
 
-Alarm button:
+Alert button:
 
 - shown in all header tiers, including compact and minimal
 - icon-only control with tooltip and accessible label
 - visual states (pure function of `status`):
-  - `ALARM_DISABLED`: `BellSlashIcon`, muted
+  - `ALERT_DISABLED`: `BellSlashIcon`, muted
   - `NOTHING_TO_SHOW`: `BellIcon` filled, muted, upright
   - `MIGHT_BE_BUSY`: `BellIcon` filled, muted, tilted slightly (-22.5°)
   - `BUSY`: `BellIcon` filled, muted, tilted 45°
   - `MIGHT_NEED_ATTENTION`: `BellIcon` filled, muted, tilted 60°
-  - `ALARM_RINGING`: `BellIcon` filled, warning color, rocking animation (±45° bell-ring keyframe); reduced-motion: static 45° tilt
+  - `ALERT_RINGING`: `BellIcon` filled, warning color, rocking animation (±45° bell-ring keyframe); reduced-motion: static 45° tilt
 - escalation is conveyed by increasing tilt angle, not by a separate badge element
 - the tilt/animation must not change the button's layout size
 
-Interaction (`dismissOrToggleAlarm` state machine):
+Interaction (`dismissOrToggleAlert` state machine):
 
-- left-click the bell while `ALARM_DISABLED`: enables the alarm (creates activity monitor)
-- left-click the bell while `ALARM_RINGING`: dismisses the alarm, creates a soft TODO if none exists, then opens the context menu anchored below the button
+- left-click the bell while `ALERT_DISABLED`: enables the alert (creates activity monitor)
+- left-click the bell while `ALERT_RINGING`: dismisses the alert, creates a soft TODO if none exists, then opens the context menu anchored below the button
 - left-click the bell after an attention-based dismissal (`attentionDismissedRing` is set): clears the flag and opens the context menu. This lets the user access TODO/disable options after attending to a ringing Session without requiring a right-click.
-- left-click the bell in any other enabled state: disables the alarm (destroys activity monitor)
+- left-click the bell in any other enabled state: disables the alert (destroys activity monitor)
 - pressing `a` on a selected Pane in command mode: same as left-click
 - right-click the bell (any state): opens a context menu with:
   - a TODO row with `hard` and `off` options only; soft TODOs are never manually selectable here
   - "Mark as TODO" / "Clear TODO" (toggles hard TODO), with `[t]` shortcut hint
-  - "Disable alarms" (only when alarm is enabled)
+  - "Disable alerts" (only when alert is enabled)
   - brief description of soft/hard TODO behavior
 - tooltip includes "Right-click for options" hint
 
-The alarm control has higher layout priority than split or zoom controls. Long titles must truncate before the bell disappears.
+The alert control has higher layout priority than split or zoom controls. Long titles must truncate before the bell disappears.
 
 ### Door
 
-A Door is display-only for alarm state in v1. It must not replace the existing Door primary actions defined in `docs/specs/layout.md`.
+A Door is display-only for alert state in v1. It must not replace the existing Door primary actions defined in `docs/specs/layout.md`.
 
 Door indicators:
 
-- show bell indicator only when `status !== 'ALARM_DISABLED'`
+- show bell indicator only when `status !== 'ALERT_DISABLED'`
 - show TODO pill when `hasTodo(todo)` (soft or hard)
-- if `status === 'ALARM_RINGING'`, the Door bell icon uses warning color and the same rocking animation as the Pane header
+- if `status === 'ALERT_RINGING'`, the Door bell icon uses warning color and the same rocking animation as the Pane header
 - the Door bell icon shows the same tilt angles as the Pane header for escalation states
 
 Door interaction:
 
 - click or `Enter` keeps its existing meaning: reattach and enter passthrough
 - `d` keeps its existing meaning: reattach and stay in command mode
-- alarm-specific actions are manipulated after restore, from the Pane header UI
+- alert-specific actions are manipulated after restore, from the Pane header UI
 
 Consequences:
 
@@ -302,25 +302,25 @@ Consequences:
 - Pane titles and Door titles must use `min-width: 0` plus truncation so indicators do not overflow their containers.
 - Bell and TODO indicators must be fixed-width, non-shrinking affordances.
 - The ringing treatment must not change layout size. No border-width jumps, no icon-size jumps.
-- If header space becomes extremely tight, the TODO pill may collapse before the alarm control does.
+- If header space becomes extremely tight, the TODO pill may collapse before the alert control does.
 
 ### Accessibility and motion
 
 - Ringing must not rely on color alone. Use icon state plus outline, fill, or pulse.
 - Respect `prefers-reduced-motion`. In reduced-motion mode, replace the rocking animation with a steady 45° tilt. All tilt states are static transforms and work unchanged regardless of motion preference.
 - Bell button must expose accurate `aria-label` text:
-  - "Enable alarm"
-  - "Disable alarm"
-  - "Alarm ringing"
+  - "Enable alert"
+  - "Disable alert"
+  - "Alert ringing"
 - TODO pill and bell actions must remain keyboard reachable.
 - Any ringing modal or popover must trap focus, support `Escape`, and restore focus to the bell button when closed.
 
 ### Session and lifecycle edge cases
 
-- Multiple Sessions may ring at once. Alarm state is independent per Session.
+- Multiple Sessions may ring at once. Alert state is independent per Session.
 - Detaching or reattaching a ringing Session preserves the ring because the ring belongs to the Session.
 - A Session that exits while ringing continues to ring until attended, dismissed, disabled, or destroyed by the user.
-- Killing the Session clears all alarm and TODO state because the Session no longer exists.
+- Killing the Session clears all alert and TODO state because the Session no longer exists.
 - If output resumes while a Session is ringing and the Session has attention, the ring clears and the Session returns to the normal state-machine flow. If the Session lacks attention, the ring persists (latch behavior prevents silent dismissal).
 - App blur clears attention but does not dismiss existing rings.
 
@@ -335,31 +335,31 @@ Consequences:
 
 ### Slow response, same pane, user walks away
 
-- User enables alarm on a Pane.
+- User enables alert on a Pane.
 - User runs a slow command.
 - The Session progresses through `MIGHT_BE_BUSY` and `BUSY`.
-- The Session later goes quiet, then transitions through `MIGHT_NEED_ATTENTION` into `ALARM_RINGING`.
+- The Session later goes quiet, then transitions through `MIGHT_NEED_ATTENTION` into `ALERT_RINGING`.
 - If `T_USER_ATTENTION` has expired, the Pane rings even if it remained selected.
 
 ### Slow response, user switched elsewhere
 
-- User enables alarm on Session A.
+- User enables alert on Session A.
 - Session A becomes `MIGHT_BE_BUSY`, then `BUSY`.
 - User works in Session B or another app.
-- Session A later goes quiet long enough to transition into `ALARM_RINGING`.
+- Session A later goes quiet long enough to transition into `ALERT_RINGING`.
 - Session A rings because it does not have attention.
 
 ### Door rings, user wants to inspect immediately
 
-- User detaches an alarm-enabled Session into a Door.
-- The Session later transitions into `ALARM_RINGING`.
+- User detaches an alert-enabled Session into a Door.
+- The Session later transitions into `ALERT_RINGING`.
 - The Door rings.
 - User clicks the Door.
 - The Session reattaches into passthrough and the ring clears.
 
 ### Door rings, user wants to keep command-mode control
 
-- User detaches an alarm-enabled Session into a Door.
+- User detaches an alert-enabled Session into a Door.
 - The Door starts ringing.
 - User presses `d` on the Door in command mode.
 - The Pane is restored, but the ring remains because the user has not yet explicitly attended to the Session.
@@ -368,26 +368,26 @@ Consequences:
 
 - A Session rings.
 - User clicks into the pane to read the output.
-- The alarm clears, a soft TODO appears (dashed pill).
+- The alert clears, a soft TODO appears (dashed pill).
 - User types a command → each printable keypress strikes one letter of the `TODO` pill; after 4 keypresses the pill morphs to a `✓` and clears (they engaged).
-- The Session later emits new output, progresses through `BUSY`, and eventually reaches `ALARM_RINGING` again.
+- The Session later emits new output, progresses through `BUSY`, and eventually reaches `ALERT_RINGING` again.
 
 ### User dismisses but doesn't engage
 
 - A Session rings.
 - User clicks into the pane briefly, then switches to another session.
-- The alarm clears, a soft TODO appears.
+- The alert clears, a soft TODO appears.
 - User never types into the terminal → soft TODO persists.
 - User later notices the dashed TODO pill and clicks it → "Clear" / "Keep".
 - Choosing "Keep" promotes to a hard (solid) TODO.
 
 ## Verification checklist
 
-- Alarm only rings on a fresh transition into `ALARM_RINGING`
+- Alert only rings on a fresh transition into `ALERT_RINGING`
 - Single quick responses stay in `NOTHING_TO_SHOW`
-- short pauses in a `BUSY` session only reach `MIGHT_NEED_ATTENTION`, not `ALARM_RINGING`
+- short pauses in a `BUSY` session only reach `MIGHT_NEED_ATTENTION`, not `ALERT_RINGING`
 - Resize noise cannot cause a ring
-- Detach/reattach preserves alarm state (`status` and `todo`)
+- Detach/reattach preserves alert state (`status` and `todo`)
 - `d` restore from a Door does not silently clear a ring
 - click/`Enter` restore from a Door does clear a ring
 - very long titles do not push bell or TODO indicators out of bounds
