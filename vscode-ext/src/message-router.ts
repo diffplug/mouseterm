@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as ptyManager from './pty-manager';
-import { AlarmManager, type SessionStatus } from '../../lib/src/lib/alarm-manager';
+import { AlertManager, type SessionStatus } from '../../lib/src/lib/alert-manager';
 import type { PersistedSession } from '../../lib/src/lib/session-types';
 import type { WebviewMessage, ExtensionMessage } from './message-types';
 import { log } from './log';
@@ -16,34 +16,34 @@ const globalOwnedPtyIds = new Set<string>();
 const activeRouters = new Set<{ flushSessionSave(timeoutMs?: number): Promise<void> }>();
 let nextFlushRequestId = 0;
 
-// Shared alarm manager — survives router disposal so alarm state persists
+// Shared alert manager — survives router disposal so alert state persists
 // across webview collapse/expand cycles.
-const alarmManager = new AlarmManager();
+const alertManager = new AlertManager();
 
-// Log all alarm state transitions (including timer-driven ones)
-alarmManager.onStateChange((id, state) => {
-  log.info(`[alarm] ${id}: → ${state.status} (todo=${state.todo})`);
+// Log all alert state transitions (including timer-driven ones)
+alertManager.onStateChange((id, state) => {
+  log.info(`[alert] ${id}: → ${state.status} (todo=${state.todo})`);
 });
 
-// Feed PTY data to the alarm manager so it can track activity.
+// Feed PTY data to the alert manager so it can track activity.
 // This is module-level so it runs regardless of webview visibility.
 ptyManager.addCallbacks({
   onData(id: string) {
-    const before = alarmManager.getState(id).status;
-    alarmManager.onData(id);
-    const after = alarmManager.getState(id).status;
+    const before = alertManager.getState(id).status;
+    alertManager.onData(id);
+    const after = alertManager.getState(id).status;
     if (before !== after) {
-      log.info(`[alarm-feed] ${id}: ${before} → ${after}`);
+      log.info(`[alert-feed] ${id}: ${before} → ${after}`);
     }
   },
   onExit(id: string) {
-    log.info(`[alarm-feed] ${id}: PTY exited`);
-    alarmManager.onExit(id);
+    log.info(`[alert-feed] ${id}: PTY exited`);
+    alertManager.onExit(id);
   },
 });
 
-export function getAlarmStates() {
-  return alarmManager.getAllStates();
+export function getAlertStates() {
+  return alertManager.getAllStates();
 }
 
 export async function flushAllSessions(timeoutMs = 1000): Promise<void> {
@@ -116,7 +116,7 @@ export function attachRouter(
   }
 
   /**
-   * Subscribe PTY data and alarm state forwarding to the webview.
+   * Subscribe PTY data and alert state forwarding to the webview.
    * Called when the webview sends mouseterm:init (proving it has live content).
    * Returns a cleanup function that unsubscribes everything.
    */
@@ -132,16 +132,16 @@ export function attachRouter(
       },
     });
 
-    const removeAlarmListener = alarmManager.onStateChange((id, state) => {
+    const removeAlertListener = alertManager.onStateChange((id, state) => {
       if (!ownedPtyIds.has(id)) return;
       webview.postMessage({
-        type: 'alarm:state', id, status: state.status, todo: state.todo, attentionDismissedRing: state.attentionDismissedRing,
+        type: 'alert:state', id, status: state.status, todo: state.todo, attentionDismissedRing: state.attentionDismissedRing,
       } satisfies ExtensionMessage);
     });
 
     return () => {
       removePtyCallbacks();
-      removeAlarmListener();
+      removeAlertListener();
     };
   }
 
@@ -253,16 +253,16 @@ export function attachRouter(
         }
 
         // Cold-start restore: this router has no live PTYs to reconnect,
-        // but has a saved session. Seed the AlarmManager so freshly-spawned
-        // PTYs get the right alarm state. Check reconnectable (not ptys)
+        // but has a saved session. Seed the AlertManager so freshly-spawned
+        // PTYs get the right alert state. Check reconnectable (not ptys)
         // because other routers may own PTYs in the global pool.
         if (reconnectable.size === 0 && options?.savedSession) {
           for (const pane of options.savedSession.panes) {
             if (!globalOwnedPtyIds.has(pane.id)) {
               claim(pane.id);
             }
-            if (pane.alarm) {
-              alarmManager.restore(pane.id, pane.alarm);
+            if (pane.alert) {
+              alertManager.restore(pane.id, pane.alert);
             }
           }
         }
@@ -287,12 +287,12 @@ export function attachRouter(
             webview.postMessage(replay);
           }
         }
-        // Send current alarm state for all reconnectable PTYs
+        // Send current alert state for all reconnectable PTYs
         for (const [id] of reconnectable) {
-          const alarmState = alarmManager.getState(id);
-          log.info(`[alarm-reconnect] ${id}: sending ${alarmState.status} (todo=${alarmState.todo})`);
+          const alertState = alertManager.getState(id);
+          log.info(`[alert-reconnect] ${id}: sending ${alertState.status} (todo=${alertState.todo})`);
           webview.postMessage({
-            type: 'alarm:state', id, status: alarmState.status, todo: alarmState.todo, attentionDismissedRing: alarmState.attentionDismissedRing,
+            type: 'alert:state', id, status: alertState.status, todo: alertState.todo, attentionDismissedRing: alertState.attentionDismissedRing,
           } satisfies ExtensionMessage);
         }
         break;
@@ -304,42 +304,42 @@ export function attachRouter(
         options?.onSaveState?.(msg.state);
         break;
 
-      // Alarm actions — proxy to the shared alarm manager
-      case 'alarm:remove':
-        alarmManager.remove(msg.id);
+      // Alert actions — proxy to the shared alert manager
+      case 'alert:remove':
+        alertManager.remove(msg.id);
         break;
-      case 'alarm:toggle':
-        alarmManager.toggleAlarm(msg.id);
+      case 'alert:toggle':
+        alertManager.toggleAlert(msg.id);
         break;
-      case 'alarm:disable':
-        alarmManager.disableAlarm(msg.id);
+      case 'alert:disable':
+        alertManager.disableAlert(msg.id);
         break;
-      case 'alarm:dismiss':
-        alarmManager.dismissAlarm(msg.id);
+      case 'alert:dismiss':
+        alertManager.dismissAlert(msg.id);
         break;
-      case 'alarm:dismissOrToggle':
-        alarmManager.dismissOrToggleAlarm(msg.id, msg.displayedStatus as SessionStatus);
+      case 'alert:dismissOrToggle':
+        alertManager.dismissOrToggleAlert(msg.id, msg.displayedStatus as SessionStatus);
         break;
-      case 'alarm:attend':
-        alarmManager.attend(msg.id);
+      case 'alert:attend':
+        alertManager.attend(msg.id);
         break;
-      case 'alarm:resize':
-        alarmManager.onResize(msg.id);
+      case 'alert:resize':
+        alertManager.onResize(msg.id);
         break;
-      case 'alarm:clearAttention':
-        alarmManager.clearAttention(msg.id);
+      case 'alert:clearAttention':
+        alertManager.clearAttention(msg.id);
         break;
-      case 'alarm:toggleTodo':
-        alarmManager.toggleTodo(msg.id);
+      case 'alert:toggleTodo':
+        alertManager.toggleTodo(msg.id);
         break;
-      case 'alarm:markTodo':
-        alarmManager.markTodo(msg.id);
+      case 'alert:markTodo':
+        alertManager.markTodo(msg.id);
         break;
-      case 'alarm:clearTodo':
-        alarmManager.clearTodo(msg.id);
+      case 'alert:clearTodo':
+        alertManager.clearTodo(msg.id);
         break;
-      case 'alarm:drainTodoBucket':
-        alarmManager.drainTodoBucket(msg.id);
+      case 'alert:drainTodoBucket':
+        alertManager.drainTodoBucket(msg.id);
         break;
     }
   });

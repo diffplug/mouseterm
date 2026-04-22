@@ -85,7 +85,7 @@ vi.mock('./platform', async () => {
 });
 
 import * as platformModule from './platform';
-import { makeAlarmScenario, type FakePtyAdapter, type FakeScenario } from './platform';
+import { makeAlertScenario, type FakePtyAdapter, type FakeScenario } from './platform';
 import { cfg } from '../cfg';
 
 const STRIKE_RECOVERY_MS = cfg.todoBucket.recoverySecondsPerLetter * 1_000;
@@ -97,17 +97,17 @@ import {
   destroyAllTerminals,
   destroyTerminal,
   detachTerminal,
-  disableSessionAlarm,
-  dismissOrToggleAlarm,
-  dismissSessionAlarm,
+  disableSessionAlert,
+  dismissOrToggleAlert,
+  dismissSessionAlert,
   focusTerminal,
   getOrCreateTerminal,
   getSessionState,
-  initAlarmStateReceiver,
+  initAlertStateReceiver,
   markSessionAttention,
   markSessionTodo,
   swapTerminals,
-  toggleSessionAlarm,
+  toggleSessionAlert,
   toggleSessionTodo,
   TODO_OFF,
   TODO_SOFT_FULL,
@@ -199,7 +199,7 @@ function reattachDoorViaD(id: string): void {
   attachTerminal(id, createContainer() as unknown as HTMLElement);
 }
 
-// Timing helpers based on cfg.alarm values:
+// Timing helpers based on cfg.alert values:
 // busyCandidateGap=1500, busyConfirmGap=500, mightNeedAttention=2000, needsAttentionConfirm=3000
 
 function driveToBusy(id: string): void {
@@ -216,14 +216,14 @@ function driveToRingingNeedsAttention(id: string): void {
   advance(2_000);
   expect(getSessionState(id).status).toBe('MIGHT_NEED_ATTENTION');
   advance(3_000);
-  expect(getSessionState(id).status).toBe('ALARM_RINGING');
+  expect(getSessionState(id).status).toBe('ALERT_RINGING');
 }
 
-describe('terminal-registry alarm behavior', () => {
+describe('terminal-registry alert behavior', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fakePlatform.reset();
-    initAlarmStateReceiver();
+    initAlertStateReceiver();
 
     const documentElement = new MockElement();
     vi.stubGlobal('document', {
@@ -255,11 +255,11 @@ describe('terminal-registry alarm behavior', () => {
     const id = 'story-1';
     createSession(
       id,
-      makeAlarmScenario([{ at: 0, data: 'prompt> quick result\r\nprompt> ' }], {
+      makeAlertScenario([{ at: 0, data: 'prompt> quick result\r\nprompt> ' }], {
         name: 'quick-response',
       }),
     );
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
     attendSession(id);
 
     advance(12_000);
@@ -275,13 +275,13 @@ describe('terminal-registry alarm behavior', () => {
     const id = 'story-2';
     createSession(
       id,
-      makeAlarmScenario([
+      makeAlertScenario([
         { at: 0, data: 'prompt> ' },
         { at: 1_600, data: 'working...' },
         { at: 1_800, data: 'more work' },
       ], { name: 'long-running' }),
     );
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
     attendSession(id);
 
     advance(1_800);
@@ -296,7 +296,7 @@ describe('terminal-registry alarm behavior', () => {
 
     advance(3_000);
     expect(getSessionState(id)).toMatchObject({
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
 
       todo: TODO_OFF,
     });
@@ -305,7 +305,7 @@ describe('terminal-registry alarm behavior', () => {
   it('Story 3: busy session pauses, then resumes', () => {
     const id = 'story-3';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToBusy(id);
     advance(2_000);
@@ -322,7 +322,7 @@ describe('terminal-registry alarm behavior', () => {
   it('Story 4: completion while still attended does not ring', () => {
     const id = 'story-4';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
     attendSession(id);
 
     driveToBusy(id);
@@ -339,7 +339,7 @@ describe('terminal-registry alarm behavior', () => {
   it('Story 5: user attends to a ringing pane — creates soft TODO', () => {
     const id = 'story-5';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     attendSession(id);
@@ -353,10 +353,10 @@ describe('terminal-registry alarm behavior', () => {
   it('Story 6: dismiss resets to NOTHING_TO_SHOW, can ring again later', () => {
     const id = 'story-6';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
-    dismissSessionAlarm(id);
+    dismissSessionAlert(id);
 
     expect(getSessionState(id)).toMatchObject({
       status: 'NOTHING_TO_SHOW',
@@ -370,15 +370,15 @@ describe('terminal-registry alarm behavior', () => {
     advance(3_000);
 
     expect(getSessionState(id)).toMatchObject({
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
       todo: TODO_SOFT_FULL,
     });
   });
 
-  it('Story 7: TODO clears ring and resets status, leaves alarms enabled', () => {
+  it('Story 7: TODO clears ring and resets status, leaves alerts enabled', () => {
     const id = 'story-7';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     markSessionTodo(id);
@@ -389,16 +389,16 @@ describe('terminal-registry alarm behavior', () => {
     });
   });
 
-  it('Story 8: disable alarms clears ring and stops tracking', () => {
+  it('Story 8: disable alerts clears ring and stops tracking', () => {
     const id = 'story-8';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
-    disableSessionAlarm(id);
+    disableSessionAlert(id);
 
     expect(getSessionState(id)).toEqual({
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
       todo: TODO_OFF,
     });
 
@@ -408,7 +408,7 @@ describe('terminal-registry alarm behavior', () => {
     advance(12_000);
 
     expect(getSessionState(id)).toEqual({
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
       todo: TODO_OFF,
     });
   });
@@ -416,12 +416,12 @@ describe('terminal-registry alarm behavior', () => {
   it('Story 9: new output while ringing latches until user attends', () => {
     const id = 'story-9';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
-    // Shell prompt output should NOT silently dismiss the alarm
+    // Shell prompt output should NOT silently dismiss the alert
     emitOutput(id, 'shell prompt');
-    expect(getSessionState(id).status).toBe('ALARM_RINGING');
+    expect(getSessionState(id).status).toBe('ALERT_RINGING');
 
     // User attends (focuses the pane) — this resets the monitor via attend()
     attendSession(id);
@@ -438,14 +438,14 @@ describe('terminal-registry alarm behavior', () => {
   it('Story 10: detach preserves state, click restore clears ring', () => {
     const id = 'story-10';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
     attendSession(id);
 
     detachSession(id);
     driveToRingingNeedsAttention(id);
 
     expect(getSessionState(id)).toMatchObject({
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
 
     });
 
@@ -460,7 +460,7 @@ describe('terminal-registry alarm behavior', () => {
   it('Story 11: detach preserves state, d restore does not clear ring', () => {
     const id = 'story-11';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
     attendSession(id);
 
     detachSession(id);
@@ -468,16 +468,16 @@ describe('terminal-registry alarm behavior', () => {
     reattachDoorViaD(id);
 
     expect(getSessionState(id)).toEqual({
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
 
       todo: TODO_OFF,
     });
   });
 
-  it('Story 12: resize noise never creates a false alarm', () => {
+  it('Story 12: resize noise never creates a false alert', () => {
     const id = 'story-12';
     const entry = createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     entry.terminal.emitResize(120, 40);
     emitOutput(id, 'redraw noise');
@@ -495,13 +495,13 @@ describe('terminal-registry alarm behavior', () => {
     const beta = 'story-13-b';
     createSession(alpha);
     createSession(beta);
-    toggleSessionAlarm(alpha);
-    toggleSessionAlarm(beta);
+    toggleSessionAlert(alpha);
+    toggleSessionAlert(beta);
 
     driveToRingingNeedsAttention(alpha);
     driveToRingingNeedsAttention(beta);
 
-    dismissSessionAlarm(alpha);
+    dismissSessionAlert(alpha);
     attendSession(beta);
 
     expect(getSessionState(alpha)).toEqual({
@@ -514,10 +514,10 @@ describe('terminal-registry alarm behavior', () => {
     });
   });
 
-  it('Story 14: destroying a session clears alarm, TODO, and attention state', () => {
+  it('Story 14: destroying a session clears alert, TODO, and attention state', () => {
     const id = 'story-14';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
     driveToRingingNeedsAttention(id);
     toggleSessionTodo(id);
 
@@ -530,14 +530,14 @@ describe('terminal-registry alarm behavior', () => {
     expect(getSessionState(id)).toEqual(DEFAULT_SESSION_UI_STATE);
 
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
     driveToBusy(id);
     expireAttention(id);
     advance(2_000);
     advance(3_000);
 
     expect(getSessionState(id)).toEqual({
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
 
       todo: TODO_OFF,
     });
@@ -546,7 +546,7 @@ describe('terminal-registry alarm behavior', () => {
   it('marks attention from terminal input and clears ringing immediately', () => {
     const id = 'input-attention';
     const entry = createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     entry.terminal.emitInput('x');
@@ -557,7 +557,7 @@ describe('terminal-registry alarm behavior', () => {
     expect(getSessionState(id).todo).toBeCloseTo(0.75);
   });
 
-  it('no monitor is created until alarm is enabled', () => {
+  it('no monitor is created until alert is enabled', () => {
     const id = 'no-monitor';
     createSession(id);
 
@@ -568,21 +568,21 @@ describe('terminal-registry alarm behavior', () => {
     advance(12_000);
 
     expect(getSessionState(id)).toEqual({
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
 
       todo: TODO_OFF,
     });
   });
 
-  it('enabling alarm starts tracking fresh from that moment', () => {
+  it('enabling alert starts tracking fresh from that moment', () => {
     const id = 'fresh-start';
     createSession(id);
 
-    // Output before alarm is enabled — ignored
+    // Output before alert is enabled — ignored
     emitOutput(id, 'old output');
     advance(5_000);
 
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     // Status starts at NOTHING_TO_SHOW, not retroactively computed
     expect(getSessionState(id).status).toBe('NOTHING_TO_SHOW');
@@ -598,7 +598,7 @@ describe('terminal-registry alarm behavior', () => {
   it('phantom dismiss creates soft TODO, typing 4 chars clears it', () => {
     const id = 'soft-todo-clear';
     const entry = createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     attendSession(id);
@@ -619,7 +619,7 @@ describe('terminal-registry alarm behavior', () => {
   it('soft TODO recovers after idle and requires fresh keypresses', () => {
     const id = 'soft-todo-refill';
     const entry = createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     attendSession(id);
@@ -648,7 +648,7 @@ describe('terminal-registry alarm behavior', () => {
   it('focus-report control sequences do not clear a soft TODO', () => {
     const id = 'soft-todo-focus-report';
     const entry = createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     attendSession(id);
@@ -663,7 +663,7 @@ describe('terminal-registry alarm behavior', () => {
   it('typing does not clear a hard TODO', () => {
     const id = 'hard-todo-persist';
     const entry = createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     toggleSessionTodo(id); // ringing → hard TODO + attend
@@ -678,7 +678,7 @@ describe('terminal-registry alarm behavior', () => {
   it('toggleSessionTodo promotes soft to hard', () => {
     const id = 'promote-soft';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     attendSession(id);
@@ -706,16 +706,16 @@ describe('terminal-registry alarm behavior', () => {
   it('dismiss does not downgrade hard TODO to soft', () => {
     const id = 'hard-survives-dismiss';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
     toggleSessionTodo(id); // set hard TODO before ringing
 
     driveToBusy(id);
     expireAttention(id);
     advance(2_000);
     advance(3_000);
-    expect(getSessionState(id).status).toBe('ALARM_RINGING');
+    expect(getSessionState(id).status).toBe('ALERT_RINGING');
 
-    dismissSessionAlarm(id);
+    dismissSessionAlert(id);
 
     // Hard TODO should survive — soft TODO only set when todo === false
     expect(getSessionState(id).todo).toBe(TODO_HARD);
@@ -724,37 +724,37 @@ describe('terminal-registry alarm behavior', () => {
   it('new output while ringing without attention does not create a soft TODO', () => {
     const id = 'ringing-output-no-soft-todo';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
-    // New output without attention — alarm latches, no soft TODO created
+    // New output without attention — alert latches, no soft TODO created
     emitOutput(id, 'next task');
 
     expect(getSessionState(id)).toEqual({
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
       todo: TODO_OFF,
     });
   });
 
-  it('disabling alarms while ringing does not create a soft TODO', () => {
+  it('disabling alerts while ringing does not create a soft TODO', () => {
     const id = 'disable-no-soft-todo';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
-    disableSessionAlarm(id);
+    disableSessionAlert(id);
 
     expect(getSessionState(id)).toEqual({
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
       todo: TODO_OFF,
     });
   });
 
-  it('alarm button enables alarms from ALARM_DISABLED', () => {
-    const id = 'alarm-button-enable';
+  it('alert button enables alerts from ALERT_DISABLED', () => {
+    const id = 'alert-button-enable';
     createSession(id);
 
-    dismissOrToggleAlarm(id, 'ALARM_DISABLED');
+    dismissOrToggleAlert(id, 'ALERT_DISABLED');
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
@@ -762,27 +762,27 @@ describe('terminal-registry alarm behavior', () => {
     });
   });
 
-  it('alarm button disables alarms from enabled non-ringing states', () => {
-    const id = 'alarm-button-disable';
+  it('alert button disables alerts from enabled non-ringing states', () => {
+    const id = 'alert-button-disable';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
     driveToBusy(id);
 
-    dismissOrToggleAlarm(id, 'BUSY');
+    dismissOrToggleAlert(id, 'BUSY');
 
     expect(getSessionState(id)).toEqual({
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
       todo: TODO_OFF,
     });
   });
 
-  it('alarm button dismisses ringing alarms to soft TODO', () => {
-    const id = 'alarm-button-dismiss';
+  it('alert button dismisses ringing alerts to soft TODO', () => {
+    const id = 'alert-button-dismiss';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
     driveToRingingNeedsAttention(id);
 
-    dismissOrToggleAlarm(id, 'ALARM_RINGING');
+    dismissOrToggleAlert(id, 'ALERT_RINGING');
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
@@ -790,10 +790,10 @@ describe('terminal-registry alarm behavior', () => {
     });
   });
 
-  it('clicking a bell rendered as ringing does not disable alarms after attention already reset it', () => {
+  it('clicking a bell rendered as ringing does not disable alerts after attention already reset it', () => {
     const id = 'displayed-ringing-dismiss';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     markSessionAttention(id);
@@ -803,7 +803,7 @@ describe('terminal-registry alarm behavior', () => {
       todo: TODO_SOFT_FULL,
     });
 
-    dismissOrToggleAlarm(id, 'ALARM_RINGING');
+    dismissOrToggleAlert(id, 'ALERT_RINGING');
 
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
@@ -814,7 +814,7 @@ describe('terminal-registry alarm behavior', () => {
   it('a bell click immediately after attention clears ringing is treated as a dismiss, not disable', () => {
     const id = 'recent-ringing-dismiss';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     markSessionAttention(id);
@@ -824,7 +824,7 @@ describe('terminal-registry alarm behavior', () => {
       todo: TODO_SOFT_FULL,
     });
 
-    expect(dismissOrToggleAlarm(id, 'NOTHING_TO_SHOW')).toBe('dismissed');
+    expect(dismissOrToggleAlert(id, 'NOTHING_TO_SHOW')).toBe('dismissed');
     expect(getSessionState(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
       todo: TODO_SOFT_FULL,
@@ -834,13 +834,13 @@ describe('terminal-registry alarm behavior', () => {
   it('programmatic terminal focus does not count as attention', () => {
     const id = 'focus-without-attention';
     createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     focusTerminal(id, true);
 
     expect(getSessionState(id)).toEqual({
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
       todo: TODO_OFF,
     });
   });
@@ -848,7 +848,7 @@ describe('terminal-registry alarm behavior', () => {
   it('ignores prompt redraw output immediately after a resize', () => {
     const id = 'resize-debounce';
     const session = createSession(id);
-    toggleSessionAlarm(id);
+    toggleSessionAlert(id);
     markSessionAttention(id);
 
     session.terminal.emitResize(120, 30);
@@ -862,13 +862,13 @@ describe('terminal-registry alarm behavior', () => {
     });
   });
 
-  it('routes alarm state updates to the swapped-in pane entry', () => {
+  it('routes alert state updates to the swapped-in pane entry', () => {
     const alpha = 'swap-alpha';
     const beta = 'swap-beta';
     createSession(alpha);
     createSession(beta);
 
-    toggleSessionAlarm(alpha);
+    toggleSessionAlert(alpha);
     markSessionAttention(alpha);
     swapTerminals(alpha, beta);
 
@@ -878,7 +878,7 @@ describe('terminal-registry alarm behavior', () => {
     emitOutput(alpha, 'more work');
 
     expect(getSessionState(alpha)).toEqual({
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
       todo: TODO_OFF,
     });
     expect(getSessionState(beta)).toEqual({
@@ -887,7 +887,7 @@ describe('terminal-registry alarm behavior', () => {
     });
   });
 
-  it('routes alarm actions to the swapped-in pane entry', () => {
+  it('routes alert actions to the swapped-in pane entry', () => {
     const alpha = 'swap-action-alpha';
     const beta = 'swap-action-beta';
     createSession(alpha);
@@ -897,22 +897,22 @@ describe('terminal-registry alarm behavior', () => {
     swapTerminals(alpha, beta);
 
     expect(getSessionState(alpha)).toEqual({
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
       todo: TODO_OFF,
     });
     expect(getSessionState(beta)).toEqual({
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
       todo: TODO_HARD,
     });
 
     clearSessionTodo(beta);
 
     expect(getSessionState(alpha)).toEqual({
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
       todo: TODO_OFF,
     });
     expect(getSessionState(beta)).toEqual({
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
       todo: TODO_OFF,
     });
   });

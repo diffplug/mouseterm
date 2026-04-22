@@ -1,7 +1,7 @@
 import type { PlatformAdapter } from './platform/types';
 import type { PersistedDetachedItem, PersistedPane, PersistedSession } from './session-types';
 import { detectResumeCommand } from './resume-patterns';
-import { getLivePersistedAlarmState, resolveTerminalSessionId } from './terminal-registry';
+import { getLivePersistedAlertState, resolveTerminalSessionId } from './terminal-registry';
 
 function getPreviousPaneMap(platform: PlatformAdapter): Map<string, PersistedPane> {
   const saved = platform.getState() as PersistedSession | null;
@@ -29,7 +29,7 @@ export async function saveSession(
   const persisted: PersistedPane[] = await Promise.all(
     [...allPanes.values()].map(async (pane) => {
       const previousPane = previousPanes.get(pane.id);
-      const liveAlarm = getLivePersistedAlarmState(pane.id);
+      const liveAlert = getLivePersistedAlertState(pane.id);
       const sessionId = resolveTerminalSessionId(pane.id);
       const [scrollback, cwd] = await Promise.all([
         platform.getScrollback(sessionId),
@@ -42,7 +42,7 @@ export async function saveSession(
         cwd: cwd ?? previousPane?.cwd ?? null,
         scrollback: resolvedScrollback,
         resumeCommand: resolvedScrollback ? detectResumeCommand(resolvedScrollback) : null,
-        alarm: liveAlarm ?? previousPane?.alarm ?? null,
+        alert: liveAlert ?? previousPane?.alert ?? null,
       };
     }),
   );

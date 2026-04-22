@@ -13,7 +13,7 @@ export const cfg = {
     /** When true, animation is frozen at T=0 (for deterministic Chromatic snapshots). */
     paused: false,
   },
-  alarm: {
+  alert: {
     /** ms — enough elapsed time to treat ongoing output as a possible busy transition. */
     busyCandidateGap: 1_500,
     /** ms — additional evidence window before calling the Session BUSY. */
@@ -26,6 +26,8 @@ export const cfg = {
     resizeDebounce: 500,
     /** ms — attention idle expiry. How long before "looking at this pane" wears off. */
     userAttention: 15_000,
+    /** When true, the ALERT_RINGING bell-ring animation is frozen at T=0 (for deterministic Chromatic snapshots). */
+    ringingPaused: false,
   },
   todoBucket: {
     /** Seconds of idle time needed to un-strike one letter of the soft-TODO pill.

@@ -7,7 +7,7 @@ Multitasking terminal for mice.
 
 - VSCode plugin or standalone desktop app
 - tmux-compatible keybindings AND mouse
-- alarm system for notifying when a terminal task is done or waiting for user input
+- alert system for notifying when a terminal task is done or waiting for user input
 
 Major URLs:
 - [homepage with screen recordings](https://mouseterm.com)

@@ -1,4 +1,4 @@
-import type { AlarmStateDetail, PlatformAdapter, PtyInfo } from './types';
+import type { AlertStateDetail, PlatformAdapter, PtyInfo } from './types';
 import { setDefaultShellOpts } from '../shell-defaults';
 
 export class VSCodeAdapter implements PlatformAdapter {
@@ -9,7 +9,7 @@ export class VSCodeAdapter implements PlatformAdapter {
   private listHandlers = new Set<(detail: { ptys: PtyInfo[] }) => void>();
   private replayHandlers = new Set<(detail: { id: string; data: string }) => void>();
   private flushRequestHandlers = new Set<(detail: { requestId: string }) => void>();
-  private alarmStateHandlers = new Set<(detail: AlarmStateDetail) => void>();
+  private alertStateHandlers = new Set<(detail: AlertStateDetail) => void>();
 
   constructor() {
     this.vscode = acquireVsCodeApi();
@@ -48,8 +48,8 @@ export class VSCodeAdapter implements PlatformAdapter {
         for (const handler of this.flushRequestHandlers) {
           handler({ requestId: msg.requestId });
         }
-      } else if (msg.type === 'alarm:state') {
-        for (const handler of this.alarmStateHandlers) {
+      } else if (msg.type === 'alert:state') {
+        for (const handler of this.alertStateHandlers) {
           handler({ id: msg.id, status: msg.status, todo: msg.todo, attentionDismissedRing: msg.attentionDismissedRing });
         }
       } else if (msg.type === 'mouseterm:newTerminal') {
@@ -194,62 +194,62 @@ export class VSCodeAdapter implements PlatformAdapter {
     this.vscode.postMessage({ type: 'mouseterm:flushSessionSaveDone', requestId });
   }
 
-  // --- Alarm management (proxied to extension host) ---
+  // --- Alert management (proxied to extension host) ---
 
-  alarmRemove(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:remove', id });
+  alertRemove(id: string): void {
+    this.vscode.postMessage({ type: 'alert:remove', id });
   }
 
-  alarmToggle(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:toggle', id });
+  alertToggle(id: string): void {
+    this.vscode.postMessage({ type: 'alert:toggle', id });
   }
 
-  alarmDisable(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:disable', id });
+  alertDisable(id: string): void {
+    this.vscode.postMessage({ type: 'alert:disable', id });
   }
 
-  alarmDismiss(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:dismiss', id });
+  alertDismiss(id: string): void {
+    this.vscode.postMessage({ type: 'alert:dismiss', id });
   }
 
-  alarmDismissOrToggle(id: string, displayedStatus: string): void {
-    this.vscode.postMessage({ type: 'alarm:dismissOrToggle', id, displayedStatus });
+  alertDismissOrToggle(id: string, displayedStatus: string): void {
+    this.vscode.postMessage({ type: 'alert:dismissOrToggle', id, displayedStatus });
   }
 
-  alarmAttend(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:attend', id });
+  alertAttend(id: string): void {
+    this.vscode.postMessage({ type: 'alert:attend', id });
   }
 
-  alarmResize(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:resize', id });
+  alertResize(id: string): void {
+    this.vscode.postMessage({ type: 'alert:resize', id });
   }
 
-  alarmClearAttention(id?: string): void {
-    this.vscode.postMessage({ type: 'alarm:clearAttention', id });
+  alertClearAttention(id?: string): void {
+    this.vscode.postMessage({ type: 'alert:clearAttention', id });
   }
 
-  alarmToggleTodo(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:toggleTodo', id });
+  alertToggleTodo(id: string): void {
+    this.vscode.postMessage({ type: 'alert:toggleTodo', id });
   }
 
-  alarmMarkTodo(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:markTodo', id });
+  alertMarkTodo(id: string): void {
+    this.vscode.postMessage({ type: 'alert:markTodo', id });
   }
 
-  alarmClearTodo(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:clearTodo', id });
+  alertClearTodo(id: string): void {
+    this.vscode.postMessage({ type: 'alert:clearTodo', id });
   }
 
-  alarmDrainTodoBucket(id: string): void {
-    this.vscode.postMessage({ type: 'alarm:drainTodoBucket', id });
+  alertDrainTodoBucket(id: string): void {
+    this.vscode.postMessage({ type: 'alert:drainTodoBucket', id });
   }
 
-  onAlarmState(handler: (detail: AlarmStateDetail) => void): void {
-    this.alarmStateHandlers.add(handler);
+  onAlertState(handler: (detail: AlertStateDetail) => void): void {
+    this.alertStateHandlers.add(handler);
   }
 
-  offAlarmState(handler: (detail: AlarmStateDetail) => void): void {
-    this.alarmStateHandlers.delete(handler);
+  offAlertState(handler: (detail: AlertStateDetail) => void): void {
+    this.alertStateHandlers.delete(handler);
   }
 
   // --- State persistence ---

@@ -1,6 +1,7 @@
 import { BellIcon } from '@phosphor-icons/react';
 import { TODO_OFF, isSoftTodo, type SessionStatus, type TodoState } from '../lib/terminal-registry';
 import { useTodoPillContent } from './TodoPillBody';
+import { bellIconClass } from './bell-icon-class';
 
 export interface DoorProps {
   doorId?: string;
@@ -17,7 +18,7 @@ export function Door({
   title,
   isActive = false,
   windowFocused = true,
-  status = 'ALARM_DISABLED',
+  status = 'ALERT_DISABLED',
   todo = TODO_OFF,
   onClick,
 }: DoorProps) {
@@ -27,8 +28,8 @@ export function Door({
   // Always use a 2px border on all sides to prevent layout shift when
   // the dashed selection border appears. Inactive: bottom is transparent.
 
-  const alarmEnabled = status !== 'ALARM_DISABLED';
-  const alarmRinging = status === 'ALARM_RINGING';
+  const alertEnabled = status !== 'ALERT_DISABLED';
+  const alertRinging = status === 'ALERT_RINGING';
   const todoPill = useTodoPillContent(todo);
 
   return (
@@ -37,9 +38,7 @@ export function Door({
       className={[
         'relative flex h-6 max-w-[220px] min-w-[68px] items-center gap-2 overflow-hidden px-2.5',
         'rounded-t-md',
-        alarmRinging
-          ? 'bg-warning/10 motion-safe:animate-pulse motion-reduce:animate-none ring-1 ring-warning/60'
-          : 'bg-surface',
+        'bg-surface',
         'text-[10px] font-medium font-mono tracking-[0.02em]',
         'transition-colors hover:bg-surface-raised',
       ].join(' ')}
@@ -53,7 +52,7 @@ export function Door({
       <span className={['min-w-0 flex-1 truncate', (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
         {title}
       </span>
-      {(todoPill.visible || alarmEnabled) && (
+      {(todoPill.visible || alertEnabled) && (
         <span className="flex shrink-0 items-center gap-1.5">
           {todoPill.visible && (
             <span
@@ -65,17 +64,9 @@ export function Door({
               {todoPill.body}
             </span>
           )}
-          {alarmEnabled && (
-            <span className={['relative', alarmRinging ? 'text-warning' : (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
-              <BellIcon size={11} weight="fill" />
-              {(status === 'MIGHT_BE_BUSY' || status === 'BUSY' || status === 'MIGHT_NEED_ATTENTION') && (
-                <span className={[
-                  'absolute -top-0.5 -right-0.5 h-1 w-1 rounded-full',
-                  status === 'MIGHT_BE_BUSY' && 'bg-foreground/40',
-                  status === 'BUSY' && 'bg-accent motion-safe:animate-alarm-dot motion-reduce:animate-none',
-                  status === 'MIGHT_NEED_ATTENTION' && 'bg-warning/60 motion-safe:animate-alarm-dot motion-reduce:animate-none',
-                ].filter(Boolean).join(' ')} />
-              )}
+          {alertEnabled && (
+            <span className={[alertRinging ? 'text-warning' : (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
+              <BellIcon size={11} weight="fill" className={bellIconClass(status)} />
             </span>
           )}
         </span>

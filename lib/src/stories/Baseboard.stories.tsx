@@ -47,7 +47,7 @@ export const OneRingingDoor: Story = {
   },
   parameters: withState({
     p1: {
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
 
       todo: TODO_OFF,
     },
@@ -71,17 +71,17 @@ export const MixedDoorStates: Story = {
       todo: TODO_OFF,
     },
     p2: {
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
 
       todo: TODO_OFF,
     },
     p3: {
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
 
       todo: TODO_HARD,
     },
     p4: {
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
 
       todo: TODO_HARD,
     },
@@ -108,12 +108,12 @@ export const OverflowWithRingingDoor: Story = {
       todo: TODO_OFF,
     },
     p5: {
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
 
       todo: TODO_OFF,
     },
     p7: {
-      status: 'ALARM_DISABLED',
+      status: 'ALERT_DISABLED',
 
       todo: TODO_HARD,
     },
@@ -137,7 +137,7 @@ export const ExtremeTitleWithBothIndicators: Story = {
   },
   parameters: withState({
     p2: {
-      status: 'ALARM_RINGING',
+      status: 'ALERT_RINGING',
 
       todo: TODO_HARD,
     },
