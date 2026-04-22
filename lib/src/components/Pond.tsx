@@ -14,7 +14,20 @@ import { createPortal } from 'react-dom';
 import { TerminalPane } from './TerminalPane';
 import { Baseboard } from './Baseboard';
 import { tv } from 'tailwind-variants';
-import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon } from '@phosphor-icons/react';
+import { PopupButtonRow, popupButton } from './design';
+import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
+import {
+  DEFAULT_MOUSE_SELECTION_STATE,
+  extendSelectionToToken,
+  flashCopy,
+  getMouseSelectionSnapshot,
+  getMouseSelectionState,
+  setOverride as setMouseOverride,
+  setSelection as setMouseSelection,
+  subscribeToMouseSelection,
+} from '../lib/mouse-selection';
+import { copyRaw, copyRewrapped, doPaste } from '../lib/clipboard';
+import { IS_MAC } from '../lib/platform';
 import {
   type AlarmButtonActionResult,
   clearSessionAttention,
@@ -201,6 +214,71 @@ function HeaderActionButton({
 }
 
 // --- Alarm context menu (right-click on bell) ---
+
+/**
+ * Portal banner shown while a temporary mouse-capture override is active.
+ * Positioned below a given anchor element (the No-Mouse icon) and kept in
+ * sync with scroll/resize. Spec §2.1 / §2.4: mouse-only, no keyboard.
+ */
+function MouseOverrideBanner({
+  anchor,
+  onMakePermanent,
+  onCancel,
+}: {
+  anchor: HTMLElement;
+  onMakePermanent: () => void;
+  onCancel: () => void;
+}) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [flashed, setFlashed] = useState<'sticky' | 'cancel' | null>(null);
+
+  useLayoutEffect(() => {
+    const update = () => {
+      const r = anchor.getBoundingClientRect();
+      setPos({ x: r.left, y: r.bottom + 4 });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [anchor]);
+
+  useEffect(() => {
+    if (!flashed) return;
+    const id = window.setTimeout(() => {
+      if (flashed === 'sticky') onMakePermanent();
+      else onCancel();
+    }, 260);
+    return () => window.clearTimeout(id);
+  }, [flashed, onMakePermanent, onCancel]);
+
+  if (!pos) return null;
+
+  return createPortal(
+    <PopupButtonRow
+      className="z-[9999]"
+      style={clampOverlayPosition({ left: pos.x, top: pos.y, width: 340, height: 32 })}
+      onMouseDown={(e) => e.stopPropagation()}
+      role="status"
+    >
+      <span className="px-1.5 py-0.5">Temporary mouse override until mouse-up.</span>
+      <button
+        type="button"
+        className={popupButton({ tone: 'muted', flashed: flashed === 'sticky' })}
+        onClick={() => !flashed && setFlashed('sticky')}
+      >Make sticky</button>
+      <button
+        type="button"
+        className={popupButton({ tone: 'muted', flashed: flashed === 'cancel' })}
+        onClick={() => !flashed && setFlashed('cancel')}
+      >Cancel</button>
+    </PopupButtonRow>,
+    document.body,
+  );
+}
 
 function clampOverlayPosition({ left, top, width, height }: {
   left: number;
@@ -529,12 +607,21 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const zoomed = useContext(ZoomedContext);
   const windowFocused = useContext(WindowFocusedContext);
   const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
+  const mouseStates = useSyncExternalStore(subscribeToMouseSelection, getMouseSelectionSnapshot);
   const actions = useContext(PondActionsContext);
   const sessionState = sessionStates.get(api.id) ?? DEFAULT_SESSION_UI_STATE;
+  const mouseState = mouseStates.get(api.id) ?? DEFAULT_MOUSE_SELECTION_STATE;
+  const showMouseIcon = mouseState.mouseReporting !== 'none';
+  const inOverride = mouseState.override !== 'off';
+  const mouseIconTooltip = inOverride
+    ? "You're overriding the TUI's mouse capture. Click to restore."
+    : 'TUI is intercepting mouse commands. Click to override.';
+  const mouseIconAriaLabel = inOverride ? 'Restore mouse capture' : 'Override mouse capture';
   const isSelected = selectedId === api.id;
   const showSelectedHeader = mode === 'passthrough' && isSelected && windowFocused;
   const isRenaming = renamingId === api.id;
   const tabRef = useRef<HTMLDivElement>(null);
+  const [mouseIconAnchor, setMouseIconAnchor] = useState<HTMLDivElement | null>(null);
   const suppressAlarmClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
   const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number } | null>(null);
@@ -684,6 +771,35 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
       </div>
       {!isRenaming && (
         <>
+          {showMouseIcon && (
+            <div ref={setMouseIconAnchor} className="ml-1 shrink-0">
+              <HeaderActionButton
+                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 text-muted hover:bg-foreground/10 hover:text-foreground"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMouseOverride(api.id, inOverride ? 'off' : 'temporary');
+                }}
+                ariaLabel={mouseIconAriaLabel}
+                tooltip={mouseIconTooltip}
+              >
+                <span className="relative flex items-center justify-center">
+                  {inOverride ? (
+                    <SelectionSlashIcon size={14} />
+                  ) : (
+                    <CursorClickIcon size={14} />
+                  )}
+                </span>
+              </HeaderActionButton>
+            </div>
+          )}
+          {mouseIconAnchor && mouseState.override === 'temporary' && (
+            <MouseOverrideBanner
+              anchor={mouseIconAnchor}
+              onMakePermanent={() => setMouseOverride(api.id, 'permanent')}
+              onCancel={() => setMouseOverride(api.id, 'off')}
+            />
+          )}
           {/* Split/Zoom controls — hidden at compact and minimal tiers */}
           {tier === 'full' && (
             <div className="ml-1 flex shrink-0 items-center gap-0.5">
@@ -1594,6 +1710,64 @@ export function Pond({
         lastCmdSide.current = side;
         lastCmdTime.current = now;
         return;
+      }
+
+      // Mid-drag keystrokes and copy/paste shortcuts. Spec §5.3, §3.6, §4.2, §8.2.
+      {
+        const sid = selectedIdRef.current;
+        if (sid) {
+          const mouseState = getMouseSelectionState(sid);
+          const sel = mouseState.selection;
+
+          // During a terminal-owned drag, `e` extends to the detected token
+          // and Esc cancels. Per spec §3.6, ALL keystrokes are consumed
+          // during a drag so they don't reach the inside program. Alt is
+          // allowed to propagate because terminal-registry's onAltChange
+          // listener uses it for block-selection shape toggling (§3.2).
+          if (sel?.dragging) {
+            if (e.key === 'e' && mouseState.hintToken) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              extendSelectionToToken(sid, mouseState.hintToken);
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              setMouseSelection(sid, null);
+              return;
+            }
+            // Let Alt propagate for block-selection toggling; consume
+            // everything else.
+            if (e.key !== 'Alt') {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+            }
+            return;
+          }
+
+          // Copy is narrow: only when the terminal has a finalized selection.
+          // Paste is broad: always intercepted on the platform's paste chord.
+          //   macOS: Cmd+V, Cmd+Shift+V. Ctrl+V passes through to the program.
+          //   Other: Ctrl+V, Ctrl+Shift+V. Both always intercepted.
+          const keyLower = e.key.toLowerCase();
+          const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+          if (sel && !sel.dragging && mod && keyLower === 'c') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            const rewrapped = e.shiftKey;
+            void (rewrapped ? copyRewrapped(sid) : copyRaw(sid)).then(() => {
+              flashCopy(sid, rewrapped ? 'rewrapped' : 'raw');
+            });
+            return;
+          }
+          if (mod && keyLower === 'v') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            void doPaste(sid);
+            return;
+          }
+        }
       }
 
       // In terminal mode, only the Meta gesture above matters — everything else goes to xterm

@@ -18,6 +18,14 @@ vi.mock('@xterm/xterm', () => {
     private dataListeners = new Set<(data: string) => void>();
     private resizeListeners = new Set<(size: { cols: number; rows: number }) => void>();
 
+    parser = {
+      registerCsiHandler: () => ({ dispose: () => {} }),
+    };
+    modes = {
+      mouseTrackingMode: 'none' as const,
+      bracketedPasteMode: false,
+    };
+
     loadAddon(): void {}
 
     open(): void {}
@@ -42,6 +50,10 @@ vi.mock('@xterm/xterm', () => {
           this.resizeListeners.delete(listener);
         },
       };
+    }
+
+    onRender(): { dispose: () => void } {
+      return { dispose: () => {} };
     }
 
     focus(): void {}
@@ -128,6 +140,12 @@ class MockElement {
       this.parentElement.children.splice(index, 1);
     }
     this.parentElement = null;
+  }
+
+  addEventListener(): void {}
+  removeEventListener(): void {}
+  getBoundingClientRect(): DOMRect {
+    return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) } as DOMRect;
   }
 }
 
@@ -220,6 +238,10 @@ describe('terminal-registry alarm behavior', () => {
       return 0;
     });
     vi.stubGlobal('MutationObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('window', {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    });
   });
 
   afterEach(() => {

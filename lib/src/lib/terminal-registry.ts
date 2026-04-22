@@ -5,6 +5,22 @@ import type { SessionStatus } from './activity-monitor';
 import { TODO_OFF, isSoftTodo, type TodoState, type AlarmButtonActionResult } from './alarm-manager';
 import type { AlarmStateDetail } from './platform/types';
 import type { PersistedAlarmState } from './session-types';
+import { attachMouseModeObserver } from './mouse-mode-observer';
+import {
+  beginDrag,
+  bumpRenderTick,
+  endDrag,
+  getMouseSelectionState,
+  isDragging,
+  removeMouseSelectionState,
+  setDragAlt,
+  setHintToken,
+  setOverride,
+  setSelection as setMouseSelection,
+  updateDrag,
+} from './mouse-selection';
+import { detectTokenAt } from './smart-token';
+import { extractSelectionText } from './selection-text';
 
 export type { SessionStatus } from './activity-monitor';
 export { TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo, isHardTodo, hasTodo, type TodoState, type AlarmButtonActionResult } from './alarm-manager';
@@ -354,17 +370,182 @@ function setupTerminalEntry(id: string): TerminalEntry {
     getPlatform().writePty(id, data);
   });
 
-  // Resize → PTY
+  // Resize → PTY. Also cancel any finalized selection (spec §3.4: resize
+  // counts as a content change).
   const resizeDisposable = terminal.onResize(({ cols, rows }) => {
     getPlatform().alarmResize(id);
     getPlatform().resizePty(id, cols, rows);
+    bumpRenderTick();
+    if (getMouseSelectionState(id).selection) {
+      setMouseSelection(id, null);
+    }
+    selectionBaseline = null;
   });
+
+  // Cancel-on-change: snapshot the selected text when the drag ends, then
+  // on every subsequent render check whether any covered cell has changed.
+  // If so, cancel the selection (spec §3.4).
+  let selectionBaseline: string | null = null;
+
+  const renderDisposable = terminal.onRender(() => {
+    bumpRenderTick();
+    if (selectionBaseline === null) return;
+    const sel = getMouseSelectionState(id).selection;
+    if (!sel || sel.dragging) {
+      selectionBaseline = null;
+      return;
+    }
+    const current = extractSelectionText(terminal, sel);
+    if (current !== selectionBaseline) {
+      setMouseSelection(id, null);
+      selectionBaseline = null;
+    }
+  });
+
+  // Observe DECSET/DECRST for mouse-reporting and bracketed-paste modes.
+  const mouseModeObserver = attachMouseModeObserver(id, terminal);
+
+  // Mouse event router. Capture phase so we see events before xterm's own
+  // handlers. We defer beginDrag (and stopPropagation) until the cursor has
+  // actually moved past a small threshold — a plain click stays a plain
+  // click so the pane-click handler upstream can still shift focus.
+  const computeCell = (ev: MouseEvent): { row: number; col: number; startedInScrollback: boolean } => {
+    // Use the same measured cell grid as the selection overlay so mouse
+    // hit-testing and highlight rendering can never drift apart.
+    const dims = getTerminalOverlayDims(id);
+    if (!dims) {
+      return { row: 0, col: 0, startedInScrollback: false };
+    }
+    const elementRect = element.getBoundingClientRect();
+    const offsetX = ev.clientX - elementRect.left - dims.gridLeft;
+    const offsetY = ev.clientY - elementRect.top - dims.gridTop;
+    const col = Math.min(dims.cols - 1, Math.max(0, Math.floor(offsetX / dims.cellWidth)));
+    const viewportRow = Math.min(dims.rows - 1, Math.max(0, Math.floor(offsetY / dims.cellHeight)));
+    const absRow = dims.viewportY + viewportRow;
+    const startedInScrollback = absRow < dims.baseY;
+    return { row: absRow, col, startedInScrollback };
+  };
+
+  const DRAG_THRESHOLD_PX_SQ = 16; // 4px squared — typical click-vs-drag threshold
+  let pendingDrag: {
+    row: number;
+    col: number;
+    altKey: boolean;
+    startedInScrollback: boolean;
+    clientX: number;
+    clientY: number;
+  } | null = null;
+
+  const onMouseDown = (ev: MouseEvent) => {
+    if (ev.button !== 0) return; // only left-click can start a selection
+    const state = getMouseSelectionState(id);
+    const cell = computeCell(ev);
+    // Per spec §3.5 and §6.1:
+    //  - reporting off: terminal handles
+    //  - reporting on + override active: terminal handles
+    //  - reporting on + no override + scrollback-origin: terminal handles
+    //  - reporting on + no override + live region: inside program handles
+    const terminalOwns =
+      state.mouseReporting === 'none'
+      || state.override !== 'off'
+      || cell.startedInScrollback;
+    if (!terminalOwns) return;
+    // Record the anchor but don't commit — this might be a plain click. We
+    // deliberately do NOT preventDefault / stopPropagation here so pane
+    // focus-on-click (and xterm's own focus handling) still work.
+    pendingDrag = {
+      row: cell.row,
+      col: cell.col,
+      altKey: ev.altKey,
+      startedInScrollback: cell.startedInScrollback,
+      clientX: ev.clientX,
+      clientY: ev.clientY,
+    };
+  };
+  const onWindowMouseMove = (ev: MouseEvent) => {
+    if (pendingDrag) {
+      const dx = ev.clientX - pendingDrag.clientX;
+      const dy = ev.clientY - pendingDrag.clientY;
+      if (dx * dx + dy * dy < DRAG_THRESHOLD_PX_SQ) return;
+      // Threshold crossed — promote pending anchor into a real drag.
+      beginDrag(id, {
+        row: pendingDrag.row,
+        col: pendingDrag.col,
+        altKey: pendingDrag.altKey,
+        startedInScrollback: pendingDrag.startedInScrollback,
+      });
+      // Wipe any nascent xterm selection that started on the bare mousedown.
+      terminal.clearSelection();
+      pendingDrag = null;
+    }
+    if (!isDragging(id)) return;
+    const cell = computeCell(ev);
+    updateDrag(id, { row: cell.row, col: cell.col, altKey: ev.altKey });
+    ev.preventDefault();
+    ev.stopPropagation();
+    // Smart-extension hint (spec §5): scan the line under the current drag
+    // cursor for a URL/path token.
+    const line = terminal.buffer.active.getLine(cell.row);
+    const text = line?.translateToString(false, 0, terminal.cols);
+    const token = text ? detectTokenAt(text, cell.col) : null;
+    setHintToken(id, token ? {
+      kind: token.kind,
+      row: cell.row,
+      startCol: token.start,
+      endCol: token.end,
+      text: token.text,
+    } : null);
+  };
+  const onWindowMouseUp = (ev: MouseEvent) => {
+    if (ev.button !== 0) return; // only left-button release ends a drag
+    if (pendingDrag) {
+      // Pure click — never crossed the drag threshold. Still counts as the
+      // mouse-up that terminates a temporary override (spec §2.1).
+      if (getMouseSelectionState(id).override === 'temporary') {
+        setOverride(id, 'off');
+      }
+      pendingDrag = null;
+      return;
+    }
+    if (!isDragging(id)) return;
+    endDrag(id);
+    setHintToken(id, null);
+    // Take a text snapshot of the finalized selection for cancel-on-change.
+    const sel = getMouseSelectionState(id).selection;
+    selectionBaseline = sel ? extractSelectionText(terminal, sel) : null;
+    // Per spec §2.1: a temporary override ends on the mouse-up that
+    // finalizes the drag.
+    if (getMouseSelectionState(id).override === 'temporary') {
+      setOverride(id, 'off');
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+  };
+  element.addEventListener('mousedown', onMouseDown, true);
+  window.addEventListener('mousemove', onWindowMouseMove, true);
+  window.addEventListener('mouseup', onWindowMouseUp, true);
+
+  // Live-flip block/linewise shape when Alt is pressed/released without
+  // mouse movement (spec §3.2).
+  const onAltChange = (ev: KeyboardEvent) => {
+    if (!isDragging(id)) return;
+    setDragAlt(id, ev.altKey);
+  };
+  window.addEventListener('keydown', onAltChange, true);
+  window.addEventListener('keyup', onAltChange, true);
 
   const cleanup = () => {
     getPlatform().offPtyData(handleData);
     getPlatform().offPtyExit(handleExit);
     inputDisposable.dispose();
     resizeDisposable.dispose();
+    renderDisposable.dispose();
+    mouseModeObserver.dispose();
+    element.removeEventListener('mousedown', onMouseDown, true);
+    window.removeEventListener('mousemove', onWindowMouseMove, true);
+    window.removeEventListener('mouseup', onWindowMouseUp, true);
+    window.removeEventListener('keydown', onAltChange, true);
+    window.removeEventListener('keyup', onAltChange, true);
   };
 
   const entry: TerminalEntry = {
@@ -528,6 +709,7 @@ export function destroyTerminal(id: string): void {
   entry.element.remove();
   entry.terminal.dispose();
   registry.delete(id);
+  removeMouseSelectionState(id);
   notifySessionStateListeners();
 }
 
@@ -581,6 +763,78 @@ export function refitTerminal(id: string): void {
   const entry = registry.get(id);
   if (!entry) return;
   entry.fit.fit();
+}
+
+/**
+ * Dimensions the selection overlay needs to position its highlight rectangles.
+ * Returns null if the terminal isn't live.
+ */
+export interface TerminalOverlayDims {
+  cols: number;
+  rows: number;
+  viewportY: number;
+  baseY: number;
+  /** Pixel width of the persistent terminal element (container for the canvas). */
+  elementWidth: number;
+  /** Pixel height of the persistent terminal element. */
+  elementHeight: number;
+  /** Measured pixel width of a single cell. */
+  cellWidth: number;
+  /** Measured pixel height of a single cell. */
+  cellHeight: number;
+  /** Left offset of the cell grid (`.xterm-screen`) within the element. */
+  gridLeft: number;
+  /** Top offset of the cell grid within the element. */
+  gridTop: number;
+}
+
+/**
+ * Get the raw xterm Terminal instance for a pane id. Used by features that
+ * need to read the buffer directly (selection extraction). Returns null
+ * when the terminal isn't live.
+ */
+export function getTerminalInstance(id: string): Terminal | null {
+  return registry.get(id)?.terminal ?? null;
+}
+
+export function getTerminalOverlayDims(id: string): TerminalOverlayDims | null {
+  const entry = registry.get(id);
+  if (!entry) return null;
+  const elementRect = entry.element.getBoundingClientRect();
+  // Measure xterm's actual cell grid, not the surrounding element. xterm puts
+  // a few pixels of padding around `.xterm-screen`, so element-divided-by-
+  // cols/rows is slightly off and the error accumulates with row count.
+  const screen = entry.element.querySelector<HTMLElement>('.xterm-screen');
+  let cellWidth: number;
+  let cellHeight: number;
+  let gridLeft: number;
+  let gridTop: number;
+  if (screen) {
+    const screenRect = screen.getBoundingClientRect();
+    cellWidth = screenRect.width / entry.terminal.cols;
+    cellHeight = screenRect.height / entry.terminal.rows;
+    gridLeft = screenRect.left - elementRect.left;
+    gridTop = screenRect.top - elementRect.top;
+  } else {
+    // Before xterm has rendered, fall back to element dimensions. Not
+    // perfectly aligned but selection UI isn't usable at this point anyway.
+    cellWidth = elementRect.width / entry.terminal.cols;
+    cellHeight = elementRect.height / entry.terminal.rows;
+    gridLeft = 0;
+    gridTop = 0;
+  }
+  return {
+    cols: entry.terminal.cols,
+    rows: entry.terminal.rows,
+    viewportY: entry.terminal.buffer.active.viewportY,
+    baseY: entry.terminal.buffer.active.baseY,
+    elementWidth: elementRect.width,
+    elementHeight: elementRect.height,
+    cellWidth,
+    cellHeight,
+    gridLeft,
+    gridTop,
+  };
 }
 
 /**

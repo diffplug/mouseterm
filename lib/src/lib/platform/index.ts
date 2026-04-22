@@ -16,6 +16,17 @@ export {
   SCENARIO_FAST_OUTPUT,
 } from './fake-scenarios';
 
+/**
+ * True when running on macOS. Used to pick native keyboard conventions
+ * (Cmd vs Ctrl for copy/paste, etc.). Computed once at module load.
+ */
+export const IS_MAC: boolean = (() => {
+  if (typeof navigator === 'undefined') return false;
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform ?? nav.platform ?? nav.userAgent ?? '';
+  return /Mac|iPhone|iPad/i.test(platform);
+})();
+
 let adapter: PlatformAdapter | null = null;
 
 /** Set an externally-created platform adapter (e.g. TauriAdapter from standalone). */
