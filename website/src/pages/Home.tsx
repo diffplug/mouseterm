@@ -119,7 +119,7 @@ function Home() {
           (fraction - ASTERISK_THRESHOLD) / 0.08
         ));
         if (asteriskRef.current) asteriskRef.current.style.opacity = String(astProgress);
-        if (footnoteRef.current) footnoteRef.current.style.opacity = String(astProgress * 0.5);
+        if (footnoteRef.current) footnoteRef.current.style.opacity = String(astProgress * 0.7);
 
         // Header: reveal brand + background at unpin threshold
         const headerProgress = Math.min(1, Math.max(0,
@@ -198,7 +198,7 @@ function Home() {
               </span>
               <p
                 ref={footnoteRef}
-                className="mt-3 text-sm"
+                className="mt-3 text-lg"
                 style={{ opacity: 0 }}
               >
                 * supports (and teaches) tmux shortcuts
@@ -271,7 +271,7 @@ function Home() {
 
           <a
             href="/playground"
-            className="inline-block px-8 py-3 rounded-md bg-[var(--color-caramel)] text-[var(--color-bg)] font-display text-lg hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150"
+            className="inline-block px-6 py-3 rounded-md bg-[var(--color-caramel)] text-[var(--color-bg)] font-display text-lg hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150"
           >
             Try it in the Playground
           </a>
@@ -316,13 +316,17 @@ function Home() {
           </div>
         </section>
 
-        <footer className="border-t border-[var(--color-text)]/10 py-10 px-4 md:px-6">
-          <nav className="mx-auto max-w-2xl flex flex-wrap items-center gap-6 text-sm opacity-50">
-            <a href="https://github.com/diffplug/mouseterm" className="hover:opacity-100">GitHub</a>
-            <a href="https://github.com/diffplug/mouseterm/blob/main/LICENSE" className="hover:opacity-100">FSL-1.1-MIT</a>
-            <a href="/dependencies" className="hover:opacity-100">Dependencies</a>
-            <a href="https://github.com/diffplug/mouseterm/issues" className="hover:opacity-100">Report an issue</a>
-          </nav>
+        <footer className="border-t border-[var(--color-text)]/10 py-10">
+          <div className="mx-auto max-w-2xl px-4 md:px-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm opacity-50">
+            <a href="/dependencies" className="underline hover:opacity-100">Dependencies</a>
+            <a href="https://github.com/diffplug/mouseterm/issues" className="underline hover:opacity-100">Report an issue</a>
+            <p>
+              Brought to you by{" "}
+              <a href="https://nedshed.dev" className="underline hover:opacity-100">nedshed.dev</a>
+              {" "}and{" "}
+              <a href="https://diffplug.com" className="underline hover:opacity-100">DiffPlug</a>
+            </p>
+          </div>
         </footer>
       </div>
     </>
