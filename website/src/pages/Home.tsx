@@ -246,7 +246,7 @@ function Home() {
             </span>
             <span ref={word2Ref} style={{ opacity: 0, transform: "translateY(12px)" }}>
               <span className="text-[var(--color-caramel)] relative">
-                for Mice<sup ref={asteriskRef} className="absolute left-full top-0" style={{ opacity: 0 }}>*</sup>
+                for Mice<sup ref={asteriskRef} className="absolute left-full top-3" style={{ opacity: 0 }}>*</sup>
               </span>
             </span>
             <p
@@ -254,7 +254,7 @@ function Home() {
               className="mt-3 text-lg"
               style={{ opacity: 0 }}
             >
-              * supports (and teaches) tmux shortcuts
+              *supports (and teaches) tmux shortcuts
             </p>
           </div>
         </div>
