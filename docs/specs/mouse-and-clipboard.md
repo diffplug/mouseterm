@@ -300,11 +300,23 @@ The bracketed-paste mode is read at paste time from xterm's public `terminal.mod
 
 ### 8.6 Paste Content
 
-The terminal pastes plain text only. It calls `navigator.clipboard.readText()` and writes the resulting string to the PTY (with bracketed-paste wrapping when enabled). If `readText` returns an empty string or throws (e.g. the document lacks focus or permission was denied), the paste is silently a no-op.
+Paste reads the clipboard in three tiers, falling through in order:
 
-File-URL handling, image paste, content-aware transformations, paste history, and credential warnings are out of scope (see §9).
+1. **File references.** The platform adapter checks for OS file references (Finder/Explorer Copy of a file) via the sidecar/extension host. If present, each path is shell-escaped and the space-joined list is written to the PTY with a trailing space so the next token starts cleanly. Files are checked first so that a file-ref clipboard never reaches `navigator.clipboard.readText()` — on macOS WKWebView that call can trigger a native paste-permission popup when the clipboard came from another app.
+2. **Plain text.** `navigator.clipboard.readText()`. If non-empty, the string is written to the PTY (with bracketed-paste wrapping when enabled by the inside program).
+3. **Raw image data.** If neither of the above matches and the clipboard holds image bytes (e.g. a `Cmd+Shift+4` screenshot), the bytes are written to a newly-created private temp directory as `<uuid>.png` and that single path is pasted as in tier 1. On Unix-like systems the temp directory is owner-only and the image file is written owner-readable/writable to avoid exposing clipboard screenshots to other local users.
 
-### 8.7 Right-Click and Menu Paste
+Each tier is implemented by a shared Node module (`standalone/sidecar/clipboard-ops.js`) that shells out to the OS-native clipboard tool: `osascript` on macOS, `Get-Clipboard` on Windows, `wl-paste`/`xclip` on Linux. The Tauri build reaches it through the existing sidecar; the VSCode build calls into the same module from its extension host. If every tier comes back empty, paste is a silent no-op.
+
+Content-aware transformations, paste history, credential warnings, and middle-click (X11 PRIMARY) paste remain out of scope (see §9).
+
+### 8.7 Drag-to-Paste
+
+Dragging files onto a terminal pane mirrors the paste chain above: escaped paths are typed at the current prompt, space-joined with a trailing space. Tauri receives the drop natively via `WindowEvent::DragDrop` and routes paths to the focused pane.
+
+Drag-to-paste is **not supported in the VSCode build**: VSCode's `WebviewView` (sidebar/panel) is excluded from external-file drop routing by the workbench, so the webview iframe never receives `dragover`/`drop` events for files dragged from the OS. See §9.2. VSCode users paste instead (§8.1/§8.5).
+
+### 8.8 Right-Click and Menu Paste
 
 Right-click and OS Edit-menu paste are not currently implemented; users paste via the keyboard shortcuts in §8.2.
 
@@ -332,10 +344,10 @@ The following are explicitly not implemented today; they may be added in respons
 - A settings toggle to disable Ctrl+V interception on Windows and Linux.
 - A paste popup (parallel to the copy popup) for previewing or transforming paste content before it is committed.
 - Paste content transformations (strip trailing whitespace, normalize line endings, convert smart quotes).
-- File URL handling: pasting a `file://` URL as the bare path (Finder/Explorer drag-as-text).
-- Image paste: detecting image data on the clipboard and offering to paste it as a temp file path or inline base64.
 - Paste history.
 - Credential-shaped content detection and warnings.
 - Multi-line paste confirmation dialogs.
 - A "literal next keystroke" terminal-level shortcut (Ctrl+Alt+V or similar) for programs that don't support Ctrl+Q-style `quoted-insert`.
 - Middle-click paste / X11 PRIMARY selection integration on Linux.
+- Drop-position-aware pane routing (currently drops always go to the focused pane).
+- Drag-to-paste in the VSCode build. `WebviewView` is excluded from external-file drop routing by the workbench and there is no API to opt in (see [microsoft/vscode#111092](https://github.com/microsoft/vscode/issues/111092), closed as out-of-scope). Users paste via Ctrl+V / Cmd+V instead.

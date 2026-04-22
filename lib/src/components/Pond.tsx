@@ -26,7 +26,7 @@ import {
   setSelection as setMouseSelection,
   subscribeToMouseSelection,
 } from '../lib/mouse-selection';
-import { copyRaw, copyRewrapped, doPaste } from '../lib/clipboard';
+import { copyRaw, copyRewrapped, doPaste, pasteFilePaths } from '../lib/clipboard';
 import { IS_MAC } from '../lib/platform';
 import {
   type AlertButtonActionResult,
@@ -1683,12 +1683,22 @@ export function Pond({
     platform.onRequestSessionFlush(handleSessionFlushRequest);
     window.addEventListener('pagehide', handlePageHide);
 
+    const unsubFilesDropped = platform.onFilesDropped?.((paths) => {
+      if (paths.length === 0) return;
+      const sid = selectedTypeRef.current === 'pane' ? selectedIdRef.current : null;
+      if (!sid) return;
+      const api = apiRef.current;
+      if (!api || !api.panels.some((p) => p.id === sid)) return;
+      pasteFilePaths(sid, paths);
+    });
+
     return () => {
       if (sessionSaveTimerRef.current) {
         clearTimeout(sessionSaveTimerRef.current);
         sessionSaveTimerRef.current = null;
       }
       window.removeEventListener('pagehide', handlePageHide);
+      unsubFilesDropped?.();
       platform.offRequestSessionFlush(handleSessionFlushRequest);
       platform.offPtyExit(handlePtyExit);
       layoutDisposable.dispose();

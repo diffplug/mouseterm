@@ -11,7 +11,10 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Emitter, Manager, RunEvent};
+use tauri::{
+    menu::{AboutMetadata, Menu, PredefinedMenuItem, Submenu},
+    AppHandle, DragDropEvent, Emitter, Manager, RunEvent, WindowEvent,
+};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 enum SidecarMsg {
@@ -211,6 +214,29 @@ fn pty_get_scrollback(
     Ok(response
         .get("data")
         .and_then(|data| data.as_str().map(String::from)))
+}
+
+#[tauri::command]
+fn read_clipboard_file_paths(
+    state: tauri::State<'_, SidecarState>,
+) -> Result<Vec<String>, String> {
+    let response =
+        request_from_sidecar_timeout(&state, "clipboard:readFiles", serde_json::json!({}), Duration::from_secs(5))?;
+    Ok(response
+        .get("paths")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default())
+}
+
+#[tauri::command]
+fn read_clipboard_image_as_file_path(
+    state: tauri::State<'_, SidecarState>,
+) -> Result<Option<String>, String> {
+    let response =
+        request_from_sidecar_timeout(&state, "clipboard:readImage", serde_json::json!({}), Duration::from_secs(10))?;
+    Ok(response
+        .get("path")
+        .and_then(|path| path.as_str().map(String::from)))
 }
 
 #[tauri::command]
@@ -420,6 +446,57 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Replace Tauri's default menu, which binds Cmd+V to a native Paste
+        // action that fights with the webview's DOM keydown handler. The
+        // terminal owns Cmd+C / Cmd+V / Cmd+X in JS (see `Pond.tsx`).
+        .menu(|handle| {
+            let pkg = handle.package_info();
+            let about = AboutMetadata {
+                name: Some(pkg.name.clone()),
+                version: Some(pkg.version.to_string()),
+                ..Default::default()
+            };
+            let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<_>>> = Vec::new();
+            #[cfg(target_os = "macos")]
+            items.push(Box::new(Submenu::with_items(
+                handle,
+                pkg.name.clone(),
+                true,
+                &[
+                    &PredefinedMenuItem::about(handle, None, Some(about))?,
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::services(handle, None)?,
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::hide(handle, None)?,
+                    &PredefinedMenuItem::hide_others(handle, None)?,
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::quit(handle, None)?,
+                ],
+            )?));
+            items.push(Box::new(Submenu::with_items(
+                handle,
+                "Window",
+                true,
+                &[
+                    &PredefinedMenuItem::minimize(handle, None)?,
+                    &PredefinedMenuItem::maximize(handle, None)?,
+                    #[cfg(target_os = "macos")]
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::close_window(handle, None)?,
+                ],
+            )?));
+            let refs: Vec<&dyn tauri::menu::IsMenuItem<_>> = items.iter().map(|b| b.as_ref()).collect();
+            Menu::with_items(handle, &refs)
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
+                let payload: Vec<String> = paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                let _ = window.emit("mouseterm://files-dropped", serde_json::json!({ "paths": payload }));
+            }
+        })
         .setup(|app| {
             init_log();
             append_log("[app] setup started");
@@ -453,6 +530,8 @@ pub fn run() {
             pty_request_init,
             shutdown_sidecar,
             get_available_shells,
+            read_clipboard_file_paths,
+            read_clipboard_image_as_file_path,
         ])
         .build(tauri::generate_context!())
         .expect("error while building MouseTerm")

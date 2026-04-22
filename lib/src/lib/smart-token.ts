@@ -16,15 +16,12 @@ export interface DetectedToken {
 interface Pattern {
   kind: 'url' | 'path';
   re: RegExp;
-  /** When true, trailing-punctuation stripping is skipped — the pattern's
-   *  trailing characters are significant (e.g. error-location `:line:col`). */
-  skipStrip?: boolean;
 }
 
 const PATTERNS: Pattern[] = [
   { kind: 'url', re: /^https?:\/\/\S+$/ },
   { kind: 'url', re: /^file:\/\/\S+$/ },
-  { kind: 'path', re: /^\S+:\d+(:\d+)?$/, skipStrip: true }, // error-location first (so it beats generic path)
+  { kind: 'path', re: /^\S+:\d+(:\d+)?$/ }, // error-location first (so it beats generic path)
   { kind: 'path', re: /^~\/\S*$/ },
   { kind: 'path', re: /^\/\S+$/ },
   { kind: 'path', re: /^\.\.?\/\S*$/ },
@@ -88,11 +85,16 @@ export function detectTokenAt(line: string, col: number): DetectedToken | null {
   const raw = line.slice(start, end);
   if (!raw) return null;
 
-  for (const { kind, re, skipStrip } of PATTERNS) {
-    if (!re.test(raw)) continue;
-    const text = skipStrip ? raw : stripTrailing(raw);
-    if (!text) continue;
-    return { kind, start, end: start + text.length, text };
+  // Strip trailing punctuation once, then test all patterns against the
+  // cleaned token. This ensures error-location patterns like `file:42` are
+  // found even when the original token had a trailing period (e.g. in
+  // compiler output "Error at src/foo.ts:42.").
+  const cleaned = stripTrailing(raw);
+  if (!cleaned) return null;
+
+  for (const { kind, re } of PATTERNS) {
+    if (!re.test(cleaned)) continue;
+    return { kind, start, end: start + cleaned.length, text: cleaned };
   }
   return null;
 }

@@ -130,6 +130,22 @@ export class VSCodeAdapter implements PlatformAdapter {
     return this.requestResponse('pty:getScrollback', 'pty:scrollback', { id }, (msg) => msg.data);
   }
 
+  readClipboardFilePaths(): Promise<string[] | null> {
+    return this.requestResponse<string[] | null>(
+      'clipboard:readFiles', 'clipboard:files', {},
+      (msg) => msg.paths,
+      5000,
+    );
+  }
+
+  readClipboardImageAsFilePath(): Promise<string | null> {
+    return this.requestResponse<string | null>(
+      'clipboard:readImage', 'clipboard:image', {},
+      (msg) => msg.path,
+      10000,
+    );
+  }
+
   onPtyData(handler: (detail: { id: string; data: string }) => void): void {
     this.dataHandlers.add(handler);
   }

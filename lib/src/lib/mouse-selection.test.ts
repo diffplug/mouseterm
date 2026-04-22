@@ -4,6 +4,7 @@ import {
   __resetMouseSelectionForTests,
   beginDrag,
   endDrag,
+  flashCopy,
   getMouseSelectionSnapshot,
   getMouseSelectionState,
   isDragging,
@@ -269,6 +270,23 @@ describe('mouse-selection: drag lifecycle', () => {
   it('beginDrag with startedInScrollback=true preserves the flag', () => {
     beginDrag('a', { row: 2, col: 0, altKey: false, startedInScrollback: true });
     expect(getMouseSelectionState('a').selection?.startedInScrollback).toBe(true);
+  });
+});
+
+describe('mouse-selection: flashCopy race', () => {
+  it('beginDrag during a flash clears copyFlash so the timer does not nuke the new selection', () => {
+    beginDrag('a', { row: 0, col: 0, altKey: false, startedInScrollback: false });
+    updateDrag('a', { row: 3, col: 5, altKey: false });
+    endDrag('a');
+
+    // Simulate flashCopy — but we call beginDrag before the timer fires.
+    flashCopy('a', 'raw', 500);
+    expect(getMouseSelectionState('a').copyFlash).toBe('raw');
+
+    // New drag starts before the 500ms timer.
+    beginDrag('a', { row: 10, col: 2, altKey: false, startedInScrollback: false });
+    expect(getMouseSelectionState('a').copyFlash).toBeNull();
+    expect(getMouseSelectionState('a').selection?.startRow).toBe(10);
   });
 });
 

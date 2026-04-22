@@ -28,6 +28,8 @@ function createPlatform(savedState: PersistedSession | null): PlatformAdapter {
     getAvailableShells: vi.fn(async () => []),
     getCwd: vi.fn(async () => '/tmp/live'),
     getScrollback: vi.fn(async () => 'echo hello\n'),
+    readClipboardFilePaths: vi.fn(async () => null),
+    readClipboardImageAsFilePath: vi.fn(async () => null),
     onPtyData: () => {},
     offPtyData: () => {},
     onPtyExit: () => {},

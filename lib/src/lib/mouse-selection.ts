@@ -149,6 +149,9 @@ export function beginDrag(
   args: { row: number; col: number; altKey: boolean; startedInScrollback: boolean },
 ): void {
   const s = ensure(id);
+  // Clear any in-flight copy flash so its timer won't null out this new
+  // selection when it fires (the timer checks `copyFlash !== kind`).
+  s.copyFlash = null;
   s.selection = {
     startRow: args.row,
     startCol: args.col,

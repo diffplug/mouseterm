@@ -26,6 +26,7 @@ export class TauriAdapter implements PlatformAdapter {
   private exitHandlers = new Set<(detail: { id: string; exitCode: number }) => void>();
   private listHandlers = new Set<(detail: { ptys: PtyInfo[] }) => void>();
   private replayHandlers = new Set<(detail: { id: string; data: string }) => void>();
+  private filesDroppedHandlers = new Set<(paths: string[]) => void>();
   private alertStateHandlers = new Set<(detail: AlertStateDetail) => void>();
   private unlistenFns: Array<() => void> = [];
   private alertManager = new AlertManager();
@@ -76,6 +77,14 @@ export class TauriAdapter implements PlatformAdapter {
         }
       }),
     );
+
+    this.unlistenFns.push(
+      await listen<{ paths: string[] }>("mouseterm://files-dropped", (event) => {
+        const paths = event.payload.paths ?? [];
+        if (paths.length === 0) return;
+        for (const handler of this.filesDroppedHandlers) handler(paths);
+      }),
+    );
   }
 
   shutdown(): void {
@@ -119,6 +128,23 @@ export class TauriAdapter implements PlatformAdapter {
     try {
       return await rawInvoke<string | null>("pty_get_scrollback", { id });
     } catch { return null; }
+  }
+
+  async readClipboardFilePaths(): Promise<string[] | null> {
+    try {
+      return await rawInvoke<string[]>("read_clipboard_file_paths");
+    } catch { return null; }
+  }
+
+  async readClipboardImageAsFilePath(): Promise<string | null> {
+    try {
+      return await rawInvoke<string | null>("read_clipboard_image_as_file_path");
+    } catch { return null; }
+  }
+
+  onFilesDropped(handler: (paths: string[]) => void): () => void {
+    this.filesDroppedHandlers.add(handler);
+    return () => { this.filesDroppedHandlers.delete(handler); };
   }
 
   onPtyData(handler: (detail: { id: string; data: string }) => void): void {
