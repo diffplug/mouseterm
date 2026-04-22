@@ -10,8 +10,10 @@ export { Home as Component };
 const RUNWAY_VH = 300;
 
 /** Scroll thresholds within the pinned runway (0–1) */
-const WORD_THRESHOLDS = [0.0, 0.28, 0.41] as const;
-const ASTERISK_THRESHOLD = 0.50;
+const ICON_INITIAL_HIDE_FRAC = 0.67; // Fraction of icon's rendered height hidden at load — leaves top third visible
+const HOOK_FADE_REMAINING = 0.10;    // Hook begins fading when bottom 10% of icon enters viewport
+const WORD_THRESHOLDS = [0.25, 0.40, 0.55] as const;
+const ASTERISK_THRESHOLD = 0.65;
 
 /** Fraction of runway where the hero text unpins and scrolls away (0–1).
  *  The video keeps scrubbing underneath. */
@@ -58,6 +60,7 @@ function Home() {
   const footnoteRef = useRef<HTMLParagraphElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const headerBrandRef = useRef<HTMLAnchorElement>(null);
+  const hookRef = useRef<HTMLDivElement>(null);
   const [installGuide, setInstallGuide] = useState<string | null>(null);
 
   useEffect(() => {
@@ -98,9 +101,33 @@ function Home() {
         const fraction = runwayHeight > 0
           ? Math.min(1, Math.max(0, runwayScroll / runwayHeight))
           : 0;
-        // Scrub video
+
+        // Compute rendered video content height (object-contain fits within container
+        // while preserving the video's native aspect ratio). This is the icon's actual
+        // on-screen size and drives the icon rise distance, the hook fade timing, and
+        // the video scrub start point.
+        const naturalAspect = video.videoWidth && video.videoHeight
+          ? video.videoWidth / video.videoHeight
+          : 1.22; // fallback before metadata loads
+        const containerAspect = video.offsetWidth / video.offsetHeight;
+        const iconHeight = naturalAspect > containerAspect
+          ? video.offsetWidth / naturalAspect  // width-limited
+          : video.offsetHeight;                 // height-limited
+        const initialOffset = iconHeight * ICON_INITIAL_HIDE_FRAC;
+
+        // Scrub video: hold on frame 0 while the icon is still rising into position.
+        // Once the icon reaches its static position (runwayScroll >= initialOffset),
+        // scrub the remaining scroll range across the video's duration.
         if (video.duration && isFinite(video.duration)) {
-          video.currentTime = fraction * video.duration;
+          if (runwayScroll < initialOffset) {
+            video.currentTime = 0;
+          } else {
+            const videoRunway = runwayHeight - initialOffset;
+            const videoProgress = videoRunway > 0
+              ? Math.min(1, (runwayScroll - initialOffset) / videoRunway)
+              : 0;
+            video.currentTime = videoProgress * video.duration;
+          }
         }
 
         // Reveal words
@@ -121,6 +148,8 @@ function Home() {
         if (asteriskRef.current) asteriskRef.current.style.opacity = String(astProgress);
         if (footnoteRef.current) footnoteRef.current.style.opacity = String(astProgress * 0.7);
 
+        // (Hook fade handled below, after iconHeight is computed for the icon rise.)
+
         // Header: reveal brand + background at unpin threshold
         const headerProgress = Math.min(1, Math.max(0,
           (fraction - UNPIN_THRESHOLD) / 0.08
@@ -139,9 +168,39 @@ function Home() {
         const contentEnterScroll = runway.offsetHeight * UNPIN_THRESHOLD - window.innerHeight;
         const slideAmount = Math.max(0, runwayScroll - contentEnterScroll);
 
-        video.style.transform = slideAmount > 0
-          ? `translateY(-${Math.round(slideAmount)}px)`
+        // Video transform combines two behaviors:
+        //   1. Icon-rise (runwayScroll 0 → initialOffset px): 1:1 with scroll.
+        //      At load the icon is translated +initialOffset so only the top third
+        //      is visible; each pixel of scroll lifts it by one pixel until fully
+        //      in view.
+        //   2. Existing unpin slide (fraction > UNPIN_THRESHOLD): translate up with
+        //      content as hero unpins.
+        let videoTranslateY = 0;
+        let iconCurrentOffset = 0;
+        if (runwayScroll < initialOffset) {
+          iconCurrentOffset = initialOffset - runwayScroll;
+          videoTranslateY = iconCurrentOffset;
+        } else if (slideAmount > 0) {
+          videoTranslateY = -Math.round(slideAmount);
+        }
+        video.style.transform = videoTranslateY !== 0
+          ? `translateY(${Math.round(videoTranslateY)}px)`
           : '';
+
+        // Hook text: holds visible until the bottom ~10% of the icon enters the
+        // viewport, then fades out as the icon completes its rise. Tied to icon
+        // position (not scroll fraction) so the timing matches 1:1 icon motion.
+        if (hookRef.current) {
+          const remainingHidden = iconHeight > 0 ? iconCurrentOffset / iconHeight : 0;
+          let fadeProgress = 0;
+          if (runwayScroll >= initialOffset) {
+            fadeProgress = 1;
+          } else if (remainingHidden < HOOK_FADE_REMAINING) {
+            fadeProgress = 1 - remainingHidden / HOOK_FADE_REMAINING;
+          }
+          hookRef.current.style.opacity = String(1 - fadeProgress);
+          hookRef.current.style.transform = `translateY(${-fadeProgress * 24}px)`;
+        }
 
         // Hero: cap so it stops at unstick (fraction = 1); natural scroll takes over.
         const maxHeroOffset = runway.offsetHeight * (1 - UNPIN_THRESHOLD);
@@ -182,6 +241,14 @@ function Home() {
       {/* ── Pinned scroll runway: hero text overlay ── */}
       <div ref={runwayRef} style={{ height: `${RUNWAY_VH}vh` }}>
         <div ref={heroRef} className="sticky top-0 flex flex-col items-center z-[1]" style={{ height: "100vh" }}>
+          {/* Hook copy — visible on load, fades out on first scroll */}
+          <div
+            ref={hookRef}
+            className="absolute top-[20vh] left-0 right-0 flex flex-col items-center text-center px-6 font-display text-[clamp(2.5rem,5vw+0.5rem,4rem)] gap-1"
+          >
+            <span>Too many terminals.</span>
+            <span>Not enough focus.</span>
+          </div>
           {/* Hero words — sits above the video */}
           <div className="flex-1 flex items-end text-center px-6" style={{ paddingBottom: "520px" }}>
             <div className="flex flex-col items-center gap-1 font-display text-[clamp(2.5rem,5vw+0.5rem,4rem)]">
