@@ -116,14 +116,18 @@ function Home() {
         const initialOffset = iconHeight * ICON_INITIAL_HIDE_FRAC;
 
         // Scrub video: hold frame 0 during icon rise, then scrub remaining range.
+        // Skip redundant seeks whose delta is less than one frame's duration —
+        // each seek forces a decode, and sub-frame seeks produce the same output.
         if (video.duration && isFinite(video.duration)) {
-          if (runwayScroll < initialOffset) {
-            video.currentTime = 0;
-          } else {
+          let target = 0;
+          if (runwayScroll >= initialOffset) {
             const videoProgress = (runwayHeight - initialOffset) > 0
               ? clamp01((runwayScroll - initialOffset) / (runwayHeight - initialOffset))
               : 0;
-            video.currentTime = videoProgress * video.duration;
+            target = videoProgress * video.duration;
+          }
+          if (Math.abs(video.currentTime - target) > 1 / 24) {
+            video.currentTime = target;
           }
         }
 
@@ -227,33 +231,31 @@ function Home() {
           {/* Hook copy — visible on load, fades out on first scroll */}
           <div
             ref={hookRef}
-            className="absolute top-[20vh] left-0 right-0 flex flex-col items-center text-center px-6 font-display text-[clamp(2.5rem,5vw+0.5rem,4rem)] gap-1"
+            className="absolute top-20 md:top-24 left-0 right-0 flex flex-col items-center text-center px-6 font-display text-[clamp(2.5rem,5vw+0.5rem,4rem)] gap-1"
           >
             <span>Too many terminals.</span>
             <span>Not enough focus.</span>
           </div>
-          {/* Hero words — sits above the video */}
-          <div className="flex-1 flex items-end text-center px-6" style={{ paddingBottom: "520px" }}>
-            <div className="flex flex-col items-center gap-1 font-display text-[clamp(2.5rem,5vw+0.5rem,4rem)]">
-              <span ref={word0Ref} style={{ opacity: 0, transform: "translateY(12px)" }}>
-                Multitasking
+          {/* Hero words — crossfade in place with the hook, just below the header */}
+          <div className="absolute top-20 md:top-24 left-0 right-0 flex flex-col items-center text-center px-6 gap-1 font-display text-[clamp(2.5rem,5vw+0.5rem,4rem)]">
+            <span ref={word0Ref} style={{ opacity: 0, transform: "translateY(12px)" }}>
+              Multitasking
+            </span>
+            <span ref={word1Ref} style={{ opacity: 0, transform: "translateY(12px)" }}>
+              Terminal
+            </span>
+            <span ref={word2Ref} style={{ opacity: 0, transform: "translateY(12px)" }}>
+              <span className="text-[var(--color-caramel)]">
+                for Mice<sup ref={asteriskRef} style={{ opacity: 0 }}>*</sup>
               </span>
-              <span ref={word1Ref} style={{ opacity: 0, transform: "translateY(12px)" }}>
-                Terminal
-              </span>
-              <span ref={word2Ref} style={{ opacity: 0, transform: "translateY(12px)" }}>
-                <span className="text-[var(--color-caramel)]">
-                  for Mice<sup ref={asteriskRef} style={{ opacity: 0 }}>*</sup>
-                </span>
-              </span>
-              <p
-                ref={footnoteRef}
-                className="mt-3 text-lg"
-                style={{ opacity: 0 }}
-              >
-                * supports (and teaches) tmux shortcuts
-              </p>
-            </div>
+            </span>
+            <p
+              ref={footnoteRef}
+              className="mt-3 text-lg"
+              style={{ opacity: 0 }}
+            >
+              * supports (and teaches) tmux shortcuts
+            </p>
           </div>
         </div>
       </div>
