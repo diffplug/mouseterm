@@ -58,7 +58,7 @@ Frontend Library (lib/src/)
 - **Shell login args are shell-specific.** The shared `pty-core.js` launches POSIX shells with `-l` only for shells that accept it. `csh`/`tcsh` must be spawned without `-l` so both the standalone app and VS Code extension can open a usable terminal for users whose login shell is C shell-derived.
 - **mergeAlarmStates on every save path.** Both the frontend periodic save (`onSaveState` callback) and the backend deactivate refresh (`refreshSavedSessionStateFromPtys`) must merge current alarm states. Missing this causes alarm state to revert on restore.
 - **Scrollback trailing newline.** Restored scrollback must end with `\n` to avoid zsh printing a `%` artifact at the top of the terminal.
-- **retainContextWhenHidden.** Set on `WebviewPanel` (editor tabs) but NOT on `WebviewView` (bottom panel). The view relies on reconnect/replay when it becomes visible again; the panel keeps its DOM alive.
+- **retainContextWhenHidden.** Set on both `WebviewPanel` (editor tabs) and `WebviewView` (bottom panel) so that xterm.js DOM, scrollback, and PTY subscriptions survive panel hide/show without going through the reconnect dance.
 - **Two save sources.** Session state is saved from two places: the frontend (debounced 500ms + 30s interval via `mouseterm:saveState`) and the backend (deactivate flushes webviews then refreshes from live PTYs). Both paths must produce consistent state.
 
 ### Extension manifest (current)
