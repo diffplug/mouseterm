@@ -307,7 +307,7 @@ Consequences:
 ### Accessibility and motion
 
 - Ringing must not rely on color alone. Use icon state plus outline, fill, or pulse.
-- Respect `prefers-reduced-motion`. In reduced-motion mode, replace flashing with a steady highlighted state. Dot badge pulse animations are also disabled; the `MIGHT_BE_BUSY` dot is always static regardless of motion preference.
+- Respect `prefers-reduced-motion`. In reduced-motion mode, replace the rocking animation with a steady 45° tilt. All tilt states are static transforms and work unchanged regardless of motion preference.
 - Bell button must expose accurate `aria-label` text:
   - "Enable alarm"
   - "Disable alarm"
