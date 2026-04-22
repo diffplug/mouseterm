@@ -14,7 +14,8 @@ import { createPortal } from 'react-dom';
 import { TerminalPane } from './TerminalPane';
 import { Baseboard } from './Baseboard';
 import { tv } from 'tailwind-variants';
-import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, ProhibitIcon } from '@phosphor-icons/react';
+import { PopupButtonRow, popupButton } from './design';
+import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
   extendSelectionToToken,
@@ -45,6 +46,7 @@ import {
   destroyTerminal,
   swapTerminals,
   setPendingShellOpts,
+  getDefaultShellOpts,
   type SessionStatus,
   isSoftTodo,
   isHardTodo,
@@ -229,6 +231,7 @@ function MouseOverrideBanner({
   onCancel: () => void;
 }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [flashed, setFlashed] = useState<'sticky' | 'cancel' | null>(null);
 
   useLayoutEffect(() => {
     const update = () => {
@@ -244,27 +247,36 @@ function MouseOverrideBanner({
     };
   }, [anchor]);
 
+  useEffect(() => {
+    if (!flashed) return;
+    const id = window.setTimeout(() => {
+      if (flashed === 'sticky') onMakePermanent();
+      else onCancel();
+    }, 260);
+    return () => window.clearTimeout(id);
+  }, [flashed, onMakePermanent, onCancel]);
+
   if (!pos) return null;
 
   return createPortal(
-    <div
-      className="z-[9999] flex items-center gap-2 rounded border border-border bg-surface-raised px-2 py-1 text-xs text-foreground shadow-md"
+    <PopupButtonRow
+      className="z-[9999]"
       style={clampOverlayPosition({ left: pos.x, top: pos.y, width: 340, height: 32 })}
       onMouseDown={(e) => e.stopPropagation()}
       role="status"
     >
-      <span>Temporary mouse override until mouse-up.</span>
+      <span className="px-1.5 py-0.5">Temporary mouse override until mouse-up.</span>
       <button
         type="button"
-        className="rounded border border-border px-1.5 py-0.5 text-xs text-foreground hover:bg-foreground/10"
-        onClick={onMakePermanent}
-      >Make permanent</button>
+        className={popupButton({ tone: 'muted', flashed: flashed === 'sticky' })}
+        onClick={() => !flashed && setFlashed('sticky')}
+      >Make sticky</button>
       <button
         type="button"
-        className="rounded border border-border px-1.5 py-0.5 text-xs text-muted hover:bg-foreground/10 hover:text-foreground"
-        onClick={onCancel}
+        className={popupButton({ tone: 'muted', flashed: flashed === 'cancel' })}
+        onClick={() => !flashed && setFlashed('cancel')}
       >Cancel</button>
-    </div>,
+    </PopupButtonRow>,
     document.body,
   );
 }
@@ -686,34 +698,6 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             onClick={(e) => { e.stopPropagation(); actions.onStartRename(api.id); }}
           >{api.title}</span>
         )}
-        {showMouseIcon && (
-          <div ref={setMouseIconAnchor} className="shrink-0">
-            <HeaderActionButton
-              className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 text-muted hover:bg-foreground/10 hover:text-foreground"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                setMouseOverride(api.id, inOverride ? 'off' : 'temporary');
-              }}
-              ariaLabel={mouseIconAriaLabel}
-              tooltip={mouseIconTooltip}
-            >
-              <span className="relative flex items-center justify-center">
-                <CursorClickIcon size={14} />
-                {inOverride && (
-                  <ProhibitIcon size={14} weight="bold" className="absolute inset-0 text-accent" />
-                )}
-              </span>
-            </HeaderActionButton>
-          </div>
-        )}
-        {mouseIconAnchor && mouseState.override === 'temporary' && (
-          <MouseOverrideBanner
-            anchor={mouseIconAnchor}
-            onMakePermanent={() => setMouseOverride(api.id, 'permanent')}
-            onCancel={() => setMouseOverride(api.id, 'off')}
-          />
-        )}
         <HeaderActionButton
           className={[
             'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0',
@@ -788,6 +772,35 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
       </div>
       {!isRenaming && (
         <>
+          {showMouseIcon && (
+            <div ref={setMouseIconAnchor} className="ml-1 shrink-0">
+              <HeaderActionButton
+                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 text-muted hover:bg-foreground/10 hover:text-foreground"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMouseOverride(api.id, inOverride ? 'off' : 'temporary');
+                }}
+                ariaLabel={mouseIconAriaLabel}
+                tooltip={mouseIconTooltip}
+              >
+                <span className="relative flex items-center justify-center">
+                  {inOverride ? (
+                    <SelectionSlashIcon size={14} />
+                  ) : (
+                    <CursorClickIcon size={14} />
+                  )}
+                </span>
+              </HeaderActionButton>
+            </div>
+          )}
+          {mouseIconAnchor && mouseState.override === 'temporary' && (
+            <MouseOverrideBanner
+              anchor={mouseIconAnchor}
+              onMakePermanent={() => setMouseOverride(api.id, 'permanent')}
+              onCancel={() => setMouseOverride(api.id, 'off')}
+            />
+          )}
           {/* Split/Zoom controls — hidden at compact and minimal tiers */}
           {tier === 'full' && (
             <div className="ml-1 flex shrink-0 items-center gap-0.5">
@@ -1503,6 +1516,26 @@ export function Pond({
     detachedRef.current = restoredDetached;
     setDetached(restoredDetached);
 
+    // Apply the currently-selected shell to a freshly-added panel. Panels
+    // that are reconnecting to an existing PTY already have a running shell,
+    // so their pendingShellOpts are never consumed — only first-time spawns
+    // use this.
+    const addTerminalPanel = (id: string) => {
+      const defaults = getDefaultShellOpts();
+      if (defaults?.shell) {
+        setPendingShellOpts(id, { shell: defaults.shell, args: defaults.args });
+      }
+      const referencePanel = e.api.panels[e.api.panels.length - 1] ?? null;
+      const direction = referencePanel && referencePanel.api.width - referencePanel.api.height > 0 ? 'right' : 'below';
+      e.api.addPanel({
+        id,
+        component: 'terminal',
+        tabComponent: 'terminal',
+        title: '<unnamed>',
+        position: referencePanel ? { referencePanel: referencePanel.id, direction } : undefined,
+      });
+    };
+
     if (layout && restored && restored.length > 0) {
       // Cold-start restore: apply saved dockview layout (includes panel arrangement)
       try {
@@ -1511,7 +1544,7 @@ export function Pond({
       } catch {
         // Layout restore failed — fall back to creating panels manually
         for (const id of restored) {
-          e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
+          addTerminalPanel(id);
         }
         setSelectedId(restored[0]);
       }
@@ -1521,7 +1554,7 @@ export function Pond({
         ? restored
         : [generatePaneId()];
       for (const id of paneIds) {
-        e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
+        addTerminalPanel(id);
       }
       setSelectedId(paneIds[0]);
     }
@@ -2110,6 +2143,11 @@ export function Pond({
     if (!api) return;
     const newId = generatePaneId();
     const ref = id && api.getPanel(id) ? id : null;
+    // Carry the currently-selected shell into the split, same as [+].
+    const defaults = getDefaultShellOpts();
+    if (defaults?.shell) {
+      setPendingShellOpts(newId, { shell: defaults.shell, args: defaults.args });
+    }
     // Horizontal split places the new pane to the right → reveal from its left edge.
     // Vertical split places it below → reveal from its top edge.
     freshlySpawnedRef.current.set(newId, direction === 'right' ? 'left' : 'top');
@@ -2122,7 +2160,7 @@ export function Pond({
     });
     selectPanel(newId);
     onEventRef.current?.({ type: 'split', direction: splitDirection, source });
-  }, [selectPanel]);
+  }, [selectPanel, generatePaneId]);
 
   // --- Pond actions (for tab buttons) ---
 

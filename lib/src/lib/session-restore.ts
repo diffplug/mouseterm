@@ -1,6 +1,6 @@
 import type { PlatformAdapter } from './platform/types';
 import type { PersistedDetachedItem, PersistedSession } from './session-types';
-import { restoreTerminal } from './terminal-registry';
+import { getDefaultShellOpts, restoreTerminal } from './terminal-registry';
 
 export interface RestoredSession {
   paneIds: string[];
@@ -13,12 +13,15 @@ export function restoreSession(platform: PlatformAdapter): RestoredSession | nul
   if (!saved || saved.version !== 1 || !saved.panes || saved.panes.length === 0) return null;
   const detached = saved.detached ?? [];
   const detachedIds = new Set(detached.map((item) => item.id));
+  const shellOpts = getDefaultShellOpts();
 
   for (const pane of saved.panes) {
     restoreTerminal(pane.id, {
       cwd: pane.cwd,
       scrollback: pane.scrollback,
       title: pane.title,
+      shell: shellOpts?.shell,
+      args: shellOpts?.args,
     });
   }
 
