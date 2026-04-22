@@ -354,7 +354,6 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
         .sidecar("node")
         .map_err(|err| format!("failed to resolve bundled Node.js runtime: {err}"))?
         .arg(&sidecar_arg_path)
-        .env("MOUSETERM_DEBUG_CLIPBOARD", "1")
         .set_raw_out(false)
         .spawn()
         .map_err(|err| format!("failed to start Node.js sidecar: {err}"))?;
