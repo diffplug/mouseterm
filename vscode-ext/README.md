@@ -3,7 +3,7 @@
 
 # MouseTerm
 
-Multitasking terminal with tmux keybindings, mouse support, and a built-in alarm system for completed tasks and prompts.
+Multitasking terminal with tmux keybindings, mouse support, and a built-in alert system for completed tasks and prompts.
 
 TODO: GIF demonstrating a 3-pane layout where one pane finishes a build and its border changes to show completion, while the user clicks to split another pane and drags to resize
 
@@ -11,11 +11,11 @@ TODO: GIF demonstrating a 3-pane layout where one pane finishes a build and its 
   - npm dev, sleep it
   - claude, start a long job
   - split horizontal, codex long job
-  - claude alarms when done
+  - claude alerts when done
 
 ## Features
 
-### Built-in Alarm System
+### Built-in Alert System
 
 Know when a task finishes without watching it. MouseTerm monitors terminal output and marks panes as done when they go quiet â€” works with any CLI tool, zero configuration. No more staring at idle screens or forgetting which terminal you were waiting on.
 
@@ -23,7 +23,7 @@ TODO: GIF showing two terminals running long tasks, one finishes and gets the âœ
 
 ### Tiling Layout with Minimize / Maximize
 
-Split horizontally, split vertically, drag to resize. Maximize the complicated one. Minimize the ones you don't need to look at right now (detach in tmux terminology). Alarms keep running whether minimized or not.
+Split horizontally, split vertically, drag to resize. Maximize the complicated one. Minimize the ones you don't need to look at right now (detach in tmux terminology). Alerts keep running whether minimized or not.
 
 Already know tmux? Same shortcuts. Nothing new to learn.
 

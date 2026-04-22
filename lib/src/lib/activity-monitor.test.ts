@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ActivityMonitor, type SessionStatus } from './activity-monitor';
 
-// Timing constants from cfg.alarm:
+// Timing constants from cfg.alert:
 // busyCandidateGap=1500, busyConfirmGap=500, mightNeedAttention=2000, needsAttentionConfirm=3000, resizeDebounce=500
 
 describe('ActivityMonitor', () => {
@@ -40,7 +40,7 @@ describe('ActivityMonitor', () => {
   function driveMonitorToNeedsAttention(monitor: ActivityMonitor) {
     driveMonitorToMightNeedAttention(monitor);
     vi.advanceTimersByTime(3_000);
-    expect(monitor.getStatus()).toBe('ALARM_RINGING');
+    expect(monitor.getStatus()).toBe('ALERT_RINGING');
   }
 
   it('starts in NOTHING_TO_SHOW', () => {
@@ -103,18 +103,18 @@ describe('ActivityMonitor', () => {
     expect(changes).toEqual(['MIGHT_BE_BUSY', 'BUSY', 'MIGHT_NEED_ATTENTION']);
   });
 
-  it('transitions MIGHT_NEED_ATTENTION to ALARM_RINGING after sustained silence', () => {
+  it('transitions MIGHT_NEED_ATTENTION to ALERT_RINGING after sustained silence', () => {
     const { monitor, changes } = createMonitor();
     driveMonitorToNeedsAttention(monitor);
     expect(changes).toEqual([
       'MIGHT_BE_BUSY',
       'BUSY',
       'MIGHT_NEED_ATTENTION',
-      'ALARM_RINGING',
+      'ALERT_RINGING',
     ]);
   });
 
-  it('returns to NOTHING_TO_SHOW instead of ALARM_RINGING if attention is still present', () => {
+  it('returns to NOTHING_TO_SHOW instead of ALERT_RINGING if attention is still present', () => {
     const { monitor, changes, attention } = createMonitor();
     driveMonitorToMightNeedAttention(monitor);
     attention.current = true;
@@ -141,10 +141,10 @@ describe('ActivityMonitor', () => {
     ]);
   });
 
-  it('treats new output from ALARM_RINGING as a new MIGHT_BE_BUSY cycle (when attended)', () => {
+  it('treats new output from ALERT_RINGING as a new MIGHT_BE_BUSY cycle (when attended)', () => {
     const { monitor, changes, attention } = createMonitor();
     driveMonitorToNeedsAttention(monitor);
-    // User sees the alarm (sets attention), then new output resets
+    // User sees the alert (sets attention), then new output resets
     attention.current = true;
     monitor.onData();
     expect(monitor.getStatus()).toBe('MIGHT_BE_BUSY');
@@ -152,18 +152,18 @@ describe('ActivityMonitor', () => {
       'MIGHT_BE_BUSY',
       'BUSY',
       'MIGHT_NEED_ATTENTION',
-      'ALARM_RINGING',
+      'ALERT_RINGING',
       'MIGHT_BE_BUSY',
     ]);
   });
 
-  it('latches in ALARM_RINGING when new output arrives without attention', () => {
+  it('latches in ALERT_RINGING when new output arrives without attention', () => {
     const { monitor } = createMonitor();
     driveMonitorToNeedsAttention(monitor);
-    expect(monitor.getStatus()).toBe('ALARM_RINGING');
-    // No attention — alarm should latch
+    expect(monitor.getStatus()).toBe('ALERT_RINGING');
+    // No attention — alert should latch
     monitor.onData();
-    expect(monitor.getStatus()).toBe('ALARM_RINGING');
+    expect(monitor.getStatus()).toBe('ALERT_RINGING');
   });
 
   it('attend() resets BUSY work back to NOTHING_TO_SHOW', () => {
@@ -174,7 +174,7 @@ describe('ActivityMonitor', () => {
     expect(changes).toEqual(['MIGHT_BE_BUSY', 'BUSY', 'NOTHING_TO_SHOW']);
   });
 
-  it('attend() resets ALARM_RINGING back to NOTHING_TO_SHOW', () => {
+  it('attend() resets ALERT_RINGING back to NOTHING_TO_SHOW', () => {
     const { monitor, changes } = createMonitor();
     driveMonitorToNeedsAttention(monitor);
     monitor.attend();
@@ -183,7 +183,7 @@ describe('ActivityMonitor', () => {
       'MIGHT_BE_BUSY',
       'BUSY',
       'MIGHT_NEED_ATTENTION',
-      'ALARM_RINGING',
+      'ALERT_RINGING',
       'NOTHING_TO_SHOW',
     ]);
   });

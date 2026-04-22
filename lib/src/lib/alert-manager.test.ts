@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AlarmManager, TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo } from './alarm-manager';
+import { AlertManager, TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo } from './alert-manager';
 import { cfg } from '../cfg';
 
 const STRIKE_RECOVERY_MS = cfg.todoBucket.recoverySecondsPerLetter * 1_000;
 
-describe('AlarmManager in isolation', () => {
-  let manager: AlarmManager;
+describe('AlertManager in isolation', () => {
+  let manager: AlertManager;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    manager = new AlarmManager();
+    manager = new AlertManager();
   });
 
   afterEach(() => {
@@ -17,12 +17,12 @@ describe('AlarmManager in isolation', () => {
     vi.useRealTimers();
   });
 
-  // Timing from cfg.alarm:
+  // Timing from cfg.alert:
   // busyCandidateGap=1500, busyConfirmGap=500, mightNeedAttention=2000, needsAttentionConfirm=3000
 
-  it('state machine advances through silence to ALARM_RINGING', () => {
+  it('state machine advances through silence to ALERT_RINGING', () => {
     const id = 'test-pty';
-    manager.toggleAlarm(id);
+    manager.toggleAlert(id);
     expect(manager.getState(id).status).toBe('NOTHING_TO_SHOW');
 
     // Simulate sustained output over 2 seconds
@@ -36,7 +36,7 @@ describe('AlarmManager in isolation', () => {
     manager.onData(id);
     expect(manager.getState(id).status).toBe('BUSY');
 
-    // Clear attention so alarm can ring
+    // Clear attention so alert can ring
     manager.clearAttention(id);
 
     // Now silence — task finished. Advance past mightNeedAttention (2000ms)
@@ -45,14 +45,14 @@ describe('AlarmManager in isolation', () => {
 
     // Advance past needsAttentionConfirm (3000ms)
     vi.advanceTimersByTime(3_000);
-    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
   });
 
-  it('reproduces the exact user scenario: alarm set, 5s task, collapse after 2s, wait 60s', () => {
+  it('reproduces the exact user scenario: alert set, 5s task, collapse after 2s, wait 60s', () => {
     const id = 'user-scenario';
 
-    // Step 1: Set alarm
-    manager.toggleAlarm(id);
+    // Step 1: Set alert
+    manager.toggleAlert(id);
     manager.clearAttention(id);
 
     // Step 2: Start task — output every 200ms for 5 seconds
@@ -69,13 +69,13 @@ describe('AlarmManager in isolation', () => {
     // Step 4: Wait 60 seconds
     vi.advanceTimersByTime(60_000);
 
-    // Step 5: Restore — alarm should already be ringing
-    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+    // Step 5: Restore — alert should already be ringing
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
   });
 
-  it('ALARM_RINGING latches when user has no attention (view hidden)', () => {
+  it('ALERT_RINGING latches when user has no attention (view hidden)', () => {
     const id = 'latch-test';
-    manager.toggleAlarm(id);
+    manager.toggleAlert(id);
     manager.clearAttention(id);
 
     // Drive to BUSY
@@ -85,34 +85,34 @@ describe('AlarmManager in isolation', () => {
     manager.onData(id);
     expect(manager.getState(id).status).toBe('BUSY');
 
-    // Silence → ALARM_RINGING
+    // Silence → ALERT_RINGING
     vi.advanceTimersByTime(2_000);
     vi.advanceTimersByTime(3_000);
-    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
 
-    // New data arrives (e.g. shell prompt) — alarm should NOT reset
-    // because the user has no attention (hasn't seen the alarm)
+    // New data arrives (e.g. shell prompt) — alert should NOT reset
+    // because the user has no attention (hasn't seen the alert)
     manager.onData(id);
-    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
 
     // Even sustained output shouldn't reset it
     for (let i = 0; i < 10; i++) {
       manager.onData(id);
       vi.advanceTimersByTime(200);
     }
-    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
 
     // But once the user attends (focuses the pane), new data DOES reset
     manager.attend(id);
     manager.onData(id);
-    expect(manager.getState(id).status).not.toBe('ALARM_RINGING');
+    expect(manager.getState(id).status).not.toBe('ALERT_RINGING');
   });
 
-  it('ALARM_RINGING resets on data when user has attention', () => {
+  it('ALERT_RINGING resets on data when user has attention', () => {
     const id = 'reset-test';
-    manager.toggleAlarm(id);
+    manager.toggleAlert(id);
 
-    // Drive to ALARM_RINGING while user has attention
+    // Drive to ALERT_RINGING while user has attention
     manager.attend(id);
     manager.onData(id);
     vi.advanceTimersByTime(1_600);
@@ -123,13 +123,13 @@ describe('AlarmManager in isolation', () => {
     manager.clearAttention(id);
     vi.advanceTimersByTime(2_000);
     vi.advanceTimersByTime(3_000);
-    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
 
     // User comes back and attends
     manager.attend(id);
-    // New data should reset the alarm (user has seen it)
+    // New data should reset the alert (user has seen it)
     manager.onData(id);
-    expect(manager.getState(id).status).not.toBe('ALARM_RINGING');
+    expect(manager.getState(id).status).not.toBe('ALERT_RINGING');
   });
 
   it('onStateChange fires when state transitions', () => {
@@ -139,7 +139,7 @@ describe('AlarmManager in isolation', () => {
       if (_id === id) states.push(state.status);
     });
 
-    manager.toggleAlarm(id);
+    manager.toggleAlert(id);
     manager.clearAttention(id);
 
     // Drive to BUSY
@@ -154,22 +154,22 @@ describe('AlarmManager in isolation', () => {
 
     expect(states).toContain('BUSY');
     expect(states).toContain('MIGHT_NEED_ATTENTION');
-    expect(states).toContain('ALARM_RINGING');
+    expect(states).toContain('ALERT_RINGING');
   });
 
   // --- Soft-TODO bucket tests ---
 
   function createSoftTodo(id: string): void {
-    manager.toggleAlarm(id);
+    manager.toggleAlert(id);
     manager.clearAttention(id);
-    // Drive to BUSY → silence → ALARM_RINGING
+    // Drive to BUSY → silence → ALERT_RINGING
     manager.onData(id);
     vi.advanceTimersByTime(1_600);
     manager.onData(id);
     manager.onData(id);
     vi.advanceTimersByTime(2_000);
     vi.advanceTimersByTime(3_000);
-    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
     // Attend creates soft TODO
     manager.attend(id);
     expect(isSoftTodo(manager.getState(id).todo)).toBe(true);
@@ -284,7 +284,7 @@ describe('AlarmManager in isolation', () => {
     expect(manager.getState(id).todo).toBe(TODO_HARD);
   });
 
-  it('re-attending a ringing alarm resets a partially-struck soft-TODO to full and clears its recovery timer', () => {
+  it('re-attending a ringing alert resets a partially-struck soft-TODO to full and clears its recovery timer', () => {
     const id = 'bucket-reset-on-reattend';
     createSoftTodo(id);
 
@@ -294,7 +294,7 @@ describe('AlarmManager in isolation', () => {
     manager.drainTodoBucket(id);
     expect(manager.getState(id).todo).toBeCloseTo(0.25);
 
-    // Drive to ALARM_RINGING again
+    // Drive to ALERT_RINGING again
     manager.clearAttention(id);
     manager.onData(id);
     vi.advanceTimersByTime(1_600);
@@ -302,7 +302,7 @@ describe('AlarmManager in isolation', () => {
     manager.onData(id);
     vi.advanceTimersByTime(2_000);
     vi.advanceTimersByTime(3_000);
-    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
 
     // Re-attend should reset the bucket to full
     manager.attend(id);
@@ -315,7 +315,7 @@ describe('AlarmManager in isolation', () => {
     expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
   });
 
-  it('dismissing a ringing alarm resets a partially-struck soft-TODO to full and clears its recovery timer', () => {
+  it('dismissing a ringing alert resets a partially-struck soft-TODO to full and clears its recovery timer', () => {
     const id = 'bucket-reset-on-dismiss';
     createSoftTodo(id);
 
@@ -324,7 +324,7 @@ describe('AlarmManager in isolation', () => {
     manager.drainTodoBucket(id);
     expect(manager.getState(id).todo).toBeCloseTo(0.5);
 
-    // Drive to ALARM_RINGING again
+    // Drive to ALERT_RINGING again
     manager.clearAttention(id);
     manager.onData(id);
     vi.advanceTimersByTime(1_600);
@@ -332,17 +332,17 @@ describe('AlarmManager in isolation', () => {
     manager.onData(id);
     vi.advanceTimersByTime(2_000);
     vi.advanceTimersByTime(3_000);
-    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
 
     // Dismiss should reset the bucket to full
-    manager.dismissAlarm(id);
+    manager.dismissAlert(id);
     expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
 
     vi.advanceTimersByTime(10 * STRIKE_RECOVERY_MS);
     expect(manager.getState(id).todo).toBe(TODO_SOFT_FULL);
   });
 
-  it('re-attending a ringing alarm does NOT override a hard TODO', () => {
+  it('re-attending a ringing alert does NOT override a hard TODO', () => {
     const id = 'bucket-no-reset-hard';
     createSoftTodo(id);
 
@@ -350,7 +350,7 @@ describe('AlarmManager in isolation', () => {
     manager.markTodo(id);
     expect(manager.getState(id).todo).toBe(TODO_HARD);
 
-    // Drive to ALARM_RINGING again
+    // Drive to ALERT_RINGING again
     manager.clearAttention(id);
     manager.onData(id);
     vi.advanceTimersByTime(1_600);
@@ -358,7 +358,7 @@ describe('AlarmManager in isolation', () => {
     manager.onData(id);
     vi.advanceTimersByTime(2_000);
     vi.advanceTimersByTime(3_000);
-    expect(manager.getState(id).status).toBe('ALARM_RINGING');
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
 
     // Re-attend should NOT change hard TODO
     manager.attend(id);

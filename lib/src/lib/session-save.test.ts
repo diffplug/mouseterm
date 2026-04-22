@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlatformAdapter } from './platform/types';
 import type { PersistedSession } from './session-types';
-import { TODO_HARD } from './alarm-manager';
+import { TODO_HARD } from './alert-manager';
 
 const terminalRegistryMocks = vi.hoisted(() => ({
-  getLivePersistedAlarmState: vi.fn(),
+  getLivePersistedAlertState: vi.fn(),
   resolveTerminalSessionId: vi.fn(),
 }));
 
 vi.mock('./terminal-registry', () => ({
-  getLivePersistedAlarmState: terminalRegistryMocks.getLivePersistedAlarmState,
+  getLivePersistedAlertState: terminalRegistryMocks.getLivePersistedAlertState,
   resolveTerminalSessionId: terminalRegistryMocks.resolveTerminalSessionId,
 }));
 
@@ -42,20 +42,20 @@ function createPlatform(savedState: PersistedSession | null): PlatformAdapter {
     onRequestSessionFlush: () => {},
     offRequestSessionFlush: () => {},
     notifySessionFlushComplete: () => {},
-    alarmRemove: () => {},
-    alarmToggle: () => {},
-    alarmDisable: () => {},
-    alarmDismiss: () => {},
-    alarmDismissOrToggle: () => {},
-    alarmAttend: () => {},
-    alarmResize: () => {},
-    alarmClearAttention: () => {},
-    alarmToggleTodo: () => {},
-    alarmMarkTodo: () => {},
-    alarmClearTodo: () => {},
-    alarmDrainTodoBucket: () => {},
-    onAlarmState: () => {},
-    offAlarmState: () => {},
+    alertRemove: () => {},
+    alertToggle: () => {},
+    alertDisable: () => {},
+    alertDismiss: () => {},
+    alertDismissOrToggle: () => {},
+    alertAttend: () => {},
+    alertResize: () => {},
+    alertClearAttention: () => {},
+    alertToggleTodo: () => {},
+    alertMarkTodo: () => {},
+    alertClearTodo: () => {},
+    alertDrainTodoBucket: () => {},
+    onAlertState: () => {},
+    offAlertState: () => {},
     saveState: vi.fn((state: unknown) => {
       persistedState = state;
     }),
@@ -67,17 +67,17 @@ describe('saveSession', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     terminalRegistryMocks.resolveTerminalSessionId.mockImplementation((id: string) => id);
-    terminalRegistryMocks.getLivePersistedAlarmState.mockReturnValue(null);
+    terminalRegistryMocks.getLivePersistedAlertState.mockReturnValue(null);
   });
 
-  it('persists the live alarm state even when the previous snapshot was empty', async () => {
+  it('persists the live alert state even when the previous snapshot was empty', async () => {
     const platform = createPlatform({
       version: 1,
       layout: null,
-      panes: [{ id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null, alarm: null }],
+      panes: [{ id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null, alert: null }],
     });
 
-    terminalRegistryMocks.getLivePersistedAlarmState.mockReturnValue({ status: 'NOTHING_TO_SHOW', todo: TODO_HARD });
+    terminalRegistryMocks.getLivePersistedAlertState.mockReturnValue({ status: 'NOTHING_TO_SHOW', todo: TODO_HARD });
 
     await saveSession(platform, { root: true }, [{ id: 'pane-a', title: 'Pane A' }]);
 
@@ -88,7 +88,7 @@ describe('saveSession', () => {
       panes: [
         expect.objectContaining({
           id: 'pane-a',
-          alarm: { status: 'NOTHING_TO_SHOW', todo: TODO_HARD },
+          alert: { status: 'NOTHING_TO_SHOW', todo: TODO_HARD },
         }),
       ],
     });

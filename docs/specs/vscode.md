@@ -2,7 +2,7 @@
 
 ## What's built
 
-MouseTerm has two hosting modes: a `WebviewView` in the bottom panel (alongside Terminal, Problems, Output) and `WebviewPanel` editor tabs (via `mouseterm.open`, supports multiple instances). Both restore across "Developer: Reload Window". PTY lifecycle is fully decoupled from the webview — PTYs live in the extension host via `pty-manager.ts`, survive panel visibility toggling, and replay buffered output on reconnect. Session persistence works across restarts: pane layout, CWD, scrollback, alarm state (enabled/disabled + todo), and resume commands are saved and restored on cold start. The view uses `workspaceState` for persistence; editor panels use VS Code's per-panel `vscode.setState()` so multiple panels don't clobber each other. Alarm state is merged into every periodic save (not just deactivate) so it survives even if VS Code kills the extension host before deactivate completes. A `WebviewPanelSerializer` handles editor tab restoration; `onWebviewPanel:mouseterm` activation event ensures the extension activates early enough. Theme integration uses a two-layer CSS variable system mapping `--vscode-*` tokens to semantic `--mt-*` variables, covering all 16 ANSI colors, surfaces, typography, and borders. CSP is strict with nonce-gated scripts.
+MouseTerm has two hosting modes: a `WebviewView` in the bottom panel (alongside Terminal, Problems, Output) and `WebviewPanel` editor tabs (via `mouseterm.open`, supports multiple instances). Both restore across "Developer: Reload Window". PTY lifecycle is fully decoupled from the webview — PTYs live in the extension host via `pty-manager.ts`, survive panel visibility toggling, and replay buffered output on reconnect. Session persistence works across restarts: pane layout, CWD, scrollback, alert state (enabled/disabled + todo), and resume commands are saved and restored on cold start. The view uses `workspaceState` for persistence; editor panels use VS Code's per-panel `vscode.setState()` so multiple panels don't clobber each other. Alert state is merged into every periodic save (not just deactivate) so it survives even if VS Code kills the extension host before deactivate completes. A `WebviewPanelSerializer` handles editor tab restoration; `onWebviewPanel:mouseterm` activation event ensures the extension activates early enough. Theme integration uses a two-layer CSS variable system mapping `--vscode-*` tokens to semantic `--mt-*` variables, covering all 16 ANSI colors, surfaces, typography, and borders. CSP is strict with nonce-gated scripts.
 
 **Architecture:**
 
@@ -14,7 +14,7 @@ Extension Host (vscode-ext/src/)
 ├── message-types.ts          — bidirectional message type definitions
 ├── pty-manager.ts            — PTY lifecycle, buffering (1M char cap), CWD queries
 ├── pty-host.js               — forked child process wrapping pty-core via node-pty
-├── session-state.ts          — workspaceState persistence + alarm state merging
+├── session-state.ts          — workspaceState persistence + alert state merging
 ├── webview-html.ts           — CSP injection, nonce generation, asset URI rewriting
 └── log.ts                    — extension logging
 
@@ -24,7 +24,7 @@ Shared PTY Core (standalone/sidecar/)
 Frontend Library (lib/src/)
 ├── App.tsx                       — error boundary wrapper
 ├── main.tsx                      — entry point
-├── cfg.ts                        — timing config (marching ants, alarm thresholds)
+├── cfg.ts                        — timing config (marching ants, alert thresholds)
 ├── theme.css                     — --vscode-* -> --mt-* variable system
 ├── index.css                     — dockview overrides, marching-ants keyframe
 ├── components/
@@ -33,13 +33,13 @@ Frontend Library (lib/src/)
 │   ├── Baseboard.tsx             — detached-pane door carousel
 │   └── Door.tsx                  — individual detached-pane door
 └── lib/
-    ├── terminal-registry.ts      — global xterm.js registry, theme observer, alarm wiring
+    ├── terminal-registry.ts      — global xterm.js registry, theme observer, alert wiring
     ├── reconnect.ts              — live reconnect + cold-start restore
-    ├── alarm-manager.ts          — alarm state machine (portable, no DOM deps)
-    ├── activity-monitor.ts       — silence/output pattern detection for alarm
+    ├── alert-manager.ts          — alert state machine (portable, no DOM deps)
+    ├── activity-monitor.ts       — silence/output pattern detection for alert
     ├── session-save.ts           — periodic save (debounced 500ms + 30s interval)
     ├── session-restore.ts        — cold-start pane restoration
-    ├── session-types.ts          — PersistedSession/PersistedPane/PersistedAlarmState types
+    ├── session-types.ts          — PersistedSession/PersistedPane/PersistedAlertState types
     ├── resume-patterns.ts        — detect resumable commands from scrollback
     ├── spatial-nav.ts            — arrow-key panel navigation + restore neighbor lookup
     ├── layout-snapshot.ts        — dockview layout cloning + structure signature
@@ -53,10 +53,10 @@ Frontend Library (lib/src/)
 ### Invariants
 
 - **Save before kill.** Deactivate must save session state *before* killing PTYs. CWD and scrollback queries need live processes. See ordering in `extension.ts:deactivate()`.
-- **Alarm state is global.** A single `AlarmManager` instance in `message-router.ts` is shared across all routers and survives router disposal. PTY data feeds into it at module level, regardless of webview visibility.
+- **Alert state is global.** A single `AlertManager` instance in `message-router.ts` is shared across all routers and survives router disposal. PTY data feeds into it at module level, regardless of webview visibility.
 - **PTY ownership.** Each router tracks its PTYs in `ownedPtyIds`. A module-level `globalOwnedPtyIds` set prevents a reconnecting router from stealing PTYs owned by another webview.
 - **Shell login args are shell-specific.** The shared `pty-core.js` launches POSIX shells with `-l` only for shells that accept it. `csh`/`tcsh` must be spawned without `-l` so both the standalone app and VS Code extension can open a usable terminal for users whose login shell is C shell-derived.
-- **mergeAlarmStates on every save path.** Both the frontend periodic save (`onSaveState` callback) and the backend deactivate refresh (`refreshSavedSessionStateFromPtys`) must merge current alarm states. Missing this causes alarm state to revert on restore.
+- **mergeAlertStates on every save path.** Both the frontend periodic save (`onSaveState` callback) and the backend deactivate refresh (`refreshSavedSessionStateFromPtys`) must merge current alert states. Missing this causes alert state to revert on restore.
 - **Scrollback trailing newline.** Restored scrollback must end with `\n` to avoid zsh printing a `%` artifact at the top of the terminal.
 - **retainContextWhenHidden.** Set on both `WebviewPanel` (editor tabs) and `WebviewView` (bottom panel) so that xterm.js DOM, scrollback, and PTY subscriptions survive panel hide/show without going through the reconnect dance.
 - **Two save sources.** Session state is saved from two places: the frontend (debounced 500ms + 30s interval via `mouseterm:saveState`) and the backend (deactivate flushes webviews then refreshes from live PTYs). Both paths must produce consistent state.
@@ -156,17 +156,17 @@ All types defined in `message-types.ts`. Webview-side handling in `vscode-adapte
 | `mouseterm:init` | Trigger reconnection: get PTY list + replay data |
 | `mouseterm:saveState` | Frontend persisting session state |
 | `mouseterm:flushSessionSaveDone` | Ack for deactivate-triggered flush (matched by requestId) |
-| `alarm:toggle` | Toggle alarm enabled/disabled for a PTY |
-| `alarm:disable` | Disable alarm for a PTY |
-| `alarm:dismiss` | Dismiss ringing alarm |
-| `alarm:dismissOrToggle` | Context-dependent: dismiss if ringing, else toggle |
-| `alarm:attend` | Mark user as attending to a PTY |
-| `alarm:remove` | Remove alarm state entirely |
-| `alarm:resize` | Notify alarm of terminal resize (debounce noise) |
-| `alarm:clearAttention` | Clear attention timer |
-| `alarm:toggleTodo` | Toggle TODO (false <-> hard) |
-| `alarm:markTodo` | Set hard TODO |
-| `alarm:clearTodo` | Remove TODO |
+| `alert:toggle` | Toggle alert enabled/disabled for a PTY |
+| `alert:disable` | Disable alert for a PTY |
+| `alert:dismiss` | Dismiss ringing alert |
+| `alert:dismissOrToggle` | Context-dependent: dismiss if ringing, else toggle |
+| `alert:attend` | Mark user as attending to a PTY |
+| `alert:remove` | Remove alert state entirely |
+| `alert:resize` | Notify alert of terminal resize (debounce noise) |
+| `alert:clearAttention` | Clear attention timer |
+| `alert:toggleTodo` | Toggle TODO (false <-> hard) |
+| `alert:markTodo` | Set hard TODO |
+| `alert:clearTodo` | Remove TODO |
 
 **Extension Host -> Webview:**
 
@@ -180,7 +180,7 @@ All types defined in `message-types.ts`. Webview-side handling in `vscode-adapte
 | `pty:scrollback` | Scrollback query response (matched by requestId) |
 | `pty:shells` | Available shells list response (matched by requestId) |
 | `mouseterm:flushSessionSave` | Request webview to save state now (deactivate trigger, matched by requestId) |
-| `alarm:state` | Alarm state change (status, todo, attentionDismissedRing) |
+| `alert:state` | Alert state change (status, todo, attentionDismissedRing) |
 
 ### Serialization and restore
 
@@ -206,14 +206,14 @@ interface PersistedPane {
   title: string;
   scrollback: string | null;
   resumeCommand: string | null;
-  alarm?: PersistedAlarmState | null;
+  alert?: PersistedAlertState | null;
 }
 ```
 
 **Persistence flow:**
 
 1. Frontend saves state periodically (debounced 500ms + 30s interval) via `mouseterm:saveState` message
-2. Router's `onSaveState` callback merges in current alarm states via `mergeAlarmStates()`
+2. Router's `onSaveState` callback merges in current alert states via `mergeAlertStates()`
 3. WebviewView writes to `workspaceState`; WebviewPanels persist via `vscode.setState()` (per-panel, no clobbering)
 4. On deactivate: flush all sessions from webviews (1s timeout), then refresh from live PTYs (queries CWD + scrollback while processes are still alive)
 5. Graceful shutdown: save state -> SIGTERM -> 2s wait -> force kill

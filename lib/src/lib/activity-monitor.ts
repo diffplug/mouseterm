@@ -1,23 +1,23 @@
 import { cfg } from '../cfg';
 
 export type SessionStatus =
-  | 'ALARM_DISABLED'
+  | 'ALERT_DISABLED'
   | 'NOTHING_TO_SHOW'
   | 'MIGHT_BE_BUSY'
   | 'BUSY'
   | 'MIGHT_NEED_ATTENTION'
-  | 'ALARM_RINGING';
+  | 'ALERT_RINGING';
 
 export interface ActivityMonitorOptions {
   hasAttention?: () => boolean;
   onChange?: (status: SessionStatus, previousStatus: SessionStatus) => void;
 }
 
-const T_BUSY_CANDIDATE_GAP = cfg.alarm.busyCandidateGap;
-const T_BUSY_CONFIRM_GAP = cfg.alarm.busyConfirmGap;
-const T_MIGHT_NEED_ATTENTION = cfg.alarm.mightNeedAttention;
-const T_ALARM_RINGING_CONFIRM = cfg.alarm.needsAttentionConfirm;
-const T_RESIZE_DEBOUNCE = cfg.alarm.resizeDebounce;
+const T_BUSY_CANDIDATE_GAP = cfg.alert.busyCandidateGap;
+const T_BUSY_CONFIRM_GAP = cfg.alert.busyConfirmGap;
+const T_MIGHT_NEED_ATTENTION = cfg.alert.mightNeedAttention;
+const T_ALERT_RINGING_CONFIRM = cfg.alert.needsAttentionConfirm;
+const T_RESIZE_DEBOUNCE = cfg.alert.resizeDebounce;
 
 export class ActivityMonitor {
   private status: SessionStatus = 'NOTHING_TO_SHOW';
@@ -69,11 +69,11 @@ export class ActivityMonitor {
       case 'MIGHT_NEED_ATTENTION':
         this.enterBusy();
         break;
-      case 'ALARM_RINGING':
-        // Latch: don't reset the alarm until the user has actually seen it.
+      case 'ALERT_RINGING':
+        // Latch: don't reset the alert until the user has actually seen it.
         // hasAttention() is true when the user recently interacted with the pane.
         // If they haven't (view hidden, or just not focused), new output from
-        // e.g. a shell prompt shouldn't silently dismiss the alarm.
+        // e.g. a shell prompt shouldn't silently dismiss the alert.
         if (!this.hasAttention()) return;
         this.firstOutputAt = now;
         this.outputCountSinceAttention = 1;
@@ -166,8 +166,8 @@ export class ActivityMonitor {
         return;
       }
       this.resetOutputTracking();
-      this.setStatus('ALARM_RINGING');
-    }, T_ALARM_RINGING_CONFIRM);
+      this.setStatus('ALERT_RINGING');
+    }, T_ALERT_RINGING_CONFIRM);
   }
 
   private clearActivityTimers(): void {

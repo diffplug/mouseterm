@@ -1,4 +1,4 @@
-import type { SessionStatus, TodoState } from '../../lib/src/lib/alarm-manager';
+import type { SessionStatus, TodoState } from '../../lib/src/lib/alert-manager';
 
 // Messages from webview → extension host
 export type WebviewMessage =
@@ -14,19 +14,19 @@ export type WebviewMessage =
   | { type: 'mouseterm:init' }
   | { type: 'mouseterm:saveState'; state: unknown }
   | { type: 'mouseterm:flushSessionSaveDone'; requestId: string }
-  // Alarm actions
-  | { type: 'alarm:remove'; id: string }
-  | { type: 'alarm:toggle'; id: string }
-  | { type: 'alarm:disable'; id: string }
-  | { type: 'alarm:dismiss'; id: string }
-  | { type: 'alarm:dismissOrToggle'; id: string; displayedStatus: string }
-  | { type: 'alarm:attend'; id: string }
-  | { type: 'alarm:resize'; id: string }
-  | { type: 'alarm:clearAttention'; id?: string }
-  | { type: 'alarm:toggleTodo'; id: string }
-  | { type: 'alarm:markTodo'; id: string }
-  | { type: 'alarm:clearTodo'; id: string }
-  | { type: 'alarm:drainTodoBucket'; id: string };
+  // Alert actions
+  | { type: 'alert:remove'; id: string }
+  | { type: 'alert:toggle'; id: string }
+  | { type: 'alert:disable'; id: string }
+  | { type: 'alert:dismiss'; id: string }
+  | { type: 'alert:dismissOrToggle'; id: string; displayedStatus: string }
+  | { type: 'alert:attend'; id: string }
+  | { type: 'alert:resize'; id: string }
+  | { type: 'alert:clearAttention'; id?: string }
+  | { type: 'alert:toggleTodo'; id: string }
+  | { type: 'alert:markTodo'; id: string }
+  | { type: 'alert:clearTodo'; id: string }
+  | { type: 'alert:drainTodoBucket'; id: string };
 
 export interface PtyInfo {
   id: string;
@@ -48,5 +48,5 @@ export type ExtensionMessage =
   | { type: 'mouseterm:newTerminal'; shell?: string; args?: string[] }
   | { type: 'mouseterm:selectedShell'; shell?: string; args?: string[] }
   | { type: 'mouseterm:flushSessionSave'; requestId: string }
-  // Alarm state updates
-  | { type: 'alarm:state'; id: string; status: SessionStatus; todo: TodoState; attentionDismissedRing: boolean };
+  // Alert state updates
+  | { type: 'alert:state'; id: string; status: SessionStatus; todo: TodoState; attentionDismissedRing: boolean };
