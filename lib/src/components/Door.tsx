@@ -1,7 +1,7 @@
 import { BellIcon } from '@phosphor-icons/react';
 import { TODO_OFF, isSoftTodo, type SessionStatus, type TodoState } from '../lib/terminal-registry';
 import { useTodoPillContent } from './TodoPillBody';
-import { cfg } from '../cfg';
+import { bellIconClass } from './bell-icon-class';
 
 export interface DoorProps {
   doorId?: string;
@@ -66,21 +66,7 @@ export function Door({
           )}
           {alarmEnabled && (
             <span className={[alarmRinging ? 'text-warning' : (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
-              <BellIcon
-                size={11}
-                weight="fill"
-                className={[
-                  'transition-transform',
-                  status === 'MIGHT_BE_BUSY' && '-rotate-[22.5deg]',
-                  status === 'BUSY' && 'rotate-45',
-                  status === 'MIGHT_NEED_ATTENTION' && 'rotate-[60deg]',
-                  status === 'ALARM_RINGING' && (
-                    cfg.alarm.ringingPaused
-                      ? 'rotate-45'
-                      : 'motion-safe:animate-bell-ring motion-reduce:rotate-45'
-                  ),
-                ].filter(Boolean).join(' ')}
-              />
+              <BellIcon size={11} weight="fill" className={bellIconClass(status)} />
             </span>
           )}
         </span>

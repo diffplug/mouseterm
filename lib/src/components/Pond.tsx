@@ -58,6 +58,7 @@ import { getPlatform } from '../lib/platform';
 import { saveSession } from '../lib/session-save';
 import type { PersistedDetachedItem } from '../lib/session-types';
 import { cfg } from '../cfg';
+import { bellIconClass } from './bell-icon-class';
 import { useTodoPillContent } from './TodoPillBody';
 
 // --- Theme ---
@@ -700,10 +701,10 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         )}
         <HeaderActionButton
           className={[
-            'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0',
+            'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 hover:bg-foreground/10',
             sessionState.status === 'ALARM_RINGING'
-              ? 'text-warning hover:bg-foreground/10'
-              : 'text-muted hover:bg-foreground/10 hover:text-foreground',
+              ? 'text-warning'
+              : 'text-muted hover:text-foreground',
           ].join(' ')}
           onMouseDownCapture={(e) => {
             if (e.button !== 0) return;
@@ -729,21 +730,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             {sessionState.status === 'ALARM_DISABLED' ? (
               <BellSlashIcon size={14} />
             ) : (
-              <BellIcon
-                size={14}
-                weight="fill"
-                className={[
-                  'transition-transform',
-                  sessionState.status === 'MIGHT_BE_BUSY' && '-rotate-[22.5deg]',
-                  sessionState.status === 'BUSY' && 'rotate-45',
-                  sessionState.status === 'MIGHT_NEED_ATTENTION' && 'rotate-[60deg]',
-                  sessionState.status === 'ALARM_RINGING' && (
-                    cfg.alarm.ringingPaused
-                      ? 'rotate-45'
-                      : 'motion-safe:animate-bell-ring motion-reduce:rotate-45'
-                  ),
-                ].filter(Boolean).join(' ')}
-              />
+              <BellIcon size={14} weight="fill" className={bellIconClass(sessionState.status)} />
             )}
           </span>
         </HeaderActionButton>

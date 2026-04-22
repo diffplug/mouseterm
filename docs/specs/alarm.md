@@ -248,14 +248,13 @@ Alarm button:
 - icon-only control with tooltip and accessible label
 - visual states (pure function of `status`):
   - `ALARM_DISABLED`: `BellSlashIcon`, muted
-  - `NOTHING_TO_SHOW`: `BellIcon` filled, muted
-  - `MIGHT_BE_BUSY`: `BellIcon` filled, muted, with a faint dot badge (`foreground/40`, static)
-  - `BUSY`: `BellIcon` filled, muted, with an accent-colored dot badge (gentle breathing pulse)
-  - `MIGHT_NEED_ATTENTION`: `BellIcon` filled, muted, with a warning-colored dot badge (`warning/60`, gentle breathing pulse)
-  - `ALARM_RINGING`: `BellIcon` filled, warning color, whole-button breathing pulse; no dot badge
-- the dot badge is a small circle positioned at the top-right corner of the bell icon
-- the dot badge has a `border-surface-alt` outline to cleanly separate it from the bell icon
-- the dot badge must not change the button's layout size
+  - `NOTHING_TO_SHOW`: `BellIcon` filled, muted, upright
+  - `MIGHT_BE_BUSY`: `BellIcon` filled, muted, tilted slightly (-22.5°)
+  - `BUSY`: `BellIcon` filled, muted, tilted 45°
+  - `MIGHT_NEED_ATTENTION`: `BellIcon` filled, muted, tilted 60°
+  - `ALARM_RINGING`: `BellIcon` filled, warning color, rocking animation (±45° bell-ring keyframe); reduced-motion: static 45° tilt
+- escalation is conveyed by increasing tilt angle, not by a separate badge element
+- the tilt/animation must not change the button's layout size
 
 Interaction (`dismissOrToggleAlarm` state machine):
 
@@ -281,8 +280,8 @@ Door indicators:
 
 - show bell indicator only when `status !== 'ALARM_DISABLED'`
 - show TODO pill when `hasTodo(todo)` (soft or hard)
-- if `status === 'ALARM_RINGING'`, the Door itself gets the ringing treatment, not just a tiny icon
-- the Door bell icon shows the same dot badge as the Pane header for `MIGHT_BE_BUSY`, `BUSY`, and `MIGHT_NEED_ATTENTION` states, but smaller (4px vs 6px) to match the smaller bell icon
+- if `status === 'ALARM_RINGING'`, the Door bell icon uses warning color and the same rocking animation as the Pane header
+- the Door bell icon shows the same tilt angles as the Pane header for escalation states
 
 Door interaction:
 
