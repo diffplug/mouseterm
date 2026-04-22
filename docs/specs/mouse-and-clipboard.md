@@ -312,7 +312,9 @@ Content-aware transformations, paste history, credential warnings, and middle-cl
 
 ### 8.7 Drag-to-Paste
 
-Dragging files onto a terminal pane mirrors the paste chain above: escaped paths are typed at the current prompt, space-joined with a trailing space. Tauri receives the drop natively via `WindowEvent::DragDrop` and routes paths to the focused pane. VSCode webviews are sandboxed — `File.path` is not exposed — so bytes are copied into `$TMPDIR/mouseterm-drops/<uuid>-<filename>` and that temp path is pasted. This mismatch is intentional: under Tauri the original path is preserved; under VSCode the user gets a usable path with a tolerable byte-copy cost.
+Dragging files onto a terminal pane mirrors the paste chain above: escaped paths are typed at the current prompt, space-joined with a trailing space. Tauri receives the drop natively via `WindowEvent::DragDrop` and routes paths to the focused pane.
+
+Drag-to-paste is **not supported in the VSCode build**: VSCode's `WebviewView` (sidebar/panel) is excluded from external-file drop routing by the workbench, so the webview iframe never receives `dragover`/`drop` events for files dragged from the OS. See §9.2. VSCode users paste instead (§8.1/§8.5).
 
 ### 8.8 Right-Click and Menu Paste
 
@@ -348,4 +350,4 @@ The following are explicitly not implemented today; they may be added in respons
 - A "literal next keystroke" terminal-level shortcut (Ctrl+Alt+V or similar) for programs that don't support Ctrl+Q-style `quoted-insert`.
 - Middle-click paste / X11 PRIMARY selection integration on Linux.
 - Drop-position-aware pane routing (currently drops always go to the focused pane).
-- Preserving the original path when dragging into the VSCode build (blocked by webview sandboxing of `File.path`).
+- Drag-to-paste in the VSCode build. `WebviewView` is excluded from external-file drop routing by the workbench and there is no API to opt in (see [microsoft/vscode#111092](https://github.com/microsoft/vscode/issues/111092), closed as out-of-scope). Users paste via Ctrl+V / Cmd+V instead.

@@ -142,15 +142,6 @@ export class TauriAdapter implements PlatformAdapter {
     } catch { return null; }
   }
 
-  async saveDroppedBytesToTempFile(bytes: Uint8Array, filename: string): Promise<string | null> {
-    try {
-      return await rawInvoke<string | null>("save_dropped_bytes_to_temp_file", {
-        bytes: Array.from(bytes),
-        filename,
-      });
-    } catch { return null; }
-  }
-
   onFilesDropped(handler: (paths: string[]) => void): () => void {
     this.filesDroppedHandlers.add(handler);
     return () => { this.filesDroppedHandlers.delete(handler); };

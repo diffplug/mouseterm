@@ -8,7 +8,6 @@ import { log } from './log';
 const clipboardOps = require('../../lib/clipboard-ops.cjs') as {
   readClipboardFilePaths(): Promise<string[]>;
   readClipboardImageAsFilePath(): Promise<string | null>;
-  saveDroppedBytesToTempFile(bytes: Buffer | Uint8Array, filename: string): Promise<string>;
 };
 
 // Global set of PTY IDs claimed by any router instance.
@@ -205,16 +204,6 @@ export function attachRouter(
           .catch((err) => {
             log.info(`[clipboard] readImage failed: ${err?.message ?? err}`);
             webview.postMessage({ type: 'clipboard:image', path: null, requestId: msg.requestId } satisfies ExtensionMessage);
-          });
-        break;
-      case 'file:saveBytes':
-        clipboardOps.saveDroppedBytesToTempFile(Buffer.from(msg.bytes), msg.filename)
-          .then((path) => webview.postMessage({
-            type: 'file:savedBytes', path, requestId: msg.requestId,
-          } satisfies ExtensionMessage))
-          .catch((err) => {
-            log.info(`[clipboard] saveBytes failed: ${err?.message ?? err}`);
-            webview.postMessage({ type: 'file:savedBytes', path: null, requestId: msg.requestId } satisfies ExtensionMessage);
           });
         break;
       case 'mouseterm:init': {

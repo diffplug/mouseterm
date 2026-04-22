@@ -129,7 +129,6 @@ export class FakePtyAdapter implements PlatformAdapter {
 
   async readClipboardFilePaths(): Promise<string[] | null> { return null; }
   async readClipboardImageAsFilePath(): Promise<string | null> { return null; }
-  async saveDroppedBytesToTempFile(_bytes: Uint8Array, _filename: string): Promise<string | null> { return null; }
 
   requestInit(): void {}
   onPtyList(_handler: (detail: { ptys: PtyInfo[] }) => void): void {}

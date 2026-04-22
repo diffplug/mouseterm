@@ -53,14 +53,6 @@ rl.on('line', (line) => {
           path: await clipboard.readClipboardImageAsFilePath(),
         }));
         break;
-      case 'file:saveBytes':
-        respondAsync('file:savedBytes', data.requestId, async () => ({
-          path: await clipboard.saveDroppedBytesToTempFile(
-            Buffer.from(data.bytes || []),
-            data.filename || 'file',
-          ),
-        }));
-        break;
       default: console.error(`[sidecar] Unknown event: ${event}`);
     }
   } catch (err) {

@@ -5,9 +5,6 @@ const path = require('node:path');
 const {
   readClipboardFilePaths,
   readClipboardImageAsFilePath,
-  saveDroppedBytesToTempFile,
-  sanitizeFilename,
-  tempDropsDir,
   parseUriList,
 } = require('./clipboard-ops');
 
@@ -41,22 +38,6 @@ function fakeFs() {
     },
   };
 }
-
-test('sanitizeFilename strips weird chars and caps length', () => {
-  assert.equal(sanitizeFilename('hello.png'), 'hello.png');
-  assert.equal(sanitizeFilename("it's a photo.png"), 'it_s_a_photo.png');
-  assert.equal(sanitizeFilename('../../etc/passwd'), 'passwd');
-  assert.equal(sanitizeFilename(''), 'file');
-  assert.equal(sanitizeFilename(null), 'file');
-  const long = 'a'.repeat(300) + '.png';
-  const out = sanitizeFilename(long);
-  assert.equal(out.length, 120);
-  assert.ok(out.endsWith('.png'));
-});
-
-test('tempDropsDir uses os.tmpdir()/mouseterm-drops', () => {
-  assert.equal(tempDropsDir(fakeOs('/t')), path.join('/t', 'mouseterm-drops'));
-});
 
 test('parseUriList decodes file URIs and ignores comments/non-file', () => {
   const input = [
@@ -143,33 +124,6 @@ test('readClipboardFilePaths on linux falls back when first tool fails', async (
     },
   });
   assert.deepEqual(paths, ['/tmp/fb.png']);
-});
-
-test('saveDroppedBytesToTempFile writes sanitized name under temp dir', async () => {
-  const fs = fakeFs();
-  const out = await saveDroppedBytesToTempFile(
-    new Uint8Array([1, 2, 3]),
-    "it's shot.png",
-    {
-      osModule: fakeOs('/t'),
-      cryptoModule: fakeCrypto('uuid-A'),
-      fsModule: fs.module,
-    },
-  );
-  assert.equal(out, path.join('/t', 'mouseterm-drops', 'uuid-A-it_s_shot.png'));
-  assert.equal(fs.writes.length, 1);
-  assert.equal(fs.writes[0][0], out);
-  assert.deepEqual(Array.from(fs.writes[0][1]), [1, 2, 3]);
-});
-
-test('saveDroppedBytesToTempFile accepts Buffer directly', async () => {
-  const fs = fakeFs();
-  const out = await saveDroppedBytesToTempFile(
-    Buffer.from('hello'),
-    'a.txt',
-    { osModule: fakeOs('/t'), cryptoModule: fakeCrypto('u'), fsModule: fs.module },
-  );
-  assert.equal(fs.files.get(out).toString(), 'hello');
 });
 
 test('readClipboardImageAsFilePath on mac returns temp path on success', async () => {

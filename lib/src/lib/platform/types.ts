@@ -26,10 +26,9 @@ export interface PlatformAdapter {
   getCwd(id: string): Promise<string | null>;
   getScrollback(id: string): Promise<string | null>;
 
-  // Clipboard and drag-drop support for file references and raw images.
+  // Clipboard support for file references and raw images.
   readClipboardFilePaths(): Promise<string[] | null>;
   readClipboardImageAsFilePath(): Promise<string | null>;
-  saveDroppedBytesToTempFile(bytes: Uint8Array, filename: string): Promise<string | null>;
   // Only present on adapters with a native (non-DOM) drag-drop source.
   onFilesDropped?(handler: (paths: string[]) => void): () => void;
 

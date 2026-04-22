@@ -240,23 +240,6 @@ fn read_clipboard_image_as_file_path(
 }
 
 #[tauri::command]
-fn save_dropped_bytes_to_temp_file(
-    state: tauri::State<'_, SidecarState>,
-    bytes: Vec<u8>,
-    filename: String,
-) -> Result<Option<String>, String> {
-    let response = request_from_sidecar_timeout(
-        &state,
-        "file:saveBytes",
-        serde_json::json!({ "bytes": bytes, "filename": filename }),
-        Duration::from_secs(10),
-    )?;
-    Ok(response
-        .get("path")
-        .and_then(|path| path.as_str().map(String::from)))
-}
-
-#[tauri::command]
 fn shutdown_sidecar(state: tauri::State<'_, SidecarState>) {
     let _ = state.tx.send(SidecarMsg::Shutdown);
     kill_process_tree(state.child_pid);
@@ -549,7 +532,6 @@ pub fn run() {
             get_available_shells,
             read_clipboard_file_paths,
             read_clipboard_image_as_file_path,
-            save_dropped_bytes_to_temp_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building MouseTerm")

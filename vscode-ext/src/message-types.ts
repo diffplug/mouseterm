@@ -11,7 +11,6 @@ export type WebviewMessage =
   | { type: 'pty:getShells'; requestId?: string }
   | { type: 'clipboard:readFiles'; requestId: string }
   | { type: 'clipboard:readImage'; requestId: string }
-  | { type: 'file:saveBytes'; filename: string; bytes: number[]; requestId: string }
   | { type: 'mouseterm:init' }
   | { type: 'mouseterm:saveState'; state: unknown }
   | { type: 'mouseterm:flushSessionSaveDone'; requestId: string }
@@ -46,7 +45,6 @@ export type ExtensionMessage =
   | { type: 'pty:shells'; shells: Array<{ name: string; path: string; args: string[] }>; requestId?: string }
   | { type: 'clipboard:files'; paths: string[] | null; requestId: string }
   | { type: 'clipboard:image'; path: string | null; requestId: string }
-  | { type: 'file:savedBytes'; path: string | null; requestId: string }
   | { type: 'mouseterm:newTerminal'; shell?: string; args?: string[] }
   | { type: 'mouseterm:selectedShell'; shell?: string; args?: string[] }
   | { type: 'mouseterm:flushSessionSave'; requestId: string }

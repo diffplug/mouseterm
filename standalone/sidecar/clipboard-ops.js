@@ -15,17 +15,6 @@ function debugLog(...parts) {
   try { process.stderr.write(`[clipboard] ${parts.join(' ')}\n`); } catch {}
 }
 
-function tempDropsDir(osModule = os) {
-  return path.join(osModule.tmpdir(), 'mouseterm-drops');
-}
-
-function sanitizeFilename(name) {
-  const base = path.basename(String(name || '') || 'file');
-  const clean = base.replace(/[^A-Za-z0-9._-]/g, '_');
-  const trimmed = clean.length > 120 ? clean.slice(-120) : clean;
-  return trimmed || 'file';
-}
-
 async function ensureDir(dir, fsp) {
   await fsp.mkdir(dir, { recursive: true });
 }
@@ -251,24 +240,8 @@ async function readClipboardImageAsFilePath(runtime = {}) {
   return null;
 }
 
-async function saveDroppedBytesToTempFile(bytes, filename, runtime = {}) {
-  const osModule = runtime.osModule || os;
-  const cryptoModule = runtime.cryptoModule || crypto;
-  const fsp = (runtime.fsModule && runtime.fsModule.promises) || fs.promises;
-  const dir = tempDropsDir(osModule);
-  await ensureDir(dir, fsp);
-  const name = sanitizeFilename(filename);
-  const out = path.join(dir, `${cryptoModule.randomUUID()}-${name}`);
-  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
-  await fsp.writeFile(out, buf);
-  return out;
-}
-
 module.exports = {
   readClipboardFilePaths,
   readClipboardImageAsFilePath,
-  saveDroppedBytesToTempFile,
-  sanitizeFilename,
-  tempDropsDir,
   parseUriList,
 };

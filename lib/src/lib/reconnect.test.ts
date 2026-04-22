@@ -30,7 +30,6 @@ function createPlatform(ptys: PtyInfo[], savedState: PersistedSession | null): P
     getScrollback: vi.fn(async () => null),
     readClipboardFilePaths: vi.fn(async () => null),
     readClipboardImageAsFilePath: vi.fn(async () => null),
-    saveDroppedBytesToTempFile: vi.fn(async () => null),
     onPtyData: vi.fn(),
     offPtyData: vi.fn(),
     onPtyExit: vi.fn(),

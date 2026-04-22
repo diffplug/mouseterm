@@ -146,15 +146,6 @@ export class VSCodeAdapter implements PlatformAdapter {
     );
   }
 
-  saveDroppedBytesToTempFile(bytes: Uint8Array, filename: string): Promise<string | null> {
-    return this.requestResponse<string | null>(
-      'file:saveBytes', 'file:savedBytes',
-      { filename, bytes: Array.from(bytes) },
-      (msg) => msg.path,
-      10000,
-    );
-  }
-
   onPtyData(handler: (detail: { id: string; data: string }) => void): void {
     this.dataHandlers.add(handler);
   }
