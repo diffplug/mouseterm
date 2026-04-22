@@ -161,11 +161,28 @@ async function readImageLinux(out, runtime, fsp) {
   return false;
 }
 
+// Delete dropped images after this window so $TMPDIR doesn't accumulate one
+// file per image paste across a long-lived session. Long enough that any
+// command the user launched against the path (claude, file, open, ...) has
+// had time to read it.
+const DROP_TTL_MS = 5 * 60 * 1000;
+
+function scheduleDropCleanup(filePath, fsp, setTimeoutFn) {
+  const timer = setTimeoutFn(() => {
+    // Fire-and-forget — no awaiting inside the timer callback.
+    Promise.resolve()
+      .then(() => fsp.unlink(filePath).catch(() => {}))
+      .then(() => fsp.rmdir(path.dirname(filePath)).catch(() => {}));
+  }, DROP_TTL_MS);
+  if (timer && typeof timer.unref === 'function') timer.unref();
+}
+
 async function readClipboardImageAsFilePath(runtime = {}) {
   const platform = runtime.platform || process.platform;
   const osModule = runtime.osModule || os;
   const cryptoModule = runtime.cryptoModule || crypto;
   const fsp = (runtime.fsModule && runtime.fsModule.promises) || fs.promises;
+  const setTimeoutFn = runtime.setTimeoutFn || setTimeout;
 
   let dir = null;
   let out = null;
@@ -178,6 +195,7 @@ async function readClipboardImageAsFilePath(runtime = {}) {
       : await readImageLinux(out, runtime, fsp);
     if (ok && (await fsp.stat(out)).size > 0) {
       await fsp.chmod?.(out, 0o600);
+      scheduleDropCleanup(out, fsp, setTimeoutFn);
       return out;
     }
   } catch {}

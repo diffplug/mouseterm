@@ -142,11 +142,13 @@ test('readClipboardFilePaths on linux falls back when first tool fails', async (
 
 test('readClipboardImageAsFilePath on mac returns temp path on success', async () => {
   const fs = fakeFs();
+  const timers = [];
   const result = await readClipboardImageAsFilePath({
     platform: 'darwin',
     osModule: fakeOs('/t'),
     cryptoModule: fakeCrypto('uuid-I'),
     fsModule: fs.module,
+    setTimeoutFn: (cb, ms) => { timers.push({ cb, ms }); return { unref() {} }; },
     exec: async (cmd, args) => {
       assert.equal(cmd, 'osascript');
       const [, script] = args;
@@ -156,11 +158,23 @@ test('readClipboardImageAsFilePath on mac returns temp path on success', async (
       return { stdout: 'ok\n' };
     },
   });
-  assert.equal(result, path.join('/t', 'mouseterm-drops-dir-0', 'uuid-I-clipboard.png'));
+  const expected = path.join('/t', 'mouseterm-drops-dir-0', 'uuid-I-clipboard.png');
+  assert.equal(result, expected);
   assert.deepEqual(fs.chmods, [
     [path.join('/t', 'mouseterm-drops-dir-0'), 0o700],
-    [path.join('/t', 'mouseterm-drops-dir-0', 'uuid-I-clipboard.png'), 0o600],
+    [expected, 0o600],
   ]);
+  // Cleanup was scheduled, but not yet run: the temp file still exists.
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].ms, 5 * 60 * 1000);
+  assert.equal(fs.unlinks.length, 0);
+
+  // Firing the scheduled cleanup unlinks the file and its parent dir.
+  timers[0].cb();
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(fs.unlinks, [expected]);
+  assert.deepEqual(fs.rmdirs, [path.join('/t', 'mouseterm-drops-dir-0')]);
 });
 
 test('readClipboardImageAsFilePath returns null when osascript returns empty', async () => {
