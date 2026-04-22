@@ -11,7 +11,7 @@ export function Component() {
 
       <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)] pt-24 pb-16">
         <div className="mx-auto max-w-3xl px-4 md:px-6">
-          <h1 className="font-display text-[clamp(1.75rem,3vw+0.5rem,2.5rem)] font-semibold tracking-tight mb-2">
+          <h1 className="font-display text-[clamp(1.5rem,2.5vw+0.5rem,2.25rem)] mb-2">
             Dependencies
           </h1>
           <p className="text-base opacity-50 mb-10">
@@ -21,9 +21,9 @@ export function Component() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left border-b border-[var(--color-text)]/10">
-                <th className="pb-2 font-medium opacity-70">Package</th>
-                <th className="pb-2 font-medium opacity-70">Version</th>
-                <th className="pb-2 font-medium opacity-70">License</th>
+                <th className="pb-2 opacity-70">Package</th>
+                <th className="pb-2 opacity-70">Version</th>
+                <th className="pb-2 opacity-70">License</th>
               </tr>
             </thead>
             <tbody>

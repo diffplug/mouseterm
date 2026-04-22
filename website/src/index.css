@@ -1,24 +1,28 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Ubuntu Sans Mono", ui-monospace, monospace;
+  --font-body: "Ubuntu Mono", ui-monospace, monospace;
   --color-bg: oklch(10% 0.01 60);
   --color-surface: oklch(18% 0.015 60);
   --color-text: oklch(92% 0.01 60);
-  --color-caramel: oklch(65% 0.14 60);
-  --color-caramel-light: oklch(75% 0.12 60);
+  --color-caramel: #d38d5f;
 }
 
 html {
   background: var(--color-bg);
   color: var(--color-text);
+  font-family: var(--font-body);
   font-kerning: normal;
 }
 
-/* Override lib's terminal-app styles (body overflow:hidden, #root height:100vh)
-   which Vite loads globally. The Playground page re-applies them when it mounts. */
-body {
+/* Override lib's terminal-app styles (body overflow:hidden, #root height:100vh,
+   body font-family system font) which Vite loads globally. The Playground page
+   re-applies them when it mounts. Higher specificity (html body) is required so
+   we beat the lib's `body` rule which loads after ours on /playground. */
+html body {
   overflow: auto;
+  font-family: var(--font-body);
 }
 
 #root {

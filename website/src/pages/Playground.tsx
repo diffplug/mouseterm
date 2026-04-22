@@ -93,7 +93,7 @@ function Playground() {
         controls={<ThemePicker variant="playground-header" />}
       />
 
-      <main className="fixed top-24 right-0 bottom-0 left-0 flex min-h-0 md:top-28">
+      <main className="fixed top-16 right-0 bottom-0 left-0 flex min-h-0 md:top-20">
         {PondModule ? (
           <PondModule.Pond
             initialPaneIds={[PANE_MAIN]}
