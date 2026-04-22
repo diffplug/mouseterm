@@ -19,6 +19,9 @@ const ASTERISK_THRESHOLD = 0.65;
  *  The video keeps scrubbing underneath. */
 const UNPIN_THRESHOLD = 0.8;
 
+/** Clamp a value to 0–1. */
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
 const PILL =
   "inline-block px-4 py-1.5 rounded-md border border-[var(--color-caramel)]/30 text-[var(--color-caramel)] text-sm font-display hover:bg-[var(--color-caramel)]/10 hover:border-[var(--color-caramel)]/60 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150";
 
@@ -99,13 +102,10 @@ function Home() {
         const runwayScroll = -rect.top;
         const runwayHeight = runway.offsetHeight - window.innerHeight;
         const fraction = runwayHeight > 0
-          ? Math.min(1, Math.max(0, runwayScroll / runwayHeight))
+          ? clamp01(runwayScroll / runwayHeight)
           : 0;
 
-        // Compute rendered video content height (object-contain fits within container
-        // while preserving the video's native aspect ratio). This is the icon's actual
-        // on-screen size and drives the icon rise distance, the hook fade timing, and
-        // the video scrub start point.
+        // Rendered icon height (object-contain preserves aspect ratio within container).
         const naturalAspect = video.videoWidth && video.videoHeight
           ? video.videoWidth / video.videoHeight
           : 1.22; // fallback before metadata loads
@@ -115,16 +115,13 @@ function Home() {
           : video.offsetHeight;                 // height-limited
         const initialOffset = iconHeight * ICON_INITIAL_HIDE_FRAC;
 
-        // Scrub video: hold on frame 0 while the icon is still rising into position.
-        // Once the icon reaches its static position (runwayScroll >= initialOffset),
-        // scrub the remaining scroll range across the video's duration.
+        // Scrub video: hold frame 0 during icon rise, then scrub remaining range.
         if (video.duration && isFinite(video.duration)) {
           if (runwayScroll < initialOffset) {
             video.currentTime = 0;
           } else {
-            const videoRunway = runwayHeight - initialOffset;
-            const videoProgress = videoRunway > 0
-              ? Math.min(1, (runwayScroll - initialOffset) / videoRunway)
+            const videoProgress = (runwayHeight - initialOffset) > 0
+              ? clamp01((runwayScroll - initialOffset) / (runwayHeight - initialOffset))
               : 0;
             video.currentTime = videoProgress * video.duration;
           }
@@ -134,26 +131,24 @@ function Home() {
         for (let i = 0; i < WORD_THRESHOLDS.length; i++) {
           const el = wordRefs[i].current;
           if (!el) continue;
-          const progress = Math.min(1, Math.max(0,
+          const progress = clamp01(
             (fraction - WORD_THRESHOLDS[i]) / 0.08
-          ));
+          );
           el.style.opacity = String(progress);
           el.style.transform = `translateY(${(1 - progress) * 12}px)`;
         }
 
         // Asterisk + footnote
-        const astProgress = Math.min(1, Math.max(0,
+        const astProgress = clamp01(
           (fraction - ASTERISK_THRESHOLD) / 0.08
-        ));
+        );
         if (asteriskRef.current) asteriskRef.current.style.opacity = String(astProgress);
         if (footnoteRef.current) footnoteRef.current.style.opacity = String(astProgress * 0.7);
 
-        // (Hook fade handled below, after iconHeight is computed for the icon rise.)
-
         // Header: reveal brand + background at unpin threshold
-        const headerProgress = Math.min(1, Math.max(0,
+        const headerProgress = clamp01(
           (fraction - UNPIN_THRESHOLD) / 0.08
-        ));
+        );
         if (headerBrandRef.current) {
           headerBrandRef.current.style.opacity = String(headerProgress);
         }
@@ -169,35 +164,23 @@ function Home() {
         const slideAmount = Math.max(0, runwayScroll - contentEnterScroll);
 
         // Video transform combines two behaviors:
-        //   1. Icon-rise (runwayScroll 0 → initialOffset px): 1:1 with scroll.
-        //      At load the icon is translated +initialOffset so only the top third
-        //      is visible; each pixel of scroll lifts it by one pixel until fully
-        //      in view.
-        //   2. Existing unpin slide (fraction > UNPIN_THRESHOLD): translate up with
-        //      content as hero unpins.
-        let videoTranslateY = 0;
-        let iconCurrentOffset = 0;
-        if (runwayScroll < initialOffset) {
-          iconCurrentOffset = initialOffset - runwayScroll;
-          videoTranslateY = iconCurrentOffset;
-        } else if (slideAmount > 0) {
-          videoTranslateY = -Math.round(slideAmount);
-        }
+        //   1. Icon-rise (runwayScroll 0 → initialOffset): translate down so only
+        //      the top third is visible; scroll lifts it 1:1 until fully in view.
+        //   2. Unpin slide (fraction > UNPIN_THRESHOLD): translate up with content.
+        const iconCurrentOffset = Math.max(0, initialOffset - runwayScroll);
+        const videoTranslateY = iconCurrentOffset > 0
+          ? iconCurrentOffset
+          : slideAmount > 0 ? -Math.round(slideAmount) : 0;
         video.style.transform = videoTranslateY !== 0
           ? `translateY(${Math.round(videoTranslateY)}px)`
           : '';
 
-        // Hook text: holds visible until the bottom ~10% of the icon enters the
-        // viewport, then fades out as the icon completes its rise. Tied to icon
-        // position (not scroll fraction) so the timing matches 1:1 icon motion.
+        // Hook text: visible until the icon nearly finishes rising, then fades out.
         if (hookRef.current) {
           const remainingHidden = iconHeight > 0 ? iconCurrentOffset / iconHeight : 0;
-          let fadeProgress = 0;
-          if (runwayScroll >= initialOffset) {
-            fadeProgress = 1;
-          } else if (remainingHidden < HOOK_FADE_REMAINING) {
-            fadeProgress = 1 - remainingHidden / HOOK_FADE_REMAINING;
-          }
+          const fadeProgress = iconCurrentOffset === 0
+            ? 1
+            : clamp01(1 - remainingHidden / HOOK_FADE_REMAINING);
           hookRef.current.style.opacity = String(1 - fadeProgress);
           hookRef.current.style.transform = `translateY(${-fadeProgress * 24}px)`;
         }
