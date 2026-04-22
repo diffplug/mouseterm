@@ -6,6 +6,7 @@ import { getSavedSessionState, saveSessionState, mergeAlarmStates } from './sess
 import type { ExtensionMessage } from './message-types';
 import * as ptyManager from './pty-manager';
 import { resolveSelectedShell } from './shell-selection';
+import { log } from './log';
 
 export class MouseTermViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
@@ -79,6 +80,7 @@ export class MouseTermViewProvider implements vscode.WebviewViewProvider {
     });
 
     view.onDidDispose(() => {
+      log.info('[view] onDidDispose fired — releasing router (PTYs remain alive)');
       this.routerDisposable?.dispose();
       this.routerDisposable = undefined;
       this.view = undefined;

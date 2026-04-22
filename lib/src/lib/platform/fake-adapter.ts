@@ -127,6 +127,10 @@ export class FakePtyAdapter implements PlatformAdapter {
   async getCwd(_id: string): Promise<string | null> { return null; }
   async getScrollback(_id: string): Promise<string | null> { return null; }
 
+  async readClipboardFilePaths(): Promise<string[] | null> { return null; }
+  async readClipboardImageAsFilePath(): Promise<string | null> { return null; }
+  async saveDroppedBytesToTempFile(_bytes: Uint8Array, _filename: string): Promise<string | null> { return null; }
+
   requestInit(): void {}
   onPtyList(_handler: (detail: { ptys: PtyInfo[] }) => void): void {}
   offPtyList(_handler: (detail: { ptys: PtyInfo[] }) => void): void {}

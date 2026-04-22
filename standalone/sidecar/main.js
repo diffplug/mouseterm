@@ -9,10 +9,24 @@
 const readline = require('readline');
 const nodePty = require('node-pty');
 const { create } = require('./pty-core');
+const clipboard = require('./clipboard-ops');
+
+function send(event, data) {
+  process.stdout.write(JSON.stringify({ event, data }) + '\n');
+}
 
 const mgr = create((event, data) => {
-  process.stdout.write(JSON.stringify({ event: `pty:${event}`, data }) + '\n');
+  send(`pty:${event}`, data);
 }, nodePty);
+
+async function respondAsync(event, requestId, run) {
+  try {
+    const data = await run();
+    send(event, { ...data, requestId });
+  } catch (err) {
+    send(event, { error: String(err && err.message || err), requestId });
+  }
+}
 
 const rl = readline.createInterface({ input: process.stdin });
 
@@ -29,6 +43,24 @@ rl.on('line', (line) => {
       case 'pty:getScrollback': mgr.getScrollback(data.id, data.requestId); break;
       case 'pty:getShells':  mgr.getShells(data.requestId); break;
       case 'pty:gracefulKillAll': mgr.gracefulKillAll(data.timeout); break;
+      case 'clipboard:readFiles':
+        respondAsync('clipboard:files', data.requestId, async () => ({
+          paths: await clipboard.readClipboardFilePaths(),
+        }));
+        break;
+      case 'clipboard:readImage':
+        respondAsync('clipboard:image', data.requestId, async () => ({
+          path: await clipboard.readClipboardImageAsFilePath(),
+        }));
+        break;
+      case 'file:saveBytes':
+        respondAsync('file:savedBytes', data.requestId, async () => ({
+          path: await clipboard.saveDroppedBytesToTempFile(
+            Buffer.from(data.bytes || []),
+            data.filename || 'file',
+          ),
+        }));
+        break;
       default: console.error(`[sidecar] Unknown event: ${event}`);
     }
   } catch (err) {

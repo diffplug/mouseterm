@@ -5,6 +5,12 @@ import type { PersistedSession } from '../../lib/src/lib/session-types';
 import type { WebviewMessage, ExtensionMessage } from './message-types';
 import { log } from './log';
 
+const clipboardOps = require('../../lib/clipboard-ops.cjs') as {
+  readClipboardFilePaths(): Promise<string[]>;
+  readClipboardImageAsFilePath(): Promise<string | null>;
+  saveDroppedBytesToTempFile(bytes: Buffer | Uint8Array, filename: string): Promise<string>;
+};
+
 // Global set of PTY IDs claimed by any router instance.
 // Prevents reconnecting routers from stealing PTYs owned by other webviews.
 const globalOwnedPtyIds = new Set<string>();
@@ -180,6 +186,36 @@ export function attachRouter(
             type: 'pty:shells', shells, requestId: msg.requestId,
           } satisfies ExtensionMessage);
         });
+        break;
+      case 'clipboard:readFiles':
+        clipboardOps.readClipboardFilePaths()
+          .then((paths) => webview.postMessage({
+            type: 'clipboard:files', paths: paths.length ? paths : null, requestId: msg.requestId,
+          } satisfies ExtensionMessage))
+          .catch((err) => {
+            log.info(`[clipboard] readFiles failed: ${err?.message ?? err}`);
+            webview.postMessage({ type: 'clipboard:files', paths: null, requestId: msg.requestId } satisfies ExtensionMessage);
+          });
+        break;
+      case 'clipboard:readImage':
+        clipboardOps.readClipboardImageAsFilePath()
+          .then((path) => webview.postMessage({
+            type: 'clipboard:image', path, requestId: msg.requestId,
+          } satisfies ExtensionMessage))
+          .catch((err) => {
+            log.info(`[clipboard] readImage failed: ${err?.message ?? err}`);
+            webview.postMessage({ type: 'clipboard:image', path: null, requestId: msg.requestId } satisfies ExtensionMessage);
+          });
+        break;
+      case 'file:saveBytes':
+        clipboardOps.saveDroppedBytesToTempFile(Buffer.from(msg.bytes), msg.filename)
+          .then((path) => webview.postMessage({
+            type: 'file:savedBytes', path, requestId: msg.requestId,
+          } satisfies ExtensionMessage))
+          .catch((err) => {
+            log.info(`[clipboard] saveBytes failed: ${err?.message ?? err}`);
+            webview.postMessage({ type: 'file:savedBytes', path: null, requestId: msg.requestId } satisfies ExtensionMessage);
+          });
         break;
       case 'mouseterm:init': {
         // Webview has (re-)initialized — subscribe to live events.

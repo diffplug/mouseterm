@@ -78,7 +78,12 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('mouseterm.view', provider),
+    vscode.window.registerWebviewViewProvider('mouseterm.view', provider, {
+      // Keep the webview script + xterm DOM alive when the Panel is hidden
+      // (close/toggle), so PTYs and scrollback are preserved across re-show
+      // without going through the reconnect dance.
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
     vscode.window.registerWebviewPanelSerializer('mouseterm', {
       async deserializeWebviewPanel(panel: vscode.WebviewPanel, state: unknown) {
         setupPanel(context, panel, state, () => provider.getSelectedShell());
