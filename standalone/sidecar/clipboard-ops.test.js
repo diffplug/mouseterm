@@ -157,29 +157,18 @@ test('readClipboardImageAsFilePath returns null when osascript returns empty', a
   assert.equal(result, null);
 });
 
-test('readClipboardImageAsFilePath on linux writes buffer from spawn stdout', async () => {
+test('readClipboardImageAsFilePath on linux writes buffer from exec stdout', async () => {
   const fs = fakeFs();
-  const EventEmitter = require('node:events');
-  function fakeSpawn(cmd) {
-    const child = new EventEmitter();
-    child.stdout = new EventEmitter();
-    setImmediate(() => {
-      if (cmd === 'xclip') {
-        child.stdout.emit('data', Buffer.from([0x89, 0x50, 0x4E, 0x47]));
-        child.emit('close', 0);
-      } else {
-        child.emit('close', 1);
-      }
-    });
-    return child;
-  }
   const result = await readClipboardImageAsFilePath({
     platform: 'linux',
     env: {},
     osModule: fakeOs('/t'),
     cryptoModule: fakeCrypto('uuid-L'),
     fsModule: fs.module,
-    spawn: fakeSpawn,
+    exec: async (cmd) => {
+      if (cmd === 'xclip') return { stdout: Buffer.from([0x89, 0x50, 0x4E, 0x47]) };
+      throw new Error('no tool');
+    },
   });
   assert.equal(result, path.join('/t', 'mouseterm-drops', 'uuid-L-clipboard.png'));
   assert.equal(fs.writes.length, 1);

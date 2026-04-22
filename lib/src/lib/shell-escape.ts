@@ -1,11 +1,11 @@
 import { IS_MAC } from './platform';
 
-function detectIsWindows(): boolean {
+const IS_WINDOWS: boolean = (() => {
   if (typeof navigator === 'undefined') return false;
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
   const p = (nav.userAgentData?.platform ?? nav.platform ?? nav.userAgent ?? '').toLowerCase();
   return p.includes('win');
-}
+})();
 
 // Matches macOS Terminal's drag-and-drop format: backslash-escape each shell
 // metacharacter instead of wrapping in quotes. TUIs like `claude` recognize
@@ -23,6 +23,5 @@ export function shellEscapeWindows(input: string): string {
 }
 
 export function shellEscapePath(input: string): string {
-  if (!IS_MAC && detectIsWindows()) return shellEscapeWindows(input);
-  return shellEscapePosix(input);
+  return !IS_MAC && IS_WINDOWS ? shellEscapeWindows(input) : shellEscapePosix(input);
 }

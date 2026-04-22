@@ -2,54 +2,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { execFile, spawn } = require('node:child_process');
+const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 
 const execFileP = promisify(execFile);
 
 const MAX_BUFFER = 16 * 1024 * 1024;
-const DEBUG = process.env.MOUSETERM_DEBUG_CLIPBOARD === '1';
-
-function debugLog(...parts) {
-  if (!DEBUG) return;
-  try { process.stderr.write(`[clipboard] ${parts.join(' ')}\n`); } catch {}
-}
-
-async function ensureDir(dir, fsp) {
-  await fsp.mkdir(dir, { recursive: true });
-}
-
-async function fileNonEmpty(p, fsp) {
-  try {
-    const st = await fsp.stat(p);
-    return st.size > 0;
-  } catch {
-    return false;
-  }
-}
-
-async function silentUnlink(p, fsp) {
-  try { await fsp.unlink(p); } catch {}
-}
-
-function collectSpawnStdout(spawnFn, cmd, args) {
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawnFn(cmd, args);
-    } catch {
-      resolve(null);
-      return;
-    }
-    const chunks = [];
-    child.stdout.on('data', (c) => chunks.push(c));
-    child.on('error', () => resolve(null));
-    child.on('close', (code) => {
-      if (code === 0 && chunks.length > 0) resolve(Buffer.concat(chunks));
-      else resolve(null);
-    });
-  });
-}
 
 const MAC_FILE_PATHS_SCRIPT = [
   'use framework "AppKit"',
@@ -73,20 +31,10 @@ const MAC_FILE_PATHS_SCRIPT = [
 
 async function readFilePathsMac(runtime) {
   const exec = runtime.exec || execFileP;
-  if (DEBUG) {
-    try {
-      const { stdout } = await exec('osascript', ['-e', 'clipboard info'], { maxBuffer: MAX_BUFFER });
-      debugLog('clipboard info:', JSON.stringify(stdout.trim()));
-    } catch (err) {
-      debugLog('clipboard info failed:', err && err.message || err);
-    }
-  }
   try {
     const { stdout } = await exec('osascript', ['-e', MAC_FILE_PATHS_SCRIPT], { maxBuffer: MAX_BUFFER });
-    debugLog('files script stdout:', JSON.stringify(stdout));
     return stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-  } catch (err) {
-    debugLog('files script error:', err && err.message || err);
+  } catch {
     return [];
   }
 }
@@ -144,10 +92,6 @@ async function readClipboardFilePaths(runtime = {}) {
   return readFilePathsLinux(runtime);
 }
 
-function dropsFilePath(osModule, cryptoModule, name) {
-  return path.join(osModule.tmpdir(), 'mouseterm-drops', `${cryptoModule.randomUUID()}-${name}`);
-}
-
 async function readImageMac(out, runtime) {
   const exec = runtime.exec || execFileP;
   const script = [
@@ -171,10 +115,8 @@ async function readImageMac(out, runtime) {
   ].join('\n');
   try {
     const { stdout } = await exec('osascript', ['-e', script], { maxBuffer: MAX_BUFFER });
-    debugLog('image script stdout:', JSON.stringify(stdout));
     return stdout.trim() === 'ok';
-  } catch (err) {
-    debugLog('image script error:', err && err.message || err);
+  } catch {
     return false;
   }
 }
@@ -201,18 +143,20 @@ async function readImageWindows(out, runtime) {
 
 async function readImageLinux(out, runtime, fsp) {
   const env = runtime.env || process.env;
-  const spawnFn = runtime.spawn || spawn;
+  const exec = runtime.exec || execFileP;
   const wayland = Boolean(env.WAYLAND_DISPLAY);
   const attempts = wayland
     ? [['wl-paste', ['--type', 'image/png']], ['xclip', ['-selection', 'clipboard', '-t', 'image/png', '-o']]]
     : [['xclip', ['-selection', 'clipboard', '-t', 'image/png', '-o']], ['wl-paste', ['--type', 'image/png']]];
 
   for (const [cmd, args] of attempts) {
-    const buf = await collectSpawnStdout(spawnFn, cmd, args);
-    if (buf && buf.length > 0) {
-      await fsp.writeFile(out, buf);
-      return true;
-    }
+    try {
+      const { stdout } = await exec(cmd, args, { encoding: 'buffer', maxBuffer: MAX_BUFFER });
+      if (stdout && stdout.length > 0) {
+        await fsp.writeFile(out, stdout);
+        return true;
+      }
+    } catch {}
   }
   return false;
 }
@@ -223,20 +167,15 @@ async function readClipboardImageAsFilePath(runtime = {}) {
   const cryptoModule = runtime.cryptoModule || crypto;
   const fsp = (runtime.fsModule && runtime.fsModule.promises) || fs.promises;
 
-  const out = dropsFilePath(osModule, cryptoModule, 'clipboard.png');
+  const out = path.join(osModule.tmpdir(), 'mouseterm-drops', `${cryptoModule.randomUUID()}-clipboard.png`);
   try {
-    await ensureDir(path.dirname(out), fsp);
-  } catch {
-    return null;
-  }
-
-  let ok = false;
-  if (platform === 'darwin') ok = await readImageMac(out, runtime);
-  else if (platform === 'win32') ok = await readImageWindows(out, runtime);
-  else ok = await readImageLinux(out, runtime, fsp);
-
-  if (ok && await fileNonEmpty(out, fsp)) return out;
-  await silentUnlink(out, fsp);
+    await fsp.mkdir(path.dirname(out), { recursive: true });
+    const ok = platform === 'darwin' ? await readImageMac(out, runtime)
+      : platform === 'win32' ? await readImageWindows(out, runtime)
+      : await readImageLinux(out, runtime, fsp);
+    if (ok && (await fsp.stat(out)).size > 0) return out;
+  } catch {}
+  try { await fsp.unlink(out); } catch {}
   return null;
 }
 
