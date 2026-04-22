@@ -302,9 +302,9 @@ The bracketed-paste mode is read at paste time from xterm's public `terminal.mod
 
 Paste reads the clipboard in three tiers, falling through in order:
 
-1. **Plain text.** `navigator.clipboard.readText()`. If non-empty, the string is written to the PTY (with bracketed-paste wrapping when enabled by the inside program).
-2. **File references.** If the clipboard has no text but carries OS file references (Finder/Explorer Copy of a file), each path is shell-escaped and the space-joined list is written to the PTY with a trailing space so the next token starts cleanly.
-3. **Raw image data.** If neither of the above matches and the clipboard holds image bytes (e.g. a `Cmd+Shift+4` screenshot), the bytes are written to `$TMPDIR/mouseterm-drops/<uuid>.png` and that single path is pasted as in tier 2.
+1. **File references.** The platform adapter checks for OS file references (Finder/Explorer Copy of a file) via the sidecar/extension host. If present, each path is shell-escaped and the space-joined list is written to the PTY with a trailing space so the next token starts cleanly. Files are checked first so that a file-ref clipboard never reaches `navigator.clipboard.readText()` — on macOS WKWebView that call can trigger a native paste-permission popup when the clipboard came from another app.
+2. **Plain text.** `navigator.clipboard.readText()`. If non-empty, the string is written to the PTY (with bracketed-paste wrapping when enabled by the inside program).
+3. **Raw image data.** If neither of the above matches and the clipboard holds image bytes (e.g. a `Cmd+Shift+4` screenshot), the bytes are written to `$TMPDIR/mouseterm-drops/<uuid>.png` and that single path is pasted as in tier 1.
 
 Each tier is implemented by a shared Node module (`standalone/sidecar/clipboard-ops.js`) that shells out to the OS-native clipboard tool: `osascript` on macOS, `Get-Clipboard` on Windows, `wl-paste`/`xclip` on Linux. The Tauri build reaches it through the existing sidecar; the VSCode build calls into the same module from its extension host. If every tier comes back empty, paste is a silent no-op.
 

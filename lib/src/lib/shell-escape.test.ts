@@ -26,6 +26,10 @@ describe('shellEscapePosix', () => {
     expect(shellEscapePosix('a\\b.png')).toBe('a\\\\b.png');
   });
 
+  it('backslash-escapes carriage returns (security: prevents command injection)', () => {
+    expect(shellEscapePosix('a\rb')).toBe('a\\\rb');
+  });
+
   it('backslash-escapes shell metacharacters', () => {
     expect(shellEscapePosix('a$b')).toBe('a\\$b');
     expect(shellEscapePosix('a`b')).toBe('a\\`b');

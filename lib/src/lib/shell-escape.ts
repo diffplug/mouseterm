@@ -11,7 +11,7 @@ function detectIsWindows(): boolean {
 // metacharacter instead of wrapping in quotes. TUIs like `claude` recognize
 // backslash-escaped tokens as filesystem paths where a single-quoted whole
 // path gets treated as opaque pasted text.
-const POSIX_UNSAFE = /([ \t\n!"#$&'()*;<>?[\\\]`{|}~])/g;
+const POSIX_UNSAFE = /([ \t\n\r!"#$&'()*;<>?[\\\]`{|}~])/g;
 
 export function shellEscapePosix(input: string): string {
   if (input === '') return "''";
