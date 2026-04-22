@@ -6,6 +6,7 @@ import { attachRouter, flushAllSessions, getAlarmStates } from './message-router
 import { getWebviewHtml } from './webview-html';
 import { log } from './log';
 import { getSavedSessionState, isPersistedSession, mergeAlarmStates, refreshSavedSessionStateFromPtys, saveSessionState } from './session-state';
+import { resolveSelectedShell, setSelectedShellPath, getSelectedShellPath } from './shell-selection';
 
 let extensionContext: vscode.ExtensionContext | null = null;
 
@@ -20,6 +21,7 @@ function setupPanel(
   context: vscode.ExtensionContext,
   panel: vscode.WebviewPanel,
   savedState?: unknown,
+  getSelectedShell?: () => { shell?: string; args?: string[] } | null,
 ) {
   const mediaPath = path.join(context.extensionPath, 'media');
 
@@ -39,12 +41,13 @@ function setupPanel(
     light: vscode.Uri.file(path.join(context.extensionPath, 'icon-tiny-light.png')),
     dark: vscode.Uri.file(path.join(context.extensionPath, 'icon-tiny-dark.png')),
   };
-  panel.webview.html = getWebviewHtml(panel.webview, mediaPath, initialState);
+  panel.webview.html = getWebviewHtml(panel.webview, mediaPath, initialState, getSelectedShell?.());
 
   const router = attachRouter(panel.webview, {
     reconnect: !!savedState,
     killOnDispose: true,
     savedSession: isPersistedSession(initialState) ? initialState : null,
+    getSelectedShell,
     // Panels persist via vscode.setState() (per-panel, managed by VS Code).
     // Don't write to workspaceState — that's for the WebviewView only.
   });
@@ -58,11 +61,27 @@ export function activate(context: vscode.ExtensionContext) {
 
   const provider = new MouseTermViewProvider(context);
 
+  // Updates the shell-derived state in one place: the view header (shell
+  // name appears next to the title via description) and the webview's
+  // default-shell slot that split-spawns read from.
+  const applyShell = (shell: { name: string; path: string; args: string[] } | undefined) => {
+    provider.setDescription(shell?.name);
+    provider.setSelectedShell(shell ? { shell: shell.path, args: shell.args } : null);
+  };
+
+  // Warm up shell detection in the background so the picker/+ buttons
+  // don't pay the cold-start cost (child fork + WSL probe) when the user
+  // first clicks them. Also seeds the view description / webview state
+  // with the current shell.
+  void ptyManager.getAvailableShells().then((shells) => {
+    applyShell(resolveSelectedShell(context, shells));
+  });
+
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('mouseterm.view', provider),
     vscode.window.registerWebviewPanelSerializer('mouseterm', {
       async deserializeWebviewPanel(panel: vscode.WebviewPanel, state: unknown) {
-        setupPanel(context, panel, state);
+        setupPanel(context, panel, state, () => provider.getSelectedShell());
       },
     }),
     vscode.commands.registerCommand('mouseterm.focus', () => {
@@ -80,7 +99,53 @@ export function activate(context: vscode.ExtensionContext) {
           localResourceRoots: [vscode.Uri.file(mediaPath)],
         },
       );
-      setupPanel(context, panel);
+      setupPanel(context, panel, undefined, () => provider.getSelectedShell());
+    }),
+    vscode.commands.registerCommand('mouseterm.newTerminal', async () => {
+      await vscode.commands.executeCommand('mouseterm.view.focus');
+      const shells = await ptyManager.getAvailableShells();
+      const shell = resolveSelectedShell(context, shells);
+      await provider.postMessage({
+        type: 'mouseterm:newTerminal',
+        shell: shell?.path,
+        args: shell?.args,
+      });
+    }),
+    vscode.commands.registerCommand('mouseterm.selectShell', async () => {
+      const shells = await ptyManager.getAvailableShells();
+      if (shells.length === 0) {
+        void vscode.window.showWarningMessage('MouseTerm: no shells detected.');
+        return;
+      }
+      const currentPath = getSelectedShellPath(context) ?? shells[0].path;
+      const items: (vscode.QuickPickItem & { path: string; args: string[] })[] = shells.map((s) => ({
+        label: s.name,
+        description: s.path,
+        picked: s.path === currentPath,
+        path: s.path,
+        args: s.args,
+      }));
+      const picked = await vscode.window.showQuickPick(items, {
+        title: 'Select default shell for MouseTerm',
+        placeHolder: 'The [+] button will spawn a terminal with this shell.',
+      });
+      if (!picked) return;
+
+      const hasWorkspace = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
+      let scope: 'workspace' | 'global' = 'global';
+      if (hasWorkspace) {
+        const scopeChoice = await vscode.window.showQuickPick(
+          [
+            { label: 'Apply globally (default)', value: 'global' as const },
+            { label: 'Apply to this workspace only', value: 'workspace' as const },
+          ],
+          { title: 'Where should this apply?' },
+        );
+        if (!scopeChoice) return;
+        scope = scopeChoice.value;
+      }
+      await setSelectedShellPath(context, picked.path, scope);
+      applyShell({ name: picked.label, path: picked.path, args: picked.args });
     }),
   );
 }

@@ -1,6 +1,6 @@
 import type { PlatformAdapter, PtyInfo } from './platform/types';
 import { reconnectTerminal } from './terminal-registry';
-import type { PersistedDetachedItem } from './session-types';
+import type { PersistedDetachedItem, PersistedSession } from './session-types';
 import { restoreSession } from './session-restore';
 
 export interface ReconnectResult {
@@ -71,6 +71,15 @@ function reconnectLivePtys(platform: PlatformAdapter): Promise<ReconnectResult> 
         });
         ids.push(pty.id);
       }
+      // Pull saved visible/detached state so reconnect (e.g. after panel
+      // close/reopen) restores splits and doors instead of stacking every live
+      // PTY into one tab group.
+      const savedPlan = getSavedLiveReconnectPlan(platform.getState(), ids);
+      if (savedPlan) {
+        resolve(savedPlan);
+        return;
+      }
+
       resolve({ paneIds: ids, detached: [] });
     }
 
@@ -78,4 +87,40 @@ function reconnectLivePtys(platform: PlatformAdapter): Promise<ReconnectResult> 
     platform.onPtyReplay(handleReplay);
     platform.requestInit();
   });
+}
+
+function getSavedLiveReconnectPlan(savedState: unknown, liveIds: string[]): ReconnectResult | null {
+  const saved = savedState as PersistedSession | null;
+  if (!saved || saved.version !== 1 || !Array.isArray(saved.panes)) return null;
+
+  // Reuse persisted visible/detached state only when every live PTY is covered
+  // by the saved session. Extra saved panes can be stale, but extra live panes
+  // have no reliable saved layout position.
+  const liveSet = new Set(liveIds);
+  const savedSet = new Set(saved.panes.map((p) => p.id));
+  if (!liveIds.every((id) => savedSet.has(id))) return null;
+
+  const detached = (saved.detached ?? []).filter((item) => liveSet.has(item.id));
+  const detachedIds = new Set(detached.map((item) => item.id));
+  const paneIds = saved.panes
+    .filter((pane) => liveSet.has(pane.id) && !detachedIds.has(pane.id))
+    .map((pane) => pane.id);
+  const layoutPanelIds = getLayoutPanelIds(saved.layout);
+  const layoutMatchesVisiblePanes =
+    !!layoutPanelIds &&
+    layoutPanelIds.length === paneIds.length &&
+    layoutPanelIds.every((id) => paneIds.includes(id));
+
+  return {
+    paneIds,
+    detached,
+    layout: layoutMatchesVisiblePanes ? saved.layout : undefined,
+  };
+}
+
+function getLayoutPanelIds(layout: unknown): string[] | null {
+  if (!layout || typeof layout !== 'object') return null;
+  const panels = (layout as { panels?: unknown }).panels;
+  if (!panels || typeof panels !== 'object' || Array.isArray(panels)) return null;
+  return Object.keys(panels);
 }

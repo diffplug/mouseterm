@@ -19,6 +19,7 @@ interface PtyBufferEntry {
 
 const MAX_BUFFER_CHARS = 1_000_000;
 const ptyBuffers = new Map<string, PtyBufferEntry>();
+const killedPtyIds = new Set<string>();
 
 function trimChunks(chunks: string[], totalChars: number): number {
   while (totalChars > MAX_BUFFER_CHARS && chunks.length > 1) {
@@ -40,6 +41,7 @@ function createBufferEntry(alive: boolean, exitCode?: number): PtyBufferEntry {
 }
 
 function bufferData(id: string, data: string): void {
+  if (killedPtyIds.has(id)) return;
   let entry = ptyBuffers.get(id);
   if (!entry) {
     entry = createBufferEntry(true);
@@ -55,6 +57,7 @@ function bufferData(id: string, data: string): void {
 }
 
 function bufferExit(id: string, exitCode: number): void {
+  if (killedPtyIds.has(id)) return;
   let entry = ptyBuffers.get(id);
   if (!entry) {
     entry = createBufferEntry(false, exitCode);
@@ -96,6 +99,15 @@ let cachedNodePath: string | null = null;
 
 function findSystemNode(): string {
   if (cachedNodePath) return cachedNodePath;
+
+  // On Windows, use the host's execPath (Electron's Node). VSCode's own
+  // integrated terminal uses node-pty against Electron, so this works for us
+  // too — and avoids the bogus Unix-path fallback below that was causing
+  // multi-second fork stalls.
+  if (process.platform === 'win32') {
+    cachedNodePath = process.execPath;
+    return cachedNodePath;
+  }
 
   // Try common locations first (avoids shell invocation)
   const candidates = [
@@ -167,6 +179,7 @@ function ensureChild(extensionPath: string): ChildProcess {
     child = null;
     childReady = false;
     pendingMessages = [];
+    shellsCache = null;
   });
 
   child.stderr?.on('data', (data: Buffer) => {
@@ -197,6 +210,7 @@ function sendToChild(msg: any): void {
 }
 
 export function spawn(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void {
+  killedPtyIds.delete(id);
   ptyBuffers.set(id, createBufferEntry(true));
   sendToChild({ type: 'spawn', id, cols: options?.cols || 80, rows: options?.rows || 30, cwd: options?.cwd, shell: options?.shell, args: options?.args });
 }
@@ -207,13 +221,20 @@ export interface ShellEntry {
   args: string[];
 }
 
+let shellsCache: Promise<ShellEntry[]> | null = null;
+
 export function getAvailableShells(): Promise<ShellEntry[]> {
-  return new Promise((resolve) => {
+  if (shellsCache) return shellsCache;
+  const pending = new Promise<ShellEntry[]>((resolve) => {
     const requestId = `shells-${Date.now()}`;
+    // Ensure the child process is forked before attaching the listener —
+    // otherwise `child` is null on the cold path and the handler is never
+    // registered, causing the timeout to fire with an empty list.
+    sendToChild({ type: 'getShells', requestId });
     const timeout = setTimeout(() => {
       child?.off('message', handler);
       resolve([]);
-    }, 5000);
+    }, 15000);
     const handler = (msg: any) => {
       if (msg.type === 'shells' && msg.requestId === requestId) {
         clearTimeout(timeout);
@@ -222,12 +243,19 @@ export function getAvailableShells(): Promise<ShellEntry[]> {
       }
     };
     child?.on('message', handler);
-    sendToChild({ type: 'getShells', requestId });
   });
+  shellsCache = pending;
+  // Don't pin an empty result in the cache — lets a subsequent call retry
+  // if the first one timed out or the child was still warming up.
+  void pending.then((shells) => {
+    if (shells.length === 0 && shellsCache === pending) shellsCache = null;
+  });
+  return pending;
 }
 
 export function getCwd(id: string): Promise<string | null> {
   return new Promise((resolve) => {
+    sendToChild({ type: 'getCwd', id });
     const timeout = setTimeout(() => {
       child?.off('message', handler);
       resolve(null);
@@ -240,7 +268,6 @@ export function getCwd(id: string): Promise<string | null> {
       }
     };
     child?.on('message', handler);
-    sendToChild({ type: 'getCwd', id });
   });
 }
 
@@ -253,6 +280,7 @@ export function resize(id: string, cols: number, rows: number): void {
 }
 
 export function kill(id: string): void {
+  killedPtyIds.add(id);
   ptyBuffers.delete(id);
   sendToChild({ type: 'kill', id });
 }
@@ -278,6 +306,7 @@ export function gracefulKillAll(timeoutMs = 2000): Promise<void> {
 
 export function killAll(): void {
   ptyBuffers.clear();
+  killedPtyIds.clear();
   if (child?.connected) {
     child.send({ type: 'killAll' });
     child.kill();

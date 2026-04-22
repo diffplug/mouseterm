@@ -1,4 +1,5 @@
 import type { AlarmStateDetail, PlatformAdapter, PtyInfo } from './types';
+import { setDefaultShellOpts } from '../shell-defaults';
 
 export class VSCodeAdapter implements PlatformAdapter {
   private vscode: ReturnType<typeof acquireVsCodeApi>;
@@ -12,6 +13,16 @@ export class VSCodeAdapter implements PlatformAdapter {
 
   constructor() {
     this.vscode = acquireVsCodeApi();
+
+    // Seed the default shell from the extension-injected global so that
+    // the first terminal on startup (which spawns synchronously on Pond
+    // mount) picks up the selected shell, not the platform default.
+    const injectedShell = (globalThis as typeof globalThis & {
+      __MOUSETERM_SELECTED_SHELL__?: { shell?: string; args?: string[] } | null;
+    }).__MOUSETERM_SELECTED_SHELL__;
+    if (injectedShell?.shell) {
+      setDefaultShellOpts({ shell: injectedShell.shell, args: injectedShell.args });
+    }
 
     window.addEventListener('message', (event: MessageEvent) => {
       const msg = event.data;
@@ -41,6 +52,12 @@ export class VSCodeAdapter implements PlatformAdapter {
         for (const handler of this.alarmStateHandlers) {
           handler({ id: msg.id, status: msg.status, todo: msg.todo, attentionDismissedRing: msg.attentionDismissedRing });
         }
+      } else if (msg.type === 'mouseterm:newTerminal') {
+        window.dispatchEvent(new CustomEvent('mouseterm:new-terminal', {
+          detail: { shell: msg.shell, args: msg.args },
+        }));
+      } else if (msg.type === 'mouseterm:selectedShell') {
+        setDefaultShellOpts(msg.shell ? { shell: msg.shell, args: msg.args } : null);
       }
     });
   }
@@ -228,6 +245,12 @@ export class VSCodeAdapter implements PlatformAdapter {
   }
 
   getState(): unknown {
-    return this.hostState ?? this.vscode.getState();
+    // vscode.getState() is VSCode's own per-webview storage and persists
+    // across re-mount (e.g. panel collapsed then re-expanded). Prefer it
+    // so splits made after initial resolve aren't lost — the injected
+    // hostState only reflects what the extension put in the HTML at the
+    // first resolveWebviewView call. Fall back to hostState on the very
+    // first load, before any setState has run.
+    return this.vscode.getState() ?? this.hostState;
   }
 }
