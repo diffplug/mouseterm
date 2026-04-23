@@ -123,6 +123,7 @@ interface HeaderActionButtonProps {
   className: string;
   ariaLabel: string;
   tooltip?: string;
+  tooltipDetail?: string;
   tooltipAlign?: 'left' | 'right';
   onMouseDownCapture?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onMouseDown?: (e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -136,6 +137,7 @@ function HeaderActionButton({
   className,
   ariaLabel,
   tooltip,
+  tooltipDetail,
   tooltipAlign = 'right',
   onMouseDownCapture,
   onMouseDown,
@@ -147,7 +149,7 @@ function HeaderActionButton({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties | null>(null);
-  const tooltipText = tooltip ?? ariaLabel;
+  const tooltipPrimary = tooltip ?? ariaLabel;
 
   useEffect(() => {
     if (!isVisible || !buttonRef.current) return;
@@ -207,10 +209,13 @@ function HeaderActionButton({
     {isVisible && tooltipStyle && createPortal(
       <PopupButtonRow
         role="tooltip"
-        className="pointer-events-none z-[9999] whitespace-nowrap px-2 py-1.5 leading-none"
+        className="pointer-events-none z-[9999] whitespace-nowrap px-2 py-1.5"
         style={tooltipStyle}
       >
-        {tooltipText}
+        <div className="flex flex-col gap-0.5 leading-none">
+          <div>{tooltipPrimary}</div>
+          {tooltipDetail && <div>{tooltipDetail}</div>}
+        </div>
       </PopupButtonRow>,
       document.body,
     )}
@@ -638,10 +643,13 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
       ? 'Enable alert'
       : 'Disable alert';
   const alertButtonTooltip = sessionState.status === 'ALERT_RINGING'
-    ? 'Alert ringing - Click to dismiss and show options'
+    ? 'Alert ringing'
     : sessionState.status === 'ALERT_DISABLED'
-      ? 'Enable alert [a] - Right-click for options'
-      : 'Disable alert [a] - Right-click for options';
+      ? 'Enable [a]lert'
+      : 'Disable [a]lert';
+  const alertButtonTooltipDetail = sessionState.status === 'ALERT_RINGING'
+    ? 'Click to dismiss and show options'
+    : 'Right-click for options';
 
   const openDialogFromButton = useCallback((button: HTMLButtonElement) => {
     const rect = button.getBoundingClientRect();
@@ -727,6 +735,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           onContextMenu={(e) => { e.preventDefault(); setDialogPosition({ x: e.clientX, y: e.clientY }); }}
           ariaLabel={alertButtonAriaLabel}
           tooltip={alertButtonTooltip}
+          tooltipDetail={alertButtonTooltipDetail}
           tooltipAlign="left"
           dataAlertButtonFor={api.id}
         >
@@ -805,13 +814,15 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitH(api.id); }}
                 ariaLabel="Split horizontal"
-                tooltip='Split horizontal ["] (looks like two vertical panes)'
+                tooltip='Split horizontal [" or |]'
+                tooltipDetail='looks like two vertical panes'
               ><SplitHorizontalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitV(api.id); }}
                 ariaLabel="Split vertical"
-                tooltip="Split vertical [%] (the slash looks like it's cutting horizontally)"
+                tooltip="Split vertical [% or -]"
+                tooltipDetail="the slash looks like it's cutting horizontally"
               ><SplitVerticalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
@@ -827,13 +838,13 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
               className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
               onClick={(e) => { e.stopPropagation(); actions.onDetach(api.id); }}
               ariaLabel="Detach"
-              tooltip="Detach [d]"
+              tooltip="Detach [d or m]"
             ><ArrowLineDownIcon size={14} /></HeaderActionButton>
             <HeaderActionButton
               className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-error/10 hover:text-error"
               onClick={(e) => { e.stopPropagation(); actions.onKill(api.id); }}
               ariaLabel="Kill"
-              tooltip="Kill [x]"
+              tooltip="Kill [x or k]"
             ><XIcon size={14} /></HeaderActionButton>
           </div>
         </>
@@ -1309,9 +1320,11 @@ export function Pond({
   const [detached, setDetached] = useState<DetachedItem[]>(() => (initialDetached ?? []).map(toDetachedItem));
   const [zoomed, setZoomed] = useState(false);
 
-  // Refs for mode-switch gesture (Left Cmd → Right Cmd within 500ms)
+  // Refs for mode-switch gesture (Left Cmd → Right Cmd, or Left Shift → Right Shift, within 500ms)
   const lastCmdSide = useRef<'left' | 'right' | null>(null);
   const lastCmdTime = useRef(0);
+  const lastShiftSide = useRef<'left' | 'right' | null>(null);
+  const lastShiftTime = useRef(0);
 
   // Navigation breadcrumb: remember last direction + origin for back-navigation
   const navHistory = useRef<{ direction: string; fromId: string } | null>(null);
@@ -1720,7 +1733,8 @@ export function Pond({
     const handler = (e: KeyboardEvent) => {
       const currentMode = modeRef.current;
 
-      // --- Mode switch gesture: LCmd → RCmd within 500ms (works in both modes) ---
+      // --- Mode switch gesture: LCmd → RCmd (or LShift → RShift) within 500ms
+      // (works in both modes) ---
       if (e.key === 'Meta') {
         const now = Date.now();
         const side = e.location === 1 ? 'left' : 'right';
@@ -1737,6 +1751,24 @@ export function Pond({
         }
         lastCmdSide.current = side;
         lastCmdTime.current = now;
+        return;
+      }
+      if (e.key === 'Shift') {
+        const now = Date.now();
+        const side = e.location === 1 ? 'left' : 'right';
+        if (
+          lastShiftSide.current === 'left' &&
+          side === 'right' &&
+          now - lastShiftTime.current < 500
+        ) {
+          if (currentMode === 'passthrough') {
+            exitTerminalMode();
+          }
+          lastShiftSide.current = null;
+          return;
+        }
+        lastShiftSide.current = side;
+        lastShiftTime.current = now;
         return;
       }
 
@@ -1849,7 +1881,7 @@ export function Pond({
       }
 
       // Horizontal split (or create first pane)
-      if (e.key === '"') {
+      if (e.key === '"' || e.key === '|') {
         e.preventDefault();
         e.stopPropagation();
         pondActionsRef.current.onSplitH(sid, 'keyboard');
@@ -1857,7 +1889,7 @@ export function Pond({
       }
 
       // Vertical split (or create first pane)
-      if (e.key === '%') {
+      if (e.key === '%' || e.key === '-') {
         e.preventDefault();
         e.stopPropagation();
         pondActionsRef.current.onSplitV(sid, 'keyboard');
@@ -1902,7 +1934,7 @@ export function Pond({
       }
 
       // Kill with confirmation
-      if (e.key === 'x' && sid) {
+      if ((e.key === 'x' || e.key === 'k') && sid) {
         e.preventDefault();
         e.stopPropagation();
         if (selectedTypeRef.current === 'door') {
@@ -1923,8 +1955,8 @@ export function Pond({
         return;
       }
 
-      // Detach (pane) / Reattach (door) — "d" toggles detach state
-      if (e.key === 'd' && sid) {
+      // Detach (pane) / Reattach (door) — "d" or "m" toggles detach state
+      if ((e.key === 'd' || e.key === 'm') && sid) {
         e.preventDefault();
         e.stopPropagation();
         if (selectedTypeRef.current === 'door') {
