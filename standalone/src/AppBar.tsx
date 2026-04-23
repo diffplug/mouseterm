@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { CaretDownIcon, MinusIcon, CornersOutIcon, CornersInIcon, XIcon, PlusIcon, CheckIcon } from '@phosphor-icons/react';
 import { ThemePicker } from '../../lib/src/components/ThemePicker';
+import { PopupButtonRow } from '../../lib/src/components/design';
 import { setDefaultShellOpts } from '../../lib/src/lib/shell-defaults';
 
 export interface ShellEntry {
@@ -25,9 +26,11 @@ function Tip({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="group relative flex items-stretch">
       {children}
-      <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-surface-raised px-2 py-1 text-[10px] text-foreground opacity-0 shadow-md border border-border transition-opacity group-hover:opacity-100">
+      <PopupButtonRow
+        className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap px-2 py-1 opacity-0 transition-opacity group-hover:opacity-100"
+      >
         {label}
-      </span>
+      </PopupButtonRow>
     </div>
   );
 }
@@ -141,7 +144,10 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
         </button>
       </Tip>
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-max rounded border border-border bg-surface-raised py-1 shadow-md" role="menu">
+        <PopupButtonRow
+          role="menu"
+          className="absolute left-0 top-full z-50 mt-1 w-max flex-col py-1"
+        >
           {shells.map((shell) => {
             const isSelected = shell.path === selected?.path;
             return (
@@ -162,7 +168,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
               </button>
             );
           })}
-        </div>
+        </PopupButtonRow>
       )}
     </div>
   );

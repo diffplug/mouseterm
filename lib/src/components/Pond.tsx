@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom';
 import { TerminalPane } from './TerminalPane';
 import { Baseboard } from './Baseboard';
 import { tv } from 'tailwind-variants';
-import { PopupButtonRow, popupButton } from './design';
+import { PopupButtonRow, popupButton, renderShortcuts } from './design';
 import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
@@ -213,8 +213,8 @@ function HeaderActionButton({
         style={tooltipStyle}
       >
         <div className="flex flex-col gap-0.5 leading-none">
-          <div>{tooltipPrimary}</div>
-          {tooltipDetail && <div>{tooltipDetail}</div>}
+          <div>{renderShortcuts(tooltipPrimary)}</div>
+          {tooltipDetail && <div>{renderShortcuts(tooltipDetail)}</div>}
         </div>
       </PopupButtonRow>,
       document.body,
@@ -814,15 +814,13 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitH(api.id); }}
                 ariaLabel="Split horizontal"
-                tooltip='Split horizontal [" or |]'
-                tooltipDetail='looks like two vertical panes'
+                tooltip='Split horizontal [|] or [%]'
               ><SplitHorizontalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitV(api.id); }}
                 ariaLabel="Split vertical"
-                tooltip="Split vertical [% or -]"
-                tooltipDetail="the slash looks like it's cutting horizontally"
+                tooltip='Split vertical [-] or ["]'
               ><SplitVerticalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
@@ -838,13 +836,13 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
               className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
               onClick={(e) => { e.stopPropagation(); actions.onDetach(api.id); }}
               ariaLabel="Detach"
-              tooltip="Detach [d or m]"
+              tooltip="Detach [m] or [d]"
             ><ArrowLineDownIcon size={14} /></HeaderActionButton>
             <HeaderActionButton
               className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-error/10 hover:text-error"
               onClick={(e) => { e.stopPropagation(); actions.onKill(api.id); }}
               ariaLabel="Kill"
-              tooltip="Kill [x or k]"
+              tooltip="Kill [k] or [x]"
             ><XIcon size={14} /></HeaderActionButton>
           </div>
         </>
@@ -1881,7 +1879,7 @@ export function Pond({
       }
 
       // Horizontal split (or create first pane)
-      if (e.key === '"' || e.key === '|') {
+      if (e.key === '|' || e.key === '%') {
         e.preventDefault();
         e.stopPropagation();
         pondActionsRef.current.onSplitH(sid, 'keyboard');
@@ -1889,7 +1887,7 @@ export function Pond({
       }
 
       // Vertical split (or create first pane)
-      if (e.key === '%' || e.key === '-') {
+      if (e.key === '-' || e.key === '"') {
         e.preventDefault();
         e.stopPropagation();
         pondActionsRef.current.onSplitV(sid, 'keyboard');
@@ -1934,7 +1932,7 @@ export function Pond({
       }
 
       // Kill with confirmation
-      if ((e.key === 'x' || e.key === 'k') && sid) {
+      if ((e.key === 'k' || e.key === 'x') && sid) {
         e.preventDefault();
         e.stopPropagation();
         if (selectedTypeRef.current === 'door') {
@@ -1955,8 +1953,8 @@ export function Pond({
         return;
       }
 
-      // Detach (pane) / Reattach (door) — "d" or "m" toggles detach state
-      if ((e.key === 'd' || e.key === 'm') && sid) {
+      // Detach (pane) / Reattach (door) — "m" or "d" toggles detach state
+      if ((e.key === 'm' || e.key === 'd') && sid) {
         e.preventDefault();
         e.stopPropagation();
         if (selectedTypeRef.current === 'door') {

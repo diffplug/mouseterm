@@ -18,11 +18,11 @@ mouseterm has two modes:
 
 | Key | Action | Description |
 |-----|--------|-------------|
-| `"` or `\|` | Split horizontal | Split the selected pane — result looks like two vertical panes. |
-| `%` or `-` | Split vertical | Split the selected pane — the slash / dash looks like it's cutting horizontally. |
+| `\|` or `%` | Split horizontal | Split the selected pane into two side-by-side panes. |
+| `-` or `"` | Split vertical | Split the selected pane into two stacked panes. |
 | `z` | Toggle zoom | Fullscreen the selected pane, or return to the normal layout. |
-| `d` or `m` | Detach / reattach | Detach the selected pane to the baseboard (minimize), or reattach a detached door. |
-| `x` or `k` | Kill | Kill the selected pane or door. Prompts for a random character to confirm. |
+| `m` or `d` | Detach / reattach | Detach the selected pane to the baseboard (minimize), or reattach a detached door. |
+| `k` or `x` | Kill | Kill the selected pane or door. Prompts for a random character to confirm. |
 | `,` | Rename | Enter rename mode for the selected pane's title. |
 | `a` | Toggle alert | Dismiss or toggle the bell alert for the selected pane. |
 | `t` | Toggle todo | Toggle the TODO marker (soft / hard) on the selected pane. |

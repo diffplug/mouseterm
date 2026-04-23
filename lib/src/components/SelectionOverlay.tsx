@@ -10,6 +10,7 @@ import {
 import { normalizeSelection } from '../lib/selection-text';
 import { getTerminalOverlayDims } from '../lib/terminal-registry';
 import { IS_MAC } from '../lib/platform';
+import { PopupButtonRow } from './design';
 
 interface Rect {
   top: number;
@@ -189,18 +190,20 @@ export function SelectionOverlay({ terminalId }: Props) {
         </svg>
       )}
       {hint && (
-        <div
-          className="pointer-events-none absolute rounded border border-border bg-surface-raised px-1.5 py-0.5 text-xs text-muted shadow-sm"
+        <PopupButtonRow
+          className="pointer-events-none absolute px-1.5 py-0.5"
           style={{ left: hint.left, top: hint.top, bottom: hint.bottom }}
         >
-          <div>Hold {IS_MAC ? 'Opt' : 'Alt'} for block selection</div>
-          {state.hintToken && (
-            <div>
-              Press <span className="text-foreground">e</span> to select the full{' '}
-              {state.hintToken.kind === 'url' ? 'URL' : 'path'}
-            </div>
-          )}
-        </div>
+          <div className="flex flex-col gap-0.5 leading-none text-muted">
+            <div>Hold {IS_MAC ? 'Opt' : 'Alt'} for block selection</div>
+            {state.hintToken && (
+              <div>
+                Press <span className="text-foreground">e</span> to select the full{' '}
+                {state.hintToken.kind === 'url' ? 'URL' : 'path'}
+              </div>
+            )}
+          </div>
+        </PopupButtonRow>
       )}
     </div>
   );
