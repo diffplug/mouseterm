@@ -123,6 +123,7 @@ interface HeaderActionButtonProps {
   className: string;
   ariaLabel: string;
   tooltip?: string;
+  tooltipAlign?: 'left' | 'right';
   onMouseDownCapture?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onMouseDown?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -135,6 +136,7 @@ function HeaderActionButton({
   className,
   ariaLabel,
   tooltip,
+  tooltipAlign = 'right',
   onMouseDownCapture,
   onMouseDown,
   onClick,
@@ -155,9 +157,9 @@ function HeaderActionButton({
       if (!rect) return;
       setTooltipStyle({
         position: 'fixed',
-        left: rect.left + rect.width / 2,
-        top: rect.top - 8,
-        transform: 'translate(-50%, -100%)',
+        left: tooltipAlign === 'left' ? rect.left : rect.right,
+        top: rect.bottom + 8,
+        transform: tooltipAlign === 'left' ? 'translate(0, 0)' : 'translate(-100%, 0)',
       });
     };
 
@@ -168,7 +170,7 @@ function HeaderActionButton({
       window.removeEventListener('scroll', updatePosition, true);
       window.removeEventListener('resize', updatePosition);
     };
-  }, [isVisible]);
+  }, [isVisible, tooltipAlign]);
 
   return (
     <>
@@ -203,12 +205,13 @@ function HeaderActionButton({
       </button>
     </div>
     {isVisible && tooltipStyle && createPortal(
-      <span
-        className="pointer-events-none z-[9999] whitespace-nowrap rounded border border-border bg-surface-raised px-2 py-1.5 text-[11px] leading-none text-foreground shadow-sm"
+      <PopupButtonRow
+        role="tooltip"
+        className="pointer-events-none z-[9999] whitespace-nowrap px-2 py-1.5 leading-none"
         style={tooltipStyle}
       >
         {tooltipText}
-      </span>,
+      </PopupButtonRow>,
       document.body,
     )}
     </>
@@ -724,6 +727,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           onContextMenu={(e) => { e.preventDefault(); setDialogPosition({ x: e.clientX, y: e.clientY }); }}
           ariaLabel={alertButtonAriaLabel}
           tooltip={alertButtonTooltip}
+          tooltipAlign="left"
           dataAlertButtonFor={api.id}
         >
           <span className="flex items-center justify-center">
@@ -801,13 +805,13 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitH(api.id); }}
                 ariaLabel="Split horizontal"
-                tooltip='Split horizontal ["]'
+                tooltip='Split horizontal ["] (looks like two vertical panes)'
               ><SplitHorizontalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitV(api.id); }}
                 ariaLabel="Split vertical"
-                tooltip="Split vertical [%]"
+                tooltip="Split vertical [%] (the slash looks like it's cutting horizontally)"
               ><SplitVerticalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
