@@ -1,43 +1,74 @@
-> [!CAUTION]
-> This project is under construction and not ready for public use. Please check back in a few days!
-
 # MouseTerm
 
-Multitasking terminal with tmux keybindings, mouse support, and a built-in alert system for completed tasks and prompts.
+Terminal multiplexer for VS Code (or [standalone app](https://mouseterm.com/#download)) - tmux keybindings, mouse support, human-friendly copy-paste, and alerts for completed tasks.
 
-TODO: GIF demonstrating a 3-pane layout where one pane finishes a build and its border changes to show completion, while the user clicks to split another pane and drags to resize
+[mouseterm.com/playground](https://mouseterm.com/playground) - try before you install
 
-  - GIF starts out with one terminal
-  - npm dev, sleep it
-  - claude, start a long job
-  - split horizontal, codex long job
-  - claude alerts when done
+TODO: Hero GIF.
 
-## Features
+## Alert System
 
-### Built-in Alert System
-
-Know when a task finishes without watching it. MouseTerm monitors terminal output and marks panes as done when they go quiet — works with any CLI tool, zero configuration. No more staring at idle screens or forgetting which terminal you were waiting on.
+MouseTerm tracks activity the same way you do — visual motion. When a pane stops changing for two seconds, it marks the task complete and alerts you. Works with any CLI tool that prints to a terminal, no plugins or configuration.
 
 TODO: GIF showing two terminals running long tasks, one finishes and gets the ✓ floating status, user is working in another pane and notices at a glance
 
-### Tiling Layout with Minimize / Maximize
+- TODO: alerts disabled
+- TODO: alerts enabled
+- TODO: task is running, will send an alert when task completes
+- TODO: task is finished and needs your attention
 
-Split horizontally, split vertically, drag to resize. Maximize the complicated one. Minimize the ones you don't need to look at right now (detach in tmux terminology). Alerts keep running whether minimized or not.
+When you click a task that was ringing, it adds a TODO next to the terminal's title. This TODO will remain until you hit `Enter` in that terminal, or until you explicitly dismiss the TODO by clicking it or typing `t` in command mode.
 
-Already know tmux? Same shortcuts. Nothing new to learn.
+This lightweight TODO system remembers which tasks need follow-up so you don't have to.
 
-Never used tmux? Click everything with the mouse, hover to learn the shortcuts if you want.
+## Mouse-Friendly Copy and Paste
 
-TODO: GIF showing splitting panes with mouse clicks and keyboard shortcuts, dragging borders to resize, swapping pane positions
+When you copy-paste from a terminal, you are usually stuck with a bunch of newlines that you wouldn't get if you were copying from any other kind of program. MouseTerm can optionally remove these with `Copy Rewrapped`.
 
-### Any Theme, Anywhere
+TODO: GIF showing copy/paste with line-break rewrap
+
+For TUIs which register for xterm mouse interception (such as `htop` and `neovim`), most terminals make it impossible for you to copy using the mouse. MouseTerm makes it easy to temporarily override the mouse interception.
+
+TODO: GIF showing htop and the override mechanism
+
+## Tiling Layout with Minimize
+
+Run builds, agents, servers, and scripts side by side. Minimize the ones you're not watching to a compact status indicator — every pane keeps running and every alert still fires whether minimized or not.
+
+You can spawn, layout, and relayout everything in the terminal using any of:
+
+- default tmux shortcuts
+- intuitive modern shortcuts
+- the mouse
+
+TODO: layout GIF
+
+## Keyboard Shortcuts
+
+If you use the mouse, then MouseTerm is always in **passthrough** mode, where all keypresses passthrough to the selected terminal. If you press `LShift` followed by `RShift` in quick succession (or `LCmd → RCmd`, or `LCtrl → RCtrl`), then you will enter **command** mode where keypresses can spawn terminals, navigate panes, and rearrange the layout.
+
+### Command Mode Shortcuts
+
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Return to **passthrough** mode |
+| `\|` tmux `%` | Split left/right |
+| `-` tmux `"` | Split top/bottom |
+| Arrow keys | Navigate between panes |
+| `Cmd+Arrow` | Swap pane positions |
+| `z` | Zoom / unzoom the selected pane |
+| `m` tmux `d` | Minimize pane to baseboard |
+| `k` tmux `x` | Kill pane |
+| `,` | Rename pane |
+
+## Any Theme, Anywhere
 
 MouseTerm uses your VSCode theme — colors, styling, everything. Switch themes and MouseTerm switches with you. No separate configuration, no mismatched colors.
 
 TODO: GIF showing theme switching — user changes VSCode theme and MouseTerm updates instantly to match
 
-You can also use MouseTerm in the View area (bottom and sides), in the Editor area (center region where the files are), or both.
+You can also use MouseTerm in the Panel area (bottom, next to the built-in terminal), in the Editor area (center region where you edit files), or both.
 
 TODO: GIF showing MouseTerm in various areas
 
@@ -45,31 +76,12 @@ TODO: GIF showing MouseTerm in various areas
 
 1. Install the extension
 2. Open the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`)
-3. Run **MouseTerm: Open**
-
-## Keyboard Reference
-
-MouseTerm has two modes: **command** for managing panes, and **passthrough** where all keypresses passthrough to the terminal.
-
-Press `Enter` to go from **command** to **passthrough** mode.
-Press `Left Cmd` then `Right Cmd` in quick succession to go back to **command** mode.
-
-### Command Mode Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `"` | Split horizontally (" looks like it was split in half horizontally) |
-| `%` | Split vertically (the slash in % looks like it's splitting something vertically) |
-| Arrow keys | Navigate between panes |
-| `Cmd+Arrow` | Swap pane positions |
-| `Enter` | Enter terminal mode |
-| `z` | Zoom / unzoom the selected pane |
-| `d` | Detach pane to bottom bar |
-| `x` | Close pane |
-| `,` | Rename pane |
+  - **MouseTerm: Focus** to open the "Panel" version of MouseTerm (next to the terminal)
+  - **MouseTerm: Open in Editor** to open a MouseTerm tab in the content area (you can open multiple)
 
 ## Links
 
-- Also available as a standalone terminal app for Win, Mac and Linux at [mouseterm.com](https://mouseterm.com)
+- Prefer a standalone terminal app? Self-updating installers available for Win, Mac and Linux at [mouseterm.com](https://mouseterm.com/#download)
+- You can try it in a [browser playground](https://mouseterm.com/playground)
 - [GitHub](https://github.com/diffplug/mouseterm)
-- [Report an Issue](https://github.com/diffplug/mouseterm/issues)
+- Brought to you by [DiffPlug](https://www.diffplug.com/)

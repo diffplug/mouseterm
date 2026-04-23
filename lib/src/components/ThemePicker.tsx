@@ -191,7 +191,7 @@ function ThemeStoreDialog({
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      className="fixed inset-0 z-50 m-auto h-[420px] w-[min(380px,calc(100vw-2rem))] rounded border p-0 shadow-2xl backdrop:bg-black/50"
+      className="fixed inset-0 z-50 m-auto h-[420px] w-[min(380px,calc(100vw-2rem))] rounded border p-0 font-mono shadow-2xl backdrop:bg-black/50"
       style={styles.panel}
     >
       <div className="flex h-full flex-col">
@@ -343,8 +343,8 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
     ? 'flex h-8 w-[116px] min-w-0 items-center gap-2 rounded border px-2 text-left text-[12px] transition-colors sm:w-40 md:w-56'
     : 'flex h-6 max-w-[190px] items-center gap-1.5 rounded border border-transparent px-2 text-xs transition-colors hover:opacity-85';
   const menuClass = isPlayground
-    ? 'fixed top-16 right-4 left-4 z-50 overflow-hidden rounded border shadow-2xl md:absolute md:top-full md:right-0 md:left-auto md:mt-2 md:w-[22rem]'
-    : 'absolute right-0 top-full z-50 mt-1 w-[280px] overflow-hidden rounded border shadow-2xl';
+    ? 'fixed top-16 right-4 left-4 z-50 overflow-hidden rounded border font-mono shadow-2xl md:absolute md:top-full md:right-0 md:left-auto md:mt-2 md:w-[22rem]'
+    : 'absolute right-0 top-full z-50 mt-1 w-[280px] overflow-hidden rounded border font-mono shadow-2xl';
   const rowButtonClass = isPlayground
     ? 'flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs'
     : 'flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-xs';

@@ -85,10 +85,10 @@ Detection: Captures a `ResizeSnapshot` (serialized grid structure with branch ra
 
 Detection: Watches `PondEvent.zoomChange` — requires both a `zoomed: true` then `zoomed: false` event (unzoom after zoom).
 
-**Step 4 — Detach a pane, then bring it back**
+**Step 4 — Minimize a pane, then bring it back**
 > That task is running in the background — you don't need to watch it. Send it to the baseboard, then click its door when you want it back.
 >
-> *Click the detach button in the tab header. Click the door in the baseboard to reattach.*
+> *Click the minimize button in the tab header. Click the door in the baseboard to reattach.*
 
 Detection: Watches `PondEvent.detachChange` — requires `count > 0` (detach) then `count === 0` (reattach back to zero).
 

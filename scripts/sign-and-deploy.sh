@@ -662,9 +662,12 @@ create_release() {
     # Extract changelog for this version
     local notes_file="$WORK_DIR/release-notes.md"
     if [[ -f "$REPO_ROOT/CHANGELOG.md" ]]; then
-        # Extract section between [X.Y.Z] and the next ## heading
-        # Use sed to drop the trailing heading line (macOS BSD head lacks -n -1)
-        sed -n "/^## \[$version\]/,/^## \[/p" "$REPO_ROOT/CHANGELOG.md" | sed '$d' > "$notes_file"
+        # Extract section between [X.Y.Z] and the next ## heading.
+        # Drop the leading version heading (GitHub already shows the tag as the title)
+        # and the trailing next-version heading line.
+        sed -n "/^## \[$version\]/,/^## \[/p" "$REPO_ROOT/CHANGELOG.md" \
+            | sed '1d;$d' \
+            | sed '/./,$!d' > "$notes_file"
     fi
 
     if [[ ! -s "$notes_file" ]]; then

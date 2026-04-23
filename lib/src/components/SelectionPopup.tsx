@@ -12,7 +12,7 @@ import { copyRaw, copyRewrapped } from '../lib/clipboard';
 import { CheckIcon } from '@phosphor-icons/react';
 import { IS_MAC } from '../lib/platform';
 import { getTerminalOverlayDims } from '../lib/terminal-registry';
-import { PopupButtonRow, popupButton } from './design';
+import { PopupButtonRow, popupButton, Shortcut } from './design';
 
 interface Props {
   terminalId: string;
@@ -117,8 +117,6 @@ export function SelectionPopup({ terminalId }: Props) {
 
   const flashed = (kind: 'raw' | 'rewrapped') => state.copyFlash === kind;
   const buttonClass = (kind: 'raw' | 'rewrapped') => popupButton({ flashed: flashed(kind) });
-  const shortcutClass = (kind: 'raw' | 'rewrapped') =>
-    flashed(kind) ? 'text-accent/70' : 'text-muted';
 
   return (
     <PopupButtonRow
@@ -132,9 +130,7 @@ export function SelectionPopup({ terminalId }: Props) {
         onClick={() => onCopy(false)}
       >
         <span className="relative inline-block">
-          <span className={flashed('raw') ? 'invisible' : shortcutClass('raw')}>
-            [{copyShortcut}]
-          </span>
+          <Shortcut className={flashed('raw') ? 'invisible' : undefined}>{copyShortcut}</Shortcut>
           {flashed('raw') && (
             <span className="absolute inset-0 flex items-center justify-center">
               <CheckIcon size={12} weight="bold" />
@@ -149,9 +145,7 @@ export function SelectionPopup({ terminalId }: Props) {
         onClick={() => onCopy(true)}
       >
         <span className="relative inline-block">
-          <span className={flashed('rewrapped') ? 'invisible' : shortcutClass('rewrapped')}>
-            [{rewrapShortcut}]
-          </span>
+          <Shortcut className={flashed('rewrapped') ? 'invisible' : undefined}>{rewrapShortcut}</Shortcut>
           {flashed('rewrapped') && (
             <span className="absolute inset-0 flex items-center justify-center">
               <CheckIcon size={12} weight="bold" />
