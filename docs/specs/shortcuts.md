@@ -12,7 +12,7 @@ mouseterm has two modes:
 |-----|--------|-------------|
 | Left ⌘ → Right ⌘ (within 500 ms) | Toggle mode | Tap left Command, then right Command within 500 ms to swap between workspace and terminal mode. |
 | Left Shift → Right Shift (within 500 ms) | Toggle mode | Same as above, but with the Shift keys. |
-| `Enter` (workspace) | Enter terminal mode | Switch the selected pane into passthrough (or reattach a detached door). |
+| `Enter` (workspace) | Enter terminal mode | Switch the selected pane into passthrough (or reattach a minimized door). |
 
 ## Pane actions (workspace mode)
 
@@ -21,7 +21,7 @@ mouseterm has two modes:
 | `\|` or `%` | Split horizontal | Split the selected pane into two side-by-side panes. |
 | `-` or `"` | Split vertical | Split the selected pane into two stacked panes. |
 | `z` | Toggle zoom | Fullscreen the selected pane, or return to the normal layout. |
-| `m` or `d` | Detach / reattach | Detach the selected pane to the baseboard (minimize), or reattach a detached door. |
+| `m` or `d` | Minimize / reattach | Minimize the selected pane to the baseboard, or reattach a minimized door. |
 | `k` or `x` | Kill | Kill the selected pane or door. Prompts for a random character to confirm. |
 | `,` | Rename | Enter rename mode for the selected pane's title. |
 | `a` | Toggle alert | Dismiss or toggle the bell alert for the selected pane. |

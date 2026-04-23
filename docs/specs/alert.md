@@ -97,7 +97,7 @@ Attention is cleared when:
 
 - the user has not explicitly interacted with that Session for `T_USER_ATTENTION`
 - the app loses focus
-- the Session is detached into a Door while it had attention
+- the Session is minimized into a Door while it had attention
 - the Session is destroyed
 
 `T_USER_ATTENTION` is intentionally finite so a user can run a slow command, walk away, and still get a visual alert later even if that Pane remained selected. Start with 15s and tune with real usage.
@@ -318,7 +318,7 @@ Consequences:
 ### Session and lifecycle edge cases
 
 - Multiple Sessions may ring at once. Alert state is independent per Session.
-- Detaching or reattaching a ringing Session preserves the ring because the ring belongs to the Session.
+- Minimizing or reattaching a ringing Session preserves the ring because the ring belongs to the Session.
 - A Session that exits while ringing continues to ring until attended, dismissed, disabled, or destroyed by the user.
 - Killing the Session clears all alert and TODO state because the Session no longer exists.
 - If output resumes while a Session is ringing and the Session has attention, the ring clears and the Session returns to the normal state-machine flow. If the Session lacks attention, the ring persists (latch behavior prevents silent dismissal).
@@ -351,7 +351,7 @@ Consequences:
 
 ### Door rings, user wants to inspect immediately
 
-- User detaches an alert-enabled Session into a Door.
+- User minimizes an alert-enabled Session into a Door.
 - The Session later transitions into `ALERT_RINGING`.
 - The Door rings.
 - User clicks the Door.
@@ -359,7 +359,7 @@ Consequences:
 
 ### Door rings, user wants to keep command-mode control
 
-- User detaches an alert-enabled Session into a Door.
+- User minimizes an alert-enabled Session into a Door.
 - The Door starts ringing.
 - User presses `d` on the Door in command mode.
 - The Pane is restored, but the ring remains because the user has not yet explicitly attended to the Session.
@@ -387,7 +387,7 @@ Consequences:
 - Single quick responses stay in `NOTHING_TO_SHOW`
 - short pauses in a `BUSY` session only reach `MIGHT_NEED_ATTENTION`, not `ALERT_RINGING`
 - Resize noise cannot cause a ring
-- Detach/reattach preserves alert state (`status` and `todo`)
+- Minimize/reattach preserves alert state (`status` and `todo`)
 - `d` restore from a Door does not silently clear a ring
 - click/`Enter` restore from a Door does clear a ring
 - very long titles do not push bell or TODO indicators out of bounds

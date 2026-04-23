@@ -9,7 +9,7 @@ A Session can be in one of two containers:
 - **Pane** — a visible container in the content area. The session's terminal output is rendered via xterm.js. The pane has a header with controls and acts as the drag handle for layout rearrangement.
 - **Door** — a minimized container in the baseboard. The session is still alive (PTY running, output buffered) but not visible. The door shows the session's title plus alert and TODO indicators, and looks like a mouse hole cut into the baseboard.
 
-Transitioning between Pane and Door does not alter the Session in any way. Detaching a pane creates a door; reattaching a door creates a pane. The terminal content, scrollback, and process state are preserved across transitions.
+Transitioning between Pane and Door does not alter the Session in any way. Minimizing a pane creates a door; reattaching a door creates a pane. The terminal content, scrollback, and process state are preserved across transitions.
 
 ## Shell layout
 
@@ -31,7 +31,7 @@ Pond
 │       │   │       └── TerminalPaneHeader (tab component, drag handle)
 │       │   └── SelectionOverlay (fixed positioned, pointer-events: none)
 │       ├── Baseboard (always-visible bottom strip, shortcut hints when empty)
-│       │   └── Door components (one per detached session)
+│       │   └── Door components (one per minimized session)
 │       └── KillConfirmOverlay (conditional)
 ```
 
@@ -45,7 +45,7 @@ Pond
 - Focus and selection state (`selectedId`, `selectedType`)
 - Passthrough/command mode system
 - Keyboard shortcuts and selection overlay rendering
-- Session lifecycle: detach (pane → door), reattach (door → pane), kill
+- Session lifecycle: minimize (pane → door), reattach (door → pane), kill
 - Terminal lifecycle (via terminal-registry)
 - Activity monitoring and alert state
 - TODO state management
@@ -79,7 +79,7 @@ Elements from left to right:
 - SplitHorizontalIcon `split horizontal ["]` (full tier only)
 - SplitVerticalIcon `split vertical [%]` (full tier only)
 - ArrowsOutIcon / ArrowsInIcon `zoom / unzoom [z]` (full tier only)
-- ArrowLineDownIcon `detach [d]`
+- ArrowLineDownIcon `minimize [m]`
 - XIcon `kill [x]` (hover turns error-red)
 
 The alert bell and TODO pill are defined in `docs/specs/alert.md` (visual states, interaction, context menu, and hardening).
@@ -88,21 +88,21 @@ The alert bell and TODO pill are defined in `docs/specs/alert.md` (visual states
 
 The header adapts to available width via ResizeObserver in three tiers:
 
-- **Full** (>280px): all controls visible — alert, TODO, split, zoom, detach, kill
-- **Compact** (160–280px): SplitH/SplitV/Zoom hidden; alert, TODO, detach, kill visible
-- **Minimal** (<160px): SplitH/SplitV/Zoom and TODO pill hidden; alert, detach, kill visible. Session name truncates with ellipsis as needed.
+- **Full** (>280px): all controls visible — alert, TODO, split, zoom, minimize, kill
+- **Compact** (160–280px): SplitH/SplitV/Zoom hidden; alert, TODO, minimize, kill visible
+- **Minimal** (<160px): SplitH/SplitV/Zoom and TODO pill hidden; alert, minimize, kill visible. Session name truncates with ellipsis as needed.
 
 ## Baseboard
 
 Below the content area is the baseboard (`h-8`, 32px). It is always visible — a thin strip when empty, showing keyboard shortcut hints when there are no doors and the container is wider than 350px (currently: `LCmd → RCmd to enter command mode`).
 
-When a session is detached, it becomes a **door** on the baseboard. The door displays the session's title, a TODO badge (if set), and an alert bell icon with activity dot. It uses the bottom edge of the window as its bottom border, with left, top, and right borders with `rounded-t-md` — resembling a mouse hole. Door dimensions: `min-w-[68px] max-w-[220px] h-6`.
+When a session is minimized, it becomes a **door** on the baseboard. The door displays the session's title, a TODO badge (if set), and an alert bell icon with activity dot. It uses the bottom edge of the window as its bottom border, with left, top, and right borders with `rounded-t-md` — resembling a mouse hole. Door dimensions: `min-w-[68px] max-w-[220px] h-6`.
 
 ### Door interaction
 
 - **Clicking a door** (in any mode): restores the session into the content area as a pane and enters passthrough mode. The terminal gets focus immediately.
 - **Enter** on a door (command mode): same as clicking — restores and enters passthrough mode.
-- **d** on a door (command mode): restores the session into a pane but stays in command mode. This is the inverse of pressing `d` on a pane (which detaches it), making `d` a toggle.
+- **d** on a door (command mode): restores the session into a pane but stays in command mode. This is the inverse of pressing `d` on a pane (which minimizes it), making `d` a toggle.
 - **x** on a door (command mode): restores the session into a pane, then immediately shows the kill confirmation.
 - **Arrow keys** can navigate to doors from panes (see Navigation).
 
@@ -160,7 +160,7 @@ All handled in a single capture-phase `keydown` listener on `window`. Every hand
 | `Enter` | Enter passthrough mode | Restore session + enter passthrough |
 | `,` | Inline rename | — |
 | `x` | Kill with confirmation | Restore session + kill confirmation |
-| `d` | Detach to door | Restore session (stay in command) |
+| `d` | Minimize to door | Restore session (stay in command) |
 | `z` | Toggle maximize/restore | — |
 | `t` | Toggle TODO flag (none/soft → hard → none) | — |
 | `a` | Dismiss or toggle alert | — |
@@ -208,9 +208,9 @@ Down from the bottom-most pane navigates to the first door in the baseboard. Up 
 
 Swaps session **content** between two panes — the layout shape is unchanged. Uses `swapTerminals()` from terminal-registry which swaps registry entries and reattaches DOM elements to each other's containers. Also swaps dockview panel titles. Selection follows the moved session. Uses the same back-navigation breadcrumb as arrow keys.
 
-## Detach and reattach
+## Minimize and reattach
 
-### Detach (`d` key or detach header button)
+### Minimize (`m` key or minimize header button)
 1. Capture restore context before removing:
    - `neighborId` and `direction`: spatial position relative to nearest neighbor
    - `remainingPanelIds`: sorted IDs of panes that stay
@@ -226,7 +226,7 @@ Three strategies based on layout state:
 
 **Exact restore** (layout structure signature matches AND same panes exist):
 - Deserialize the saved layout snapshot with `reuseExistingPanels: true`
-- Preserves exact split ratios from before detach
+- Preserves exact split ratios from before minimize
 
 **Neighbor restore** (neighbor still exists AND pane set matches `remainingPanelIds`):
 - `addPanel` with `position: { referencePanel: neighborId, direction }`
@@ -260,10 +260,10 @@ Pane IDs are session IDs. `TerminalPane` calls `getOrCreateTerminal(id)` on moun
 
 ### Session persistence
 
-Layout, scrollback, cwd, detached items, and alert state are saved to persistent storage via a debounced save (500ms). Saves are triggered by layout changes, panel add/remove, and a 30s periodic interval. Saves are flushed immediately on PTY exit, `pagehide`, and extension shutdown requests.
+Layout, scrollback, cwd, minimized items, and alert state are saved to persistent storage via a debounced save (500ms). Saves are triggered by layout changes, panel add/remove, and a 30s periodic interval. Saves are flushed immediately on PTY exit, `pagehide`, and extension shutdown requests.
 
 On startup, recovery is priority-based:
-1. **Live PTYs** (webview hidden/shown): request PTY list + replay data from platform, `reconnectTerminal()` for each (500ms timeout). If the saved session covers every live PTY, restore the saved dockview layout when its visible panel set matches and restore saved detached items as doors.
+1. **Live PTYs** (webview hidden/shown): request PTY list + replay data from platform, `reconnectTerminal()` for each (500ms timeout). If the saved session covers every live PTY, restore the saved dockview layout when its visible panel set matches and restore saved minimized items as doors.
 2. **Saved session** (app restart): restore layout from serialized dockview state, `restoreTerminal()` for each pane with saved cwd + scrollback, and spawn each PTY with the current default shell selection
 3. **Fallback/manual pane creation**: when no saved layout can be safely applied, add multiple panes as splits from the previous pane rather than tabs
 4. **Empty state**: create a single new pane
@@ -294,7 +294,7 @@ When a pane is added, its dockview group element gets a directional `.pane-spawn
 
 - **Horizontal split** (new pane on the right) → reveal from the left edge.
 - **Vertical split** (new pane below) → reveal from the top edge.
-- **Auto-spawn after last-pane kill/detach** → reveal from the top-left corner.
+- **Auto-spawn after last-pane kill/minimize** → reveal from the top-left corner.
 
 The direction is carried via `FreshlySpawnedContext` — a `Map<paneId, SpawnDirection>` written by the spawn call site and consumed once by `TerminalPanel`'s `useLayoutEffect` on first mount.
 
@@ -312,9 +312,9 @@ Case handling is purely rect-based (measure before and after removal), so 2-pane
 
 ### Auto-spawn delay
 
-When `onDidRemovePanel` triggers the "always keep one pane visible" auto-spawn (see corner case #10), the `api.addPanel` call is deferred by 440ms. This lets the outgoing animation (kill ghost crush, or detach's selection-overlay slide to the door) complete before the replacement's reveal starts — they play sequentially in the same screen region instead of fighting each other. The deferred spawn re-checks `totalPanels` at fire time and becomes a no-op if anything repopulated the pane area during the delay (e.g. a door reattach).
+When `onDidRemovePanel` triggers the "always keep one pane visible" auto-spawn (see corner case #10), the `api.addPanel` call is deferred by 440ms. This lets the outgoing animation (kill ghost crush, or minimize's selection-overlay slide to the door) complete before the replacement's reveal starts — they play sequentially in the same screen region instead of fighting each other. The deferred spawn re-checks `totalPanels` at fire time and becomes a no-op if anything repopulated the pane area during the delay (e.g. a door reattach).
 
-The deferred spawn also only calls `selectPanel` if selection is null. The kill handler clears selection to null, so the new pane takes focus. The detach flow sets selection to the just-created door; preserving that door focus across the delay is the point.
+The deferred spawn also only calls `selectPanel` if selection is null. The kill handler clears selection to null, so the new pane takes focus. The minimize flow sets selection to the just-created door; preserving that door focus across the delay is the point.
 
 ## Corner cases
 
@@ -327,14 +327,14 @@ The deferred spawn also only calls `selectPanel` if selection is null. The kill 
 7. **Asymmetric back-navigation**: breadcrumb tracks last direction + origin for opposite-direction return.
 8. **Center drop merges panels**: intercepted at group-level `model.onWillDrop` and converted to a swap.
 9. **Group drag has null panelId**: falls back to `api.getGroup(groupId).activePanel.id`.
-10. **Auto-spawn on empty**: `onDidRemovePanel` creates a new session whenever the last visible pane is removed, whether or not doors exist — there is always a pane visible. The `addPanel` call is delayed 440ms (see "Auto-spawn delay" under Animations) so the outgoing kill/detach animation finishes first.
-11. **Door focus survives auto-spawn**: `api.addPanel` auto-activates the new panel, firing `onDidActivePanelChange`. When the current selection is a door (e.g., just-detached last pane), that listener must not flip `selectedId` to the new pane — otherwise `selectedType === 'door'` + `selectedId === newPaneId` desyncs and the door loses its highlight while the SelectionOverlay is stuck on the stale door rect. The listener early-returns when `selectedType === 'door'`.
+10. **Auto-spawn on empty**: `onDidRemovePanel` creates a new session whenever the last visible pane is removed, whether or not doors exist — there is always a pane visible. The `addPanel` call is delayed 440ms (see "Auto-spawn delay" under Animations) so the outgoing kill/minimize animation finishes first.
+11. **Door focus survives auto-spawn**: `api.addPanel` auto-activates the new panel, firing `onDidActivePanelChange`. When the current selection is a door (e.g., just-minimized last pane), that listener must not flip `selectedId` to the new pane — otherwise `selectedType === 'door'` + `selectedId === newPaneId` desyncs and the door loses its highlight while the SelectionOverlay is stuck on the stale door rect. The listener early-returns when `selectedType === 'door'`.
 
 ## Files
 
 | File | Role |
 |------|------|
-| `lib/src/components/Pond.tsx` | Main layout orchestrator: modes, keyboard, selection overlay, detach/reattach. Also defines `TerminalPanel`, `TerminalPaneHeader`, `KillConfirmOverlay` |
+| `lib/src/components/Pond.tsx` | Main layout orchestrator: modes, keyboard, selection overlay, minimize/reattach. Also defines `TerminalPanel`, `TerminalPaneHeader`, `KillConfirmOverlay` |
 | `lib/src/components/Baseboard.tsx` | Always-visible bottom strip with door components, overflow arrows, and shortcut hints |
 | `lib/src/components/Door.tsx` | Individual door element — mouse-hole styled button with alert/TODO indicators |
 | `lib/src/components/TerminalPane.tsx` | Thin xterm.js mount point — attaches/detaches persistent session elements |

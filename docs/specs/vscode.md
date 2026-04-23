@@ -30,8 +30,8 @@ Frontend Library (lib/src/)
 ├── components/
 │   ├── Pond.tsx                  — pane manager (dockview), mode system, keyboard shortcuts
 │   ├── TerminalPane.tsx          — xterm.js mount point with ResizeObserver
-│   ├── Baseboard.tsx             — detached-pane door carousel
-│   └── Door.tsx                  — individual detached-pane door
+│   ├── Baseboard.tsx             — minimized-pane door carousel
+│   └── Door.tsx                  — individual minimized-pane door
 └── lib/
     ├── terminal-registry.ts      — global xterm.js registry, theme observer, alert wiring
     ├── reconnect.ts              — live reconnect + cold-start restore
@@ -133,7 +133,7 @@ Both are capped at 1M chars per PTY. When the cap is reached, oldest chunks are 
    - { type: 'pty:list', ptys: [{ id, alive, exitCode }] }   // all owned PTYs
    - { type: 'pty:replay', id, data }                         // buffered output per PTY
 4. Webview restores terminals from replay data, resumes live stream
-5. If the saved session covers those live PTYs, the frontend uses the saved dockview layout when its visible panels match and restores saved detached doors; detached PTYs reconnect into the registry but remain doors instead of visible panes
+5. If the saved session covers those live PTYs, the frontend uses the saved dockview layout when its visible panels match and restores saved minimized doors; minimized PTYs reconnect into the registry but remain doors instead of visible panes
 ```
 
 For cold-start restore (no live PTYs), the webview falls back to saved session state: spawns new PTYs in saved CWDs using the currently selected MouseTerm shell, injects saved scrollback (with trailing newline to avoid zsh `%` artifact), and restores dockview layout. The reconnect module (`reconnect.ts`) uses a 500ms timeout when waiting for the PTY list.
@@ -301,7 +301,7 @@ vscode.commands.executeCommand('setContext', 'mouseterm.mode', 'normal');
 | `mouseterm.enterTerminalMode` | Switch to passthrough mode |
 | `mouseterm.enterNormalMode` | Switch to navigation mode |
 | `mouseterm.listSessions` | Show QuickPick of all live PTY sessions |
-| `mouseterm.reattach` | Reattach a detached PTY to a pane |
+| `mouseterm.reattach` | Reattach a minimized PTY to a pane |
 
 ### Not yet implemented
 

@@ -40,28 +40,29 @@ You can spawn, layout, and relayout everything in the terminal using any of:
 
 TODO: layout GIF
 
+## Keyboard shortcuts
+
 MouseTerm has two modes: **command** for managing panes, and **passthrough** where all keypresses passthrough to the terminal.
 
 Press `Enter` to drill down from **command** to **passthrough** mode for the selected terminal. To go back up to command mode, press `LShift` then `RShift` in quick succession (or `LCmd -> RCmd`, or `LCtrl -> RCtrl`).
 
 ### Command Mode Shortcuts
 
-To enter command mode, press `LShift` then `RShift` in quick succession (or `LCmd -> RCmd`, or `LCtrl -> RCtrl`).
 
 | Key | Action |
 |-----|--------|
-| `\|` tmux `%` | Split horizontally (" looks like it was split in half horizontally) |
-| `-` tmux `"` | Split vertically (the slash in % looks like it's splitting something vertically) |
+| `\|` tmux `%` | Split horizontally |
+| `-` tmux `"` | Split vertically |
 | Arrow keys | Navigate between panes |
 | `Cmd+Arrow` | Swap pane positions |
 | `Enter` | Enter terminal mode |
 | `z` | Zoom / unzoom the selected pane |
-| `m` tmux `d` | Minimize / detach pane to bottom bar |
+| `m` tmux `d` | Minimize pane to baseboard |
 | `k` tmux `x` | Kill pane |
 | `,` | Rename pane |
 
 
-### Any Theme, Anywhere
+## Any Theme, Anywhere
 
 MouseTerm uses your VSCode theme — colors, styling, everything. Switch themes and MouseTerm switches with you. No separate configuration, no mismatched colors.
 

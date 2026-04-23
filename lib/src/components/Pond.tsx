@@ -835,8 +835,8 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             <HeaderActionButton
               className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
               onClick={(e) => { e.stopPropagation(); actions.onDetach(api.id); }}
-              ariaLabel="Detach"
-              tooltip="Detach [m] or [d]"
+              ariaLabel="Minimize"
+              tooltip="Minimize [m] or [d]"
             ><ArrowLineDownIcon size={14} /></HeaderActionButton>
             <HeaderActionButton
               className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-error/10 hover:text-error"
