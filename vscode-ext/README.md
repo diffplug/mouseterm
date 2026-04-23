@@ -1,7 +1,8 @@
 # MouseTerm
 
-Multitasking terminal with tmux keybindings, mouse support, human-friendly copy-paste, and an alert system for completed tasks and prompts. You can try it without installing at [mouseterm.com/playground](https://mouseterm.com/playground).
+Terminal Multiplexer for VS Code (or [standalone app](https://mouseterm.com/#download)) - tmux keybindings, mouse support, human-friendly copy-paste, and alerts for completed tasks.
 
+[mouseterm.com/playground](https://mouseterm.com/playground)
 
 TODO: Hero GIF.
 
@@ -13,12 +14,12 @@ TODO: GIF showing two terminals running long tasks, one finishes and gets the �
 
 - ![TODO] alerts disabled
 - ![TODO] alerts enabled
-- ![TODO] task is running, will start ringing when it completes
+- ![TODO] task is running, will send an alert when task completes
 - ![TODO] task is finished and needs your attention
 
-When you click a task that was ringing, it adds a `TODO`. This `TODO` will remain until you hit `[Enter]` in that terminal, or until you explicitly dismiss the `TODO` by clicking it or typing `t` in command mode.
+When you click a task that was ringing, it adds a `TODO` next to the terminal's title. This `TODO` will remain until you hit `[Enter]` in that terminal, or until you explicitly dismiss the `TODO` by clicking it or typing `t` in command mode.
 
-This lightweight TODO system empowers you to glance at the result of a completed task without requiring you to remember to come back to it.
+This lightweight TODO system lets you glance at the result of a completed task without requiring you to remember to come back to it.
 
 ## Mouse-Friendly Copy and Paste
 
@@ -32,6 +33,8 @@ TODO: GIF showing htop
 
 ## Tiling Layout with Minimize / Maximize
 
+Run builds, agents, servers, and scripts side by side. Minimize the ones you're not watching to a compact status indicator — every pane keeps running and every alert still fires whether minimized or not.
+
 You can spawn, layout, and relayout everything in the terminal using any of:
 
 - default tmux shortcuts
@@ -42,25 +45,22 @@ TODO: layout GIF
 
 ## Keyboard shortcuts
 
-MouseTerm has two modes: **command** for managing panes, and **passthrough** where all keypresses passthrough to the terminal.
-
-Press `Enter` to drill down from **command** to **passthrough** mode for the selected terminal. To go back up to command mode, press `LShift` then `RShift` in quick succession (or `LCmd -> RCmd`, or `LCtrl -> RCtrl`).
+If you use the mouse, then MouseTerm is always in **passthrough** mode, where all keypresses passthrough to the selected terminal. If you press `LShift` then `RShift` in quick succession (or `LCmd -> RCmd`, or `LCtrl -> RCtrl`), then you will enter **command** mode where keypresses can spawn keypresses or manipulate the layout of the terminals.
 
 ### Command Mode Shortcuts
 
 
 | Key | Action |
 |-----|--------|
+| `Enter` | Transitions back into **passthrough** mode |
 | `\|` tmux `%` | Split horizontally |
 | `-` tmux `"` | Split vertically |
 | Arrow keys | Navigate between panes |
 | `Cmd+Arrow` | Swap pane positions |
-| `Enter` | Enter terminal mode |
 | `z` | Zoom / unzoom the selected pane |
 | `m` tmux `d` | Minimize pane to baseboard |
 | `k` tmux `x` | Kill pane |
 | `,` | Rename pane |
-
 
 ## Any Theme, Anywhere
 
@@ -68,7 +68,7 @@ MouseTerm uses your VSCode theme — colors, styling, everything. Switch themes 
 
 TODO: GIF showing theme switching — user changes VSCode theme and MouseTerm updates instantly to match
 
-You can also use MouseTerm in the Panel area (bottom and sides), in the Editor area (center region where the files are), or both.
+You can also use MouseTerm in the Panel area (bottom, next to the built-in terminal), in the Editor area (center region where you edit files), or both.
 
 TODO: GIF showing MouseTerm in various areas
 
@@ -81,7 +81,7 @@ TODO: GIF showing MouseTerm in various areas
 
 ## Links
 
-- Also available as a standalone terminal app for Win, Mac and Linux at [mouseterm.com](https://mouseterm.com/#download)
+- Prefer a standalone terminal app? Self-updating installers available for Win, Mac and Linux at [mouseterm.com](https://mouseterm.com/#download)
 - You can try it in a [browser playground](https://mouseterm.com/playground)
 - [GitHub](https://github.com/diffplug/mouseterm)
 - Brought to you by [DiffPlug](https://www.diffplug.com/)
