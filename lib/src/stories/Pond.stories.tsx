@@ -41,7 +41,7 @@ async function splitPanes() {
   await wait(100);
 }
 
-async function detachSelectedPane() {
+async function minimizeSelectedPane() {
   await wait(200);
   window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', bubbles: true }));
   await wait(150);
@@ -83,11 +83,11 @@ export const MultiPaneLight: Story = {
   play: splitPanes,
 };
 
-export const WithDetached: Story = {
+export const WithDoors: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_LS_OUTPUT) } },
   play: async () => {
     await splitPanes();
-    await detachSelectedPane();
+    await minimizeSelectedPane();
   },
 };
 
@@ -134,7 +134,7 @@ export const AlertRingingPane: Story = {
 export const AlertRingingDoor: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
   play: async () => {
-    await detachSelectedPane();
+    await minimizeSelectedPane();
     primeByIndex([
       {
         status: 'ALERT_RINGING',
@@ -177,10 +177,10 @@ export const TodoAfterDismiss: Story = {
   },
 };
 
-export const DetachedRingingSession: Story = {
+export const MinimizedRingingSession: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
   play: async () => {
-    await detachSelectedPane();
+    await minimizeSelectedPane();
     primeByIndex([
       {
         status: 'ALERT_RINGING',

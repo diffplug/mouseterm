@@ -78,9 +78,9 @@ let dialogKeyboardActive = false;
 export interface DooredItem {
   id: string;
   title: string;
-  neighborId: string | null;       // panel that was adjacent before detach
+  neighborId: string | null;       // pane that was adjacent before minimize
   direction: DoorDirection;       // where we were relative to that neighbor
-  remainingPanelIds: string[];      // sorted panel IDs after detach (for layout-changed check)
+  remainingPanelIds: string[];      // sorted pane IDs after minimize (for layout-changed check)
   restoreLayout: SerializedDockview | null;
   detachedLayoutSignature: string;
 }
@@ -1002,7 +1002,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef
         ? doorElements.get(selectedId)
         : resolvePanelElement(panelElements.get(selectedId));
       // Keep stale rect while the element is temporarily missing (e.g. during
-      // detach → door transition) so the overlay stays mounted and can animate.
+      // minimize → door transition) so the overlay stays mounted and can animate.
       if (!targetEl) return;
 
       const targetRect = targetEl.getBoundingClientRect();
@@ -1287,7 +1287,7 @@ export function Pond({
   // Consumed once in handleReady to restore existing sessions
   const initialPaneIdsRef = useRef(initialPaneIds);
   const restoredLayoutRef = useRef(restoredLayout);
-  const initialDetachedRef = useRef((initialDoors ?? []).map(toDooredItem));
+  const initialDoorsRef = useRef((initialDoors ?? []).map(toDooredItem));
 
   // Mutable maps shared via context — consumers must call bumpVersion() after
   // any mutation so that dependent effects/components re-run.
@@ -1476,7 +1476,7 @@ export function Pond({
     api.removePanel(panel);
     clearSessionAttention(id);
     const detachedLayoutSignature = getLayoutStructureSignature(api.toJSON());
-    const nextDetached = [...doorsRef.current, {
+    const nextDoors = [...doorsRef.current, {
       id,
       title,
       neighborId,
@@ -1485,8 +1485,8 @@ export function Pond({
       restoreLayout,
       detachedLayoutSignature,
     }];
-    doorsRef.current = nextDetached;
-    setDoors(nextDetached);
+    doorsRef.current = nextDoors;
+    setDoors(nextDoors);
 
     // Keep the minimized session selected as a door so the user can track where it went.
     modeRef.current = 'command';
@@ -1517,10 +1517,10 @@ export function Pond({
     // Restore existing PTY sessions if available
     const restored = initialPaneIdsRef.current;
     const layout = restoredLayoutRef.current;
-    const restoredDoors = initialDetachedRef.current;
+    const restoredDoors = initialDoorsRef.current;
     initialPaneIdsRef.current = undefined; // consume once
     restoredLayoutRef.current = undefined;
-    initialDetachedRef.current = [];
+    initialDoorsRef.current = [];
     doorsRef.current = restoredDoors;
     setDoors(restoredDoors);
 
@@ -1632,7 +1632,7 @@ export function Pond({
     // Always keep one pane visible: when the last visible pane is removed (killed
     // or minimized), spawn a fresh one — regardless of whether doors exist.
     //
-    // Delay the spawn by the kill/detach animation duration so the two animations
+    // Delay the spawn by the kill/minimize animation duration so the two animations
     // don't overlap — the outgoing pane crushes/fades first, then the new pane
     // reveals from the top-left. If anything restores a pane in the meantime
     // (e.g. door reattach), the delayed spawn becomes a no-op.
@@ -1649,7 +1649,7 @@ export function Pond({
         e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
         // Only steal focus if nothing is selected (i.e., the kill path, which
         // clears selection). On minimize the new door is selected and we
-        // must not override that — the door retains focus per the detach UX.
+        // must not override that — the door retains focus per the minimize UX.
         if (selectedIdRef.current === null) {
           selectPanel(id);
         }
@@ -1998,7 +1998,7 @@ export function Pond({
 
         const dir = e.key;
         const currentType = selectedTypeRef.current;
-        const currentDetached = doorsRef.current;
+        const currentDoors = doorsRef.current;
 
         // Navigation from a door
         if (currentType === 'door') {
@@ -2010,11 +2010,11 @@ export function Pond({
             return;
           }
           // Left/Right between doors
-          const doorIdx = currentDetached.findIndex(d => d.id === sid);
+          const doorIdx = currentDoors.findIndex(d => d.id === sid);
           if (dir === 'ArrowLeft' && doorIdx > 0) {
-            selectDoor(currentDetached[doorIdx - 1].id);
-          } else if (dir === 'ArrowRight' && doorIdx < currentDetached.length - 1) {
-            selectDoor(currentDetached[doorIdx + 1].id);
+            selectDoor(currentDoors[doorIdx - 1].id);
+          } else if (dir === 'ArrowRight' && doorIdx < currentDoors.length - 1) {
+            selectDoor(currentDoors[doorIdx + 1].id);
           }
           return;
         }
@@ -2032,9 +2032,9 @@ export function Pond({
         if (targetId) {
           navHistory.current = { direction: dir, fromId: sid };
           selectPanel(targetId);
-        } else if (dir === 'ArrowDown' && currentDetached.length > 0) {
+        } else if (dir === 'ArrowDown' && currentDoors.length > 0) {
           // No pane below — move to first door in baseboard
-          selectDoor(currentDetached[0].id);
+          selectDoor(currentDoors[0].id);
         }
         return;
       }
@@ -2117,9 +2117,9 @@ export function Pond({
       }
     }
 
-    const nextDetached = doorsRef.current.filter(p => p.id !== item.id);
-    doorsRef.current = nextDetached;
-    setDoors(nextDetached);
+    const nextDoors = doorsRef.current.filter(p => p.id !== item.id);
+    doorsRef.current = nextDoors;
+    setDoors(nextDoors);
     selectPanel(item.id);
     if (enterPassthrough) {
       enterTerminalMode(item.id);

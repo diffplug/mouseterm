@@ -185,7 +185,7 @@ function expireAttention(id?: string): void {
   clearSessionAttention(id);
 }
 
-function detachSession(id: string): void {
+function minimizeSession(id: string): void {
   unmountElement(id);
   clearSessionAttention(id);
 }
@@ -435,13 +435,13 @@ describe('terminal-registry alert behavior', () => {
     expect(getActivity(id).status).toBe('BUSY');
   });
 
-  it('Story 10: detach preserves state, click restore clears ring', () => {
+  it('Story 10: minimize preserves state, click reattach clears ring', () => {
     const id = 'story-10';
     createSession(id);
     toggleSessionAlert(id);
     attendSession(id);
 
-    detachSession(id);
+    minimizeSession(id);
     driveToRingingNeedsAttention(id);
 
     expect(getActivity(id)).toMatchObject({
@@ -457,13 +457,13 @@ describe('terminal-registry alert behavior', () => {
     });
   });
 
-  it('Story 11: detach preserves state, d restore does not clear ring', () => {
+  it('Story 11: minimize preserves state, d reattach does not clear ring', () => {
     const id = 'story-11';
     createSession(id);
     toggleSessionAlert(id);
     attendSession(id);
 
-    detachSession(id);
+    minimizeSession(id);
     driveToRingingNeedsAttention(id);
     reattachDoorViaD(id);
 
