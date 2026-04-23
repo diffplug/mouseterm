@@ -24,9 +24,9 @@ Human-driven steps, in order:
    - [lib/package.json](../../lib/package.json)
 4. **Commit and tag** — `git commit -m "Release vX.Y.Z"` then `git tag vX.Y.Z`.
 5. **Push** — `git push && git push origin vX.Y.Z`. This triggers CI (Stage 1).
-6. **Wait for CI** — monitor the workflow run. VSCode extension publishes automatically.
+6. **Set environment variables** — go to your password manager and copy the relevant env variables into the terminal
 7. **Run local signing** — `./scripts/sign-and-deploy.sh all X.Y.Z`. Plug in the PIV USB key first. The script will:
-   - Download unsigned CI artifacts
+   - Download unsigned CI artifacts (after auto-waiting for CI to finish)
    - Sign macOS (will prompt for `APPLE_SIGN_PASS` if not set)
    - Sign Windows (will prompt for `EV_SIGN_PIN` if not set)
    - Generate Tauri update manifest and copy to `website/public/standalone-latest.json`
