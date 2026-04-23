@@ -181,7 +181,7 @@ let currentAlertHandler: ((detail: AlertStateDetail) => void) | null = null;
 
 /**
  * Wire up the platform's alert state events to the local session state store.
- * Call once during startup, before reconnect. Safe to call again after platform reset.
+ * Call once during startup, before resume/restore. Safe to call again after platform reset.
  */
 export function initAlertStateReceiver(): void {
   const platform = getPlatform();
@@ -564,7 +564,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
     attentionDismissedRing: false,
   };
 
-  // Apply any primed alert state (from platform reconnect)
+  // Apply any primed alert state (from platform resume)
   const primed = primedActivityStates.get(id);
   if (primed) {
     if (primed.status !== undefined) entry.alertStatus = primed.status;
@@ -721,8 +721,8 @@ export function disposeSession(id: string): void {
 }
 
 /**
- * Swap two terminals' registry entries. Their DOM elements are detached,
- * entries swapped, and elements reattached to each other's containers.
+ * Swap two terminals' registry entries. Their DOM elements are unmounted,
+ * entries swapped, and elements remounted into each other's containers.
  * The layout stays the same — only the terminal content swaps.
  *
  * Note: after swapping, registry key idA holds the entry that was originally

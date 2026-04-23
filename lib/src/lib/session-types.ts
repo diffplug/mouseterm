@@ -52,11 +52,6 @@ export interface PersistedSessionV1 {
   layout: unknown;
 }
 
-/**
- * Migrate a v1 session blob to v2. Renames `detached` → `doors` and per-door
- * fields: `remainingPanelIds` → `remainingPaneIds`, `restoreLayout` →
- * `layoutAtMinimize`, `detachedLayoutSignature` → `layoutAtMinimizeSignature`.
- */
 export function migrateSessionV1toV2(v1: PersistedSessionV1): PersistedSession {
   return {
     version: 2,
@@ -74,10 +69,6 @@ export function migrateSessionV1toV2(v1: PersistedSessionV1): PersistedSession {
   };
 }
 
-/**
- * Read a persisted blob of unknown version and normalize to the current
- * `PersistedSession` shape. Returns null if the blob is missing or malformed.
- */
 export function readPersistedSession(raw: unknown): PersistedSession | null {
   if (!raw || typeof raw !== 'object') return null;
   const blob = raw as { version?: number };

@@ -38,7 +38,7 @@ export interface PlatformAdapter {
   onPtyExit(handler: (detail: { id: string; exitCode: number }) => void): void;
   offPtyExit(handler: (detail: { id: string; exitCode: number }) => void): void;
 
-  // Reconnection
+  // Resume (live-PTY replay after webview hide/show)
   requestInit(): void;
   onPtyList(handler: (detail: { ptys: PtyInfo[] }) => void): void;
   offPtyList(handler: (detail: { ptys: PtyInfo[] }) => void): void;

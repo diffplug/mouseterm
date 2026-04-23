@@ -52,7 +52,7 @@ import {
   isHardTodo,
   TODO_OFF,
 } from '../lib/terminal-registry';
-import { resolvePanelElement, findPanelInDirection, findReattachNeighbor, type DoorDirection } from '../lib/spatial-nav';
+import { resolvePanelElement, findPanelInDirection, findReattachNeighbor } from '../lib/spatial-nav';
 import { cloneLayout, getLayoutStructureSignature } from '../lib/layout-snapshot';
 import { getPlatform } from '../lib/platform';
 import { saveSession } from '../lib/session-save';
@@ -75,22 +75,9 @@ let dialogKeyboardActive = false;
 
 // --- Types ---
 
-export interface DooredItem {
-  id: string;
-  title: string;
-  neighborId: string | null;       // pane that was adjacent before minimize
-  direction: DoorDirection;       // where we were relative to that neighbor
-  remainingPaneIds: string[];      // sorted pane IDs after minimize (for layout-changed check)
+export type DooredItem = Omit<PersistedDoor, 'layoutAtMinimize'> & {
   layoutAtMinimize: SerializedDockview | null;
-  layoutAtMinimizeSignature: string;
-}
-
-function toDooredItem(item: PersistedDoor): DooredItem {
-  return {
-    ...item,
-    layoutAtMinimize: item.layoutAtMinimize as SerializedDockview | null,
-  };
-}
+};
 
 interface ConfirmKill {
   id: string;
@@ -100,12 +87,14 @@ interface ConfirmKill {
 
 export type PondMode = 'command' | 'passthrough';
 
+export type PondSelectionKind = 'pane' | 'door';
+
 export type PondEvent =
   | { type: 'modeChange'; mode: PondMode }
   | { type: 'zoomChange'; zoomed: boolean }
   | { type: 'minimizeChange'; count: number }
   | { type: 'split'; direction: 'horizontal' | 'vertical'; source: 'keyboard' | 'mouse' }
-  | { type: 'selectionChange'; id: string | null; kind: 'pane' | 'door' };
+  | { type: 'selectionChange'; id: string | null; kind: PondSelectionKind };
 
 // --- Variants ---
 
@@ -980,7 +969,7 @@ export function MarchingAntsRect({ width, height, isDoor, color, paused }: {
 function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef }: {
   apiRef: React.RefObject<DockviewApi | null>;
   selectedId: string | null;
-  selectedType: 'pane' | 'door';
+  selectedType: PondSelectionKind;
   mode: PondMode;
   overlayElRef?: React.RefObject<HTMLDivElement | null>;
 }) {
@@ -1287,7 +1276,7 @@ export function Pond({
   // Consumed once in handleReady to restore existing sessions
   const initialPaneIdsRef = useRef(initialPaneIds);
   const restoredLayoutRef = useRef(restoredLayout);
-  const initialDoorsRef = useRef((initialDoors ?? []).map(toDooredItem));
+  const initialDoorsRef = useRef((initialDoors ?? []) as DooredItem[]);
 
   // Mutable maps shared via context — consumers must call bumpVersion() after
   // any mutation so that dependent effects/components re-run.
@@ -1307,7 +1296,7 @@ export function Pond({
   // We own these — dockview is just for spatial layout and DnD
   const [mode, setMode] = useState<PondMode>('command');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<'pane' | 'door'>('pane');
+  const [selectedType, setSelectedType] = useState<PondSelectionKind>('pane');
 
   const windowFocused = useWindowFocused();
 
@@ -1315,7 +1304,7 @@ export function Pond({
   const [confirmKill, setConfirmKill] = useState<ConfirmKill | null>(null);
   useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
   const [renamingPaneId, setRenamingPaneId] = useState<string | null>(null);
-  const [doors, setDoors] = useState<DooredItem[]>(() => (initialDoors ?? []).map(toDooredItem));
+  const [doors, setDoors] = useState<DooredItem[]>(() => (initialDoors ?? []) as DooredItem[]);
   const [zoomed, setZoomed] = useState(false);
 
   // Refs for mode-switch gesture (Left Cmd → Right Cmd, or Left Shift → Right Shift, within 500ms)
@@ -1362,16 +1351,7 @@ export function Pond({
     if (!api) return Promise.resolve();
 
     const panes = api.panels.map((p) => ({ id: p.id, title: p.title ?? '<unnamed>' }));
-    const doorItems: PersistedDoor[] = doorsRef.current.map((item) => ({
-      id: item.id,
-      title: item.title,
-      neighborId: item.neighborId,
-      direction: item.direction,
-      remainingPaneIds: item.remainingPaneIds,
-      layoutAtMinimize: item.layoutAtMinimize,
-      layoutAtMinimizeSignature: item.layoutAtMinimizeSignature,
-    }));
-    return saveSession(getPlatform(), api.toJSON(), panes, doorItems);
+    return saveSession(getPlatform(), api.toJSON(), panes, doorsRef.current);
   }, []);
 
   const persistSessionNow = useCallback((): Promise<void> => {
@@ -1524,8 +1504,8 @@ export function Pond({
     doorsRef.current = restoredDoors;
     setDoors(restoredDoors);
 
-    // Apply the currently-selected shell to a freshly-added panel. Panels
-    // that are reconnecting to an existing PTY already have a running shell,
+    // Apply the currently-selected shell to a freshly-added pane. Panes
+    // that are resuming over an existing PTY already have a running shell,
     // so their pendingShellOpts are never consumed — only first-time spawns
     // use this.
     const addTerminalPanel = (id: string) => {
@@ -1557,7 +1537,7 @@ export function Pond({
         setSelectedId(restored[0]);
       }
     } else {
-      // Reconnect or fresh start: create panels from IDs
+      // Resume/restore or fresh start: create panels from IDs
       const paneIds = restored && restored.length > 0
         ? restored
         : [generatePaneId()];
@@ -2057,20 +2037,20 @@ export function Pond({
     const confirmKillAfterRestore = options?.confirmKill ?? false;
 
     const currentLayoutSignature = getLayoutStructureSignature(api.toJSON());
-    // Exact restore is only safe when the layout structure matches AND the
-    // current panels are the same ones that existed when we minimized. If new
-    // panels were auto-spawned (e.g. last pane minimized → auto-create), the
+    // Exact reattach is only safe when the layout structure matches AND the
+    // current panes are the same ones that existed when we minimized. If new
+    // panes were auto-spawned (e.g. last pane minimized → auto-create), the
     // layoutAtMinimize would destroy them.
-    const currentPanelIds = api.panels.map(p => p.id).sort();
-    const restorePanelIds = item.layoutAtMinimize
+    const currentPaneIds = api.panels.map(p => p.id).sort();
+    const reattachPaneIds = item.layoutAtMinimize
       ? Object.keys(item.layoutAtMinimize.panels).filter(id => id !== item.id).sort()
       : [];
-    const canRestoreExactLayout =
+    const canReattachExactLayout =
       !!item.layoutAtMinimize &&
       currentLayoutSignature === item.layoutAtMinimizeSignature &&
-      idsMatch(currentPanelIds, restorePanelIds);
+      idsMatch(currentPaneIds, reattachPaneIds);
 
-    if (canRestoreExactLayout) {
+    if (canReattachExactLayout) {
       const currentTitles = new Map(
         api.panels.map(panel => [panel.id, panel.title ?? panel.id] as const),
       );

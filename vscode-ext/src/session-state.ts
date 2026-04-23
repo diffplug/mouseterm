@@ -1,20 +1,14 @@
 import * as vscode from 'vscode';
 import * as ptyManager from './pty-manager';
 import type { AlertState } from '../../lib/src/lib/alert-manager';
-import type { PersistedAlertState, PersistedPane, PersistedSession } from '../../lib/src/lib/session-types';
+import { readPersistedSession, type PersistedAlertState, type PersistedPane, type PersistedSession } from '../../lib/src/lib/session-types';
 import { log } from './log';
 
 const SESSION_STATE_KEY = 'mouseterm.session';
 
-export function isPersistedSession(value: unknown): value is PersistedSession {
-  if (!value || typeof value !== 'object') return false;
-  const maybeSession = value as Partial<PersistedSession>;
-  return maybeSession.version === 1 && Array.isArray(maybeSession.panes);
-}
-
 export function getSavedSessionState(context: vscode.ExtensionContext): PersistedSession | null {
-  const saved = context.workspaceState.get<unknown>(SESSION_STATE_KEY);
-  return isPersistedSession(saved) ? saved : null;
+  const saved = readPersistedSession(context.workspaceState.get<unknown>(SESSION_STATE_KEY));
+  return saved && Array.isArray(saved.panes) ? saved : null;
 }
 
 export function saveSessionState(context: vscode.ExtensionContext, state: unknown): Thenable<void> {
@@ -27,10 +21,11 @@ export function saveSessionState(context: vscode.ExtensionContext, state: unknow
  * rather than relying on deactivate (which may not complete).
  */
 export function mergeAlertStates(state: unknown, alertStates: Map<string, AlertState>): unknown {
-  if (!isPersistedSession(state)) return state;
+  const parsed = readPersistedSession(state);
+  if (!parsed || !Array.isArray(parsed.panes)) return state;
   return {
-    ...state,
-    panes: state.panes.map((pane) => {
+    ...parsed,
+    panes: parsed.panes.map((pane) => {
       const alert = alertStates.get(pane.id);
       return {
         ...pane,

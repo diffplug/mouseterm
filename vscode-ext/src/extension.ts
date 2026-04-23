@@ -5,7 +5,8 @@ import { MouseTermViewProvider } from './webview-view-provider';
 import { attachRouter, flushAllSessions, getAlertStates } from './message-router';
 import { getWebviewHtml } from './webview-html';
 import { log } from './log';
-import { getSavedSessionState, isPersistedSession, mergeAlertStates, refreshSavedSessionStateFromPtys, saveSessionState } from './session-state';
+import { getSavedSessionState, mergeAlertStates, refreshSavedSessionStateFromPtys, saveSessionState } from './session-state';
+import { readPersistedSession } from '../../lib/src/lib/session-types';
 import { resolveSelectedShell, setSelectedShellPath, getSelectedShellPath } from './shell-selection';
 
 let extensionContext: vscode.ExtensionContext | null = null;
@@ -46,7 +47,7 @@ function setupPanel(
   const router = attachRouter(panel.webview, {
     reconnect: !!savedState,
     killOnDispose: true,
-    savedSession: isPersistedSession(initialState) ? initialState : null,
+    savedSession: readPersistedSession(initialState),
     getSelectedShell,
     // Panels persist via vscode.setState() (per-panel, managed by VS Code).
     // Don't write to workspaceState — that's for the WebviewView only.
