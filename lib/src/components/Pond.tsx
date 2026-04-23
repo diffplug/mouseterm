@@ -80,15 +80,15 @@ export interface DooredItem {
   title: string;
   neighborId: string | null;       // pane that was adjacent before minimize
   direction: DoorDirection;       // where we were relative to that neighbor
-  remainingPanelIds: string[];      // sorted pane IDs after minimize (for layout-changed check)
-  restoreLayout: SerializedDockview | null;
-  detachedLayoutSignature: string;
+  remainingPaneIds: string[];      // sorted pane IDs after minimize (for layout-changed check)
+  layoutAtMinimize: SerializedDockview | null;
+  layoutAtMinimizeSignature: string;
 }
 
 function toDooredItem(item: PersistedDoor): DooredItem {
   return {
     ...item,
-    restoreLayout: item.restoreLayout as SerializedDockview | null,
+    layoutAtMinimize: item.layoutAtMinimize as SerializedDockview | null,
   };
 }
 
@@ -1367,9 +1367,9 @@ export function Pond({
       title: item.title,
       neighborId: item.neighborId,
       direction: item.direction,
-      remainingPanelIds: item.remainingPanelIds,
-      restoreLayout: item.restoreLayout,
-      detachedLayoutSignature: item.detachedLayoutSignature,
+      remainingPaneIds: item.remainingPaneIds,
+      layoutAtMinimize: item.layoutAtMinimize,
+      layoutAtMinimizeSignature: item.layoutAtMinimizeSignature,
     }));
     return saveSession(getPlatform(), api.toJSON(), panes, doorItems);
   }, []);
@@ -1462,28 +1462,28 @@ export function Pond({
     const panel = api.getPanel(id);
     if (!panel) return;
     const title = panel.title ?? id;
-    const restoreLayout = cloneLayout(api.toJSON());
+    const layoutAtMinimize = cloneLayout(api.toJSON());
 
     // Capture the nearest adjacent pane and our actual relative position
     // so immediate restore can reconstruct the original split precisely.
     const { neighborId, direction } = findReattachNeighbor(id, api, panelElements);
 
-    const remainingPanelIds = api.panels
+    const remainingPaneIds = api.panels
       .filter(p => p.id !== id)
       .map(p => p.id)
       .sort();
 
     api.removePanel(panel);
     clearSessionAttention(id);
-    const detachedLayoutSignature = getLayoutStructureSignature(api.toJSON());
+    const layoutAtMinimizeSignature = getLayoutStructureSignature(api.toJSON());
     const nextDoors = [...doorsRef.current, {
       id,
       title,
       neighborId,
       direction,
-      remainingPanelIds,
-      restoreLayout,
-      detachedLayoutSignature,
+      remainingPaneIds,
+      layoutAtMinimize,
+      layoutAtMinimizeSignature,
     }];
     doorsRef.current = nextDoors;
     setDoors(nextDoors);
@@ -2060,14 +2060,14 @@ export function Pond({
     // Exact restore is only safe when the layout structure matches AND the
     // current panels are the same ones that existed when we minimized. If new
     // panels were auto-spawned (e.g. last pane minimized → auto-create), the
-    // restoreLayout would destroy them.
+    // layoutAtMinimize would destroy them.
     const currentPanelIds = api.panels.map(p => p.id).sort();
-    const restorePanelIds = item.restoreLayout
-      ? Object.keys(item.restoreLayout.panels).filter(id => id !== item.id).sort()
+    const restorePanelIds = item.layoutAtMinimize
+      ? Object.keys(item.layoutAtMinimize.panels).filter(id => id !== item.id).sort()
       : [];
     const canRestoreExactLayout =
-      !!item.restoreLayout &&
-      currentLayoutSignature === item.detachedLayoutSignature &&
+      !!item.layoutAtMinimize &&
+      currentLayoutSignature === item.layoutAtMinimizeSignature &&
       idsMatch(currentPanelIds, restorePanelIds);
 
     if (canRestoreExactLayout) {
@@ -2077,7 +2077,7 @@ export function Pond({
 
       // reuseExistingPanels: keep existing panel component instances mounted
       // rather than destroying and recreating them during deserialization.
-      api.fromJSON(cloneLayout(item.restoreLayout!), { reuseExistingPanels: true });
+      api.fromJSON(cloneLayout(item.layoutAtMinimize!), { reuseExistingPanels: true });
 
       for (const [panelId, title] of currentTitles) {
         if (panelId === item.id) continue;
@@ -2088,7 +2088,7 @@ export function Pond({
       const layoutUnchanged =
         item.neighborId &&
         api.getPanel(item.neighborId) &&
-        idsMatch(currentIds, item.remainingPanelIds);
+        idsMatch(currentIds, item.remainingPaneIds);
 
       if (layoutUnchanged) {
         // Restore to original position next to the same neighbor

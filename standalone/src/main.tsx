@@ -54,7 +54,7 @@ async function bootstrap() {
       <App
         initialPaneIds={result.paneIds}
         restoredLayout={result.layout}
-        initialDoors={result.detached}
+        initialDoors={result.doors}
         baseboardNotice={<ConnectedUpdateBanner />}
       />
     </StrictMode>,

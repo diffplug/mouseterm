@@ -71,26 +71,26 @@ describe('resumeOrRestore', () => {
     vi.clearAllMocks();
   });
 
-  it('restores saved visible layout and detached doors for matching live PTYs', async () => {
+  it('restores saved visible layout and minimized doors for matching live PTYs', async () => {
     const layout = {
       panels: {
         'pane-a': {},
         'pane-b': {},
       },
     };
-    const detached = [{
+    const doors = [{
       id: 'pane-c',
       title: 'Pane C',
       neighborId: 'pane-b',
       direction: 'right' as const,
-      remainingPanelIds: ['pane-a', 'pane-b'],
-      restoreLayout: layout,
-      detachedLayoutSignature: 'sig',
+      remainingPaneIds: ['pane-a', 'pane-b'],
+      layoutAtMinimize: layout,
+      layoutAtMinimizeSignature: 'sig',
     }];
     const saved: PersistedSession = {
-      version: 1,
+      version: 2,
       layout,
-      detached,
+      doors,
       panes: [
         { id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null },
         { id: 'pane-b', title: 'Pane B', cwd: null, scrollback: null, resumeCommand: null },
@@ -106,7 +106,7 @@ describe('resumeOrRestore', () => {
 
     expect(result).toEqual({
       paneIds: ['pane-a', 'pane-b'],
-      detached,
+      doors,
       layout,
     });
     expect(terminalRegistryMocks.resumeTerminal).toHaveBeenCalledWith('pane-c', 'pane-c-replay', {
@@ -117,7 +117,7 @@ describe('resumeOrRestore', () => {
 
   it('does not reuse a saved layout when live PTYs do not match saved panes', async () => {
     const saved: PersistedSession = {
-      version: 1,
+      version: 2,
       layout: { panels: { 'pane-a': {}, 'pane-b': {} } },
       panes: [
         { id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null },
@@ -133,14 +133,14 @@ describe('resumeOrRestore', () => {
 
     expect(result).toEqual({
       paneIds: ['pane-a', 'pane-b', 'extra-pane'],
-      detached: [],
+      doors: [],
     });
   });
 
   it('ignores stale saved panes when the saved layout still matches live visible panes', async () => {
     const layout = { panels: { 'pane-a': {}, 'pane-b': {} } };
     const saved: PersistedSession = {
-      version: 1,
+      version: 2,
       layout,
       panes: [
         { id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null },
@@ -156,7 +156,7 @@ describe('resumeOrRestore', () => {
 
     expect(result).toEqual({
       paneIds: ['pane-a', 'pane-b'],
-      detached: [],
+      doors: [],
       layout,
     });
   });

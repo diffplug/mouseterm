@@ -8,9 +8,9 @@ const makeItem = (id: string, title: string): DooredItem => ({
   title,
   neighborId: null,
   direction: 'right',
-  remainingPanelIds: [],
-  restoreLayout: null,
-  detachedLayoutSignature: '',
+  remainingPaneIds: [],
+  layoutAtMinimize: null,
+  layoutAtMinimizeSignature: '',
 });
 
 function withState(byId: Record<string, Record<string, unknown>>) {
