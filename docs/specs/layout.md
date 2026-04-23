@@ -1,10 +1,12 @@
 # Layout Spec
 
+> See `docs/specs/ontology.md` for canonical state names, layer definitions, and transition verbs. This spec uses the ontology's vocabulary throughout.
+
 ## Conceptual model
 
-A **Session** is a single PTY instance — a running shell process with its scrollback, environment, and working directory. Sessions are managed by the terminal registry and persist independently of how they are displayed. Each session also carries UI state: an alert status (from the activity monitor) and an optional TODO flag.
+A **Session** is a single PTY instance — a running shell process with its scrollback, environment, and working directory. Sessions are managed by the terminal registry and persist independently of how they are displayed. Each session also carries Activity state (alert status from the activity monitor, optional TODO flag).
 
-A Session can be in one of two containers:
+A Session's **View** state places it in one of two containers:
 
 - **Pane** — a visible container in the content area. The session's terminal output is rendered via xterm.js. The pane has a header with controls and acts as the drag handle for layout rearrangement.
 - **Door** — a minimized container in the baseboard. The session is still alive (PTY running, output buffered) but not visible. The door shows the session's title plus alert and TODO indicators, and looks like a mouse hole cut into the baseboard.
@@ -211,24 +213,24 @@ Swaps session **content** between two panes — the layout shape is unchanged. U
 ## Minimize and reattach
 
 ### Minimize (`m` key or minimize header button)
-1. Capture restore context before removing:
+1. Capture reattach context before removing:
    - `neighborId` and `direction`: spatial position relative to nearest neighbor
-   - `remainingPanelIds`: sorted IDs of panes that stay
-   - `restoreLayout`: full layout snapshot
-   - `detachedLayoutSignature`: structural fingerprint (ignores sizes)
+   - `remainingPaneIds`: sorted IDs of panes that stay
+   - `layoutAtMinimize`: full layout snapshot
+   - `layoutAtMinimizeSignature`: structural fingerprint (ignores sizes)
 2. Remove pane from dockview (`api.removePanel`)
-3. Add to `detached` state → door appears in baseboard
-4. Session stays alive in registry (not destroyed)
+3. Add to `doors` state → door appears in baseboard
+4. Session stays in registry (not disposed)
 5. Selection moves to the new door (stays in command mode)
 
 ### Reattach (click door, Enter/d on door)
 Three strategies based on layout state:
 
-**Exact restore** (layout structure signature matches AND same panes exist):
+**Exact reattach** (layout structure signature matches AND same panes exist):
 - Deserialize the saved layout snapshot with `reuseExistingPanels: true`
 - Preserves exact split ratios from before minimize
 
-**Neighbor restore** (neighbor still exists AND pane set matches `remainingPanelIds`):
+**Neighbor reattach** (neighbor still exists AND pane set matches `remainingPaneIds`):
 - `addPanel` with `position: { referencePanel: neighborId, direction }`
 - Restores original position relative to neighbor
 
@@ -249,28 +251,28 @@ The name `<span>` is replaced by an `<input>` with:
 
 ## Session lifecycle and terminal registry
 
-Pane IDs are session IDs. `TerminalPane` calls `getOrCreateTerminal(id)` on mount and `detachTerminal(id)` on unmount. The session (xterm.js instance, PTY, DOM element) persists in the registry across mount/unmount cycles.
+Pane IDs are session IDs. `TerminalPane` calls `getOrCreateTerminal(id)` on React mount and `unmountElement(id)` on React unmount. The session (xterm.js instance, PTY, DOM element) persists in the registry across mount/unmount cycles — the DOM element is detached from its container but the Registry entry stays `Mounted`.
 
 - **Create**: `getOrCreateTerminal` spawns xterm.js + FitAddon + PTY, returns existing if already created
-- **Reconnect**: `reconnectTerminal` creates xterm entry and writes replay data without spawning a new PTY (used after webview recreation when platform preserves live PTYs)
-- **Restore**: `restoreTerminal` creates xterm entry and spawns new PTY with saved cwd and scrollback (used on app restart from saved session)
-- **Attach/detach**: moves the persistent DOM element in/out of a container — no session state loss
-- **Destroy**: `destroyTerminal` kills PTY, disposes xterm, removes from registry. Only called on explicit kill (`x`).
-- **Swap**: `swapTerminals` swaps two registry entries and reattaches DOM elements to each other's containers
+- **Resume**: `resumeTerminal` creates xterm entry and writes replay data without spawning a new PTY. Used when the webview is recreated while the host retains Live PTYs (Link: Severed → Resuming → Live).
+- **Restore**: `restoreTerminal` creates xterm entry and spawns a new PTY with saved cwd and scrollback. Used on cold start from a saved Snapshot (Link: Cold → Live).
+- **mount / unmount (DOM)**: `mountElement` reparents the persistent DOM element into a container; `unmountElement` removes it. The Registry entry survives.
+- **Dispose**: `disposeSession` kills the PTY, disposes xterm, removes the registry entry. Only called on explicit kill (`x`).
+- **Swap**: `swapTerminals` swaps two registry entries and reattaches DOM elements to each other's containers.
 
 ### Session persistence
 
 Layout, scrollback, cwd, minimized items, and alert state are saved to persistent storage via a debounced save (500ms). Saves are triggered by layout changes, panel add/remove, and a 30s periodic interval. Saves are flushed immediately on PTY exit, `pagehide`, and extension shutdown requests.
 
 On startup, recovery is priority-based:
-1. **Live PTYs** (webview hidden/shown): request PTY list + replay data from platform, `reconnectTerminal()` for each (500ms timeout). If the saved session covers every live PTY, restore the saved dockview layout when its visible panel set matches and restore saved minimized items as doors.
-2. **Saved session** (app restart): restore layout from serialized dockview state, `restoreTerminal()` for each pane with saved cwd + scrollback, and spawn each PTY with the current default shell selection
+1. **Resume** (webview hidden/shown, live PTYs): request PTY list + replay data from platform, `resumeTerminal()` for each (500ms timeout). If the saved session covers every live PTY, restore the saved dockview layout when its visible panel set matches and reattach saved minimized items as doors.
+2. **Restore** (app restart, cold start): restore layout from serialized dockview state, `restoreTerminal()` for each pane with saved cwd + scrollback, and spawn each PTY with the current default shell selection
 3. **Fallback/manual pane creation**: when no saved layout can be safely applied, add multiple panes as splits from the previous pane rather than tabs
 4. **Empty state**: create a single new pane
 
-### Session UI state
+### Activity state
 
-Each session carries `SessionUiState` with `status: SessionStatus` and `todo: TodoState`. These are synced to React via `useSyncExternalStore`. State that arrives from the platform before a terminal entry is created (reconnect scenario) is held as "primed state" and applied when the terminal is finally created.
+Each session carries `ActivityState` with `status: SessionStatus` and `todo: TodoState`. These are synced to React via `useSyncExternalStore`. State that arrives from the platform before a registry entry exists (resume scenario) is held as "primed state" and applied when the registry entry is created.
 
 ## Theme
 
@@ -337,8 +339,8 @@ The deferred spawn also only calls `selectPanel` if selection is null. The kill 
 | `lib/src/components/Pond.tsx` | Main layout orchestrator: modes, keyboard, selection overlay, minimize/reattach. Also defines `TerminalPanel`, `TerminalPaneHeader`, `KillConfirmOverlay` |
 | `lib/src/components/Baseboard.tsx` | Always-visible bottom strip with door components, overflow arrows, and shortcut hints |
 | `lib/src/components/Door.tsx` | Individual door element — mouse-hole styled button with alert/TODO indicators |
-| `lib/src/components/TerminalPane.tsx` | Thin xterm.js mount point — attaches/detaches persistent session elements |
-| `lib/src/lib/terminal-registry.ts` | Session lifecycle: create, reconnect, restore, attach, detach, destroy, swap, focus, refit. Session UI state store |
+| `lib/src/components/TerminalPane.tsx` | Thin xterm.js mount point — mounts/unmounts persistent session elements |
+| `lib/src/lib/terminal-registry.ts` | Session lifecycle: create, resume, restore, mount, unmount, dispose, swap, focus, refit. Activity state store |
 | `lib/src/lib/spatial-nav.ts` | Spatial navigation (`findPanelInDirection`) and restore-neighbor detection (`findRestoreNeighbor`) |
 | `lib/src/lib/layout-snapshot.ts` | Layout cloning (`cloneLayout`) and structural signature (`getLayoutStructureSignature`) for restore comparison |
 | `lib/src/lib/activity-monitor.ts` | Per-session activity state machine: output timing → alert escalation |
