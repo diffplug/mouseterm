@@ -117,7 +117,7 @@ export class TutorialDetector {
         }
         break;
 
-      case 'detachChange':
+      case 'minimizeChange':
         if (event.count > 0) {
           this.hasDetached = true;
         } else if (this.hasDetached && this.shell.isStepComplete(2)) {

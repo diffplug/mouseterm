@@ -1,20 +1,20 @@
 import { useRef, useState, useMemo, useLayoutEffect, useContext, useSyncExternalStore, type ReactNode } from 'react';
 import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { Door } from './Door';
-import { DoorElementsContext, WindowFocusedContext, type DetachedItem } from './Pond';
-import { DEFAULT_SESSION_UI_STATE, getSessionStateSnapshot, subscribeToSessionStateChanges } from '../lib/terminal-registry';
+import { DoorElementsContext, WindowFocusedContext, type DooredItem } from './Pond';
+import { DEFAULT_ACTIVITY_STATE, getActivitySnapshot, subscribeToActivity } from '../lib/terminal-registry';
 
 export interface BaseboardProps {
-  items: DetachedItem[];
+  items: DooredItem[];
   activeId: string | null;
-  onReattach: (item: DetachedItem) => void;
+  onReattach: (item: DooredItem) => void;
   notice?: ReactNode;
 }
 
 export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProps) {
   const { elements: doorElements, bumpVersion } = useContext(DoorElementsContext);
   const windowFocused = useContext(WindowFocusedContext);
-  const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
+  const activityStates = useSyncExternalStore(subscribeToActivity, getActivitySnapshot);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [startIndex, setStartIndex] = useState(0);
@@ -52,7 +52,7 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
     if (arrowMeasureEl.current) {
       layoutMetrics.current.arrowWidth = arrowMeasureEl.current.offsetWidth;
     }
-  }, [items, sessionStates]);
+  }, [items, activityStates]);
 
   // Reset startIndex when the set of door items changes (not just count)
   const itemKey = useMemo(() => items.map(i => i.id).join('\0'), [items]);
@@ -137,13 +137,13 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
       {/* Hidden measurement pass — doors + overflow arrow */}
       <div ref={measureEl} className="absolute -left-[9999px] flex gap-1.5" aria-hidden>
         {items.map(item => {
-          const sessionState = sessionStates.get(item.id) ?? DEFAULT_SESSION_UI_STATE;
+          const activity = activityStates.get(item.id) ?? DEFAULT_ACTIVITY_STATE;
           return (
             <Door
               key={item.id}
               title={item.title}
-              status={sessionState.status}
-              todo={sessionState.todo}
+              status={activity.status}
+              todo={activity.todo}
 
             />
           );
@@ -170,7 +170,7 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
       )}
 
       {items.slice(startIndex, endIndex).map(item => {
-        const sessionState = sessionStates.get(item.id) ?? DEFAULT_SESSION_UI_STATE;
+        const activity = activityStates.get(item.id) ?? DEFAULT_ACTIVITY_STATE;
         return (
           <Door
             key={item.id}
@@ -178,8 +178,8 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
             title={item.title}
             isActive={activeId === item.id}
             windowFocused={windowFocused}
-            status={sessionState.status}
-            todo={sessionState.todo}
+            status={activity.status}
+            todo={activity.todo}
             onClick={() => onReattach(item)}
           />
         );

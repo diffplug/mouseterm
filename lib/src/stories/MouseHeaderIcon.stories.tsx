@@ -20,7 +20,7 @@ const SESSION_ID = 'mouse-story';
 
 const noopActions: PondActions = {
   onKill: () => {},
-  onDetach: () => {},
+  onMinimize: () => {},
   onAlertButton: () => 'noop',
   onToggleTodo: () => {},
   onSplitH: () => {},

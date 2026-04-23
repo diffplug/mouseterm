@@ -1,5 +1,5 @@
 import type { PlatformAdapter } from './platform/types';
-import type { PersistedDetachedItem, PersistedPane, PersistedSession } from './session-types';
+import type { PersistedDoor, PersistedPane, PersistedSession } from './session-types';
 import { detectResumeCommand } from './resume-patterns';
 import { getLivePersistedAlertState, resolveTerminalSessionId } from './terminal-registry';
 
@@ -15,7 +15,7 @@ export async function saveSession(
   platform: PlatformAdapter,
   layout: unknown,
   panes: Array<{ id: string; title: string }>,
-  detached: PersistedDetachedItem[] = [],
+  detached: PersistedDoor[] = [],
 ): Promise<void> {
   const previousPanes = getPreviousPaneMap(platform);
   const allPanes = new Map<string, { id: string; title: string }>();

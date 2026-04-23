@@ -7,7 +7,7 @@ import {
   SCENARIO_ANSI_COLORS,
   SCENARIO_LONG_RUNNING,
 } from '../lib/platform';
-import { getSessionStateSnapshot, primeSessionState, type SessionUiState, TODO_OFF, TODO_HARD } from '../lib/terminal-registry';
+import { getActivitySnapshot, primeActivity, type ActivityState, TODO_OFF, TODO_HARD } from '../lib/terminal-registry';
 
 const meta: Meta<typeof Pond> = {
   title: 'App/Pond',
@@ -21,12 +21,12 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function primeByIndex(states: Partial<SessionUiState>[]) {
-  const ids = [...getSessionStateSnapshot().keys()];
+function primeByIndex(states: Partial<ActivityState>[]) {
+  const ids = [...getActivitySnapshot().keys()];
   states.forEach((state, index) => {
     const id = ids[index];
     if (id) {
-      primeSessionState(id, state);
+      primeActivity(id, state);
     }
   });
 }

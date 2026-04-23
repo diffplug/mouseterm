@@ -1,12 +1,12 @@
 import type { PlatformAdapter, PtyInfo } from './platform/types';
-import { reconnectTerminal } from './terminal-registry';
-import type { PersistedDetachedItem, PersistedSession } from './session-types';
+import { resumeTerminal } from './terminal-registry';
+import type { PersistedDoor, PersistedSession } from './session-types';
 import { restoreSession } from './session-restore';
 
 export interface ReconnectResult {
   paneIds: string[];
   layout?: unknown; // dockview SerializedDockview, only present on cold-start restore
-  detached?: PersistedDetachedItem[];
+  detached?: PersistedDoor[];
 }
 
 /**
@@ -17,9 +17,9 @@ export interface ReconnectResult {
  * 2. Saved session (app restarted) → restore with saved scrollback + cwd
  * 3. Neither → return empty (Pond creates a fresh terminal)
  */
-export async function reconnectFromInit(platform: PlatformAdapter): Promise<ReconnectResult> {
+export async function resumeOrRestore(platform: PlatformAdapter): Promise<ReconnectResult> {
   // First, try to reconnect to live PTYs
-  const liveResult = await reconnectLivePtys(platform);
+  const liveResult = await resumeLiveSessions(platform);
   if (liveResult.paneIds.length > 0) return liveResult;
 
   // No live PTYs — try saved session restore
@@ -29,7 +29,7 @@ export async function reconnectFromInit(platform: PlatformAdapter): Promise<Reco
   return { paneIds: [] };
 }
 
-function reconnectLivePtys(platform: PlatformAdapter): Promise<ReconnectResult> {
+function resumeLiveSessions(platform: PlatformAdapter): Promise<ReconnectResult> {
   return new Promise<ReconnectResult>((resolve) => {
     const replayBuffer = new Map<string, string>();
     let ptyList: PtyInfo[] | null = null;
@@ -65,7 +65,7 @@ function reconnectLivePtys(platform: PlatformAdapter): Promise<ReconnectResult> 
 
       const ids: string[] = [];
       for (const pty of ptyList) {
-        reconnectTerminal(pty.id, replayBuffer.get(pty.id) ?? null, {
+        resumeTerminal(pty.id, replayBuffer.get(pty.id) ?? null, {
           alive: pty.alive,
           exitCode: pty.exitCode,
         });

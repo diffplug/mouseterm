@@ -1,4 +1,4 @@
-import type { DetachDirection } from './spatial-nav';
+import type { DoorDirection } from './spatial-nav';
 import type { SessionStatus } from './activity-monitor';
 import type { TodoState } from './alert-manager';
 
@@ -16,11 +16,11 @@ export interface PersistedPane {
   alert?: PersistedAlertState | null;
 }
 
-export interface PersistedDetachedItem {
+export interface PersistedDoor {
   id: string;
   title: string;
   neighborId: string | null;
-  direction: DetachDirection;
+  direction: DoorDirection;
   remainingPanelIds: string[];
   restoreLayout: unknown;
   detachedLayoutSignature: string;
@@ -29,6 +29,6 @@ export interface PersistedDetachedItem {
 export interface PersistedSession {
   version: 1;
   panes: PersistedPane[];
-  detached?: PersistedDetachedItem[];
+  detached?: PersistedDoor[];
   layout: unknown; // SerializedDockview — kept as `unknown` to avoid dockview dep in types
 }

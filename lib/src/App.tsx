@@ -1,6 +1,6 @@
 import { Component, type ReactNode } from "react";
 import { Pond } from "./components/Pond";
-import type { PersistedDetachedItem } from "./lib/session-types";
+import type { PersistedDoor } from "./lib/session-types";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
@@ -24,17 +24,17 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 export default function App({
   initialPaneIds,
   restoredLayout,
-  initialDetached,
+  initialDoors,
   baseboardNotice,
 }: {
   initialPaneIds?: string[];
   restoredLayout?: unknown;
-  initialDetached?: PersistedDetachedItem[];
+  initialDoors?: PersistedDoor[];
   baseboardNotice?: ReactNode;
 }) {
   return (
     <ErrorBoundary>
-      <Pond initialPaneIds={initialPaneIds} restoredLayout={restoredLayout} initialDetached={initialDetached} baseboardNotice={baseboardNotice} />
+      <Pond initialPaneIds={initialPaneIds} restoredLayout={restoredLayout} initialDoors={initialDoors} baseboardNotice={baseboardNotice} />
     </ErrorBoundary>
   );
 }

@@ -3,16 +3,16 @@ import type { PlatformAdapter, PtyInfo } from './platform/types';
 import type { PersistedSession } from './session-types';
 
 const terminalRegistryMocks = vi.hoisted(() => ({
-  reconnectTerminal: vi.fn(),
+  resumeTerminal: vi.fn(),
   restoreTerminal: vi.fn(),
 }));
 
 vi.mock('./terminal-registry', () => ({
-  reconnectTerminal: terminalRegistryMocks.reconnectTerminal,
+  resumeTerminal: terminalRegistryMocks.resumeTerminal,
   restoreTerminal: terminalRegistryMocks.restoreTerminal,
 }));
 
-import { reconnectFromInit } from './reconnect';
+import { resumeOrRestore } from './reconnect';
 
 function createPlatform(ptys: PtyInfo[], savedState: PersistedSession | null): PlatformAdapter {
   const listHandlers = new Set<(detail: { ptys: PtyInfo[] }) => void>();
@@ -66,7 +66,7 @@ function createPlatform(ptys: PtyInfo[], savedState: PersistedSession | null): P
   };
 }
 
-describe('reconnectFromInit', () => {
+describe('resumeOrRestore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -98,7 +98,7 @@ describe('reconnectFromInit', () => {
       ],
     };
 
-    const result = await reconnectFromInit(createPlatform([
+    const result = await resumeOrRestore(createPlatform([
       { id: 'pane-a', alive: true },
       { id: 'pane-b', alive: true },
       { id: 'pane-c', alive: true },
@@ -109,7 +109,7 @@ describe('reconnectFromInit', () => {
       detached,
       layout,
     });
-    expect(terminalRegistryMocks.reconnectTerminal).toHaveBeenCalledWith('pane-c', 'pane-c-replay', {
+    expect(terminalRegistryMocks.resumeTerminal).toHaveBeenCalledWith('pane-c', 'pane-c-replay', {
       alive: true,
       exitCode: undefined,
     });
@@ -125,7 +125,7 @@ describe('reconnectFromInit', () => {
       ],
     };
 
-    const result = await reconnectFromInit(createPlatform([
+    const result = await resumeOrRestore(createPlatform([
       { id: 'pane-a', alive: true },
       { id: 'pane-b', alive: true },
       { id: 'extra-pane', alive: true },
@@ -149,7 +149,7 @@ describe('reconnectFromInit', () => {
       ],
     };
 
-    const result = await reconnectFromInit(createPlatform([
+    const result = await resumeOrRestore(createPlatform([
       { id: 'pane-a', alive: true },
       { id: 'pane-b', alive: true },
     ], saved));

@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { setPlatform } from "mouseterm-lib/lib/platform";
-import { reconnectFromInit } from "mouseterm-lib/lib/reconnect";
+import { resumeOrRestore } from "mouseterm-lib/lib/reconnect";
 import {
   applyTheme,
   getActiveThemeId,
@@ -40,7 +40,7 @@ async function bootstrap() {
   const { initAlertStateReceiver } = await import("mouseterm-lib/lib/terminal-registry");
   initAlertStateReceiver();
   restoreStandaloneTheme();
-  const result = await reconnectFromInit(platform);
+  const result = await resumeOrRestore(platform);
 
   startUpdateCheck();
 
@@ -54,7 +54,7 @@ async function bootstrap() {
       <App
         initialPaneIds={result.paneIds}
         restoredLayout={result.layout}
-        initialDetached={result.detached}
+        initialDoors={result.detached}
         baseboardNotice={<ConnectedUpdateBanner />}
       />
     </StrictMode>,

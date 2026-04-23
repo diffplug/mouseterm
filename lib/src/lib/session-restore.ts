@@ -1,11 +1,11 @@
 import type { PlatformAdapter } from './platform/types';
-import type { PersistedDetachedItem, PersistedSession } from './session-types';
+import type { PersistedDoor, PersistedSession } from './session-types';
 import { getDefaultShellOpts, restoreTerminal } from './terminal-registry';
 
 export interface RestoredSession {
   paneIds: string[];
   layout: unknown;
-  detached: PersistedDetachedItem[];
+  detached: PersistedDoor[];
 }
 
 export function restoreSession(platform: PlatformAdapter): RestoredSession | null {

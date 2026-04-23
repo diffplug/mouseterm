@@ -5,11 +5,11 @@ import '../src/theme.css';
 import '../src/index.css';
 import { initPlatform, type FakePtyAdapter, type FakeScenario } from '../src/lib/platform';
 import {
-  clearPrimedSessionState,
-  destroyAllTerminals,
-  getSessionStateSnapshot,
-  primeSessionState,
-  type SessionUiState,
+  clearPrimedActivity,
+  disposeAllSessions,
+  getActivitySnapshot,
+  primeActivity,
+  type ActivityState,
 } from '../src/lib/terminal-registry';
 import { VSCODE_THEMES } from './themes';
 import { cfg } from '../src/cfg';
@@ -69,8 +69,8 @@ const preview: Preview = {
       const scenario = (context.parameters?.fakePty as { scenario?: FakeScenario })?.scenario;
       const primedSessionState = context.parameters?.primedSessionState as
         | {
-            byId?: Record<string, Partial<SessionUiState>>;
-            byIndex?: Partial<SessionUiState>[];
+            byId?: Record<string, Partial<ActivityState>>;
+            byIndex?: Partial<ActivityState>[];
           }
         | undefined;
       const platform = fakePlatform as FakePtyAdapter;
@@ -82,17 +82,17 @@ const preview: Preview = {
         let raf2 = 0;
 
         const applyPrimedState = () => {
-          clearPrimedSessionState();
+          clearPrimedActivity();
 
           for (const [id, state] of Object.entries(primedSessionState?.byId ?? {})) {
-            primeSessionState(id, state);
+            primeActivity(id, state);
           }
 
-          const sessionIds = [...getSessionStateSnapshot().keys()];
+          const sessionIds = [...getActivitySnapshot().keys()];
           primedSessionState?.byIndex?.forEach((state, index) => {
             const id = sessionIds[index];
             if (id) {
-              primeSessionState(id, state);
+              primeActivity(id, state);
             }
           });
         };
@@ -104,9 +104,9 @@ const preview: Preview = {
         return () => {
           window.cancelAnimationFrame(raf1);
           window.cancelAnimationFrame(raf2);
-          clearPrimedSessionState();
+          clearPrimedActivity();
           platform.clearDefaultScenario();
-          destroyAllTerminals();
+          disposeAllSessions();
         };
       }, [platform, primedSessionState]);
 

@@ -349,7 +349,7 @@ export class AlertManager {
    * creates a fresh ActivityMonitor (it will start in NOTHING_TO_SHOW until
    * PTY data arrives).
    */
-  restore(id: string, state: { status: string; todo: TodoState }): void {
+  seed(id: string, state: { status: string; todo: TodoState }): void {
     const entry = this.getOrCreateEntry(id);
     entry.todo = migrateTodoState(state.todo);
     // If the alert was enabled (anything other than ALERT_DISABLED), create a monitor
