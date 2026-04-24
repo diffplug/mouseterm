@@ -1804,9 +1804,10 @@ export function Pond({
           <FreshlySpawnedContext.Provider value={freshlySpawnedRef.current}>
           <DialogKeyboardContext.Provider value={setDialogKeyboardActive}>
           <div className="flex-1 min-h-0 flex flex-col bg-surface text-foreground font-sans overflow-hidden">
-            {/* Dockview */}
-            <div className="flex-1 min-h-0 relative p-1.5">
-              <div ref={dockviewContainerRef} className="absolute inset-1.5">
+            {/* Dockview — no bottom padding so the last row of panes meets
+                the baseboard's top border flush. */}
+            <div className="flex-1 min-h-0 relative px-1.5 pt-1.5">
+              <div ref={dockviewContainerRef} className="absolute inset-x-1.5 top-1.5 bottom-0">
                 <DockviewReact
                   components={components}
                   tabComponents={tabComponents}

@@ -66,8 +66,11 @@ body {
   overflow: visible !important;
 }
 
-/* Individual tab — stretch to fill, remove tab-like styling */
+/* Individual tab — stretch to fill, remove tab-like styling. Transparent
+ * bg is critical: our React tab has rounded-t corners, so any color on the
+ * wrapping dv-tab would peek through the corner triangles. */
 .dv-tabs-container .dv-tab {
+  background: transparent !important;
   border: none !important;
   margin: 0 !important;
   padding: 0 !important;

@@ -50,7 +50,7 @@ export function TerminalPane({ id, isFocused = true }: TerminalPaneProps) {
   }, [id, isFocused]);
 
   return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-terminal-bg">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden rounded-b bg-terminal-bg">
       <SelectionOverlay terminalId={id} />
       <SelectionPopup terminalId={id} />
     </div>
