@@ -204,7 +204,7 @@ The Session leaves `ALERT_RINGING` and returns to `NOTHING_TO_SHOW` when any of 
 - the user marks the Session as TODO (`t` key or context menu)
 - new output arrives while the Session has attention (starts a new `MIGHT_BE_BUSY` cycle; without attention the alert stays ringing — see latch in transition rules)
 
-All attention-based dismissals (the first three above) set `todo = true` if it is not already set. This prevents phantom dismissals where the alert vanishes without a trace. Once the TODO is visible, the user can clear it explicitly from the pill/dialog or by pressing `Enter` into that Session. Synthetic terminal reports (focus events, cursor-position responses) do not count as user input for clearing.
+All attention-based dismissals (the first three above) set `todo = true` if it is not already set. This prevents phantom dismissals where the alert vanishes without a trace. Once the TODO is visible, the user can clear it explicitly from the pill/dialog or by typing `Enter` as passthrough input into that Session's shell (i.e., the keystroke is forwarded to the PTY). The command-mode `Enter` that *switches into* passthrough does not clear the TODO. Synthetic terminal reports (focus events, cursor-position responses) also do not count as user input for clearing.
 
 The Session leaves `ALERT_RINGING` and returns to `ALERT_DISABLED` when:
 
@@ -234,7 +234,7 @@ TODO pill:
 - toggled in command mode with `t` (`false` -> `true` -> `false`)
 - shown when `todo === true`
 - auto-created on alert dismiss or attention-based alert clearing
-- pressing `Enter` into a Session with TODO clears it
+- typing `Enter` as passthrough input (forwarded to the Session's shell) clears the TODO; the command-mode `Enter` that switches *into* passthrough does not
 - clicking the TODO pill clears it
 - when TODO clears, the pill briefly morphs to a `✓` glyph in the success color (~500 ms) before unmounting — this marks the moment of completion so the pill never vanishes silently
 - no empty placeholder when off
