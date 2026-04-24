@@ -58,6 +58,13 @@
   --color-header-inactive-bg: var(--vscode-list-inactiveSelectionBackground, var(--vscode-sideBar-background, #37373d));
   --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground, var(--vscode-list-activeSelectionForeground, var(--vscode-foreground, #cccccc)));
 
+  /* Door palette — Baseboard's usePickDoorPalette hook overrides these on
+   * body at runtime, picking whichever of (header-inactive, terminal) gives
+   * higher luminance contrast vs app-bg. The fallback below covers first
+   * paint before the hook runs. */
+  --color-door-bg: var(--color-header-inactive-bg);
+  --color-door-fg: var(--color-header-inactive-fg);
+
   /* Terminal — xterm.js content, orthogonal to chrome */
   --color-terminal-bg: var(--vscode-terminal-background, var(--vscode-editor-background, #1e1e1e));
   --color-terminal-fg: var(--vscode-terminal-foreground, #cccccc);
