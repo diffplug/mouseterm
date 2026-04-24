@@ -14,7 +14,15 @@ import { createPortal } from 'react-dom';
 import { TerminalPane } from './TerminalPane';
 import { Baseboard } from './Baseboard';
 import { tv } from 'tailwind-variants';
-import { PopupButtonRow, popupButton } from './design';
+import {
+  DOOR_SELECTION_BORDER_RADIUS,
+  PopupButtonRow,
+  TERMINAL_BORDER_RADIUS_PX,
+  TERMINAL_BOTTOM_RADIUS_CLASS,
+  TERMINAL_SELECTION_BORDER_RADIUS,
+  TERMINAL_TOP_RADIUS_CLASS,
+  popupButton,
+} from './design';
 import { HeaderActionButton } from './HeaderActionButton';
 import { TodoAlertDialog } from './TodoAlertDialog';
 import { KILL_CONFIRM_MS, KILL_SHAKE_MS, KillConfirmOverlay, orchestrateKill, randomKillChar, type ConfirmKill } from './KillConfirm';
@@ -87,7 +95,7 @@ export type PondEvent =
 // --- Variants ---
 
 const tabVariant = tv({
-  base: 'flex h-full w-full cursor-grab items-center gap-1.5 rounded-t pl-2 pr-[5px] text-sm leading-none font-mono tracking-normal select-none active:cursor-grabbing',
+  base: `flex h-full w-full cursor-grab items-center gap-1.5 ${TERMINAL_TOP_RADIUS_CLASS} pl-2 pr-[5px] text-sm leading-none font-mono tracking-normal select-none active:cursor-grabbing`,
   variants: {
     state: {
       active: 'bg-header-active-bg text-header-active-fg',
@@ -316,7 +324,7 @@ function TerminalPanel({ api }: IDockviewPanelProps) {
   }, [api, freshlySpawned]);
 
   return (
-    <div ref={elRef} className="h-full w-full overflow-hidden rounded-b-lg bg-terminal-bg" onMouseDown={() => actions.onClickPanel(api.id)}>
+    <div ref={elRef} className={`h-full w-full overflow-hidden bg-terminal-bg ${TERMINAL_BOTTOM_RADIUS_CLASS}`} onMouseDown={() => actions.onClickPanel(api.id)}>
       <TerminalPane id={api.id} isFocused={isFocused} />
     </div>
   );
@@ -637,9 +645,9 @@ export function MarchingAntsRect({ width, height, isDoor, color, paused }: {
   const [dashStyle, setDashStyle] = useState<{ dasharray: string; offset: number } | null>(null);
   const ma = cfg.marchingAnts;
 
-  // Door: rounded top, flat bottom.  Pane: all corners rounded.
-  const r = 8; // ~0.5rem
-  const rDoor = 6; // ~0.375rem
+  // Door: rounded top, flat bottom. Pane: all corners rounded.
+  const r = TERMINAL_BORDER_RADIUS_PX;
+  const rDoor = TERMINAL_BORDER_RADIUS_PX;
   const tl = isDoor ? rDoor : r;
   const tr = isDoor ? rDoor : r;
   const br = isDoor ? 0 : r;
@@ -747,7 +755,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef
   };
 
   if (mode === 'passthrough') {
-    style.borderRadius = isDoor ? '0.375rem 0.375rem 0 0' : '0.5rem';
+    style.borderRadius = isDoor ? DOOR_SELECTION_BORDER_RADIUS : TERMINAL_SELECTION_BORDER_RADIUS;
     style.border = `1px solid ${selectionColor}`;
     return <div ref={overlayElRef} style={style} />;
   }

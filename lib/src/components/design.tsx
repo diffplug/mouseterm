@@ -16,6 +16,18 @@ import type { HTMLAttributes, ReactNode } from 'react';
  * would be 12px and 14px); `text-base` and `text-xl` are stock.
  */
 
+/**
+ * Shared terminal chrome radius. Pane headers/doors own the top corners while
+ * terminal bodies own the bottom corners; keep the CSS and SVG values aligned.
+ */
+export const TERMINAL_BORDER_RADIUS_REM = 0.5;
+export const TERMINAL_BORDER_RADIUS_PX = 8;
+export const TERMINAL_TOP_RADIUS_CLASS = 'rounded-t-lg';
+export const TERMINAL_BOTTOM_RADIUS_CLASS = 'rounded-b-lg';
+export const DOOR_RADIUS_CLASS = TERMINAL_TOP_RADIUS_CLASS;
+export const TERMINAL_SELECTION_BORDER_RADIUS = `${TERMINAL_BORDER_RADIUS_REM}rem`;
+export const DOOR_SELECTION_BORDER_RADIUS = `${TERMINAL_BORDER_RADIUS_REM}rem ${TERMINAL_BORDER_RADIUS_REM}rem 0 0`;
+
 export function PopupButtonRow({
   className,
   ...props

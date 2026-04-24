@@ -2,6 +2,7 @@ import { BellIcon } from '@phosphor-icons/react';
 import type { SessionStatus, TodoState } from '../lib/terminal-registry';
 import { useTodoPillContent } from './TodoPillBody';
 import { bellIconClass } from './bell-icon-class';
+import { DOOR_RADIUS_CLASS } from './design';
 
 export interface DoorProps {
   doorId?: string;
@@ -32,10 +33,9 @@ export function Door({
       data-door-id={doorId}
       className={[
         'relative flex h-6 max-w-[220px] min-w-[68px] items-center gap-2 overflow-hidden px-2.5',
-        'rounded-t-md',
-        'bg-header-inactive-bg text-header-inactive-fg',
+        DOOR_RADIUS_CLASS,
+        'bg-door-bg text-door-fg',
         'text-sm font-medium font-mono tracking-[0.02em]',
-        'transition-colors hover:bg-header-active-bg hover:text-header-active-fg',
       ].join(' ')}
       onClick={onClick}
       title={title}
