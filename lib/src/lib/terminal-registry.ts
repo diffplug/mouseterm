@@ -25,12 +25,12 @@ import { extractSelectionText } from './selection-text';
 export type { SessionStatus } from './activity-monitor';
 export { TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo, isHardTodo, hasTodo, type TodoState, type AlertButtonActionResult } from './alert-manager';
 
-export interface SessionUiState {
+export interface ActivityState {
   status: SessionStatus;
   todo: TodoState;
 }
 
-export const DEFAULT_SESSION_UI_STATE: SessionUiState = {
+export const DEFAULT_ACTIVITY_STATE: ActivityState = {
   status: 'ALERT_DISABLED',
   todo: TODO_OFF,
 };
@@ -54,7 +54,7 @@ interface TerminalEntry {
 
 const registry = new Map<string, TerminalEntry>();
 const pendingShellOpts = new Map<string, { shell?: string; args?: string[] }>();
-const primedSessionStates = new Map<string, Partial<SessionUiState>>();
+const primedActivityStates = new Map<string, Partial<ActivityState>>();
 
 // Re-export from shell-defaults to preserve the public API surface.
 // The actual state lives in shell-defaults.ts to avoid a circular dependency
@@ -83,26 +83,26 @@ function startThemeObserver(): void {
 
 // --- Session state subscription API (for useSyncExternalStore) ---
 
-const sessionStateListeners = new Set<() => void>();
-let cachedSnapshot: Map<string, SessionUiState> | null = null;
+const activityListeners = new Set<() => void>();
+let cachedSnapshot: Map<string, ActivityState> | null = null;
 
-function notifySessionStateListeners(): void {
+function notifyActivityListeners(): void {
   cachedSnapshot = null;
-  sessionStateListeners.forEach((listener) => listener());
+  activityListeners.forEach((listener) => listener());
 }
 
-export function subscribeToSessionStateChanges(listener: () => void): () => void {
-  sessionStateListeners.add(listener);
-  return () => sessionStateListeners.delete(listener);
+export function subscribeToActivity(listener: () => void): () => void {
+  activityListeners.add(listener);
+  return () => activityListeners.delete(listener);
 }
 
-export function getSessionStateSnapshot(): Map<string, SessionUiState> {
+export function getActivitySnapshot(): Map<string, ActivityState> {
   if (cachedSnapshot) return cachedSnapshot;
 
-  const snapshot = new Map<string, SessionUiState>();
-  const ids = new Set<string>([...registry.keys(), ...primedSessionStates.keys()]);
+  const snapshot = new Map<string, ActivityState>();
+  const ids = new Set<string>([...registry.keys(), ...primedActivityStates.keys()]);
   for (const id of ids) {
-    const state = readSessionState(id);
+    const state = readActivity(id);
     if (state) {
       snapshot.set(id, state);
     }
@@ -111,11 +111,11 @@ export function getSessionStateSnapshot(): Map<string, SessionUiState> {
   return snapshot;
 }
 
-export function getSessionState(id: string): SessionUiState {
-  return readSessionState(id) ?? DEFAULT_SESSION_UI_STATE;
+export function getActivity(id: string): ActivityState {
+  return readActivity(id) ?? DEFAULT_ACTIVITY_STATE;
 }
 
-function readLiveSessionState(id: string): SessionUiState | null {
+function readLiveActivity(id: string): ActivityState | null {
   const entry = registry.get(id);
   if (!entry) return null;
 
@@ -125,13 +125,13 @@ function readLiveSessionState(id: string): SessionUiState | null {
   };
 }
 
-function readSessionState(id: string): SessionUiState | null {
-  const primedState = primedSessionStates.get(id);
-  const liveState = readLiveSessionState(id);
+function readActivity(id: string): ActivityState | null {
+  const primedState = primedActivityStates.get(id);
+  const liveState = readLiveActivity(id);
 
   if (!liveState && !primedState) return null;
   return {
-    ...(liveState ?? DEFAULT_SESSION_UI_STATE),
+    ...(liveState ?? DEFAULT_ACTIVITY_STATE),
     ...primedState,
   };
 }
@@ -150,7 +150,7 @@ export function resolveTerminalSessionId(id: string): string {
 }
 
 export function getLivePersistedAlertState(id: string): PersistedAlertState | null {
-  const state = readLiveSessionState(id);
+  const state = readLiveActivity(id);
   if (!state) return null;
   return {
     status: state.status,
@@ -158,21 +158,21 @@ export function getLivePersistedAlertState(id: string): PersistedAlertState | nu
   };
 }
 
-export function primeSessionState(id: string, state: Partial<SessionUiState>): void {
-  primedSessionStates.set(id, state);
-  notifySessionStateListeners();
+export function primeActivity(id: string, state: Partial<ActivityState>): void {
+  primedActivityStates.set(id, state);
+  notifyActivityListeners();
 }
 
-export function clearPrimedSessionState(id?: string): void {
+export function clearPrimedActivity(id?: string): void {
   if (id === undefined) {
-    if (primedSessionStates.size === 0) return;
-    primedSessionStates.clear();
-    notifySessionStateListeners();
+    if (primedActivityStates.size === 0) return;
+    primedActivityStates.clear();
+    notifyActivityListeners();
     return;
   }
 
-  if (!primedSessionStates.delete(id)) return;
-  notifySessionStateListeners();
+  if (!primedActivityStates.delete(id)) return;
+  notifyActivityListeners();
 }
 
 // --- Alert state receiver (from platform's AlertManager) ---
@@ -181,7 +181,7 @@ let currentAlertHandler: ((detail: AlertStateDetail) => void) | null = null;
 
 /**
  * Wire up the platform's alert state events to the local session state store.
- * Call once during startup, before reconnect. Safe to call again after platform reset.
+ * Call once during startup, before resume/restore. Safe to call again after platform reset.
  */
 export function initAlertStateReceiver(): void {
   const platform = getPlatform();
@@ -197,11 +197,11 @@ export function initAlertStateReceiver(): void {
       entry.todo = detail.todo;
       entry.attentionDismissedRing = detail.attentionDismissedRing;
       // Clear any primed state now that we have live data
-      primedSessionStates.delete(detail.id);
-      notifySessionStateListeners();
+      primedActivityStates.delete(detail.id);
+      notifyActivityListeners();
     } else {
       // Terminal entry not created yet — prime the state so it's ready when it is
-      primeSessionState(detail.id, { status: detail.status, todo: detail.todo });
+      primeActivity(detail.id, { status: detail.status, todo: detail.todo });
     }
   };
   platform.onAlertState(currentAlertHandler);
@@ -564,12 +564,12 @@ function setupTerminalEntry(id: string): TerminalEntry {
     attentionDismissedRing: false,
   };
 
-  // Apply any primed alert state (from platform reconnect)
-  const primed = primedSessionStates.get(id);
+  // Apply any primed alert state (from platform resume)
+  const primed = primedActivityStates.get(id);
   if (primed) {
     if (primed.status !== undefined) entry.alertStatus = primed.status;
     if (primed.todo !== undefined) entry.todo = primed.todo;
-    primedSessionStates.delete(id);
+    primedActivityStates.delete(id);
   }
 
   registry.set(id, entry);
@@ -611,10 +611,10 @@ export function getOrCreateTerminal(id: string): TerminalEntry {
 }
 
 /**
- * Reconnect to an existing PTY after the webview is recreated.
+ * Resume an existing PTY after the webview is recreated.
  * Creates the xterm instance and writes replay data, but does NOT spawn a new PTY.
  */
-export function reconnectTerminal(
+export function resumeTerminal(
   id: string,
   replayData: string | null,
   exitInfo?: { alive: boolean; exitCode?: number },
@@ -677,7 +677,7 @@ export function restoreTerminal(
  * Attach a terminal's persistent element to a container div.
  * Call this when the TerminalPane component mounts or reparents.
  */
-export function attachTerminal(id: string, container: HTMLElement): void {
+export function mountElement(id: string, container: HTMLElement): void {
   const entry = registry.get(id);
   if (!entry) return;
   container.appendChild(entry.element);
@@ -686,10 +686,10 @@ export function attachTerminal(id: string, container: HTMLElement): void {
 }
 
 /**
- * Detach a terminal's element from its current container.
+ * Unmount a terminal's element from its current container.
  * The terminal stays alive — just not in the DOM.
  */
-export function detachTerminal(id: string): void {
+export function unmountElement(id: string): void {
   const entry = registry.get(id);
   if (!entry) return;
   entry.element.remove();
@@ -698,16 +698,16 @@ export function detachTerminal(id: string): void {
 /**
  * Destroy all terminals. Used for cleanup between Storybook stories.
  */
-export function destroyAllTerminals(): void {
+export function disposeAllSessions(): void {
   for (const id of [...registry.keys()]) {
-    destroyTerminal(id);
+    disposeSession(id);
   }
 }
 
 /**
  * Permanently destroy a terminal: kill PTY, dispose xterm, remove from registry.
  */
-export function destroyTerminal(id: string): void {
+export function disposeSession(id: string): void {
   const entry = registry.get(id);
   if (!entry) return;
   getPlatform().alertRemove(entry.ptyId);
@@ -717,19 +717,19 @@ export function destroyTerminal(id: string): void {
   entry.terminal.dispose();
   registry.delete(id);
   removeMouseSelectionState(id);
-  notifySessionStateListeners();
+  notifyActivityListeners();
 }
 
 /**
- * Swap two terminals' registry entries. Their DOM elements are detached,
- * entries swapped, and elements reattached to each other's containers.
+ * Swap two terminals' registry entries. Their DOM elements are unmounted,
+ * entries swapped, and elements remounted into each other's containers.
  * The layout stays the same — only the terminal content swaps.
  *
  * Note: after swapping, registry key idA holds the entry that was originally
  * created for idB (and vice versa). The PTY data/exit handlers inside each
  * entry still filter by their original spawn ID, so PTY output continues to
  * route correctly — the PTY doesn't know or care about registry keys.
- * However, destroyTerminal(idA) after a swap will kill the PTY that was
+ * However, disposeSession(idA) after a swap will kill the PTY that was
  * originally spawned as idB. This is correct because the user sees that
  * terminal in slot A and expects "kill A" to kill it.
  */
@@ -742,7 +742,7 @@ export function swapTerminals(idA: string, idB: string): void {
   const containerA = entryA.element.parentElement;
   const containerB = entryB.element.parentElement;
 
-  // Detach both
+  // Unmount both
   entryA.element.remove();
   entryB.element.remove();
 
@@ -760,13 +760,13 @@ export function swapTerminals(idA: string, idB: string): void {
     requestAnimationFrame(() => entryA.fit.fit());
   }
 
-  notifySessionStateListeners();
+  notifyActivityListeners();
 }
 
 /**
  * Refit the terminal to its container. Call after container resize.
  */
-export function refitTerminal(id: string): void {
+export function refitSession(id: string): void {
   const entry = registry.get(id);
   if (!entry) return;
   entry.fit.fit();
@@ -847,7 +847,7 @@ export function getTerminalOverlayDims(id: string): TerminalOverlayDims | null {
 /**
  * Focus or blur the terminal.
  */
-export function focusTerminal(id: string, focused: boolean): void {
+export function focusSession(id: string, focused: boolean): void {
   const entry = registry.get(id);
   if (!entry) return;
 

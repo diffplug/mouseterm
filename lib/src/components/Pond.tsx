@@ -32,18 +32,18 @@ import {
   type AlertButtonActionResult,
   clearSessionAttention,
   clearSessionTodo,
-  DEFAULT_SESSION_UI_STATE,
+  DEFAULT_ACTIVITY_STATE,
   disableSessionAlert,
   dismissOrToggleAlert,
-  focusTerminal,
-  getSessionState,
-  getSessionStateSnapshot,
+  focusSession,
+  getActivity,
+  getActivitySnapshot,
   markSessionAttention,
   markSessionTodo,
-  subscribeToSessionStateChanges,
+  subscribeToActivity,
   toggleSessionAlert,
   toggleSessionTodo,
-  destroyTerminal,
+  disposeSession,
   swapTerminals,
   setPendingShellOpts,
   getDefaultShellOpts,
@@ -52,11 +52,11 @@ import {
   isHardTodo,
   TODO_OFF,
 } from '../lib/terminal-registry';
-import { resolvePanelElement, findPanelInDirection, findRestoreNeighbor, type DetachDirection } from '../lib/spatial-nav';
+import { resolvePanelElement, findPanelInDirection, findReattachNeighbor } from '../lib/spatial-nav';
 import { cloneLayout, getLayoutStructureSignature } from '../lib/layout-snapshot';
 import { getPlatform } from '../lib/platform';
 import { saveSession } from '../lib/session-save';
-import type { PersistedDetachedItem } from '../lib/session-types';
+import type { PersistedDoor } from '../lib/session-types';
 import { cfg } from '../cfg';
 import { bellIconClass } from './bell-icon-class';
 import { useTodoPillContent } from './TodoPillBody';
@@ -75,22 +75,9 @@ let dialogKeyboardActive = false;
 
 // --- Types ---
 
-export interface DetachedItem {
-  id: string;
-  title: string;
-  neighborId: string | null;       // panel that was adjacent before detach
-  direction: DetachDirection;       // where we were relative to that neighbor
-  remainingPanelIds: string[];      // sorted panel IDs after detach (for layout-changed check)
-  restoreLayout: SerializedDockview | null;
-  detachedLayoutSignature: string;
-}
-
-function toDetachedItem(item: PersistedDetachedItem): DetachedItem {
-  return {
-    ...item,
-    restoreLayout: item.restoreLayout as SerializedDockview | null,
-  };
-}
+export type DooredItem = Omit<PersistedDoor, 'layoutAtMinimize'> & {
+  layoutAtMinimize: SerializedDockview | null;
+};
 
 interface ConfirmKill {
   id: string;
@@ -100,12 +87,14 @@ interface ConfirmKill {
 
 export type PondMode = 'command' | 'passthrough';
 
+export type PondSelectionKind = 'pane' | 'door';
+
 export type PondEvent =
   | { type: 'modeChange'; mode: PondMode }
   | { type: 'zoomChange'; zoomed: boolean }
-  | { type: 'detachChange'; count: number }
+  | { type: 'minimizeChange'; count: number }
   | { type: 'split'; direction: 'horizontal' | 'vertical'; source: 'keyboard' | 'mouse' }
-  | { type: 'selectionChange'; id: string | null; kind: 'pane' | 'door' };
+  | { type: 'selectionChange'; id: string | null; kind: PondSelectionKind };
 
 // --- Variants ---
 
@@ -372,9 +361,9 @@ function TodoAlertDialog({
   sessionId: string;
   onClose: () => void;
 }) {
-  const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
-  const sessionState = sessionStates.get(sessionId) ?? DEFAULT_SESSION_UI_STATE;
-  const alertEnabled = sessionState.status !== 'ALERT_DISABLED';
+  const activityStates = useSyncExternalStore(subscribeToActivity, getActivitySnapshot);
+  const activity = activityStates.get(sessionId) ?? DEFAULT_ACTIVITY_STATE;
+  const alertEnabled = activity.status !== 'ALERT_DISABLED';
   const dialogRef = useRef<HTMLDivElement>(null);
 
   usePopoverFocusTrap(dialogRef, onClose, `[data-alert-button-for="${sessionId}"]`);
@@ -393,7 +382,7 @@ function TodoAlertDialog({
       if (e.key === 'a') {
         e.preventDefault();
         e.stopImmediatePropagation();
-        dismissOrToggleAlert(sessionId, getSessionState(sessionId).status);
+        dismissOrToggleAlert(sessionId, getActivity(sessionId).status);
       }
       if (e.key === 't') {
         e.preventDefault();
@@ -429,12 +418,12 @@ function TodoAlertDialog({
         <span className="text-[10px] font-mono text-muted">[t]</span>
         <span className="text-[11px] text-foreground font-medium w-10">TODO</span>
         <div className="flex gap-1 ml-auto">
-          <button type="button" className={toggleBtn(isHardTodo(sessionState.todo))}
-            onClick={() => { if (!isHardTodo(sessionState.todo)) markSessionTodo(sessionId); }}>
+          <button type="button" className={toggleBtn(isHardTodo(activity.todo))}
+            onClick={() => { if (!isHardTodo(activity.todo)) markSessionTodo(sessionId); }}>
             hard
           </button>
-          <button type="button" className={toggleBtn(sessionState.todo === TODO_OFF)}
-            onClick={() => { if (sessionState.todo !== TODO_OFF) clearSessionTodo(sessionId); }}>
+          <button type="button" className={toggleBtn(activity.todo === TODO_OFF)}
+            onClick={() => { if (activity.todo !== TODO_OFF) clearSessionTodo(sessionId); }}>
             off
           </button>
         </div>
@@ -495,7 +484,7 @@ export const DoorElementsContext = createContext<PanelElementsState>({
 
 export interface PondActions {
   onKill: (id: string) => void;
-  onDetach: (id: string) => void;
+  onMinimize: (id: string) => void;
   onAlertButton: (id: string, displayedStatus: SessionStatus) => AlertButtonActionResult;
   onToggleTodo: (id: string) => void;
   onSplitH: (id: string | null, source?: 'keyboard' | 'mouse') => void;
@@ -508,7 +497,7 @@ export interface PondActions {
 }
 export const PondActionsContext = createContext<PondActions>({
   onKill: () => {},
-  onDetach: () => {},
+  onMinimize: () => {},
   onAlertButton: () => 'noop',
   onToggleTodo: () => {},
   onSplitH: () => {},
@@ -616,10 +605,10 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const renamingId = useContext(RenamingIdContext);
   const zoomed = useContext(ZoomedContext);
   const windowFocused = useContext(WindowFocusedContext);
-  const sessionStates = useSyncExternalStore(subscribeToSessionStateChanges, getSessionStateSnapshot);
+  const activityStates = useSyncExternalStore(subscribeToActivity, getActivitySnapshot);
   const mouseStates = useSyncExternalStore(subscribeToMouseSelection, getMouseSelectionSnapshot);
   const actions = useContext(PondActionsContext);
-  const sessionState = sessionStates.get(api.id) ?? DEFAULT_SESSION_UI_STATE;
+  const activity = activityStates.get(api.id) ?? DEFAULT_ACTIVITY_STATE;
   const mouseState = mouseStates.get(api.id) ?? DEFAULT_MOUSE_SELECTION_STATE;
   const showMouseIcon = mouseState.mouseReporting !== 'none';
   const inOverride = mouseState.override !== 'off';
@@ -635,19 +624,19 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const suppressAlertClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
   const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number } | null>(null);
-  const todoPill = useTodoPillContent(sessionState.todo);
+  const todoPill = useTodoPillContent(activity.todo);
   const showTodoPill = todoPill.visible && tier !== 'minimal';
-  const alertButtonAriaLabel = sessionState.status === 'ALERT_RINGING'
+  const alertButtonAriaLabel = activity.status === 'ALERT_RINGING'
     ? 'Alert ringing'
-    : sessionState.status === 'ALERT_DISABLED'
+    : activity.status === 'ALERT_DISABLED'
       ? 'Enable alert'
       : 'Disable alert';
-  const alertButtonTooltip = sessionState.status === 'ALERT_RINGING'
+  const alertButtonTooltip = activity.status === 'ALERT_RINGING'
     ? 'Alert ringing'
-    : sessionState.status === 'ALERT_DISABLED'
+    : activity.status === 'ALERT_DISABLED'
       ? 'Enable [a]lert'
       : 'Disable [a]lert';
-  const alertButtonTooltipDetail = sessionState.status === 'ALERT_RINGING'
+  const alertButtonTooltipDetail = activity.status === 'ALERT_RINGING'
     ? 'Click to dismiss and show options'
     : 'Right-click for options';
 
@@ -713,7 +702,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         <HeaderActionButton
           className={[
             'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 hover:bg-foreground/10',
-            sessionState.status === 'ALERT_RINGING'
+            activity.status === 'ALERT_RINGING'
               ? 'text-warning'
               : 'text-muted hover:text-foreground',
           ].join(' ')}
@@ -723,14 +712,14 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             e.preventDefault();
             e.stopPropagation();
             e.nativeEvent.stopImmediatePropagation?.();
-            triggerAlertButtonAction(sessionState.status, e.currentTarget);
+            triggerAlertButtonAction(activity.status, e.currentTarget);
           }}
           onClick={(e) => {
             if (suppressAlertClickRef.current) {
               suppressAlertClickRef.current = false;
               return;
             }
-            triggerAlertButtonAction(sessionState.status, e.currentTarget);
+            triggerAlertButtonAction(activity.status, e.currentTarget);
           }}
           onContextMenu={(e) => { e.preventDefault(); setDialogPosition({ x: e.clientX, y: e.clientY }); }}
           ariaLabel={alertButtonAriaLabel}
@@ -740,10 +729,10 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           dataAlertButtonFor={api.id}
         >
           <span className="flex items-center justify-center">
-            {sessionState.status === 'ALERT_DISABLED' ? (
+            {activity.status === 'ALERT_DISABLED' ? (
               <BellSlashIcon size={14} />
             ) : (
-              <BellIcon size={14} weight="fill" className={bellIconClass(sessionState.status)} />
+              <BellIcon size={14} weight="fill" className={bellIconClass(activity.status)} />
             )}
           </span>
         </HeaderActionButton>
@@ -761,7 +750,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
               data-session-todo-for={api.id}
               className={[
                 'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10',
-                isSoftTodo(sessionState.todo) ? 'border border-dashed border-muted' : 'border border-muted',
+                isSoftTodo(activity.todo) ? 'border border-dashed border-muted' : 'border border-muted',
               ].join(' ')}
               aria-label="TODO settings"
               onMouseDown={(e) => e.stopPropagation()}
@@ -830,11 +819,11 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
               >{zoomed ? <ArrowsInIcon size={14} /> : <ArrowsOutIcon size={14} />}</HeaderActionButton>
             </div>
           )}
-          {/* Detach / Kill controls — always visible */}
+          {/* Minimize / Kill controls — always visible */}
           <div className="ml-1 flex shrink-0 items-center gap-0.5">
             <HeaderActionButton
               className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
-              onClick={(e) => { e.stopPropagation(); actions.onDetach(api.id); }}
+              onClick={(e) => { e.stopPropagation(); actions.onMinimize(api.id); }}
               ariaLabel="Minimize"
               tooltip="Minimize [m] or [d]"
             ><ArrowLineDownIcon size={14} /></HeaderActionButton>
@@ -980,7 +969,7 @@ export function MarchingAntsRect({ width, height, isDoor, color, paused }: {
 function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef }: {
   apiRef: React.RefObject<DockviewApi | null>;
   selectedId: string | null;
-  selectedType: 'pane' | 'door';
+  selectedType: PondSelectionKind;
   mode: PondMode;
   overlayElRef?: React.RefObject<HTMLDivElement | null>;
 }) {
@@ -1002,7 +991,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef
         ? doorElements.get(selectedId)
         : resolvePanelElement(panelElements.get(selectedId));
       // Keep stale rect while the element is temporarily missing (e.g. during
-      // detach → door transition) so the overlay stays mounted and can animate.
+      // minimize → door transition) so the overlay stays mounted and can animate.
       if (!targetEl) return;
 
       const targetRect = targetEl.getBoundingClientRect();
@@ -1152,7 +1141,7 @@ function orchestrateKill(
 
   const bareRemove = () => {
     killInProgressRef.current = true;
-    destroyTerminal(killedId);
+    disposeSession(killedId);
     api.removePanel(panel);
     killInProgressRef.current = false;
     if (api.panels.length > 0) selectPanel(api.panels[0].id);
@@ -1248,14 +1237,14 @@ function orchestrateKill(
 export function Pond({
   initialPaneIds,
   restoredLayout,
-  initialDetached,
+  initialDoors,
   onApiReady,
   onEvent,
   baseboardNotice,
 }: {
   initialPaneIds?: string[];
   restoredLayout?: unknown;
-  initialDetached?: PersistedDetachedItem[];
+  initialDoors?: PersistedDoor[];
   onApiReady?: (api: DockviewApi) => void;
   onEvent?: (event: PondEvent) => void;
   baseboardNotice?: React.ReactNode;
@@ -1287,7 +1276,7 @@ export function Pond({
   // Consumed once in handleReady to restore existing sessions
   const initialPaneIdsRef = useRef(initialPaneIds);
   const restoredLayoutRef = useRef(restoredLayout);
-  const initialDetachedRef = useRef((initialDetached ?? []).map(toDetachedItem));
+  const initialDoorsRef = useRef((initialDoors ?? []) as DooredItem[]);
 
   // Mutable maps shared via context — consumers must call bumpVersion() after
   // any mutation so that dependent effects/components re-run.
@@ -1307,7 +1296,7 @@ export function Pond({
   // We own these — dockview is just for spatial layout and DnD
   const [mode, setMode] = useState<PondMode>('command');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<'pane' | 'door'>('pane');
+  const [selectedType, setSelectedType] = useState<PondSelectionKind>('pane');
 
   const windowFocused = useWindowFocused();
 
@@ -1315,7 +1304,7 @@ export function Pond({
   const [confirmKill, setConfirmKill] = useState<ConfirmKill | null>(null);
   useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
   const [renamingPaneId, setRenamingPaneId] = useState<string | null>(null);
-  const [detached, setDetached] = useState<DetachedItem[]>(() => (initialDetached ?? []).map(toDetachedItem));
+  const [doors, setDoors] = useState<DooredItem[]>(() => (initialDoors ?? []) as DooredItem[]);
   const [zoomed, setZoomed] = useState(false);
 
   // Refs for mode-switch gesture (Left Cmd → Right Cmd, or Left Shift → Right Shift, within 500ms)
@@ -1334,8 +1323,8 @@ export function Pond({
   selectedIdRef.current = selectedId;
   const selectedTypeRef = useRef(selectedType);
   selectedTypeRef.current = selectedType;
-  const detachedRef = useRef(detached);
-  detachedRef.current = detached;
+  const doorsRef = useRef(doors);
+  doorsRef.current = doors;
   const confirmKillRef = useRef(confirmKill);
   confirmKillRef.current = confirmKill;
   const renamingRef = useRef(renamingPaneId);
@@ -1350,7 +1339,7 @@ export function Pond({
 
   useEffect(() => { onEventRef.current?.({ type: 'modeChange', mode }); }, [mode]);
   useEffect(() => { onEventRef.current?.({ type: 'zoomChange', zoomed }); }, [zoomed]);
-  useEffect(() => { onEventRef.current?.({ type: 'detachChange', count: detached.length }); }, [detached]);
+  useEffect(() => { onEventRef.current?.({ type: 'minimizeChange', count: doors.length }); }, [doors]);
   useEffect(() => { onEventRef.current?.({ type: 'selectionChange', id: selectedId, kind: selectedType }); }, [selectedId, selectedType]);
 
   // --- Helpers ---
@@ -1362,16 +1351,7 @@ export function Pond({
     if (!api) return Promise.resolve();
 
     const panes = api.panels.map((p) => ({ id: p.id, title: p.title ?? '<unnamed>' }));
-    const detachedItems: PersistedDetachedItem[] = detachedRef.current.map((item) => ({
-      id: item.id,
-      title: item.title,
-      neighborId: item.neighborId,
-      direction: item.direction,
-      remainingPanelIds: item.remainingPanelIds,
-      restoreLayout: item.restoreLayout,
-      detachedLayoutSignature: item.detachedLayoutSignature,
-    }));
-    return saveSession(getPlatform(), api.toJSON(), panes, detachedItems);
+    return saveSession(getPlatform(), api.toJSON(), panes, doorsRef.current);
   }, []);
 
   const persistSessionNow = useCallback((): Promise<void> => {
@@ -1448,47 +1428,47 @@ export function Pond({
     markSessionAttention(id);
     // Defer focus so it happens after mousedown/click event finishes,
     // preventing dockview from stealing focus back from xterm
-    requestAnimationFrame(() => focusTerminal(id, true));
+    requestAnimationFrame(() => focusSession(id, true));
     const panel = apiRef.current?.getPanel(id);
     if (panel) panel.api.setActive();
   }, []);
   const enterTerminalModeRef = useRef(enterTerminalMode);
   enterTerminalModeRef.current = enterTerminalMode;
 
-  /** Detach a panel: capture neighbor context, remove from dockview, add to detached state */
-  const detachPanel = useCallback((id: string) => {
+  /** Minimize a pane: capture neighbor context, remove from dockview, add to doors state */
+  const minimizePane = useCallback((id: string) => {
     const api = apiRef.current;
     if (!api) return;
     const panel = api.getPanel(id);
     if (!panel) return;
     const title = panel.title ?? id;
-    const restoreLayout = cloneLayout(api.toJSON());
+    const layoutAtMinimize = cloneLayout(api.toJSON());
 
     // Capture the nearest adjacent pane and our actual relative position
     // so immediate restore can reconstruct the original split precisely.
-    const { neighborId, direction } = findRestoreNeighbor(id, api, panelElements);
+    const { neighborId, direction } = findReattachNeighbor(id, api, panelElements);
 
-    const remainingPanelIds = api.panels
+    const remainingPaneIds = api.panels
       .filter(p => p.id !== id)
       .map(p => p.id)
       .sort();
 
     api.removePanel(panel);
     clearSessionAttention(id);
-    const detachedLayoutSignature = getLayoutStructureSignature(api.toJSON());
-    const nextDetached = [...detachedRef.current, {
+    const layoutAtMinimizeSignature = getLayoutStructureSignature(api.toJSON());
+    const nextDoors = [...doorsRef.current, {
       id,
       title,
       neighborId,
       direction,
-      remainingPanelIds,
-      restoreLayout,
-      detachedLayoutSignature,
+      remainingPaneIds,
+      layoutAtMinimize,
+      layoutAtMinimizeSignature,
     }];
-    detachedRef.current = nextDetached;
-    setDetached(nextDetached);
+    doorsRef.current = nextDoors;
+    setDoors(nextDoors);
 
-    // Keep the detached terminal selected as a door so the user can track where it went.
+    // Keep the minimized session selected as a door so the user can track where it went.
     modeRef.current = 'command';
     setMode('command');
     selectDoor(id);
@@ -1499,7 +1479,7 @@ export function Pond({
     modeRef.current = 'command';
     setMode('command');
     const id = selectedIdRef.current;
-    if (id) focusTerminal(id, false);
+    if (id) focusSession(id, false);
   }, []);
 
   useEffect(() => {
@@ -1517,15 +1497,15 @@ export function Pond({
     // Restore existing PTY sessions if available
     const restored = initialPaneIdsRef.current;
     const layout = restoredLayoutRef.current;
-    const restoredDetached = initialDetachedRef.current;
+    const restoredDoors = initialDoorsRef.current;
     initialPaneIdsRef.current = undefined; // consume once
     restoredLayoutRef.current = undefined;
-    initialDetachedRef.current = [];
-    detachedRef.current = restoredDetached;
-    setDetached(restoredDetached);
+    initialDoorsRef.current = [];
+    doorsRef.current = restoredDoors;
+    setDoors(restoredDoors);
 
-    // Apply the currently-selected shell to a freshly-added panel. Panels
-    // that are reconnecting to an existing PTY already have a running shell,
+    // Apply the currently-selected shell to a freshly-added pane. Panes
+    // that are resuming over an existing PTY already have a running shell,
     // so their pendingShellOpts are never consumed — only first-time spawns
     // use this.
     const addTerminalPanel = (id: string) => {
@@ -1557,7 +1537,7 @@ export function Pond({
         setSelectedId(restored[0]);
       }
     } else {
-      // Reconnect or fresh start: create panels from IDs
+      // Resume/restore or fresh start: create panels from IDs
       const paneIds = restored && restored.length > 0
         ? restored
         : [generatePaneId()];
@@ -1617,7 +1597,7 @@ export function Pond({
       if (panel) {
         // Dockview auto-activates a panel on addPanel. Don't let that steal
         // selection away from a currently-selected door (happens when the last
-        // pane is detached: selectDoor runs, then the delayed auto-spawn's
+        // pane is minimized: selectDoor runs, then the delayed auto-spawn's
         // addPanel would otherwise flip selectedId to the new pane's id while
         // selectedType is still 'door', desyncing the door's highlight).
         if (selectedTypeRef.current === 'door') return;
@@ -1630,9 +1610,9 @@ export function Pond({
     });
 
     // Always keep one pane visible: when the last visible pane is removed (killed
-    // or detached), spawn a fresh one — regardless of whether doors exist.
+    // or minimized), spawn a fresh one — regardless of whether doors exist.
     //
-    // Delay the spawn by the kill/detach animation duration so the two animations
+    // Delay the spawn by the kill/minimize animation duration so the two animations
     // don't overlap — the outgoing pane crushes/fades first, then the new pane
     // reveals from the top-left. If anything restores a pane in the meantime
     // (e.g. door reattach), the delayed spawn becomes a no-op.
@@ -1648,8 +1628,8 @@ export function Pond({
         freshlySpawnedRef.current.set(id, 'top-left');
         e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
         // Only steal focus if nothing is selected (i.e., the kill path, which
-        // clears selection). On detach the just-detached door is selected and we
-        // must not override that — the door retains focus per the detach UX.
+        // clears selection). On minimize the new door is selected and we
+        // must not override that — the door retains focus per the minimize UX.
         if (selectedIdRef.current === null) {
           selectPanel(id);
         }
@@ -1870,7 +1850,7 @@ export function Pond({
         e.preventDefault();
         e.stopPropagation();
         if (selectedTypeRef.current === 'door') {
-          const item = detachedRef.current.find(d => d.id === sid);
+          const item = doorsRef.current.find(d => d.id === sid);
           if (item) handleReattachRef.current(item);
         } else {
           enterTerminalMode(sid);
@@ -1936,7 +1916,7 @@ export function Pond({
         e.preventDefault();
         e.stopPropagation();
         if (selectedTypeRef.current === 'door') {
-          const item = detachedRef.current.find(d => d.id === sid);
+          const item = doorsRef.current.find(d => d.id === sid);
           if (item) handleReattachRef.current(item, { enterPassthrough: false, confirmKill: true });
           return;
         }
@@ -1953,15 +1933,15 @@ export function Pond({
         return;
       }
 
-      // Detach (pane) / Reattach (door) — "m" or "d" toggles detach state
+      // Minimize (pane) / Reattach (door) — "m" or "d" toggles View state
       if ((e.key === 'm' || e.key === 'd') && sid) {
         e.preventDefault();
         e.stopPropagation();
         if (selectedTypeRef.current === 'door') {
-          const item = detachedRef.current.find(d => d.id === sid);
+          const item = doorsRef.current.find(d => d.id === sid);
           if (item) handleReattachRef.current(item, { enterPassthrough: false });
         } else {
-          detachPanel(sid);
+          minimizePane(sid);
         }
         return;
       }
@@ -1978,7 +1958,7 @@ export function Pond({
         if (dialogKeyboardActive) return;
         e.preventDefault();
         e.stopPropagation();
-        dismissOrToggleAlert(sid, getSessionState(sid).status);
+        dismissOrToggleAlert(sid, getActivity(sid).status);
         return;
       }
 
@@ -1998,7 +1978,7 @@ export function Pond({
 
         const dir = e.key;
         const currentType = selectedTypeRef.current;
-        const currentDetached = detachedRef.current;
+        const currentDoors = doorsRef.current;
 
         // Navigation from a door
         if (currentType === 'door') {
@@ -2010,11 +1990,11 @@ export function Pond({
             return;
           }
           // Left/Right between doors
-          const doorIdx = currentDetached.findIndex(d => d.id === sid);
+          const doorIdx = currentDoors.findIndex(d => d.id === sid);
           if (dir === 'ArrowLeft' && doorIdx > 0) {
-            selectDoor(currentDetached[doorIdx - 1].id);
-          } else if (dir === 'ArrowRight' && doorIdx < currentDetached.length - 1) {
-            selectDoor(currentDetached[doorIdx + 1].id);
+            selectDoor(currentDoors[doorIdx - 1].id);
+          } else if (dir === 'ArrowRight' && doorIdx < currentDoors.length - 1) {
+            selectDoor(currentDoors[doorIdx + 1].id);
           }
           return;
         }
@@ -2032,9 +2012,9 @@ export function Pond({
         if (targetId) {
           navHistory.current = { direction: dir, fromId: sid };
           selectPanel(targetId);
-        } else if (dir === 'ArrowDown' && currentDetached.length > 0) {
+        } else if (dir === 'ArrowDown' && currentDoors.length > 0) {
           // No pane below — move to first door in baseboard
-          selectDoor(currentDetached[0].id);
+          selectDoor(currentDoors[0].id);
         }
         return;
       }
@@ -2043,12 +2023,12 @@ export function Pond({
     // capture: true so we intercept before xterm.js gets the event
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [selectPanel, selectDoor, enterTerminalMode, exitTerminalMode, detachPanel]);
+  }, [selectPanel, selectDoor, enterTerminalMode, exitTerminalMode, minimizePane]);
 
   // --- Reattach ---
 
   const handleReattach = useCallback((
-    item: DetachedItem,
+    item: DooredItem,
     options?: { enterPassthrough?: boolean; confirmKill?: boolean },
   ) => {
     const api = apiRef.current;
@@ -2057,27 +2037,27 @@ export function Pond({
     const confirmKillAfterRestore = options?.confirmKill ?? false;
 
     const currentLayoutSignature = getLayoutStructureSignature(api.toJSON());
-    // Exact restore is only safe when the layout structure matches AND the
-    // current panels are the same ones that existed when we detached. If new
-    // panels were auto-spawned (e.g. last pane detached → auto-create), the
-    // restoreLayout would destroy them.
-    const currentPanelIds = api.panels.map(p => p.id).sort();
-    const restorePanelIds = item.restoreLayout
-      ? Object.keys(item.restoreLayout.panels).filter(id => id !== item.id).sort()
+    // Exact reattach is only safe when the layout structure matches AND the
+    // current panes are the same ones that existed when we minimized. If new
+    // panes were auto-spawned (e.g. last pane minimized → auto-create), the
+    // layoutAtMinimize would destroy them.
+    const currentPaneIds = api.panels.map(p => p.id).sort();
+    const reattachPaneIds = item.layoutAtMinimize
+      ? Object.keys(item.layoutAtMinimize.panels).filter(id => id !== item.id).sort()
       : [];
-    const canRestoreExactLayout =
-      !!item.restoreLayout &&
-      currentLayoutSignature === item.detachedLayoutSignature &&
-      idsMatch(currentPanelIds, restorePanelIds);
+    const canReattachExactLayout =
+      !!item.layoutAtMinimize &&
+      currentLayoutSignature === item.layoutAtMinimizeSignature &&
+      idsMatch(currentPaneIds, reattachPaneIds);
 
-    if (canRestoreExactLayout) {
+    if (canReattachExactLayout) {
       const currentTitles = new Map(
         api.panels.map(panel => [panel.id, panel.title ?? panel.id] as const),
       );
 
       // reuseExistingPanels: keep existing panel component instances mounted
       // rather than destroying and recreating them during deserialization.
-      api.fromJSON(cloneLayout(item.restoreLayout!), { reuseExistingPanels: true });
+      api.fromJSON(cloneLayout(item.layoutAtMinimize!), { reuseExistingPanels: true });
 
       for (const [panelId, title] of currentTitles) {
         if (panelId === item.id) continue;
@@ -2088,7 +2068,7 @@ export function Pond({
       const layoutUnchanged =
         item.neighborId &&
         api.getPanel(item.neighborId) &&
-        idsMatch(currentIds, item.remainingPanelIds);
+        idsMatch(currentIds, item.remainingPaneIds);
 
       if (layoutUnchanged) {
         // Restore to original position next to the same neighbor
@@ -2117,9 +2097,9 @@ export function Pond({
       }
     }
 
-    const nextDetached = detachedRef.current.filter(p => p.id !== item.id);
-    detachedRef.current = nextDetached;
-    setDetached(nextDetached);
+    const nextDoors = doorsRef.current.filter(p => p.id !== item.id);
+    doorsRef.current = nextDoors;
+    setDoors(nextDoors);
     selectPanel(item.id);
     if (enterPassthrough) {
       enterTerminalMode(item.id);
@@ -2129,7 +2109,7 @@ export function Pond({
       requestAnimationFrame(() => {
         // Guard against panel removal between scheduling and execution
         if (!apiRef.current?.getPanel(item.id)) return;
-        focusTerminal(item.id, false);
+        focusSession(item.id, false);
         if (confirmKillAfterRestore) {
           setConfirmKill({ id: item.id, char: randomKillChar() });
         }
@@ -2213,8 +2193,8 @@ export function Pond({
     onToggleTodo: (id: string) => {
       toggleSessionTodo(id);
     },
-    onDetach: (id: string) => {
-      detachPanel(id);
+    onMinimize: (id: string) => {
+      minimizePane(id);
     },
     onSplitH: (id: string | null, source: 'keyboard' | 'mouse' = 'mouse') => {
       addSplitPanel(id, 'right', 'horizontal', source);
@@ -2250,7 +2230,7 @@ export function Pond({
     onCancelRename: () => {
       setRenamingPaneId(null);
     },
-  }), [addSplitPanel, detachPanel, enterTerminalMode, exitTerminalMode]);
+  }), [addSplitPanel, minimizePane, enterTerminalMode, exitTerminalMode]);
   const pondActionsRef = useRef(pondActions);
   pondActionsRef.current = pondActions;
 
@@ -2282,7 +2262,7 @@ export function Pond({
             </div>
 
             {/* Baseboard — always visible */}
-            <Baseboard items={detached} activeId={selectedType === 'door' ? selectedId : null} onReattach={handleReattach} notice={baseboardNotice} />
+            <Baseboard items={doors} activeId={selectedType === 'door' ? selectedId : null} onReattach={handleReattach} notice={baseboardNotice} />
 
             {/* Kill confirmation overlay — centered over the pane being killed */}
             {confirmKill && (

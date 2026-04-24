@@ -262,7 +262,7 @@ export function attachRouter(
               claim(pane.id);
             }
             if (pane.alert) {
-              alertManager.restore(pane.id, pane.alert);
+              alertManager.seed(pane.id, pane.alert);
             }
           }
         }

@@ -1,36 +1,36 @@
 import type { PlatformAdapter, PtyInfo } from './platform/types';
-import { reconnectTerminal } from './terminal-registry';
-import type { PersistedDetachedItem, PersistedSession } from './session-types';
+import { resumeTerminal } from './terminal-registry';
+import { readPersistedSession, type PersistedDoor } from './session-types';
 import { restoreSession } from './session-restore';
 
 export interface ReconnectResult {
   paneIds: string[];
   layout?: unknown; // dockview SerializedDockview, only present on cold-start restore
-  detached?: PersistedDetachedItem[];
+  doors?: PersistedDoor[];
 }
 
 /**
- * Attempt to reconnect to live PTYs, or restore from saved session.
+ * Resume over live PTYs, or cold-restore from saved session.
  *
  * Priority:
- * 1. Live PTYs (webview was hidden/shown) → reconnect with replay data
+ * 1. Live PTYs (webview was hidden/shown) → resume with replay data
  * 2. Saved session (app restarted) → restore with saved scrollback + cwd
  * 3. Neither → return empty (Pond creates a fresh terminal)
  */
-export async function reconnectFromInit(platform: PlatformAdapter): Promise<ReconnectResult> {
-  // First, try to reconnect to live PTYs
-  const liveResult = await reconnectLivePtys(platform);
-  if (liveResult.paneIds.length > 0) return liveResult;
+export async function resumeOrRestore(platform: PlatformAdapter): Promise<ReconnectResult> {
+  // First, try to resume over live PTYs
+  const liveResult = await resumeLiveSessions(platform);
+  if (liveResult) return liveResult;
 
-  // No live PTYs — try saved session restore
+  // No live PTYs — try cold restore
   const restored = await restoreSession(platform);
   if (restored) return restored;
 
   return { paneIds: [] };
 }
 
-function reconnectLivePtys(platform: PlatformAdapter): Promise<ReconnectResult> {
-  return new Promise<ReconnectResult>((resolve) => {
+function resumeLiveSessions(platform: PlatformAdapter): Promise<ReconnectResult | null> {
+  return new Promise<ReconnectResult | null>((resolve) => {
     const replayBuffer = new Map<string, string>();
     let ptyList: PtyInfo[] | null = null;
 
@@ -59,28 +59,28 @@ function reconnectLivePtys(platform: PlatformAdapter): Promise<ReconnectResult> 
       platform.offPtyReplay(handleReplay);
 
       if (!ptyList || ptyList.length === 0) {
-        resolve({ paneIds: [] });
+        resolve(null);
         return;
       }
 
       const ids: string[] = [];
       for (const pty of ptyList) {
-        reconnectTerminal(pty.id, replayBuffer.get(pty.id) ?? null, {
+        resumeTerminal(pty.id, replayBuffer.get(pty.id) ?? null, {
           alive: pty.alive,
           exitCode: pty.exitCode,
         });
         ids.push(pty.id);
       }
-      // Pull saved visible/detached state so reconnect (e.g. after panel
+      // Pull saved visible/doors state so a resume (e.g. after panel
       // close/reopen) restores splits and doors instead of stacking every live
       // PTY into one tab group.
-      const savedPlan = getSavedLiveReconnectPlan(platform.getState(), ids);
+      const savedPlan = getSavedResumePlan(platform.getState(), ids);
       if (savedPlan) {
         resolve(savedPlan);
         return;
       }
 
-      resolve({ paneIds: ids, detached: [] });
+      resolve({ paneIds: ids, doors: [] });
     }
 
     platform.onPtyList(handleList);
@@ -89,21 +89,21 @@ function reconnectLivePtys(platform: PlatformAdapter): Promise<ReconnectResult> 
   });
 }
 
-function getSavedLiveReconnectPlan(savedState: unknown, liveIds: string[]): ReconnectResult | null {
-  const saved = savedState as PersistedSession | null;
-  if (!saved || saved.version !== 1 || !Array.isArray(saved.panes)) return null;
+function getSavedResumePlan(savedState: unknown, liveIds: string[]): ReconnectResult | null {
+  const saved = readPersistedSession(savedState);
+  if (!saved || !Array.isArray(saved.panes)) return null;
 
-  // Reuse persisted visible/detached state only when every live PTY is covered
+  // Reuse persisted visible/doors state only when every live PTY is covered
   // by the saved session. Extra saved panes can be stale, but extra live panes
   // have no reliable saved layout position.
   const liveSet = new Set(liveIds);
   const savedSet = new Set(saved.panes.map((p) => p.id));
   if (!liveIds.every((id) => savedSet.has(id))) return null;
 
-  const detached = (saved.detached ?? []).filter((item) => liveSet.has(item.id));
-  const detachedIds = new Set(detached.map((item) => item.id));
+  const doors = (saved.doors ?? []).filter((item) => liveSet.has(item.id));
+  const doorIds = new Set(doors.map((item) => item.id));
   const paneIds = saved.panes
-    .filter((pane) => liveSet.has(pane.id) && !detachedIds.has(pane.id))
+    .filter((pane) => liveSet.has(pane.id) && !doorIds.has(pane.id))
     .map((pane) => pane.id);
   const layoutPanelIds = getLayoutPanelIds(saved.layout);
   const layoutMatchesVisiblePanes =
@@ -113,7 +113,7 @@ function getSavedLiveReconnectPlan(savedState: unknown, liveIds: string[]): Reco
 
   return {
     paneIds,
-    detached,
+    doors,
     layout: layoutMatchesVisiblePanes ? saved.layout : undefined,
   };
 }

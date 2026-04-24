@@ -3,16 +3,16 @@ import type { PlatformAdapter, PtyInfo } from './platform/types';
 import type { PersistedSession } from './session-types';
 
 const terminalRegistryMocks = vi.hoisted(() => ({
-  reconnectTerminal: vi.fn(),
+  resumeTerminal: vi.fn(),
   restoreTerminal: vi.fn(),
 }));
 
 vi.mock('./terminal-registry', () => ({
-  reconnectTerminal: terminalRegistryMocks.reconnectTerminal,
+  resumeTerminal: terminalRegistryMocks.resumeTerminal,
   restoreTerminal: terminalRegistryMocks.restoreTerminal,
 }));
 
-import { reconnectFromInit } from './reconnect';
+import { resumeOrRestore } from './reconnect';
 
 function createPlatform(ptys: PtyInfo[], savedState: PersistedSession | null): PlatformAdapter {
   const listHandlers = new Set<(detail: { ptys: PtyInfo[] }) => void>();
@@ -66,31 +66,31 @@ function createPlatform(ptys: PtyInfo[], savedState: PersistedSession | null): P
   };
 }
 
-describe('reconnectFromInit', () => {
+describe('resumeOrRestore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('restores saved visible layout and detached doors for matching live PTYs', async () => {
+  it('restores saved visible layout and minimized doors for matching live PTYs', async () => {
     const layout = {
       panels: {
         'pane-a': {},
         'pane-b': {},
       },
     };
-    const detached = [{
+    const doors = [{
       id: 'pane-c',
       title: 'Pane C',
       neighborId: 'pane-b',
       direction: 'right' as const,
-      remainingPanelIds: ['pane-a', 'pane-b'],
-      restoreLayout: layout,
-      detachedLayoutSignature: 'sig',
+      remainingPaneIds: ['pane-a', 'pane-b'],
+      layoutAtMinimize: layout,
+      layoutAtMinimizeSignature: 'sig',
     }];
     const saved: PersistedSession = {
-      version: 1,
+      version: 2,
       layout,
-      detached,
+      doors,
       panes: [
         { id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null },
         { id: 'pane-b', title: 'Pane B', cwd: null, scrollback: null, resumeCommand: null },
@@ -98,7 +98,7 @@ describe('reconnectFromInit', () => {
       ],
     };
 
-    const result = await reconnectFromInit(createPlatform([
+    const result = await resumeOrRestore(createPlatform([
       { id: 'pane-a', alive: true },
       { id: 'pane-b', alive: true },
       { id: 'pane-c', alive: true },
@@ -106,10 +106,10 @@ describe('reconnectFromInit', () => {
 
     expect(result).toEqual({
       paneIds: ['pane-a', 'pane-b'],
-      detached,
+      doors,
       layout,
     });
-    expect(terminalRegistryMocks.reconnectTerminal).toHaveBeenCalledWith('pane-c', 'pane-c-replay', {
+    expect(terminalRegistryMocks.resumeTerminal).toHaveBeenCalledWith('pane-c', 'pane-c-replay', {
       alive: true,
       exitCode: undefined,
     });
@@ -117,7 +117,7 @@ describe('reconnectFromInit', () => {
 
   it('does not reuse a saved layout when live PTYs do not match saved panes', async () => {
     const saved: PersistedSession = {
-      version: 1,
+      version: 2,
       layout: { panels: { 'pane-a': {}, 'pane-b': {} } },
       panes: [
         { id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null },
@@ -125,7 +125,7 @@ describe('reconnectFromInit', () => {
       ],
     };
 
-    const result = await reconnectFromInit(createPlatform([
+    const result = await resumeOrRestore(createPlatform([
       { id: 'pane-a', alive: true },
       { id: 'pane-b', alive: true },
       { id: 'extra-pane', alive: true },
@@ -133,14 +133,56 @@ describe('reconnectFromInit', () => {
 
     expect(result).toEqual({
       paneIds: ['pane-a', 'pane-b', 'extra-pane'],
-      detached: [],
+      doors: [],
     });
+  });
+
+  it('returns the live resume plan when every live session is minimized', async () => {
+    const doors = [{
+      id: 'pane-a',
+      title: 'Pane A',
+      neighborId: 'pane-b',
+      direction: 'right' as const,
+      remainingPaneIds: ['pane-b'],
+      layoutAtMinimize: { panels: { 'pane-b': {} } },
+      layoutAtMinimizeSignature: 'sig-a',
+    }, {
+      id: 'pane-b',
+      title: 'Pane B',
+      neighborId: 'pane-a',
+      direction: 'left' as const,
+      remainingPaneIds: ['pane-a'],
+      layoutAtMinimize: { panels: { 'pane-a': {} } },
+      layoutAtMinimizeSignature: 'sig-b',
+    }];
+    const saved: PersistedSession = {
+      version: 2,
+      layout: { panels: {} },
+      doors,
+      panes: [
+        { id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null },
+        { id: 'pane-b', title: 'Pane B', cwd: null, scrollback: null, resumeCommand: null },
+        { id: 'stale-pane', title: 'Stale Pane', cwd: null, scrollback: null, resumeCommand: null },
+      ],
+    };
+
+    const result = await resumeOrRestore(createPlatform([
+      { id: 'pane-a', alive: true },
+      { id: 'pane-b', alive: true },
+    ], saved));
+
+    expect(result).toEqual({
+      paneIds: [],
+      doors,
+      layout: { panels: {} },
+    });
+    expect(terminalRegistryMocks.restoreTerminal).not.toHaveBeenCalled();
   });
 
   it('ignores stale saved panes when the saved layout still matches live visible panes', async () => {
     const layout = { panels: { 'pane-a': {}, 'pane-b': {} } };
     const saved: PersistedSession = {
-      version: 1,
+      version: 2,
       layout,
       panes: [
         { id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null },
@@ -149,14 +191,14 @@ describe('reconnectFromInit', () => {
       ],
     };
 
-    const result = await reconnectFromInit(createPlatform([
+    const result = await resumeOrRestore(createPlatform([
       { id: 'pane-a', alive: true },
       { id: 'pane-b', alive: true },
     ], saved));
 
     expect(result).toEqual({
       paneIds: ['pane-a', 'pane-b'],
-      detached: [],
+      doors: [],
       layout,
     });
   });

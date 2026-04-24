@@ -1,6 +1,6 @@
 import { type DockviewApi } from 'dockview-react';
 
-export type DetachDirection = 'left' | 'right' | 'above' | 'below';
+export type DoorDirection = 'left' | 'right' | 'above' | 'below';
 
 interface SpatialCandidate { id: string; dist: number; overlaps: boolean }
 
@@ -15,17 +15,17 @@ export function resolvePanelElement(element: HTMLElement | null | undefined): HT
  *  if the current panel is to the right of the neighbor, direction='right' means
  *  "place me to the right of this reference panel."
  */
-export function findRestoreNeighbor(
+export function findReattachNeighbor(
   currentId: string,
   api: DockviewApi,
   panelElements: Map<string, HTMLElement>,
-): { neighborId: string | null; direction: DetachDirection } {
+): { neighborId: string | null; direction: DoorDirection } {
   const currentEl = resolvePanelElement(panelElements.get(currentId));
   if (!currentEl) return { neighborId: null, direction: 'right' };
 
   const c = currentEl.getBoundingClientRect();
   const EDGE_TOLERANCE = 12;
-  let best: { neighborId: string | null; direction: DetachDirection; score: number } = {
+  let best: { neighborId: string | null; direction: DoorDirection; score: number } = {
     neighborId: null,
     direction: 'right',
     score: Number.POSITIVE_INFINITY,
@@ -39,7 +39,7 @@ export function findRestoreNeighbor(
 
     const verticalOverlap = Math.min(c.bottom, r.bottom) - Math.max(c.top, r.top);
     const horizontalOverlap = Math.min(c.right, r.right) - Math.max(c.left, r.left);
-    const candidates: Array<{ direction: DetachDirection; gap: number; overlap: number }> = [];
+    const candidates: Array<{ direction: DoorDirection; gap: number; overlap: number }> = [];
 
     if (verticalOverlap > 0) {
       if (Math.abs(c.left - r.right) <= EDGE_TOLERANCE) {

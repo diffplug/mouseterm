@@ -69,7 +69,7 @@ describe('restoreSession', () => {
       args: ['-NoLogo'],
     });
     const saved: PersistedSession = {
-      version: 1,
+      version: 2,
       layout: { panels: { 'pane-a': {} } },
       panes: [
         { id: 'pane-a', title: 'Pane A', cwd: 'C:\\repo', scrollback: 'hello', resumeCommand: null },

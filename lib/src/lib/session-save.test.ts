@@ -72,7 +72,7 @@ describe('saveSession', () => {
 
   it('persists the live alert state even when the previous snapshot was empty', async () => {
     const platform = createPlatform({
-      version: 1,
+      version: 2,
       layout: null,
       panes: [{ id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null, alert: null }],
     });
@@ -82,9 +82,9 @@ describe('saveSession', () => {
     await saveSession(platform, { root: true }, [{ id: 'pane-a', title: 'Pane A' }]);
 
     expect(platform.saveState).toHaveBeenCalledWith({
-      version: 1,
+      version: 2,
       layout: { root: true },
-      detached: [],
+      doors: [],
       panes: [
         expect.objectContaining({
           id: 'pane-a',
@@ -103,9 +103,9 @@ describe('saveSession', () => {
     expect(platform.getScrollback).toHaveBeenCalledWith('pane-b');
     expect(platform.getCwd).toHaveBeenCalledWith('pane-b');
     expect(platform.saveState).toHaveBeenCalledWith({
-      version: 1,
+      version: 2,
       layout: { root: true },
-      detached: [],
+      doors: [],
       panes: [
         expect.objectContaining({
           id: 'pane-a',

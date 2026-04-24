@@ -7,7 +7,7 @@ import {
   SCENARIO_ANSI_COLORS,
   SCENARIO_LONG_RUNNING,
 } from '../lib/platform';
-import { getSessionStateSnapshot, primeSessionState, type SessionUiState, TODO_OFF, TODO_HARD } from '../lib/terminal-registry';
+import { getActivitySnapshot, primeActivity, type ActivityState, TODO_OFF, TODO_HARD } from '../lib/terminal-registry';
 
 const meta: Meta<typeof Pond> = {
   title: 'App/Pond',
@@ -21,12 +21,12 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function primeByIndex(states: Partial<SessionUiState>[]) {
-  const ids = [...getSessionStateSnapshot().keys()];
+function primeByIndex(states: Partial<ActivityState>[]) {
+  const ids = [...getActivitySnapshot().keys()];
   states.forEach((state, index) => {
     const id = ids[index];
     if (id) {
-      primeSessionState(id, state);
+      primeActivity(id, state);
     }
   });
 }
@@ -41,7 +41,7 @@ async function splitPanes() {
   await wait(100);
 }
 
-async function detachSelectedPane() {
+async function minimizeSelectedPane() {
   await wait(200);
   window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', bubbles: true }));
   await wait(150);
@@ -83,11 +83,11 @@ export const MultiPaneLight: Story = {
   play: splitPanes,
 };
 
-export const WithDetached: Story = {
+export const WithDoors: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_LS_OUTPUT) } },
   play: async () => {
     await splitPanes();
-    await detachSelectedPane();
+    await minimizeSelectedPane();
   },
 };
 
@@ -134,7 +134,7 @@ export const AlertRingingPane: Story = {
 export const AlertRingingDoor: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
   play: async () => {
-    await detachSelectedPane();
+    await minimizeSelectedPane();
     primeByIndex([
       {
         status: 'ALERT_RINGING',
@@ -177,10 +177,10 @@ export const TodoAfterDismiss: Story = {
   },
 };
 
-export const DetachedRingingSession: Story = {
+export const MinimizedRingingSession: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
   play: async () => {
-    await detachSelectedPane();
+    await minimizeSelectedPane();
     primeByIndex([
       {
         status: 'ALERT_RINGING',

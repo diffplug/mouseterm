@@ -1,16 +1,16 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { Baseboard } from '../components/Baseboard';
-import type { DetachedItem } from '../components/Pond';
+import type { DooredItem } from '../components/Pond';
 import { TODO_OFF, TODO_HARD } from '../lib/terminal-registry';
 
-const makeItem = (id: string, title: string): DetachedItem => ({
+const makeItem = (id: string, title: string): DooredItem => ({
   id,
   title,
   neighborId: null,
   direction: 'right',
-  remainingPanelIds: [],
-  restoreLayout: null,
-  detachedLayoutSignature: '',
+  remainingPaneIds: [],
+  layoutAtMinimize: null,
+  layoutAtMinimizeSignature: '',
 });
 
 function withState(byId: Record<string, Record<string, unknown>>) {
@@ -21,7 +21,7 @@ function withState(byId: Record<string, Record<string, unknown>>) {
   };
 }
 
-function BaseboardStory({ items, activeId = null }: { items: DetachedItem[]; activeId?: string | null }) {
+function BaseboardStory({ items, activeId = null }: { items: DooredItem[]; activeId?: string | null }) {
   return (
     <div className="bg-surface" style={{ width: '100%' }}>
       <Baseboard

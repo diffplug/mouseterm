@@ -14,7 +14,7 @@ const SESSION_ID = 'tab-story';
 
 const noopActions: PondActions = {
   onKill: () => {},
-  onDetach: () => {},
+  onMinimize: () => {},
   onAlertButton: () => 'noop',
   onToggleTodo: () => {},
   onSplitH: () => {},

@@ -2,10 +2,10 @@ import { useEffect, useRef } from 'react';
 import '@xterm/xterm/css/xterm.css';
 import {
   getOrCreateTerminal,
-  attachTerminal,
-  detachTerminal,
-  refitTerminal,
-  focusTerminal,
+  mountElement,
+  unmountElement,
+  refitSession,
+  focusSession,
 } from '../lib/terminal-registry';
 import { SelectionOverlay } from './SelectionOverlay';
 import { SelectionPopup } from './SelectionPopup';
@@ -18,7 +18,7 @@ interface TerminalPaneProps {
 /**
  * Thin mount point for a terminal. The actual xterm.js instance lives in the
  * terminal registry and persists across React mount/unmount cycles (reparenting,
- * detach/reattach, row moves). This component just attaches/detaches the
+ * minimize/reattach, row moves). This component just mounts/unmounts the
  * terminal's persistent DOM element to its container.
  */
 export function TerminalPane({ id, isFocused = true }: TerminalPaneProps) {
@@ -32,21 +32,21 @@ export function TerminalPane({ id, isFocused = true }: TerminalPaneProps) {
     getOrCreateTerminal(id);
 
     // Attach the terminal's persistent element to this container
-    attachTerminal(id, container);
+    mountElement(id, container);
 
     // Resize observer — refit terminal when container changes size
-    const observer = new ResizeObserver(() => refitTerminal(id));
+    const observer = new ResizeObserver(() => refitSession(id));
     observer.observe(container);
 
     return () => {
       observer.disconnect();
-      // Detach (but don't destroy) — terminal stays alive in the registry
-      detachTerminal(id);
+      // Unmount DOM element — registry entry and Session survive
+      unmountElement(id);
     };
   }, [id]);
 
   useEffect(() => {
-    focusTerminal(id, isFocused);
+    focusSession(id, isFocused);
   }, [id, isFocused]);
 
   return (

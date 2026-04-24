@@ -58,7 +58,7 @@ Progress is stored in localStorage so the user can leave and return. Show progre
 Implemented in `website/src/lib/tutorial-detection.ts` (`TutorialDetector` class). Two event sources:
 
 1. **DockviewApi events** — `onDidAddPanel`, `onDidLayoutChange`, `onDidActivePanelChange`. Subscribed in `TutorialDetector.attach(api)`.
-2. **PondEvent callbacks** — `modeChange`, `zoomChange`, `detachChange`, `split`. Routed via `Pond`'s `onEvent` prop (added in `lib/src/components/Pond.tsx`).
+2. **PondEvent callbacks** — `modeChange`, `zoomChange`, `minimizeChange`, `split`. Routed via `Pond`'s `onEvent` prop (added in `lib/src/components/Pond.tsx`).
 
 ### Phase 1: See Everything at Once
 
@@ -90,7 +90,7 @@ Detection: Watches `PondEvent.zoomChange` — requires both a `zoomed: true` the
 >
 > *Click the minimize button in the tab header. Click the door in the baseboard to reattach.*
 
-Detection: Watches `PondEvent.detachChange` — requires `count > 0` (detach) then `count === 0` (reattach back to zero).
+Detection: Watches `PondEvent.minimizeChange` — requires `count > 0` (minimize) then `count === 0` (reattach back to zero).
 
 ### Phase 3: Keyboard Power
 
@@ -142,7 +142,7 @@ The picker restores the persisted active theme on mount. The playground header i
 
 - All progress keyed as `mouseterm-tutorial-step-N` in localStorage (values: `'true'`).
 - `FakePtyAdapter` extensions: `setInputHandler(id, fn)` routes `writePty` calls to a custom handler; `sendOutput(id, data)` writes to a terminal's output stream.
-- `Pond` extensions: `initialPaneIds` prop seeds the first pane(s); `onApiReady` callback prop exposes `DockviewApi`; `onEvent` callback prop fires `PondEvent` for mode/zoom/detach/selection/split changes (types: `modeChange`, `zoomChange`, `detachChange`, `split`, `selectionChange`).
+- `Pond` extensions: `initialPaneIds` prop seeds the first pane(s); `onApiReady` callback prop exposes `DockviewApi`; `onEvent` callback prop fires `PondEvent` for mode/zoom/minimize/selection/split changes (types: `modeChange`, `zoomChange`, `minimizeChange`, `split`, `selectionChange`).
 - `SCENARIO_TUTORIAL_MOTD` scenario added to `lib/src/lib/platform/fake-scenarios.ts`.
 
 ## Mouse and Clipboard Feature Coverage
