@@ -135,6 +135,8 @@ describe('AlertManager in isolation', () => {
   });
 
   // --- Boolean TODO tests ---
+  // (The previous soft-TODO bucket tests — 4-keypress letter-striking, per-letter
+  //  recovery timers — were removed when TODO was simplified to a plain boolean.)
 
   function driveToRinging(id: string): void {
     manager.toggleAlert(id);
