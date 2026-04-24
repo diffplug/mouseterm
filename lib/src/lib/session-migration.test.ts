@@ -140,6 +140,43 @@ describe('session migration v2 → v3', () => {
     expect(v3.panes[0].alert?.todo).toBe(false);
   });
 
+  it('converts unknown numeric TODO values to boolean false', () => {
+    const v2: PersistedSessionV2 = {
+      version: 2,
+      layout: null,
+      panes: [
+        {
+          id: 'pane-unknown-high',
+          title: 'unknown high',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW', todo: 3 },
+        },
+        {
+          id: 'pane-unknown-low',
+          title: 'unknown low',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW', todo: -2 },
+        },
+        {
+          id: 'pane-unknown-nan',
+          title: 'unknown nan',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW', todo: Number.NaN },
+        },
+      ],
+    };
+    const v3 = migrateSessionV2toV3(v2);
+    expect(v3.panes[0].alert?.todo).toBe(false);
+    expect(v3.panes[1].alert?.todo).toBe(false);
+    expect(v3.panes[2].alert?.todo).toBe(false);
+  });
+
   it('preserves panes with null alert', () => {
     const v2: PersistedSessionV2 = {
       version: 2,

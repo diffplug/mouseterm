@@ -10,7 +10,7 @@ export type TodoState = boolean;
 export function migrateTodoState(todo: unknown): TodoState {
   if (typeof todo === 'boolean') return todo;
   // v2 numeric encoding: -1 = off, [0,1] = soft, 2 = hard
-  if (typeof todo === 'number') return todo !== -1;
+  if (typeof todo === 'number') return Number.isFinite(todo) && (todo === 2 || (todo >= 0 && todo <= 1));
   // v1 string encoding: 'soft' | 'hard' | false
   if (todo === 'hard' || todo === 'soft') return true;
   return false;
