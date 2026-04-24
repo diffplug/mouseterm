@@ -1373,11 +1373,15 @@ export function Pond({
       if (e.key === 'Enter' && sid) {
         e.preventDefault();
         e.stopPropagation();
+        const hadTodo = getActivity(sid).todo;
         if (selectedTypeRef.current === 'door') {
           const item = doorsRef.current.find(d => d.id === sid);
           if (item) handleReattachRef.current(item);
         } else {
           enterTerminalMode(sid);
+        }
+        if (hadTodo) {
+          clearSessionTodo(sid);
         }
         return;
       }
