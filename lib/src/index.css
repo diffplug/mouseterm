@@ -120,6 +120,33 @@ body {
   to { stroke-dashoffset: var(--march-offset); }
 }
 
+/* --- Kill-dialog confirm animation ---
+ *
+ * The focal letter pulses while the overlay fades and shrinks, overlapping
+ * the orchestrated pane-fade so the eye is handed off cleanly. Cancel and
+ * wrong-letter share the existing shake-x rejection gesture. */
+
+@keyframes kill-overlay-confirm {
+  0%   { opacity: 1; transform: scale(1); }
+  30%  { opacity: 1; transform: scale(1.02); }
+  100% { opacity: 0; transform: scale(0.96); }
+}
+
+@keyframes kill-letter-flash {
+  0%   { transform: scale(1);    filter: brightness(1); }
+  40%  { transform: scale(1.25); filter: brightness(1.6); }
+  100% { transform: scale(1);    filter: brightness(1); }
+}
+
+.kill-overlay-confirm { animation: kill-overlay-confirm 220ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+.kill-letter-flash    { animation: kill-letter-flash    220ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+                        display: inline-block; transform-origin: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .kill-overlay-confirm,
+  .kill-letter-flash { animation-duration: 1ms; }
+}
+
 /* --- Copy-confirmation flash for the selection popup button --- */
 
 @keyframes copy-flash {

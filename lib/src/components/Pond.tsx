@@ -17,7 +17,7 @@ import { tv } from 'tailwind-variants';
 import { PopupButtonRow, popupButton } from './design';
 import { HeaderActionButton } from './HeaderActionButton';
 import { TodoAlertDialog } from './TodoAlertDialog';
-import { KillConfirmOverlay, orchestrateKill, randomKillChar, type ConfirmKill } from './KillConfirm';
+import { KILL_CONFIRM_MS, KILL_SHAKE_MS, KillConfirmOverlay, orchestrateKill, randomKillChar, type ConfirmKill } from './KillConfirm';
 import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
@@ -843,6 +843,24 @@ export function Pond({
   // UI state
   const [confirmKill, setConfirmKill] = useState<ConfirmKill | null>(null);
   useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
+
+  // Drive the kill-dialog exit animation before unmount. Rejection paths
+  // (Esc, cancel button, wrong letter) share the shake gesture; the correct
+  // letter runs the confirm flash and fires orchestrateKill concurrently so
+  // the pane fade begins while the letter flash is still playing.
+  const rejectKill = useCallback(() => {
+    const ck = confirmKillRef.current;
+    if (!ck || ck.shaking || ck.confirming) return;
+    setConfirmKill({ ...ck, shaking: true });
+    shakeTimerRef.current = setTimeout(() => setConfirmKill(null), KILL_SHAKE_MS);
+  }, []);
+  const acceptKill = useCallback((onExit: () => void) => {
+    const ck = confirmKillRef.current;
+    if (!ck || ck.confirming) return;
+    setConfirmKill({ ...ck, confirming: true });
+    onExit();
+    setTimeout(() => setConfirmKill(null), KILL_CONFIRM_MS);
+  }, []);
   const [renamingPaneId, setRenamingPaneId] = useState<string | null>(null);
   const [doors, setDoors] = useState<DooredItem[]>(() => (initialDoors ?? []) as DooredItem[]);
   const [zoomed, setZoomed] = useState(false);
@@ -1364,24 +1382,15 @@ export function Pond({
       if (ck) {
         e.preventDefault();
         e.stopPropagation();
-        if (e.key === 'Escape') {
-          setConfirmKill(null);
-          return;
-        }
+        // Already exiting — swallow further input so a second key doesn't
+        // stack dismissals or fire orchestrateKill twice.
+        if (ck.confirming || ck.shaking) return;
         if (e.key.toLowerCase() === ck.char.toLowerCase()) {
-          // Dismiss the modal first so it doesn't hover over the kill animation.
-          // orchestrateKill fades the pane in place, then removes + FLIPs the
-          // survivors, handling selection updates itself (since the fade is
-          // async and selection must wait until the actual removal fires).
-          setConfirmKill(null);
-          orchestrateKill(api, ck.id, selectPanel, setSelectedId, killInProgressRef, overlayElRef);
+          acceptKill(() => orchestrateKill(api, ck.id, selectPanel, setSelectedId, killInProgressRef, overlayElRef));
           return;
         }
-        // Wrong key — shake then dismiss
-        if (!ck.shaking) {
-          setConfirmKill({ ...ck, shaking: true });
-          shakeTimerRef.current = setTimeout(() => setConfirmKill(null), 400);
-        }
+        // Escape and wrong letter both reject via the shake gesture.
+        rejectKill();
         return;
       }
 
@@ -1817,7 +1826,7 @@ export function Pond({
               <KillConfirmOverlay
                 confirmKill={confirmKill}
                 panelElements={panelElements}
-                onCancel={() => setConfirmKill(null)}
+                onCancel={() => rejectKill()}
               />
             )}
 

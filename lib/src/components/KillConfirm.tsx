@@ -7,8 +7,17 @@ import { Shortcut } from './design';
 export interface ConfirmKill {
   id: string;
   char: string;
+  /** Rejection gesture: wrong letter pressed OR user chose to cancel. */
   shaking?: boolean;
+  /** Acceptance gesture: correct letter pressed. Runs concurrently with the
+   *  pane fade from orchestrateKill. */
+  confirming?: boolean;
 }
+
+/** Duration of each kill-dialog exit gesture. Pond uses these to time the
+ *  actual unmount (and, for confirm, the orchestrateKill handoff). */
+export const KILL_SHAKE_MS = 400;
+export const KILL_CONFIRM_MS = 220;
 
 /** Random a-z excluding x (prevents accidental double-tap on kill shortcut) */
 const KILL_CONFIRM_CHARS = 'abcdefghijklmnopqrstuvwyz'; // no x
@@ -16,12 +25,12 @@ export function randomKillChar(): string {
   return KILL_CONFIRM_CHARS[Math.floor(Math.random() * KILL_CONFIRM_CHARS.length)];
 }
 
-export function KillConfirmCard({ char, onCancel, shaking }: { char: string; onCancel?: () => void; shaking?: boolean }) {
+export function KillConfirmCard({ char, onCancel, shaking, confirming }: { char: string; onCancel?: () => void; shaking?: boolean; confirming?: boolean }) {
   return (
     <div className={`bg-surface-raised border border-border px-6 py-4 rounded-lg text-center shadow-lg font-mono${shaking ? ' motion-safe:animate-shake-x' : ''}`}>
       <h2 className="text-base font-bold mb-3 text-foreground">Confirm kill</h2>
       <div className="bg-surface py-2 px-6 rounded border border-border inline-block mb-2">
-        <span className="text-xl font-bold text-error">{char}</span>
+        <span className={`text-xl font-bold text-error${confirming ? ' kill-letter-flash' : ''}`}>{char}</span>
       </div>
       <div className="text-sm text-muted leading-relaxed grid grid-cols-[auto_auto] gap-x-2 justify-center">
         <Shortcut className="justify-self-end">{char}</Shortcut>
@@ -40,6 +49,7 @@ export function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
   panelElements: Map<string, HTMLElement>;
   onCancel: () => void;
 }) {
+  const exitClass = confirmKill.confirming ? ' kill-overlay-confirm' : '';
   const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
   // useLayoutEffect (not useEffect) so the initial measurement + re-render happens
@@ -65,17 +75,17 @@ export function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
     return (
       <div
         style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width, height: rect.height, zIndex: 100 }}
-        className="flex items-center justify-center bg-surface/50 rounded"
+        className={`flex items-center justify-center bg-surface/50 rounded${exitClass}`}
       >
-        <KillConfirmCard char={confirmKill.char} onCancel={onCancel} shaking={confirmKill.shaking} />
+        <KillConfirmCard char={confirmKill.char} onCancel={onCancel} shaking={confirmKill.shaking} confirming={confirmKill.confirming} />
       </div>
     );
   }
 
   // Fallback: centered in viewport
   return (
-    <div className="fixed inset-0 bg-surface/50 z-[100] flex items-center justify-center">
-      <KillConfirmCard char={confirmKill.char} onCancel={onCancel} shaking={confirmKill.shaking} />
+    <div className={`fixed inset-0 bg-surface/50 z-[100] flex items-center justify-center${exitClass}`}>
+      <KillConfirmCard char={confirmKill.char} onCancel={onCancel} shaking={confirmKill.shaking} confirming={confirmKill.confirming} />
     </div>
   );
 }
