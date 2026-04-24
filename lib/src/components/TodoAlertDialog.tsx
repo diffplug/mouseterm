@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useLayoutEffect, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { XIcon } from '@phosphor-icons/react';
 import { Shortcut } from './design';
@@ -105,6 +105,27 @@ export function TodoAlertDialog({
   const activity = activityStates.get(sessionId) ?? DEFAULT_ACTIVITY_STATE;
   const alertEnabled = activity.status !== 'ALERT_DISABLED';
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ left: number; top: number }>({
+    left: triggerRect.left,
+    top: triggerRect.bottom + 8,
+  });
+
+  // Clamp the dialog inside the viewport after mount. w-fit makes the width
+  // content-driven, so we have to measure before we can clamp.
+  useLayoutEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    const margin = 12;
+    const rect = el.getBoundingClientRect();
+    const desiredLeft = triggerRect.left;
+    const desiredTop = triggerRect.bottom + 8;
+    const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
+    const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
+    setPosition({
+      left: Math.min(Math.max(desiredLeft, margin), maxLeft),
+      top: Math.min(Math.max(desiredTop, margin), maxTop),
+    });
+  }, [triggerRect]);
 
   usePopoverFocusTrap(dialogRef, onClose, `[data-alert-button-for="${sessionId}"]`);
 
@@ -162,7 +183,7 @@ export function TodoAlertDialog({
     <div
       ref={dialogRef}
       className="fixed z-[9999] w-fit rounded-lg border border-border bg-surface-raised p-3 shadow-lg"
-      style={{ left: triggerRect.left, top: triggerRect.bottom + 8 }}
+      style={position}
       role="dialog"
       aria-modal="true"
       aria-label="TODO and alert settings"
