@@ -52,6 +52,74 @@ export interface PersistedSessionV1 {
   layout: unknown;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isPersistedAlertState(value: unknown): value is PersistedAlertState {
+  if (value === null) return true;
+  if (!isRecord(value)) return false;
+  return typeof value.status === 'string' && (typeof value.todo === 'number' || typeof value.todo === 'boolean');
+}
+
+function isPersistedPane(value: unknown): value is PersistedPane {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === 'string' &&
+    typeof value.title === 'string' &&
+    (typeof value.cwd === 'string' || value.cwd === null) &&
+    (typeof value.scrollback === 'string' || value.scrollback === null) &&
+    (typeof value.resumeCommand === 'string' || value.resumeCommand === null) &&
+    (value.alert === undefined || isPersistedAlertState(value.alert))
+  );
+}
+
+function isPersistedDoorV1(value: unknown): value is PersistedDoorV1 {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === 'string' &&
+    typeof value.title === 'string' &&
+    (typeof value.neighborId === 'string' || value.neighborId === null) &&
+    typeof value.direction === 'string' &&
+    Array.isArray(value.remainingPanelIds) &&
+    value.remainingPanelIds.every((id) => typeof id === 'string') &&
+    typeof value.detachedLayoutSignature === 'string'
+  );
+}
+
+function isPersistedDoor(value: unknown): value is PersistedDoor {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === 'string' &&
+    typeof value.title === 'string' &&
+    (typeof value.neighborId === 'string' || value.neighborId === null) &&
+    typeof value.direction === 'string' &&
+    Array.isArray(value.remainingPaneIds) &&
+    value.remainingPaneIds.every((id) => typeof id === 'string') &&
+    typeof value.layoutAtMinimizeSignature === 'string'
+  );
+}
+
+function isPersistedSessionV1(value: unknown): value is PersistedSessionV1 {
+  if (!isRecord(value) || value.version !== 1) return false;
+  return (
+    Array.isArray(value.panes) &&
+    value.panes.every(isPersistedPane) &&
+    (value.detached === undefined || (Array.isArray(value.detached) && value.detached.every(isPersistedDoorV1))) &&
+    'layout' in value
+  );
+}
+
+function isPersistedSessionV2(value: unknown): value is PersistedSession {
+  if (!isRecord(value) || value.version !== 2) return false;
+  return (
+    Array.isArray(value.panes) &&
+    value.panes.every(isPersistedPane) &&
+    (value.doors === undefined || (Array.isArray(value.doors) && value.doors.every(isPersistedDoor))) &&
+    'layout' in value
+  );
+}
+
 export function migrateSessionV1toV2(v1: PersistedSessionV1): PersistedSession {
   return {
     version: 2,
@@ -70,9 +138,8 @@ export function migrateSessionV1toV2(v1: PersistedSessionV1): PersistedSession {
 }
 
 export function readPersistedSession(raw: unknown): PersistedSession | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const blob = raw as { version?: number };
-  if (blob.version === 2) return raw as PersistedSession;
-  if (blob.version === 1) return migrateSessionV1toV2(raw as PersistedSessionV1);
+  if (!isRecord(raw)) return null;
+  if (isPersistedSessionV2(raw)) return raw;
+  if (isPersistedSessionV1(raw)) return migrateSessionV1toV2(raw);
   return null;
 }

@@ -100,5 +100,9 @@ describe('readPersistedSession', () => {
     expect(readPersistedSession(undefined)).toBeNull();
     expect(readPersistedSession({ version: 99 })).toBeNull();
     expect(readPersistedSession('not an object')).toBeNull();
+    expect(readPersistedSession({ version: 2, layout: null, panes: 'nope' })).toBeNull();
+    expect(readPersistedSession({ version: 2, layout: null, panes: [], doors: {} })).toBeNull();
+    expect(readPersistedSession({ version: 1, layout: null, panes: [] as const, detached: {} })).toBeNull();
+    expect(readPersistedSession({ version: 1, layout: null, panes: {} })).toBeNull();
   });
 });
