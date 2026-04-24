@@ -180,6 +180,11 @@ function clampOverlayPosition({ left, top, width, height }: {
   };
 }
 
+function findAlertButtonForSession(id: string): HTMLButtonElement | null {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('[data-alert-button-for]'))
+    .find((button) => button.dataset.alertButtonFor === id) ?? null;
+}
+
 // --- Contexts ---
 
 // We own selection/focus, not dockview. These contexts let panel components read our state.
@@ -1486,7 +1491,12 @@ export function Pond({
         if (isDialogKeyboardActive()) return;
         e.preventDefault();
         e.stopPropagation();
-        dismissOrToggleAlert(sid, getActivity(sid).status);
+        const alertButton = findAlertButtonForSession(sid);
+        if (alertButton) {
+          alertButton.click();
+        } else {
+          dismissOrToggleAlert(sid, getActivity(sid).status);
+        }
         return;
       }
 
