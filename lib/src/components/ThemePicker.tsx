@@ -253,7 +253,7 @@ function ThemeStoreDialog({
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-xs font-medium">{extension.displayName || extension.name}</div>
-                  <div className="truncate text-micro" style={styles.muted}>
+                  <div className="truncate text-xs" style={styles.muted}>
                     {extension.namespace} - {extension.downloadCount.toLocaleString()} downloads
                   </div>
                 </div>
@@ -261,7 +261,7 @@ function ThemeStoreDialog({
                   <button
                     type="button"
                     onClick={() => handleRemoveExtension(key)}
-                    className="shrink-0 rounded px-2 py-1 text-micro transition-opacity hover:opacity-100"
+                    className="shrink-0 rounded px-2 py-1 text-xs transition-opacity hover:opacity-100"
                     style={styles.muted}
                   >
                     Remove
@@ -271,7 +271,7 @@ function ThemeStoreDialog({
                     type="button"
                     onClick={() => handleInstall(extension)}
                     disabled={isInstallingThis}
-                    className="shrink-0 rounded px-2 py-1 text-micro transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="shrink-0 rounded px-2 py-1 text-xs transition-opacity hover:opacity-90 disabled:opacity-50"
                     style={styles.button}
                   >
                     {isInstallingThis ? 'Installing...' : 'Install'}

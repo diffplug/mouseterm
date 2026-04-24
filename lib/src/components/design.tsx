@@ -6,8 +6,9 @@ import type { HTMLAttributes, ReactNode } from 'react';
  * App-wide type scale. Use one of these five rem-based classes for every
  * font-size — never `text-[9px]` or other arbitrary pixel values.
  *
- *   text-micro  (10px) — badges, baseboard/door metadata, tab-bar hints
- *   text-xs     (12px) — default UI body: dialog labels, buttons, popups, help text
+ *   text-micro  (10px) — TODO indicators (Door letters in baseboard, Pond tab pill)
+ *   text-xs     (12px) — default UI body: everything else — tab titles, buttons,
+ *                        dialog labels, popups, help text, baseboard, ThemePicker
  *   text-sm     (14px) — section headers inside dialogs
  *   text-base   (16px) — dialog titles
  *   text-xl     (20px) — single-purpose emphasis (the KillConfirm character)
