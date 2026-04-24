@@ -316,7 +316,7 @@ function TerminalPanel({ api }: IDockviewPanelProps) {
   }, [api, freshlySpawned]);
 
   return (
-    <div ref={elRef} className="h-full w-full" onMouseDown={() => actions.onClickPanel(api.id)}>
+    <div ref={elRef} className="h-full w-full overflow-hidden rounded-b-lg bg-terminal-bg" onMouseDown={() => actions.onClickPanel(api.id)}>
       <TerminalPane id={api.id} isFocused={isFocused} />
     </div>
   );

@@ -86,6 +86,10 @@ Elements from left to right:
 
 The alert bell and TODO pill are defined in `docs/specs/alert.md` (visual states, interaction, context menu, and hardening).
 
+### Pane body
+
+The pane body paints `--color-terminal-bg` on the React pane wrapper and the `TerminalPane` mount point. The persistent xterm host element, `.xterm-screen`, and xterm scroll container are also painted with the concrete background from `getTerminalTheme()`. This is intentional: xterm.js only paints its own rendered terminal surface, and integer row fitting can leave a sub-row remainder at the bottom of the pane. The host background must match the terminal screen exactly and clip to the pane's rounded bottom corners so the terminal surface reaches the selection overlay cleanly.
+
 ### Pane header responsive sizing
 
 The header adapts to available width via ResizeObserver in three tiers:

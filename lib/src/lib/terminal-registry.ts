@@ -72,6 +72,7 @@ function startThemeObserver(): void {
     const theme = getTerminalTheme();
     for (const entry of registry.values()) {
       entry.terminal.options.theme = theme;
+      paintTerminalHost(entry.element, entry.terminal, theme.background);
     }
   });
 
@@ -293,6 +294,22 @@ function getTerminalTheme(): Record<string, string> {
   };
 }
 
+function paintTerminalHost(element: HTMLDivElement, terminal: Terminal, background: string): void {
+  element.style.backgroundColor = background;
+  element.style.borderRadius = 'inherit';
+
+  const xtermElement = terminal.element as HTMLElement | undefined;
+  if (xtermElement) {
+    xtermElement.style.backgroundColor = background;
+    xtermElement.style.borderRadius = 'inherit';
+  }
+
+  element.querySelectorAll<HTMLElement>('.xterm-screen, .xterm-scrollable-element, .xterm-viewport')
+    .forEach((el) => {
+      el.style.backgroundColor = background;
+    });
+}
+
 // --- Input analysis ---
 
 function inputContainsEnter(data: string): boolean {
@@ -323,11 +340,12 @@ function setupTerminalEntry(id: string): TerminalEntry {
   const editorFontSize = parseInt(styles.getPropertyValue('--vscode-editor-font-size'), 10) || 12;
   const editorFontFamily = styles.getPropertyValue('--vscode-editor-font-family').trim() || "'SF Mono', Menlo, Monaco, monospace";
 
+  const theme = getTerminalTheme();
   const terminal = new Terminal({
     fontSize: editorFontSize,
     fontFamily: editorFontFamily,
     cursorBlink: true,
-    theme: getTerminalTheme(),
+    theme,
   });
 
   const fit = new FitAddon();
@@ -337,6 +355,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
   element.style.width = '100%';
   element.style.height = '100%';
   terminal.open(element);
+  paintTerminalHost(element, terminal, theme.background);
 
   // Wire PTY events
   const handleData = (detail: { id: string; data: string }) => {

@@ -54,7 +54,7 @@
   --color-header-inactive-fg: var(--vscode-sideBar-foreground, var(--vscode-foreground, #cccccc));
 
   /* Terminal — xterm.js content, orthogonal to chrome */
-  --color-terminal-bg: var(--vscode-terminal-background, #1e1e1e);
+  --color-terminal-bg: var(--vscode-terminal-background, var(--vscode-editor-background, #1e1e1e));
   --color-terminal-fg: var(--vscode-terminal-foreground, #cccccc);
 
   /* Semantic status */
@@ -84,7 +84,7 @@ body.vscode-light {
   --color-header-active-fg: var(--vscode-list-activeSelectionForeground, #000000);
   --color-header-inactive-bg: var(--vscode-sideBar-background, var(--vscode-editorGroupHeader-tabsBackground, #f3f3f3));
   --color-header-inactive-fg: var(--vscode-sideBar-foreground, var(--vscode-foreground, #6f6f6f));
-  --color-terminal-bg: var(--vscode-terminal-background, #ffffff);
+  --color-terminal-bg: var(--vscode-terminal-background, var(--vscode-editor-background, #ffffff));
   --color-terminal-fg: var(--vscode-terminal-foreground, #333333);
   --color-error: var(--vscode-errorForeground, #a1260d);
   --color-success: #388a34;
@@ -105,7 +105,7 @@ body.vscode-light {
     --color-header-active-fg: var(--vscode-list-activeSelectionForeground, #000000);
     --color-header-inactive-bg: var(--vscode-sideBar-background, var(--vscode-editorGroupHeader-tabsBackground, #f3f3f3));
     --color-header-inactive-fg: var(--vscode-sideBar-foreground, var(--vscode-foreground, #6f6f6f));
-    --color-terminal-bg: var(--vscode-terminal-background, #ffffff);
+    --color-terminal-bg: var(--vscode-terminal-background, var(--vscode-editor-background, #ffffff));
     --color-terminal-fg: var(--vscode-terminal-foreground, #333333);
     --color-error: var(--vscode-errorForeground, #a1260d);
     --color-success: #388a34;
