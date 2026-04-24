@@ -25,8 +25,7 @@ export type WebviewMessage =
   | { type: 'alert:clearAttention'; id?: string }
   | { type: 'alert:toggleTodo'; id: string }
   | { type: 'alert:markTodo'; id: string }
-  | { type: 'alert:clearTodo'; id: string }
-  | { type: 'alert:drainTodoBucket'; id: string };
+  | { type: 'alert:clearTodo'; id: string };
 
 export interface PtyInfo {
   id: string;

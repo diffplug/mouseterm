@@ -207,29 +207,7 @@ body.vscode-light {
   .ring-shrinking-to-br { animation: none; }
 }
 
-/* Soft-TODO pill: one letter per keypress gets a strike line.
- * The line draws left-to-right on strike, retracts on un-strike. */
-.strike-letter {
-  position: relative;
-  display: inline-block;
-}
-.strike-letter::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 1px;
-  background-color: currentColor;
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 150ms ease-out;
-}
-.strike-letter[data-strike='true']::after {
-  transform: scaleX(1);
-}
-
-/* 4th-strike flourish: struck letters fade out while a ✓ pulses in, then fades. */
+/* TODO dismiss flourish: letters fade out while a ✓ pulses in, then fades. */
 @keyframes todo-flourish-letters {
   0%   { opacity: 1; }
   30%  { opacity: 0; }
@@ -260,7 +238,6 @@ body.vscode-light {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .strike-letter::after { transition: none; }
   .todo-pill-flourish__letters { animation: none; opacity: 0; }
   .todo-pill-flourish__check { animation: none; opacity: 1; }
 }

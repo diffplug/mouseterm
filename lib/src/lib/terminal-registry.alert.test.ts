@@ -86,9 +86,6 @@ vi.mock('./platform', async () => {
 
 import * as platformModule from './platform';
 import { makeAlertScenario, type FakePtyAdapter, type FakeScenario } from './platform';
-import { cfg } from '../cfg';
-
-const STRIKE_RECOVERY_MS = cfg.todoBucket.recoverySecondsPerLetter * 1_000;
 import {
   DEFAULT_ACTIVITY_STATE,
   mountElement,
@@ -109,10 +106,6 @@ import {
   swapTerminals,
   toggleSessionAlert,
   toggleSessionTodo,
-  TODO_OFF,
-  TODO_SOFT_FULL,
-  TODO_HARD,
-  isSoftTodo,
 } from './terminal-registry';
 
 interface MockTerminalInstance {
@@ -266,8 +259,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -285,10 +277,7 @@ describe('terminal-registry alert behavior', () => {
     attendSession(id);
 
     advance(1_800);
-    expect(getActivity(id)).toMatchObject({
-      status: 'BUSY',
-
-    });
+    expect(getActivity(id)).toMatchObject({ status: 'BUSY' });
 
     expireAttention(id);
     advance(2_000);
@@ -297,8 +286,7 @@ describe('terminal-registry alert behavior', () => {
     advance(3_000);
     expect(getActivity(id)).toMatchObject({
       status: 'ALERT_RINGING',
-
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -313,10 +301,7 @@ describe('terminal-registry alert behavior', () => {
 
     emitOutput(id, 'still running');
 
-    expect(getActivity(id)).toMatchObject({
-      status: 'BUSY',
-
-    });
+    expect(getActivity(id)).toMatchObject({ status: 'BUSY' });
   });
 
   it('Story 4: completion while still attended does not ring', () => {
@@ -331,12 +316,11 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
-  it('Story 5: user attends to a ringing pane — creates soft TODO', () => {
+  it('Story 5: user attends to a ringing pane — turns TODO on', () => {
     const id = 'story-5';
     createSession(id);
     toggleSessionAlert(id);
@@ -346,11 +330,11 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_SOFT_FULL,
+      todo: true,
     });
   });
 
-  it('Story 6: dismiss resets to NOTHING_TO_SHOW, can ring again later', () => {
+  it('Story 6: dismiss resets to NOTHING_TO_SHOW and turns TODO on; can ring again later', () => {
     const id = 'story-6';
     createSession(id);
     toggleSessionAlert(id);
@@ -360,10 +344,9 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toMatchObject({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_SOFT_FULL,
+      todo: true,
     });
 
-    // New output starts a fresh cycle that can ring again
     driveToBusy(id);
     expireAttention(id);
     advance(2_000);
@@ -371,11 +354,11 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toMatchObject({
       status: 'ALERT_RINGING',
-      todo: TODO_SOFT_FULL,
+      todo: true,
     });
   });
 
-  it('Story 7: TODO clears ring and resets status, leaves alerts enabled', () => {
+  it('Story 7: marking TODO clears ring and resets status, leaves alerts enabled', () => {
     const id = 'story-7';
     createSession(id);
     toggleSessionAlert(id);
@@ -385,7 +368,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_HARD,
+      todo: true,
     });
   });
 
@@ -399,17 +382,16 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'ALERT_DISABLED',
-      todo: TODO_OFF,
+      todo: false,
     });
 
-    // No monitor means output doesn't drive state changes
     emitOutput(id, 'new cycle');
     emitOutput(id, 'more work');
     advance(12_000);
 
     expect(getActivity(id)).toEqual({
       status: 'ALERT_DISABLED',
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -419,15 +401,12 @@ describe('terminal-registry alert behavior', () => {
     toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
-    // Shell prompt output should NOT silently dismiss the alert
     emitOutput(id, 'shell prompt');
     expect(getActivity(id).status).toBe('ALERT_RINGING');
 
-    // User attends (focuses the pane) — this resets the monitor via attend()
     attendSession(id);
     expect(getActivity(id).status).toBe('NOTHING_TO_SHOW');
 
-    // Now new output starts a fresh cycle
     emitOutput(id, 'next task');
     advance(1_600);
     emitOutput(id, 'still going');
@@ -444,16 +423,13 @@ describe('terminal-registry alert behavior', () => {
     minimizeSession(id);
     driveToRingingNeedsAttention(id);
 
-    expect(getActivity(id)).toMatchObject({
-      status: 'ALERT_RINGING',
-
-    });
+    expect(getActivity(id)).toMatchObject({ status: 'ALERT_RINGING' });
 
     reattachDoorViaEnter(id);
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_SOFT_FULL,
+      todo: true,
     });
   });
 
@@ -469,8 +445,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'ALERT_RINGING',
-
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -485,8 +460,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -506,11 +480,11 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(alpha)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_SOFT_FULL,
+      todo: true,
     });
     expect(getActivity(beta)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_SOFT_FULL,
+      todo: true,
     });
   });
 
@@ -523,7 +497,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_HARD,
+      todo: true,
     });
 
     disposeSession(id);
@@ -538,8 +512,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'ALERT_RINGING',
-
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -551,10 +524,10 @@ describe('terminal-registry alert behavior', () => {
     driveToRingingNeedsAttention(id);
     entry.terminal.emitInput('x');
 
-    // Typing while ringing: attend creates a fresh soft TODO, then the keypress strikes one letter
+    // Typing while ringing: attend clears ring, turns TODO on.
+    // Plain 'x' is not Enter, so TODO stays on.
     expect(getActivity(id).status).toBe('NOTHING_TO_SHOW');
-    expect(isSoftTodo(getActivity(id).todo)).toBe(true);
-    expect(getActivity(id).todo).toBeCloseTo(0.75);
+    expect(getActivity(id).todo).toBe(true);
   });
 
   it('no monitor is created until alert is enabled', () => {
@@ -569,8 +542,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'ALERT_DISABLED',
-
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -578,16 +550,13 @@ describe('terminal-registry alert behavior', () => {
     const id = 'fresh-start';
     createSession(id);
 
-    // Output before alert is enabled — ignored
     emitOutput(id, 'old output');
     advance(5_000);
 
     toggleSessionAlert(id);
 
-    // Status starts at NOTHING_TO_SHOW, not retroactively computed
     expect(getActivity(id).status).toBe('NOTHING_TO_SHOW');
 
-    // New output after enabling drives state normally
     emitOutput(id, 'prompt> ');
     advance(1_600);
     emitOutput(id, 'working...');
@@ -595,149 +564,75 @@ describe('terminal-registry alert behavior', () => {
     expect(getActivity(id).status).toBe('BUSY');
   });
 
-  it('phantom dismiss creates soft TODO, typing 4 chars clears it', () => {
-    const id = 'soft-todo-clear';
+  it('Enter (\\r) in passthrough clears an on-TODO', () => {
+    const id = 'enter-clears-todo';
     const entry = createSession(id);
     toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     attendSession(id);
+    expect(getActivity(id).todo).toBe(true);
 
-    expect(getActivity(id).todo).toBe(TODO_SOFT_FULL);
-
-    // 3 keypresses strike 3 letters but don't clear
-    for (let i = 0; i < 3; i++) {
-      entry.terminal.emitInput('a');
-    }
-    expect(isSoftTodo(getActivity(id).todo)).toBe(true);
-
-    // 4th keypress clears it
-    entry.terminal.emitInput('a');
-    expect(getActivity(id).todo).toBe(TODO_OFF);
+    entry.terminal.emitInput('\r');
+    expect(getActivity(id).todo).toBe(false);
   });
 
-  it('soft TODO recovers after idle and requires fresh keypresses', () => {
-    const id = 'soft-todo-refill';
+  it('printable input without Enter does not clear a TODO', () => {
+    const id = 'printable-keeps-todo';
     const entry = createSession(id);
     toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     attendSession(id);
+    expect(getActivity(id).todo).toBe(true);
 
-    expect(getActivity(id).todo).toBe(TODO_SOFT_FULL);
-
-    // 2 keypresses strike 2 letters
-    entry.terminal.emitInput('a');
-    entry.terminal.emitInput('a');
-    expect(getActivity(id).todo).toBeCloseTo(0.5);
-
-    // 2 recovery intervals restore both letters
-    vi.advanceTimersByTime(2 * STRIKE_RECOVERY_MS);
-    expect(getActivity(id).todo).toBe(TODO_SOFT_FULL);
-
-    // Need 4 fresh keypresses to clear again
-    for (let i = 0; i < 3; i++) {
-      entry.terminal.emitInput('a');
-    }
-    expect(isSoftTodo(getActivity(id).todo)).toBe(true);
-
-    entry.terminal.emitInput('a');
-    expect(getActivity(id).todo).toBe(TODO_OFF);
+    entry.terminal.emitInput('hello');
+    expect(getActivity(id).todo).toBe(true);
   });
 
-  it('focus-report control sequences do not clear a soft TODO', () => {
-    const id = 'soft-todo-focus-report';
+  it('focus-report control sequences do not clear a TODO', () => {
+    const id = 'todo-focus-report';
     const entry = createSession(id);
     toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
     attendSession(id);
-
-    expect(getActivity(id).todo).toBe(TODO_SOFT_FULL);
+    expect(getActivity(id).todo).toBe(true);
 
     entry.terminal.emitInput('\x1b[I');
 
-    expect(getActivity(id).todo).toBe(TODO_SOFT_FULL);
+    expect(getActivity(id).todo).toBe(true);
   });
 
-  it('typing does not clear a hard TODO', () => {
-    const id = 'hard-todo-persist';
-    const entry = createSession(id);
-    toggleSessionAlert(id);
-
-    driveToRingingNeedsAttention(id);
-    toggleSessionTodo(id); // ringing → hard TODO + attend
-
-    expect(getActivity(id).todo).toBe(TODO_HARD);
-
-    entry.terminal.emitInput('ls');
-
-    expect(getActivity(id).todo).toBe(TODO_HARD);
-  });
-
-  it('toggleSessionTodo promotes soft to hard', () => {
-    const id = 'promote-soft';
-    createSession(id);
-    toggleSessionAlert(id);
-
-    driveToRingingNeedsAttention(id);
-    attendSession(id);
-
-    expect(getActivity(id).todo).toBe(TODO_SOFT_FULL);
-
-    toggleSessionTodo(id);
-
-    expect(getActivity(id).todo).toBe(TODO_HARD);
-  });
-
-  it('toggleSessionTodo cycles: false → hard → false', () => {
+  it('toggleSessionTodo cycles: false → true → false', () => {
     const id = 'toggle-cycle';
     createSession(id);
 
-    expect(getActivity(id).todo).toBe(TODO_OFF);
+    expect(getActivity(id).todo).toBe(false);
 
     toggleSessionTodo(id);
-    expect(getActivity(id).todo).toBe(TODO_HARD);
+    expect(getActivity(id).todo).toBe(true);
 
     toggleSessionTodo(id);
-    expect(getActivity(id).todo).toBe(TODO_OFF);
+    expect(getActivity(id).todo).toBe(false);
   });
 
-  it('dismiss does not downgrade hard TODO to soft', () => {
-    const id = 'hard-survives-dismiss';
-    createSession(id);
-    toggleSessionAlert(id);
-    toggleSessionTodo(id); // set hard TODO before ringing
-
-    driveToBusy(id);
-    expireAttention(id);
-    advance(2_000);
-    advance(3_000);
-    expect(getActivity(id).status).toBe('ALERT_RINGING');
-
-    dismissSessionAlert(id);
-
-    // Hard TODO should survive — soft TODO only set when todo === false
-    expect(getActivity(id).todo).toBe(TODO_HARD);
-  });
-
-  it('new output while ringing without attention does not create a soft TODO', () => {
-    const id = 'ringing-output-no-soft-todo';
+  it('new output while ringing without attention does not turn TODO on', () => {
+    const id = 'ringing-output-no-todo';
     createSession(id);
     toggleSessionAlert(id);
 
     driveToRingingNeedsAttention(id);
-    // New output without attention — alert latches, no soft TODO created
     emitOutput(id, 'next task');
 
     expect(getActivity(id)).toEqual({
       status: 'ALERT_RINGING',
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
-  it('disabling alerts while ringing does not create a soft TODO', () => {
-    const id = 'disable-no-soft-todo';
+  it('disabling alerts while ringing does not turn TODO on', () => {
+    const id = 'disable-no-todo';
     createSession(id);
     toggleSessionAlert(id);
 
@@ -746,7 +641,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'ALERT_DISABLED',
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -758,7 +653,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -772,11 +667,11 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'ALERT_DISABLED',
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
-  it('alert button dismisses ringing alerts to soft TODO', () => {
+  it('alert button dismisses ringing alerts and turns TODO on', () => {
     const id = 'alert-button-dismiss';
     createSession(id);
     toggleSessionAlert(id);
@@ -786,7 +681,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_SOFT_FULL,
+      todo: true,
     });
   });
 
@@ -800,14 +695,14 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_SOFT_FULL,
+      todo: true,
     });
 
     dismissOrToggleAlert(id, 'ALERT_RINGING');
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_SOFT_FULL,
+      todo: true,
     });
   });
 
@@ -821,13 +716,13 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_SOFT_FULL,
+      todo: true,
     });
 
     expect(dismissOrToggleAlert(id, 'NOTHING_TO_SHOW')).toBe('dismissed');
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_SOFT_FULL,
+      todo: true,
     });
   });
 
@@ -841,7 +736,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'ALERT_RINGING',
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -858,7 +753,7 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id)).toEqual({
       status: 'NOTHING_TO_SHOW',
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -879,11 +774,11 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(alpha)).toEqual({
       status: 'ALERT_DISABLED',
-      todo: TODO_OFF,
+      todo: false,
     });
     expect(getActivity(beta)).toEqual({
       status: 'BUSY',
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 
@@ -898,22 +793,22 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(alpha)).toEqual({
       status: 'ALERT_DISABLED',
-      todo: TODO_OFF,
+      todo: false,
     });
     expect(getActivity(beta)).toEqual({
       status: 'ALERT_DISABLED',
-      todo: TODO_HARD,
+      todo: true,
     });
 
     clearSessionTodo(beta);
 
     expect(getActivity(alpha)).toEqual({
       status: 'ALERT_DISABLED',
-      todo: TODO_OFF,
+      todo: false,
     });
     expect(getActivity(beta)).toEqual({
       status: 'ALERT_DISABLED',
-      todo: TODO_OFF,
+      todo: false,
     });
   });
 });

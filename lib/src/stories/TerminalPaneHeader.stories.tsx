@@ -8,7 +8,6 @@ import {
   type PondMode,
   type PondActions,
 } from '../components/Pond';
-import { TODO_OFF, TODO_SOFT_FULL, TODO_HARD } from '../lib/terminal-registry';
 
 const SESSION_ID = 'tab-story';
 
@@ -93,7 +92,7 @@ async function openAlertRightClickDialog() {
   await wait(100);
 }
 
-async function clickSoftTodo() {
+async function clickTodoPill() {
   await wait(100);
   const todoButton = document.querySelector<HTMLButtonElement>(`[data-session-todo-for="${SESSION_ID}"]`);
   todoButton?.click();
@@ -128,7 +127,7 @@ export const AlertDisabled: Story = {
   parameters: primedState({
     status: 'ALERT_DISABLED',
 
-    todo: TODO_OFF,
+    todo: false,
   }),
 };
 
@@ -136,7 +135,7 @@ export const AlertEnabled: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
 
-    todo: TODO_OFF,
+    todo: false,
   }),
 };
 
@@ -144,7 +143,7 @@ export const AlertMightBeBusy: Story = {
   parameters: primedState({
     status: 'MIGHT_BE_BUSY',
 
-    todo: TODO_OFF,
+    todo: false,
   }),
 };
 
@@ -152,7 +151,7 @@ export const AlertBusy: Story = {
   parameters: primedState({
     status: 'BUSY',
 
-    todo: TODO_OFF,
+    todo: false,
   }),
 };
 
@@ -160,7 +159,7 @@ export const AlertMightNeedAttention: Story = {
   parameters: primedState({
     status: 'MIGHT_NEED_ATTENTION',
 
-    todo: TODO_OFF,
+    todo: false,
   }),
 };
 
@@ -168,37 +167,30 @@ export const AlertRinging: Story = {
   parameters: primedState({
     status: 'ALERT_RINGING',
 
-    todo: TODO_OFF,
-  }),
-};
-
-export const SoftTodo: Story = {
-  parameters: primedState({
-    status: 'NOTHING_TO_SHOW',
-    todo: TODO_SOFT_FULL,
+    todo: false,
   }),
 };
 
 export const AlertRightClickDialog: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
-    todo: TODO_OFF,
+    todo: false,
   }),
   play: openAlertRightClickDialog,
 };
 
-export const SoftTodoPrompt: Story = {
+export const TodoClickToDismiss: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
-    todo: TODO_SOFT_FULL,
+    todo: true,
   }),
-  play: clickSoftTodo,
+  play: clickTodoPill,
 };
 
 export const TodoOnly: Story = {
   parameters: primedState({
     status: 'ALERT_DISABLED',
-    todo: TODO_HARD,
+    todo: true,
   }),
 };
 
@@ -206,7 +198,7 @@ export const TodoAndAlertEnabled: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
 
-    todo: TODO_HARD,
+    todo: true,
   }),
 };
 
@@ -214,7 +206,7 @@ export const TodoAndAlertRinging: Story = {
   parameters: primedState({
     status: 'ALERT_RINGING',
 
-    todo: TODO_HARD,
+    todo: true,
   }),
 };
 
@@ -225,7 +217,7 @@ export const CompactWidthWithAlert: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
 
-    todo: TODO_OFF,
+    todo: false,
   }),
 };
 
@@ -236,7 +228,7 @@ export const MinimalWidthWithAlert: Story = {
   parameters: primedState({
     status: 'NOTHING_TO_SHOW',
 
-    todo: TODO_OFF,
+    todo: false,
   }),
 };
 
@@ -248,7 +240,7 @@ export const LongTitleWithAlertAndTodo: Story = {
   parameters: primedState({
     status: 'ALERT_RINGING',
 
-    todo: TODO_HARD,
+    todo: true,
   }),
 };
 
@@ -259,6 +251,6 @@ export const ReducedMotionRinging: Story = {
   parameters: primedState({
     status: 'ALERT_RINGING',
 
-    todo: TODO_OFF,
+    todo: false,
   }),
 };

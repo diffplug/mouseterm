@@ -1,5 +1,5 @@
 import { BellIcon } from '@phosphor-icons/react';
-import { TODO_OFF, isSoftTodo, type SessionStatus, type TodoState } from '../lib/terminal-registry';
+import type { SessionStatus, TodoState } from '../lib/terminal-registry';
 import { useTodoPillContent } from './TodoPillBody';
 import { bellIconClass } from './bell-icon-class';
 
@@ -19,7 +19,7 @@ export function Door({
   isActive = false,
   windowFocused = true,
   status = 'ALERT_DISABLED',
-  todo = TODO_OFF,
+  todo = false,
   onClick,
 }: DoorProps) {
   // Doors can only be active in command mode (navigated to via arrow keys).
@@ -55,12 +55,7 @@ export function Door({
       {(todoPill.visible || alertEnabled) && (
         <span className="flex shrink-0 items-center gap-1.5">
           {todoPill.visible && (
-            <span
-              className={[
-                'rounded bg-surface-raised px-1 py-px text-[8px] font-semibold tracking-[0.08em] text-foreground',
-                isSoftTodo(todo) || todoPill.flourishing ? 'border border-dashed border-border' : 'border border-border',
-              ].join(' ')}
-            >
+            <span className="rounded border border-border bg-surface-raised px-1 py-px text-[8px] font-semibold tracking-[0.08em] text-foreground">
               {todoPill.body}
             </span>
           )}

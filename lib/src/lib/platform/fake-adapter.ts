@@ -151,7 +151,6 @@ export class FakePtyAdapter implements PlatformAdapter {
   alertToggleTodo(id: string): void { this.alertManager.toggleTodo(id); }
   alertMarkTodo(id: string): void { this.alertManager.markTodo(id); }
   alertClearTodo(id: string): void { this.alertManager.clearTodo(id); }
-  alertDrainTodoBucket(id: string): void { this.alertManager.drainTodoBucket(id); }
   onAlertState(handler: (detail: AlertStateDetail) => void): void { this.alertStateHandlers.add(handler); }
   offAlertState(handler: (detail: AlertStateDetail) => void): void { this.alertStateHandlers.delete(handler); }
 

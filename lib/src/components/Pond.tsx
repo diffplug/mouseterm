@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom';
 import { TerminalPane } from './TerminalPane';
 import { Baseboard } from './Baseboard';
 import { tv } from 'tailwind-variants';
-import { PopupButtonRow, popupButton, renderShortcuts } from './design';
+import { PopupButtonRow, popupButton, renderShortcuts, Shortcut } from './design';
 import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
@@ -48,9 +48,6 @@ import {
   setPendingShellOpts,
   getDefaultShellOpts,
   type SessionStatus,
-  isSoftTodo,
-  isHardTodo,
-  TODO_OFF,
 } from '../lib/terminal-registry';
 import { resolvePanelElement, findPanelInDirection, findReattachNeighbor } from '../lib/spatial-nav';
 import { cloneLayout, getLayoutStructureSignature } from '../lib/layout-snapshot';
@@ -414,42 +411,42 @@ function TodoAlertDialog({
       aria-label="TODO and alert settings"
     >
       {/* TODO row */}
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-[10px] font-mono text-muted">[t]</span>
-        <span className="text-[11px] text-foreground font-medium w-10">TODO</span>
-        <div className="flex gap-1 ml-auto">
-          <button type="button" className={toggleBtn(isHardTodo(activity.todo))}
-            onClick={() => { if (!isHardTodo(activity.todo)) markSessionTodo(sessionId); }}>
-            hard
+      <div className="mb-2 flex items-center gap-2">
+        <Shortcut>t</Shortcut>
+        <span className="w-10 text-xs font-medium text-foreground">TODO</span>
+        <div className="ml-auto flex gap-1">
+          <button type="button" className={toggleBtn(activity.todo)}
+            onClick={() => { if (!activity.todo) markSessionTodo(sessionId); }}>
+            on
           </button>
-          <button type="button" className={toggleBtn(activity.todo === TODO_OFF)}
-            onClick={() => { if (activity.todo !== TODO_OFF) clearSessionTodo(sessionId); }}>
+          <button type="button" className={toggleBtn(!activity.todo)}
+            onClick={() => { if (activity.todo) clearSessionTodo(sessionId); }}>
             off
           </button>
         </div>
       </div>
 
       {/* Alert row */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-[10px] font-mono text-muted">[a]</span>
-        <span className="text-[11px] text-foreground font-medium w-10">alert</span>
-        <div className="flex gap-1 ml-auto">
+      <div className="mb-3 flex items-center gap-2">
+        <Shortcut>a</Shortcut>
+        <span className="w-10 text-xs font-medium text-foreground">alert</span>
+        <div className="ml-auto flex gap-1">
           <button type="button" className={toggleBtn(alertEnabled)}
             onClick={() => { if (!alertEnabled) toggleSessionAlert(sessionId); }}>
-            enabled
+            on
           </button>
           <button type="button" className={toggleBtn(!alertEnabled)}
             onClick={() => { if (alertEnabled) disableSessionAlert(sessionId); }}>
-            disabled
+            off
           </button>
         </div>
       </div>
 
       {/* Help text */}
-      <div className="border-t border-border pt-2 text-[9px] leading-relaxed text-muted">
-        When an alerting tab is selected,<br />
-        the alert is cleared and the tab gets a soft TODO.<br />
-        Typing drains the soft TODO; stop typing and it refills.
+      <div className="border-t border-border pt-2 text-xs leading-relaxed text-muted">
+        When a tab with a ringing alert is selected,<br />
+        the alert is cleared and the tab gets a TODO.<br />
+        Pressing [Enter] into the tab will clear the TODO.
       </div>
     </div>,
     document.body,
@@ -739,7 +736,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         {showTodoPill && (
           todoPill.flourishing ? (
             <span
-              className="shrink-0 rounded border border-dashed border-muted px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted"
+              className="shrink-0 rounded border border-muted px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted"
               aria-hidden
             >
               {todoPill.body}
@@ -748,16 +745,12 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             <button
               type="button"
               data-session-todo-for={api.id}
-              className={[
-                'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10',
-                isSoftTodo(activity.todo) ? 'border border-dashed border-muted' : 'border border-muted',
-              ].join(' ')}
-              aria-label="TODO settings"
+              className="shrink-0 rounded border border-muted px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10"
+              aria-label="Dismiss TODO"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
-                const rect = e.currentTarget.getBoundingClientRect();
-                setDialogPosition({ x: rect.left + rect.width / 2 - 140, y: rect.bottom + 6 });
+                clearSessionTodo(api.id);
               }}
             >
               {todoPill.body}

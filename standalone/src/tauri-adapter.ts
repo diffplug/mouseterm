@@ -235,10 +235,6 @@ export class TauriAdapter implements PlatformAdapter {
     this.alertManager.clearTodo(id);
   }
 
-  alertDrainTodoBucket(id: string): void {
-    this.alertManager.drainTodoBucket(id);
-  }
-
   onAlertState(handler: (detail: AlertStateDetail) => void): void {
     this.alertStateHandlers.add(handler);
   }

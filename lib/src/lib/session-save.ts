@@ -46,6 +46,6 @@ export async function saveSession(
       };
     }),
   );
-  const session: PersistedSession = { version: 2, panes: persisted, doors, layout };
+  const session: PersistedSession = { version: 3, panes: persisted, doors, layout };
   platform.saveState(session);
 }

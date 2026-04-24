@@ -58,7 +58,6 @@ function createPlatform(ptys: PtyInfo[], savedState: PersistedSession | null): P
     alertToggleTodo: vi.fn(),
     alertMarkTodo: vi.fn(),
     alertClearTodo: vi.fn(),
-    alertDrainTodoBucket: vi.fn(),
     onAlertState: vi.fn(),
     offAlertState: vi.fn(),
     saveState: vi.fn(),
@@ -88,7 +87,7 @@ describe('resumeOrRestore', () => {
       layoutAtMinimizeSignature: 'sig',
     }];
     const saved: PersistedSession = {
-      version: 2,
+      version: 3,
       layout,
       doors,
       panes: [
@@ -117,7 +116,7 @@ describe('resumeOrRestore', () => {
 
   it('does not reuse a saved layout when live PTYs do not match saved panes', async () => {
     const saved: PersistedSession = {
-      version: 2,
+      version: 3,
       layout: { panels: { 'pane-a': {}, 'pane-b': {} } },
       panes: [
         { id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null },
@@ -156,7 +155,7 @@ describe('resumeOrRestore', () => {
       layoutAtMinimizeSignature: 'sig-b',
     }];
     const saved: PersistedSession = {
-      version: 2,
+      version: 3,
       layout: { panels: {} },
       doors,
       panes: [
@@ -182,7 +181,7 @@ describe('resumeOrRestore', () => {
   it('ignores stale saved panes when the saved layout still matches live visible panes', async () => {
     const layout = { panels: { 'pane-a': {}, 'pane-b': {} } };
     const saved: PersistedSession = {
-      version: 2,
+      version: 3,
       layout,
       panes: [
         { id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null },
