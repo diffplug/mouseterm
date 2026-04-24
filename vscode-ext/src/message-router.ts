@@ -338,9 +338,6 @@ export function attachRouter(
       case 'alert:clearTodo':
         alertManager.clearTodo(msg.id);
         break;
-      case 'alert:drainTodoBucket':
-        alertManager.drainTodoBucket(msg.id);
-        break;
     }
   });
 

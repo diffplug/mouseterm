@@ -1,6 +1,6 @@
 import type { DoorDirection } from './spatial-nav';
 import type { SessionStatus } from './activity-monitor';
-import type { TodoState } from './alert-manager';
+import { migrateTodoState, type TodoState } from './alert-manager';
 
 export interface PersistedAlertState {
   status: SessionStatus;
@@ -27,10 +27,33 @@ export interface PersistedDoor {
 }
 
 export interface PersistedSession {
-  version: 2;
+  version: 3;
   panes: PersistedPane[];
   doors?: PersistedDoor[];
   layout: unknown; // SerializedDockview — kept as `unknown` to avoid dockview dep in types
+}
+
+// --- Legacy v2 shapes (read-only, for migration) ---
+
+export interface PersistedAlertStateV2 {
+  status: SessionStatus;
+  todo: unknown; // numeric encoding: -1=off, [0,1]=soft, 2=hard
+}
+
+export interface PersistedPaneV2 {
+  id: string;
+  cwd: string | null;
+  title: string;
+  scrollback: string | null;
+  resumeCommand: string | null;
+  alert?: PersistedAlertStateV2 | null;
+}
+
+export interface PersistedSessionV2 {
+  version: 2;
+  panes: PersistedPaneV2[];
+  doors?: PersistedDoor[];
+  layout: unknown;
 }
 
 // --- Legacy v1 shapes (read-only, for migration) ---
@@ -47,22 +70,26 @@ export interface PersistedDoorV1 {
 
 export interface PersistedSessionV1 {
   version: 1;
-  panes: PersistedPane[];
+  panes: PersistedPaneV2[];
   detached?: PersistedDoorV1[];
   layout: unknown;
 }
+
+// --- Validation guards (reject untrusted blobs) ---
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isPersistedAlertState(value: unknown): value is PersistedAlertState {
+function isPersistedAlertShape(value: unknown): boolean {
   if (value === null) return true;
   if (!isRecord(value)) return false;
-  return typeof value.status === 'string' && (typeof value.todo === 'number' || typeof value.todo === 'boolean');
+  if (typeof value.status !== 'string') return false;
+  const t = value.todo;
+  return typeof t === 'boolean' || typeof t === 'number' || typeof t === 'string';
 }
 
-function isPersistedPane(value: unknown): value is PersistedPane {
+function isPersistedPaneShape(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (
     typeof value.id === 'string' &&
@@ -70,7 +97,7 @@ function isPersistedPane(value: unknown): value is PersistedPane {
     (typeof value.cwd === 'string' || value.cwd === null) &&
     (typeof value.scrollback === 'string' || value.scrollback === null) &&
     (typeof value.resumeCommand === 'string' || value.resumeCommand === null) &&
-    (value.alert === undefined || isPersistedAlertState(value.alert))
+    (value.alert === undefined || isPersistedAlertShape(value.alert))
   );
 }
 
@@ -104,23 +131,35 @@ function isPersistedSessionV1(value: unknown): value is PersistedSessionV1 {
   if (!isRecord(value) || value.version !== 1) return false;
   return (
     Array.isArray(value.panes) &&
-    value.panes.every(isPersistedPane) &&
+    value.panes.every(isPersistedPaneShape) &&
     (value.detached === undefined || (Array.isArray(value.detached) && value.detached.every(isPersistedDoorV1))) &&
     'layout' in value
   );
 }
 
-function isPersistedSessionV2(value: unknown): value is PersistedSession {
+function isPersistedSessionV2(value: unknown): value is PersistedSessionV2 {
   if (!isRecord(value) || value.version !== 2) return false;
   return (
     Array.isArray(value.panes) &&
-    value.panes.every(isPersistedPane) &&
+    value.panes.every(isPersistedPaneShape) &&
     (value.doors === undefined || (Array.isArray(value.doors) && value.doors.every(isPersistedDoor))) &&
     'layout' in value
   );
 }
 
-export function migrateSessionV1toV2(v1: PersistedSessionV1): PersistedSession {
+function isPersistedSessionV3(value: unknown): value is PersistedSession {
+  if (!isRecord(value) || value.version !== 3) return false;
+  return (
+    Array.isArray(value.panes) &&
+    value.panes.every(isPersistedPaneShape) &&
+    (value.doors === undefined || (Array.isArray(value.doors) && value.doors.every(isPersistedDoor))) &&
+    'layout' in value
+  );
+}
+
+// --- Migrations ---
+
+export function migrateSessionV1toV2(v1: PersistedSessionV1): PersistedSessionV2 {
   return {
     version: 2,
     panes: v1.panes,
@@ -137,9 +176,24 @@ export function migrateSessionV1toV2(v1: PersistedSessionV1): PersistedSession {
   };
 }
 
+export function migrateSessionV2toV3(v2: PersistedSessionV2): PersistedSession {
+  return {
+    version: 3,
+    layout: v2.layout,
+    doors: v2.doors,
+    panes: v2.panes.map((pane) => ({
+      ...pane,
+      alert: pane.alert
+        ? { status: pane.alert.status, todo: migrateTodoState(pane.alert.todo) }
+        : pane.alert,
+    })),
+  };
+}
+
 export function readPersistedSession(raw: unknown): PersistedSession | null {
   if (!isRecord(raw)) return null;
-  if (isPersistedSessionV2(raw)) return raw;
-  if (isPersistedSessionV1(raw)) return migrateSessionV1toV2(raw);
+  if (isPersistedSessionV3(raw)) return raw;
+  if (isPersistedSessionV2(raw)) return migrateSessionV2toV3(raw);
+  if (isPersistedSessionV1(raw)) return migrateSessionV2toV3(migrateSessionV1toV2(raw));
   return null;
 }

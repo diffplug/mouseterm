@@ -104,7 +104,7 @@ Detection: Watches `PondEvent.modeChange` for transition to `'command'`, then tr
 **Step 6 — Split using keyboard shortcuts**
 > Split a pane without leaving the keyboard.
 >
-> *In command mode, press " to split horizontally or % to split vertically.*
+> *In command mode, press " to split top/bottom or % to split left/right.*
 
 Detection: Watches `PondEvent.split` with `source: 'keyboard'` while in command mode.
 

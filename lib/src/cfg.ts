@@ -29,10 +29,4 @@ export const cfg = {
     /** When true, the ALERT_RINGING bell-ring animation is frozen at T=0 (for deterministic Chromatic snapshots). */
     ringingPaused: false,
   },
-  todoBucket: {
-    /** Seconds of idle time needed to un-strike one letter of the soft-TODO pill.
-     *  The word TODO has 4 letters; each printable keypress strikes one letter,
-     *  and each `recoverySecondsPerLetter` of idle time un-strikes one. */
-    recoverySecondsPerLetter: 1,
-  },
 };

@@ -1,34 +1,17 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import {
-  hasTodo,
-  isHardTodo,
-  isSoftTodo,
-  TODO_OFF,
-  type TodoState,
-} from '../lib/terminal-registry';
+import type { TodoState } from '../lib/terminal-registry';
 
-interface StrikeLetterProps {
-  char: string;
-  strike: boolean;
-}
-
-function StrikeLetter({ char, strike }: StrikeLetterProps) {
-  return (
-    <span className="strike-letter" data-strike={strike ? 'true' : 'false'}>
-      {char}
-    </span>
-  );
-}
-
-const TODO_LETTERS = ['T', 'O', 'D', 'O'] as const;
 const FLOURISH_MS = 500;
 
 /**
- * Shared render body + flourish state for the soft/hard TODO pill.
+ * Shared render body + flourish state for the TODO pill.
  *
  * Returns `visible: false` when the pill should not render at all.
- * Returns `flourishing: true` briefly after a soft TODO clears, so the
- * caller can render a non-interactive wrapper (no click target).
+ * Returns `flourishing: true` briefly after a TODO clears so the
+ * caller can set `data-flourishing="true"` on its pill shell.
+ *
+ * The body is a grid-stacked <letters, check> so the pill width stays
+ * stable across steady/flourishing states — the CSS drives the animation.
  */
 export function useTodoPillContent(todo: TodoState): {
   visible: boolean;
@@ -42,7 +25,7 @@ export function useTodoPillContent(todo: TodoState): {
   useEffect(() => {
     const prev = prevRef.current;
     prevRef.current = todo;
-    if (isSoftTodo(prev) && todo === TODO_OFF) {
+    if (prev && !todo) {
       if (timerRef.current !== null) clearTimeout(timerRef.current);
       setFlourishing(true);
       timerRef.current = setTimeout(() => {
@@ -59,34 +42,14 @@ export function useTodoPillContent(todo: TodoState): {
     [],
   );
 
-  const visible = hasTodo(todo) || flourishing;
+  const visible = todo || flourishing;
 
-  let body: ReactNode = null;
-  if (flourishing) {
-    body = (
-      <span className="todo-pill-flourish">
-        <span className="todo-pill-flourish__letters">
-          {TODO_LETTERS.map((ch, i) => (
-            <StrikeLetter key={i} char={ch} strike />
-          ))}
-        </span>
-        <span className="todo-pill-flourish__check" aria-hidden>
-          ✓
-        </span>
-      </span>
-    );
-  } else if (isSoftTodo(todo)) {
-    const strikes = Math.round((1 - todo) * 4);
-    body = (
-      <span className="inline-flex">
-        {TODO_LETTERS.map((ch, i) => (
-          <StrikeLetter key={i} char={ch} strike={strikes > i} />
-        ))}
-      </span>
-    );
-  } else if (isHardTodo(todo)) {
-    body = <>TODO</>;
-  }
+  const body: ReactNode = visible ? (
+    <span className="todo-pill-stack">
+      <span className="todo-pill-stack__letters">TODO</span>
+      <span className="todo-pill-stack__check" aria-hidden>✓</span>
+    </span>
+  ) : null;
 
   return { visible, flourishing, body };
 }

@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { Door } from '../components/Door';
-import { TODO_OFF, TODO_HARD } from '../lib/terminal-registry';
 
 function DoorStory({
   width = 260,
@@ -29,7 +28,7 @@ const meta: Meta<typeof DoorStory> = {
     title: 'build-server',
     isActive: false,
     status: 'ALERT_DISABLED',
-    todo: TODO_OFF,
+    todo: false,
     width: 260,
     reducedMotion: false,
   },
@@ -37,7 +36,7 @@ const meta: Meta<typeof DoorStory> = {
     title: { control: 'text' },
     isActive: { control: 'boolean' },
     status: { control: 'radio', options: ['ALERT_DISABLED', 'NOTHING_TO_SHOW', 'MIGHT_BE_BUSY', 'BUSY', 'MIGHT_NEED_ATTENTION', 'ALERT_RINGING'] },
-    todo: { control: 'number' },
+    todo: { control: 'boolean' },
     width: { control: 'number' },
     reducedMotion: { control: 'boolean' },
   },
@@ -52,13 +51,13 @@ export const AlertMightBeBusy: Story = { args: { status: 'MIGHT_BE_BUSY' } };
 export const AlertBusy: Story = { args: { status: 'BUSY' } };
 export const AlertMightNeedAttention: Story = { args: { status: 'MIGHT_NEED_ATTENTION' } };
 export const AlertRinging: Story = { args: { status: 'ALERT_RINGING' } };
-export const TodoOnly: Story = { args: { todo: TODO_HARD } };
-export const TodoAndAlertEnabled: Story = { args: { todo: TODO_HARD, status: 'NOTHING_TO_SHOW' } };
-export const TodoAndAlertRinging: Story = { args: { todo: TODO_HARD, status: 'ALERT_RINGING' } };
+export const TodoOnly: Story = { args: { todo: true } };
+export const TodoAndAlertEnabled: Story = { args: { todo: true, status: 'NOTHING_TO_SHOW' } };
+export const TodoAndAlertRinging: Story = { args: { todo: true, status: 'ALERT_RINGING' } };
 export const LongTitleWithIndicators: Story = {
   args: {
     title: 'my-extremely-long-running-background-process-with-a-very-descriptive-name',
-    todo: TODO_HARD,
+    todo: true,
     status: 'NOTHING_TO_SHOW',
   },
 };

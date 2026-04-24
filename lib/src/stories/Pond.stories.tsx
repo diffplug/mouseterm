@@ -7,7 +7,7 @@ import {
   SCENARIO_ANSI_COLORS,
   SCENARIO_LONG_RUNNING,
 } from '../lib/platform';
-import { getActivitySnapshot, primeActivity, type ActivityState, TODO_OFF, TODO_HARD } from '../lib/terminal-registry';
+import { getActivitySnapshot, primeActivity, type ActivityState } from '../lib/terminal-registry';
 
 const meta: Meta<typeof Pond> = {
   title: 'App/Pond',
@@ -109,7 +109,7 @@ export const AlertEnabledIdlePane: Story = {
         {
           status: 'NOTHING_TO_SHOW',
 
-          todo: TODO_OFF,
+          todo: false,
         },
       ],
     },
@@ -124,7 +124,7 @@ export const AlertRingingPane: Story = {
         {
           status: 'ALERT_RINGING',
 
-          todo: TODO_OFF,
+          todo: false,
         },
       ],
     },
@@ -139,7 +139,7 @@ export const AlertRingingDoor: Story = {
       {
         status: 'ALERT_RINGING',
 
-        todo: TODO_OFF,
+        todo: false,
       },
     ]);
     await wait(100);
@@ -154,7 +154,7 @@ export const AlertModalOpen: Story = {
         {
           status: 'ALERT_RINGING',
 
-          todo: TODO_OFF,
+          todo: false,
         },
       ],
     },
@@ -170,7 +170,7 @@ export const TodoAfterDismiss: Story = {
         {
           status: 'ALERT_RINGING',
 
-          todo: TODO_HARD,
+          todo: true,
         },
       ],
     },
@@ -185,12 +185,12 @@ export const MinimizedRingingSession: Story = {
       {
         status: 'ALERT_RINGING',
 
-        todo: TODO_HARD,
+        todo: true,
       },
       {
         status: 'NOTHING_TO_SHOW',
 
-        todo: TODO_OFF,
+        todo: false,
       },
     ]);
     await wait(100);
@@ -205,17 +205,17 @@ export const MultipleRingingSessions: Story = {
       {
         status: 'ALERT_RINGING',
 
-        todo: TODO_OFF,
+        todo: false,
       },
       {
         status: 'ALERT_RINGING',
 
-        todo: TODO_HARD,
+        todo: true,
       },
       {
         status: 'NOTHING_TO_SHOW',
 
-        todo: TODO_OFF,
+        todo: false,
       },
     ]);
     await wait(100);

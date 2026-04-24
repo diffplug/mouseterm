@@ -46,14 +46,12 @@ Each Session owns:
   - Transitional states: `MIGHT_BE_BUSY`, `MIGHT_NEED_ATTENTION`.
   - When the user enables the alert, status transitions from `ALERT_DISABLED` to `NOTHING_TO_SHOW` and activity tracking begins fresh from that moment.
   - When the user disables the alert, activity tracking stops and status returns to `ALERT_DISABLED`.
-- `todo: TodoState` (numeric)
-  - Reminder state for the Session. Default `TODO_OFF` (`-1`).
-  - `TODO_OFF` (`-1`): no TODO.
-  - `[0, 1]` (soft TODO): auto-created when a ringing alert is phantom-dismissed (any attention path). Dashed-outline pill rendered as the word `TODO`. The value is quantized to five strike levels (`1.0` = no strikes, `0.75 / 0.5 / 0.25` = 1 / 2 / 3 letters struck, `0` = about to clear). Each printable keypress strikes exactly one letter (4 keypresses clears the TODO). After `recoverySecondsPerLetter` seconds of idle, one struck letter un-strikes; this repeats until the pill is fully un-struck. Synthetic terminal reports (focus events, cursor-position responses) do not count as keypresses.
-  - `TODO_HARD` (`2`): explicitly set by the user via `t` key or context menu. Solid-outline pill. Only clears via explicit toggle.
-  - Dismissing a ringing alert when `todo` is already soft or hard does not downgrade it.
-  - Helper functions: `isSoftTodo(todo)`, `isHardTodo(todo)`, `hasTodo(todo)`.
-  - Strike-timing tuning parameter is in `cfg.todoBucket.recoverySecondsPerLetter`.
+- `todo: boolean`
+  - Reminder state for the Session. Default `false`.
+  - `false`: no TODO.
+  - `true`: TODO is shown. It may be set explicitly by the user, or auto-created when a ringing alert is dismissed by attention or by the bell.
+  - Dismissing a ringing alert when `todo` is already `true` leaves it `true`.
+  - Legacy persisted TODO encodings migrate into this boolean shape: `-1` / `false` / unknown values become `false`; numeric soft buckets, `2`, `'soft'`, and `'hard'` become `true`.
 
 Each Session also owns:
 
@@ -203,10 +201,10 @@ The Session leaves `ALERT_RINGING` and returns to `NOTHING_TO_SHOW` when any of 
 
 - the user attends to the Session (clicking into the Pane, typing in passthrough, restoring a Door via click/`Enter`)
 - the user dismisses the alert (clicking the ringing bell, pressing `a`)
-- the user marks the Session as hard TODO (`t` key or context menu)
+- the user marks the Session as TODO (`t` key or context menu)
 - new output arrives while the Session has attention (starts a new `MIGHT_BE_BUSY` cycle; without attention the alert stays ringing — see latch in transition rules)
 
-All attention-based dismissals (the first three above) create a soft TODO if `todo` is not already `TODO_HARD`. If a partially-struck soft TODO already exists, the pill resets to fully un-struck — a fresh alert ring deserves a full strike cycle. This prevents phantom dismissals where the alert vanishes without a trace. Printable keypresses strike one letter of the `TODO` pill at a time (4 strikes clears it), so users who engage with the output don't accumulate breadcrumbs. After `cfg.todoBucket.recoverySecondsPerLetter` (default 1 s) of idle, one struck letter un-strikes; this repeats until the pill is fully un-struck. Synthetic terminal reports (focus events, cursor-position responses) do not count as keypresses.
+All attention-based dismissals (the first three above) set `todo = true` if it is not already set. This prevents phantom dismissals where the alert vanishes without a trace. Once the TODO is visible, the user can clear it explicitly from the pill/dialog or by typing `Enter` as passthrough input into that Session's shell (i.e., the keystroke is forwarded to the PTY). The command-mode `Enter` that *switches into* passthrough does not clear the TODO. Synthetic terminal reports (focus events, cursor-position responses) also do not count as user input for clearing.
 
 The Session leaves `ALERT_RINGING` and returns to `ALERT_DISABLED` when:
 
@@ -218,7 +216,7 @@ The Session's alert state is cleared entirely when:
 
 If more output arrives later and the Session makes a fresh transition back into `ALERT_RINGING`, the alert rings again.
 
-Marking a Session as hard TODO resets the alert to `NOTHING_TO_SHOW` and sets `todo = TODO_HARD`, but it does **not** disable future alerts. `todo` and the alert toggle are separate concerns.
+Marking a Session as TODO resets the alert to `NOTHING_TO_SHOW` and sets `todo = true`, but it does **not** disable future alerts. `todo` and the alert toggle are separate concerns.
 
 Disabling alerts disposes the activity monitor and returns `status` to `ALERT_DISABLED`.
 
@@ -233,13 +231,12 @@ The Pane header exposes two independent concepts:
 
 TODO pill:
 
-- toggled in command mode with `t` (cycles: `TODO_OFF` → `TODO_HARD`, soft → `TODO_HARD`, `TODO_HARD` → `TODO_OFF`)
-- shown when `hasTodo(todo)` is true (i.e. `todo !== TODO_OFF`)
-- soft (`isSoftTodo(todo)`): dashed-outline pill — auto-created on alert dismiss; each printable keypress strikes one letter of the word `TODO` (4 keypresses clears it), and one letter un-strikes per `recoverySecondsPerLetter` of idle
-- when the 4th strike lands and the soft TODO clears, the pill briefly morphs to a `✓` glyph in the success color (~500 ms) before unmounting — this marks the moment of completion so the pill never vanishes silently
-- `TODO_HARD` (`isHardTodo(todo)`): solid-outline pill — explicitly set, only clears manually
-- clicking a soft pill shows a prompt: "Clear" / "Keep" (keep promotes to hard)
-- clicking a hard pill clears it
+- toggled in command mode with `t` (`false` -> `true` -> `false`)
+- shown when `todo === true`
+- auto-created on alert dismiss or attention-based alert clearing
+- typing `Enter` as passthrough input (forwarded to the Session's shell) clears the TODO; the command-mode `Enter` that switches *into* passthrough does not
+- clicking the TODO pill clears it
+- when TODO clears, the pill briefly morphs to a `✓` glyph in the success color (~500 ms) before unmounting — this marks the moment of completion so the pill never vanishes silently
 - no empty placeholder when off
 
 Alert button:
@@ -259,15 +256,14 @@ Alert button:
 Interaction (`dismissOrToggleAlert` state machine):
 
 - left-click the bell while `ALERT_DISABLED`: enables the alert (creates activity monitor)
-- left-click the bell while `ALERT_RINGING`: dismisses the alert, creates a soft TODO if none exists, then opens the context menu anchored below the button
+- left-click the bell while `ALERT_RINGING`: dismisses the alert, creates a TODO if none exists, then opens the context menu anchored below the button
 - left-click the bell after an attention-based dismissal (`attentionDismissedRing` is set): clears the flag and opens the context menu. This lets the user access TODO/disable options after attending to a ringing Session without requiring a right-click.
 - left-click the bell in any other enabled state: disables the alert (destroys activity monitor)
 - pressing `a` on a selected Pane in command mode: same as left-click
 - right-click the bell (any state): opens a context menu with:
-  - a TODO row with `hard` and `off` options only; soft TODOs are never manually selectable here
-  - "Mark as TODO" / "Clear TODO" (toggles hard TODO), with `[t]` shortcut hint
-  - "Disable alerts" (only when alert is enabled)
-  - brief description of soft/hard TODO behavior
+  - a TODO on/off switch with `[t]` shortcut hint
+  - an alert on/off switch with `[a]` shortcut hint
+  - brief description of TODO clearing behavior
 - tooltip includes "Right-click for options" hint
 
 The alert control has higher layout priority than split or zoom controls. Long titles must truncate before the bell disappears.
@@ -279,7 +275,7 @@ A Door is display-only for alert state in v1. It must not replace the existing D
 Door indicators:
 
 - show bell indicator only when `status !== 'ALERT_DISABLED'`
-- show TODO pill when `hasTodo(todo)` (soft or hard)
+- show TODO pill when `todo === true`
 - if `status === 'ALERT_RINGING'`, the Door bell icon uses warning color and the same rocking animation as the Pane header
 - the Door bell icon shows the same tilt angles as the Pane header for escalation states
 
@@ -368,18 +364,17 @@ Consequences:
 
 - A Session rings.
 - User clicks into the pane to read the output.
-- The alert clears, a soft TODO appears (dashed pill).
-- User types a command → each printable keypress strikes one letter of the `TODO` pill; after 4 keypresses the pill morphs to a `✓` and clears (they engaged).
+- The alert clears, and a TODO appears.
+- User presses `Enter` into the Session → the `TODO` pill morphs to a `✓` and clears (they engaged).
 - The Session later emits new output, progresses through `BUSY`, and eventually reaches `ALERT_RINGING` again.
 
 ### User dismisses but doesn't engage
 
 - A Session rings.
 - User clicks into the pane briefly, then switches to another session.
-- The alert clears, a soft TODO appears.
-- User never types into the terminal → soft TODO persists.
-- User later notices the dashed TODO pill and clicks it → "Clear" / "Keep".
-- Choosing "Keep" promotes to a hard (solid) TODO.
+- The alert clears, and a TODO appears.
+- User never presses `Enter` into the terminal → TODO persists.
+- User later notices the TODO pill and clicks it to clear it.
 
 ## Verification checklist
 

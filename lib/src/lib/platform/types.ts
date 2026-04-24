@@ -62,7 +62,6 @@ export interface PlatformAdapter {
   alertToggleTodo(id: string): void;
   alertMarkTodo(id: string): void;
   alertClearTodo(id: string): void;
-  alertDrainTodoBucket(id: string): void;
   onAlertState(handler: (detail: AlertStateDetail) => void): void;
   offAlertState(handler: (detail: AlertStateDetail) => void): void;
 

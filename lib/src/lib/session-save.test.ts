@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlatformAdapter } from './platform/types';
 import type { PersistedSession } from './session-types';
-import { TODO_HARD } from './alert-manager';
 
 const terminalRegistryMocks = vi.hoisted(() => ({
   getLivePersistedAlertState: vi.fn(),
@@ -53,7 +52,6 @@ function createPlatform(savedState: PersistedSession | null): PlatformAdapter {
     alertToggleTodo: () => {},
     alertMarkTodo: () => {},
     alertClearTodo: () => {},
-    alertDrainTodoBucket: () => {},
     onAlertState: () => {},
     offAlertState: () => {},
     saveState: vi.fn((state: unknown) => {
@@ -72,23 +70,23 @@ describe('saveSession', () => {
 
   it('persists the live alert state even when the previous snapshot was empty', async () => {
     const platform = createPlatform({
-      version: 2,
+      version: 3,
       layout: null,
       panes: [{ id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null, alert: null }],
     });
 
-    terminalRegistryMocks.getLivePersistedAlertState.mockReturnValue({ status: 'NOTHING_TO_SHOW', todo: TODO_HARD });
+    terminalRegistryMocks.getLivePersistedAlertState.mockReturnValue({ status: 'NOTHING_TO_SHOW', todo: true });
 
     await saveSession(platform, { root: true }, [{ id: 'pane-a', title: 'Pane A' }]);
 
     expect(platform.saveState).toHaveBeenCalledWith({
-      version: 2,
+      version: 3,
       layout: { root: true },
       doors: [],
       panes: [
         expect.objectContaining({
           id: 'pane-a',
-          alert: { status: 'NOTHING_TO_SHOW', todo: TODO_HARD },
+          alert: { status: 'NOTHING_TO_SHOW', todo: true },
         }),
       ],
     });
@@ -103,7 +101,7 @@ describe('saveSession', () => {
     expect(platform.getScrollback).toHaveBeenCalledWith('pane-b');
     expect(platform.getCwd).toHaveBeenCalledWith('pane-b');
     expect(platform.saveState).toHaveBeenCalledWith({
-      version: 2,
+      version: 3,
       layout: { root: true },
       doors: [],
       panes: [

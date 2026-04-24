@@ -2,7 +2,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { getPlatform } from './platform';
 import type { SessionStatus } from './activity-monitor';
-import { TODO_OFF, isSoftTodo, type TodoState, type AlertButtonActionResult } from './alert-manager';
+import type { TodoState, AlertButtonActionResult } from './alert-manager';
 import type { AlertStateDetail } from './platform/types';
 import type { PersistedAlertState } from './session-types';
 import { attachMouseModeObserver } from './mouse-mode-observer';
@@ -23,7 +23,7 @@ import { detectTokenAt } from './smart-token';
 import { extractSelectionText } from './selection-text';
 
 export type { SessionStatus } from './activity-monitor';
-export { TODO_OFF, TODO_SOFT_FULL, TODO_HARD, isSoftTodo, isHardTodo, hasTodo, type TodoState, type AlertButtonActionResult } from './alert-manager';
+export { type TodoState, type AlertButtonActionResult } from './alert-manager';
 
 export interface ActivityState {
   status: SessionStatus;
@@ -32,7 +32,7 @@ export interface ActivityState {
 
 export const DEFAULT_ACTIVITY_STATE: ActivityState = {
   status: 'ALERT_DISABLED',
-  todo: TODO_OFF,
+  todo: false,
 };
 
 interface TerminalEntry {
@@ -295,16 +295,9 @@ function getTerminalTheme(): Record<string, string> {
 
 // --- Input analysis ---
 
-function inputContainsPrintableText(data: string): boolean {
-  const withoutAnsiSequences = data
-    // CSI sequences, including focus/mouse reporting like ESC [ I and ESC [ < ... M
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    // SS3 sequences, used by some function/navigation keys
-    .replace(/\x1bO[@-~]/g, '')
-    // Strip remaining control chars, including bare ESC
-    .replace(/[\x00-\x1f\x7f]/g, '');
-
-  return withoutAnsiSequences.length > 0;
+function inputContainsEnter(data: string): boolean {
+  // xterm.js sends CR (\r) for the Enter key.
+  return data.includes('\r');
 }
 
 function inputIsSyntheticTerminalReport(data: string): boolean {
@@ -365,10 +358,11 @@ function setupTerminalEntry(id: string): TerminalEntry {
     const isSyntheticTerminalReport = inputIsSyntheticTerminalReport(data);
 
     if (!isSyntheticTerminalReport) {
-      getPlatform().alertAttend(id);
       const entry = registry.get(id);
-      if (entry && isSoftTodo(entry.todo) && inputContainsPrintableText(data)) {
-        getPlatform().alertDrainTodoBucket(id);
+      const hadTodo = entry?.todo === true;
+      getPlatform().alertAttend(id);
+      if (hadTodo && inputContainsEnter(data)) {
+        getPlatform().alertClearTodo(id);
       }
     }
 
@@ -560,7 +554,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
     element,
     cleanup,
     alertStatus: 'ALERT_DISABLED',
-    todo: TODO_OFF,
+    todo: false,
     attentionDismissedRing: false,
   };
 

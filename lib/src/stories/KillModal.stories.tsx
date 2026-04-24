@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import { KillConfirmCard } from '../components/Pond';
+import { KillConfirmCard } from '../components/KillConfirm';
 
 function KillModal({ char = 'G', onCancel, shaking }: { char?: string; onCancel?: () => void; shaking?: boolean }) {
   return (

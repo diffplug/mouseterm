@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { migrateSessionV1toV2, readPersistedSession, type PersistedSessionV1 } from './session-types';
+import {
+  migrateSessionV1toV2,
+  migrateSessionV2toV3,
+  readPersistedSession,
+  type PersistedSessionV1,
+  type PersistedSessionV2,
+} from './session-types';
 
 describe('session migration v1 → v2', () => {
   it('migrates a v1 blob with doors to v2, renaming fields', () => {
@@ -57,18 +63,166 @@ describe('session migration v1 → v2', () => {
   });
 });
 
+describe('session migration v2 → v3', () => {
+  it('converts numeric TODO_HARD (2) to boolean true', () => {
+    const v2: PersistedSessionV2 = {
+      version: 2,
+      layout: null,
+      panes: [
+        {
+          id: 'pane-hard',
+          title: 'Pane Hard',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW', todo: 2 },
+        },
+      ],
+    };
+    const v3 = migrateSessionV2toV3(v2);
+    expect(v3.panes[0].alert?.todo).toBe(true);
+    expect(v3.version).toBe(3);
+  });
+
+  it('converts numeric soft-bucket values ([0,1]) to boolean true', () => {
+    const v2: PersistedSessionV2 = {
+      version: 2,
+      layout: null,
+      panes: [
+        {
+          id: 'pane-soft-full',
+          title: 'full',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW', todo: 1 },
+        },
+        {
+          id: 'pane-soft-half',
+          title: 'half',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW', todo: 0.5 },
+        },
+        {
+          id: 'pane-soft-zero',
+          title: 'zero',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW', todo: 0 },
+        },
+      ],
+    };
+    const v3 = migrateSessionV2toV3(v2);
+    expect(v3.panes[0].alert?.todo).toBe(true);
+    expect(v3.panes[1].alert?.todo).toBe(true);
+    expect(v3.panes[2].alert?.todo).toBe(true);
+  });
+
+  it('converts TODO_OFF (-1) to boolean false', () => {
+    const v2: PersistedSessionV2 = {
+      version: 2,
+      layout: null,
+      panes: [
+        {
+          id: 'pane-off',
+          title: 'off',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW', todo: -1 },
+        },
+      ],
+    };
+    const v3 = migrateSessionV2toV3(v2);
+    expect(v3.panes[0].alert?.todo).toBe(false);
+  });
+
+  it('converts unknown numeric TODO values to boolean false', () => {
+    const v2: PersistedSessionV2 = {
+      version: 2,
+      layout: null,
+      panes: [
+        {
+          id: 'pane-unknown-high',
+          title: 'unknown high',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW', todo: 3 },
+        },
+        {
+          id: 'pane-unknown-low',
+          title: 'unknown low',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW', todo: -2 },
+        },
+        {
+          id: 'pane-unknown-nan',
+          title: 'unknown nan',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW', todo: Number.NaN },
+        },
+      ],
+    };
+    const v3 = migrateSessionV2toV3(v2);
+    expect(v3.panes[0].alert?.todo).toBe(false);
+    expect(v3.panes[1].alert?.todo).toBe(false);
+    expect(v3.panes[2].alert?.todo).toBe(false);
+  });
+
+  it('preserves panes with null alert', () => {
+    const v2: PersistedSessionV2 = {
+      version: 2,
+      layout: null,
+      panes: [
+        { id: 'pane-null', title: 'null', cwd: null, scrollback: null, resumeCommand: null, alert: null },
+      ],
+    };
+    const v3 = migrateSessionV2toV3(v2);
+    expect(v3.panes[0].alert).toBeNull();
+  });
+});
+
 describe('readPersistedSession', () => {
-  it('returns a v2 blob unchanged', () => {
-    const v2 = {
-      version: 2 as const,
+  it('returns a v3 blob unchanged', () => {
+    const v3 = {
+      version: 3 as const,
       layout: null,
       panes: [{ id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null }],
       doors: [],
     };
-    expect(readPersistedSession(v2)).toBe(v2);
+    expect(readPersistedSession(v3)).toBe(v3);
   });
 
-  it('migrates a v1 blob on read', () => {
+  it('migrates a v2 blob on read (numeric TODO → boolean)', () => {
+    const v2 = {
+      version: 2 as const,
+      layout: null,
+      panes: [
+        {
+          id: 'pane-a',
+          title: 'Pane A',
+          cwd: null,
+          scrollback: null,
+          resumeCommand: null,
+          alert: { status: 'NOTHING_TO_SHOW' as const, todo: 2 },
+        },
+      ],
+      doors: [],
+    };
+    const result = readPersistedSession(v2);
+    expect(result?.version).toBe(3);
+    expect(result?.panes[0].alert?.todo).toBe(true);
+  });
+
+  it('migrates a v1 blob on read through v2 to v3', () => {
     const v1 = {
       version: 1 as const,
       layout: null,
@@ -86,7 +240,7 @@ describe('readPersistedSession', () => {
       ],
     };
     const result = readPersistedSession(v1);
-    expect(result?.version).toBe(2);
+    expect(result?.version).toBe(3);
     expect(result?.doors?.[0]).toMatchObject({
       id: 'pane-b',
       remainingPaneIds: [],

@@ -240,10 +240,6 @@ export class VSCodeAdapter implements PlatformAdapter {
     this.vscode.postMessage({ type: 'alert:clearTodo', id });
   }
 
-  alertDrainTodoBucket(id: string): void {
-    this.vscode.postMessage({ type: 'alert:drainTodoBucket', id });
-  }
-
   onAlertState(handler: (detail: AlertStateDetail) => void): void {
     this.alertStateHandlers.add(handler);
   }

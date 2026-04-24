@@ -3,30 +3,17 @@ import { cfg } from '../cfg';
 
 export { type SessionStatus } from './activity-monitor';
 
-/**
- * Unified todo state as a single number.
- *
- *   TODO_OFF  (-1)  — no TODO
- *   [0, 1]         — soft TODO; value is bucket fill level (1 = full, 0 = about to clear)
- *   TODO_HARD (2)   — hard TODO (manually set, never auto-clears)
- *
- * Helpers: isSoftTodo(), isHardTodo(), hasTodo()
- */
-export type TodoState = number;
-export const TODO_OFF = -1;
-export const TODO_SOFT_FULL = 1;
-export const TODO_HARD = 2;
+/** Boolean TODO state: on (true) or off (false). */
+export type TodoState = boolean;
 
-export function isSoftTodo(todo: TodoState): boolean { return todo >= 0 && todo <= 1; }
-export function isHardTodo(todo: TodoState): boolean { return todo === TODO_HARD; }
-export function hasTodo(todo: TodoState): boolean { return todo !== TODO_OFF; }
-
-/** Migrate legacy persisted TodoState values (false/'soft'/'hard') to numeric. */
+/** Migrate legacy persisted TodoState values (numeric, string, boolean) to a boolean. */
 export function migrateTodoState(todo: unknown): TodoState {
-  if (typeof todo === 'number') return todo;
-  if (todo === 'hard') return TODO_HARD;
-  if (todo === 'soft') return TODO_SOFT_FULL;
-  return TODO_OFF; // false, null, undefined, or any other unexpected value
+  if (typeof todo === 'boolean') return todo;
+  // v2 numeric encoding: -1 = off, [0,1] = soft, 2 = hard
+  if (typeof todo === 'number') return Number.isFinite(todo) && (todo === 2 || (todo >= 0 && todo <= 1));
+  // v1 string encoding: 'soft' | 'hard' | false
+  if (todo === 'hard' || todo === 'soft') return true;
+  return false;
 }
 
 export type AlertButtonActionResult = 'enabled' | 'disabled' | 'dismissed' | 'noop';
@@ -40,7 +27,7 @@ export interface AlertState {
 
 export const DEFAULT_ALERT_STATE: AlertState = {
   status: 'ALERT_DISABLED',
-  todo: TODO_OFF,
+  todo: false,
   attentionDismissedRing: false,
 };
 
@@ -48,12 +35,9 @@ interface AlertEntry {
   monitor: ActivityMonitor | null;
   todo: TodoState;
   attentionDismissedRing: boolean;
-  recoveryTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const T_USER_ATTENTION = cfg.alert.userAttention;
-const STRIKE_RECOVERY_MS = cfg.todoBucket.recoverySecondsPerLetter * 1_000;
-const STRIKE_STEP = 0.25;
 
 /**
  * Manages ActivityMonitors, attention tracking, and todo state for PTY sessions.
@@ -128,10 +112,7 @@ export class AlertManager {
 
     if (previousStatus === 'ALERT_RINGING') {
       entry.attentionDismissedRing = true;
-      if (!isHardTodo(entry.todo)) {
-        this.clearRecoveryTimer(entry);
-        entry.todo = TODO_SOFT_FULL;
-      }
+      entry.todo = true;
     }
     entry.monitor?.attend();
     this.notify(id);
@@ -190,10 +171,7 @@ export class AlertManager {
     const entry = this.entries.get(id);
     if (!entry?.monitor) return;
     if (entry.monitor.getStatus() !== 'ALERT_RINGING') return;
-    if (!isHardTodo(entry.todo)) {
-      this.clearRecoveryTimer(entry);
-      entry.todo = TODO_SOFT_FULL;
-    }
+    entry.todo = true;
     entry.monitor.attend();
     // onChange fires → notify
   }
@@ -234,30 +212,21 @@ export class AlertManager {
 
   // --- Todo controls ---
 
-  /** Toggle: off → hard, soft → hard, hard → off */
   toggleTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
-    this.clearRecoveryTimer(entry);
-    if (entry.todo === TODO_HARD) {
-      entry.todo = TODO_OFF;
-      this.notify(id);
-    } else {
-      entry.todo = TODO_HARD;
-      if (entry.monitor?.getStatus() === 'ALERT_RINGING') {
-        entry.monitor.attend();
-        return; // onChange fires → notify
-      }
-      this.notify(id);
+    entry.todo = !entry.todo;
+    if (entry.todo && entry.monitor?.getStatus() === 'ALERT_RINGING') {
+      entry.monitor.attend();
+      return; // onChange fires → notify
     }
+    this.notify(id);
   }
 
-  /** Explicitly mark as hard TODO */
   markTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
     const isRinging = entry.monitor?.getStatus() === 'ALERT_RINGING';
-    if (entry.todo === TODO_HARD && !isRinging) return;
-    this.clearRecoveryTimer(entry);
-    entry.todo = TODO_HARD;
+    if (entry.todo && !isRinging) return;
+    entry.todo = true;
     if (isRinging) {
       entry.monitor!.attend();
       return; // onChange fires → notify
@@ -265,48 +234,11 @@ export class AlertManager {
     this.notify(id);
   }
 
-  /** Clear any TODO state */
   clearTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
-    if (entry.todo === TODO_OFF) return;
-    this.clearRecoveryTimer(entry);
-    entry.todo = TODO_OFF;
+    if (!entry.todo) return;
+    entry.todo = false;
     this.notify(id);
-  }
-
-  /**
-   * Strike one letter of the soft-TODO pill.
-   * 4 strikes clear the TODO. One letter recovers after each `recoverySecondsPerLetter`
-   * of idle (no further strikes).
-   */
-  drainTodoBucket(id: string): void {
-    const entry = this.entries.get(id);
-    if (!entry || !isSoftTodo(entry.todo)) return;
-
-    entry.todo = entry.todo - STRIKE_STEP;
-
-    if (entry.todo < 1e-9) {
-      entry.todo = TODO_OFF;
-      this.clearRecoveryTimer(entry);
-      this.notify(id);
-      return;
-    }
-
-    this.scheduleRecoveryTick(id, entry);
-    this.notify(id);
-  }
-
-  private scheduleRecoveryTick(id: string, entry: AlertEntry): void {
-    this.clearRecoveryTimer(entry);
-    entry.recoveryTimer = setTimeout(() => {
-      entry.recoveryTimer = null;
-      if (!isSoftTodo(entry.todo)) return;
-      entry.todo = Math.min(TODO_SOFT_FULL, entry.todo + STRIKE_STEP);
-      this.notify(id);
-      if (entry.todo < TODO_SOFT_FULL) {
-        this.scheduleRecoveryTick(id, entry);
-      }
-    }, STRIKE_RECOVERY_MS);
   }
 
   // --- Query ---
@@ -333,7 +265,6 @@ export class AlertManager {
   remove(id: string): void {
     const entry = this.entries.get(id);
     if (!entry) return;
-    this.clearRecoveryTimer(entry);
     entry.monitor?.dispose();
     this.entries.delete(id);
     if (this.attentionId === id) {
@@ -349,7 +280,7 @@ export class AlertManager {
    * creates a fresh ActivityMonitor (it will start in NOTHING_TO_SHOW until
    * PTY data arrives).
    */
-  seed(id: string, state: { status: string; todo: TodoState }): void {
+  seed(id: string, state: { status: string; todo: unknown }): void {
     const entry = this.getOrCreateEntry(id);
     entry.todo = migrateTodoState(state.todo);
     // If the alert was enabled (anything other than ALERT_DISABLED), create a monitor
@@ -363,7 +294,6 @@ export class AlertManager {
 
   dispose(): void {
     for (const entry of this.entries.values()) {
-      this.clearRecoveryTimer(entry);
       entry.monitor?.dispose();
     }
     this.entries.clear();
@@ -376,17 +306,10 @@ export class AlertManager {
   private getOrCreateEntry(id: string): AlertEntry {
     let entry = this.entries.get(id);
     if (!entry) {
-      entry = { monitor: null, todo: TODO_OFF, attentionDismissedRing: false, recoveryTimer: null };
+      entry = { monitor: null, todo: false, attentionDismissedRing: false };
       this.entries.set(id, entry);
     }
     return entry;
-  }
-
-  private clearRecoveryTimer(entry: AlertEntry): void {
-    if (entry.recoveryTimer !== null) {
-      clearTimeout(entry.recoveryTimer);
-      entry.recoveryTimer = null;
-    }
   }
 
   private notify(id: string): void {

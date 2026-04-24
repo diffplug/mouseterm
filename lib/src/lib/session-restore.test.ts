@@ -50,7 +50,6 @@ function createPlatform(savedState: PersistedSession | null): PlatformAdapter {
     alertToggleTodo: vi.fn(),
     alertMarkTodo: vi.fn(),
     alertClearTodo: vi.fn(),
-    alertDrainTodoBucket: vi.fn(),
     onAlertState: vi.fn(),
     offAlertState: vi.fn(),
     saveState: vi.fn(),
@@ -69,7 +68,7 @@ describe('restoreSession', () => {
       args: ['-NoLogo'],
     });
     const saved: PersistedSession = {
-      version: 2,
+      version: 3,
       layout: { panels: { 'pane-a': {} } },
       panes: [
         { id: 'pane-a', title: 'Pane A', cwd: 'C:\\repo', scrollback: 'hello', resumeCommand: null },

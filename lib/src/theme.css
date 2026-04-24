@@ -207,60 +207,62 @@ body.vscode-light {
   .ring-shrinking-to-br { animation: none; }
 }
 
-/* Soft-TODO pill: one letter per keypress gets a strike line.
- * The line draws left-to-right on strike, retracts on un-strike. */
-.strike-letter {
-  position: relative;
-  display: inline-block;
+/* TODO dismiss flourish. Sequence across 500ms:
+ *   0–30%  letters fade out while the check springs in (with a small overshoot)
+ *  30–55%  check settles, pill is visually still
+ *  55–100% whole pill shell (border, bg, check) dissolves together
+ *
+ * The pill body is a grid-stacked <letters, check> so width is stable
+ * throughout — no reflow when the animation starts. */
+.todo-pill-stack {
+  display: inline-grid;
 }
-.strike-letter::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 1px;
-  background-color: currentColor;
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 150ms ease-out;
+.todo-pill-stack > * {
+  grid-column: 1;
+  grid-row: 1;
 }
-.strike-letter[data-strike='true']::after {
-  transform: scaleX(1);
+.todo-pill-stack__letters {
+  opacity: 1;
+}
+.todo-pill-stack__check {
+  justify-self: center;
+  align-self: center;
+  color: var(--color-success);
+  opacity: 0;
 }
 
-/* 4th-strike flourish: struck letters fade out while a ✓ pulses in, then fades. */
+.todo-pill-shell[data-flourishing='true'] {
+  animation: todo-pill-dissolve 500ms ease-out forwards;
+  pointer-events: none;
+}
+.todo-pill-shell[data-flourishing='true'] .todo-pill-stack__letters {
+  animation: todo-flourish-letters 500ms ease-out forwards;
+}
+.todo-pill-shell[data-flourishing='true'] .todo-pill-stack__check {
+  animation: todo-flourish-check 500ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
 @keyframes todo-flourish-letters {
   0%   { opacity: 1; }
   30%  { opacity: 0; }
   100% { opacity: 0; }
 }
 @keyframes todo-flourish-check {
-  0%   { opacity: 0; transform: scale(0.7); }
-  30%  { opacity: 1; transform: scale(1); }
-  70%  { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1); }
+  0%   { opacity: 0; transform: scale(0.5); }
+  35%  { opacity: 1; transform: scale(1.15); }
+  55%  { transform: scale(1); }
+  100% { opacity: 1; transform: scale(1); }
 }
-.todo-pill-flourish {
-  display: inline-grid;
-}
-.todo-pill-flourish > * {
-  grid-column: 1;
-  grid-row: 1;
-}
-.todo-pill-flourish__letters {
-  animation: todo-flourish-letters 500ms ease-out forwards;
-}
-.todo-pill-flourish__check {
-  justify-self: center;
-  align-self: center;
-  color: var(--color-success);
-  opacity: 0;
-  animation: todo-flourish-check 500ms ease-out forwards;
+@keyframes todo-pill-dissolve {
+  0%, 55%  { opacity: 1; transform: scale(1); }
+  100%     { opacity: 0; transform: scale(0.92); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .strike-letter::after { transition: none; }
-  .todo-pill-flourish__letters { animation: none; opacity: 0; }
-  .todo-pill-flourish__check { animation: none; opacity: 1; }
+  .todo-pill-shell[data-flourishing='true'],
+  .todo-pill-shell[data-flourishing='true'] .todo-pill-stack__letters,
+  .todo-pill-shell[data-flourishing='true'] .todo-pill-stack__check {
+    animation: none;
+    opacity: 0;
+  }
 }
