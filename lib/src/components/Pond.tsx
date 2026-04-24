@@ -1502,6 +1502,8 @@ export function Pond({
         if (dialogKeyboardActiveRef.current) return;
         e.preventDefault();
         e.stopPropagation();
+        // Go through the real button so that a dismiss opens the dialog. The
+        // fallback handles the edge case where the header isn't mounted yet.
         const alertButton = findAlertButtonForSession(sid);
         if (alertButton) {
           alertButton.click();
