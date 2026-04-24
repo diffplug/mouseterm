@@ -5,7 +5,7 @@ import { MouseTermViewProvider } from './webview-view-provider';
 import { attachRouter, flushAllSessions, getAlertStates } from './message-router';
 import { getWebviewHtml } from './webview-html';
 import { log } from './log';
-import { getSavedSessionState, mergeAlertStates, refreshSavedSessionStateFromPtys, saveSessionState } from './session-state';
+import { mergeAlertStates, refreshSavedSessionStateFromPtys } from './session-state';
 import { readPersistedSession } from '../../lib/src/lib/session-types';
 import { resolveSelectedShell, setSelectedShellPath, getSelectedShellPath } from './shell-selection';
 

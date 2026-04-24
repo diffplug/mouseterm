@@ -39,7 +39,7 @@ export class TutorialDetector {
   private initialPanelCount = 0;
   private currentMode: PondMode = 'command';
   private hasZoomed = false;
-  private hasDetached = false;
+  private hasMinimized = false;
   private focusedPanelIds = new Set<string>();
   private pendingResizeBaselineReset = false;
   private resizeBaseline: ResizeSnapshot | null = null;
@@ -119,11 +119,11 @@ export class TutorialDetector {
 
       case 'minimizeChange':
         if (event.count > 0) {
-          this.hasDetached = true;
-        } else if (this.hasDetached && this.shell.isStepComplete(2)) {
-          // Reattached (count back to 0 after detach) — Step 4 complete
+          this.hasMinimized = true;
+        } else if (this.hasMinimized && this.shell.isStepComplete(2)) {
+          // Reattached (count back to 0 after minimize) — Step 4 complete
           this.shell.markStepComplete(3);
-          this.hasDetached = false;
+          this.hasMinimized = false;
         }
         break;
 

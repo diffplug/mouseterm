@@ -194,9 +194,9 @@ activationEvents: ["onWebviewPanel:mouseterm"]
 
 ```typescript
 interface PersistedSession {
-  version: 1;
+  version: 2;
   panes: PersistedPane[];
-  detached?: PersistedDetachedItem[];
+  doors?: PersistedDoor[];
   layout: unknown; // SerializedDockview
 }
 
@@ -207,6 +207,16 @@ interface PersistedPane {
   scrollback: string | null;
   resumeCommand: string | null;
   alert?: PersistedAlertState | null;
+}
+
+interface PersistedDoor {
+  id: string;
+  title: string;
+  neighborId: string | null;
+  direction: DoorDirection;
+  remainingPaneIds: string[];
+  layoutAtMinimize: unknown;
+  layoutAtMinimizeSignature: string;
 }
 ```
 

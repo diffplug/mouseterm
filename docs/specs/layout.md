@@ -306,7 +306,7 @@ The direction is carried via `FreshlySpawnedContext` — a `Map<paneId, SpawnDir
 
 1. Add `.pane-fading-out` (or `.pane-fading-and-shrinking-to-br` for a last-pane kill) to the killed pane's group element. Block pointer events during the fade.
 2. On `animationend`, snapshot `getBoundingClientRect` for every surviving panel's group element.
-3. `destroyTerminal` + `api.removePanel`; dockview snaps the layout.
+3. `disposeSession` + `api.removePanel`; dockview snaps the layout.
 4. Measure post-rects. Any panel whose rect grew is a "grower."
 5. For each grower, apply an inline `clip-path: inset(...)` with the newly-claimed territory clipped off, force a reflow, then transition to `inset(0)`. This reveals the grower into the vacated space without affecting `getBoundingClientRect`. Clears on `transitionend`.
 
@@ -341,11 +341,11 @@ The deferred spawn also only calls `selectPanel` if selection is null. The kill 
 | `lib/src/components/Door.tsx` | Individual door element — mouse-hole styled button with alert/TODO indicators |
 | `lib/src/components/TerminalPane.tsx` | Thin xterm.js mount point — mounts/unmounts persistent session elements |
 | `lib/src/lib/terminal-registry.ts` | Session lifecycle: create, resume, restore, mount, unmount, dispose, swap, focus, refit. Activity state store |
-| `lib/src/lib/spatial-nav.ts` | Spatial navigation (`findPanelInDirection`) and restore-neighbor detection (`findRestoreNeighbor`) |
+| `lib/src/lib/spatial-nav.ts` | Spatial navigation (`findPanelInDirection`) and reattach-neighbor detection (`findReattachNeighbor`) |
 | `lib/src/lib/layout-snapshot.ts` | Layout cloning (`cloneLayout`) and structural signature (`getLayoutStructureSignature`) for restore comparison |
 | `lib/src/lib/activity-monitor.ts` | Per-session activity state machine: output timing → alert escalation |
 | `lib/src/lib/alert-manager.ts` | Manages ActivityMonitors + attention tracking + TODO state per session |
-| `lib/src/lib/session-types.ts` | Type definitions for persisted sessions (`PersistedPane`, `PersistedDetachedItem`, `PersistedSession`) |
+| `lib/src/lib/session-types.ts` | Type definitions for persisted sessions (`PersistedPane`, `PersistedDoor`, `PersistedSession`) |
 | `lib/src/lib/session-save.ts` | Serialization: collects layout, scrollback, cwd, alert state for persistence |
 | `lib/src/lib/session-restore.ts` | Deserialization: loads saved session, calls `restoreTerminal()` for each pane |
 | `lib/src/lib/reconnect.ts` | Priority-based recovery: live PTYs first, then saved session, then empty |

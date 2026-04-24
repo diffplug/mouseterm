@@ -611,7 +611,7 @@ export function getOrCreateTerminal(id: string): TerminalEntry {
 }
 
 /**
- * Reconnect to an existing PTY after the webview is recreated.
+ * Resume an existing PTY after the webview is recreated.
  * Creates the xterm instance and writes replay data, but does NOT spawn a new PTY.
  */
 export function resumeTerminal(
@@ -686,7 +686,7 @@ export function mountElement(id: string, container: HTMLElement): void {
 }
 
 /**
- * Detach a terminal's element from its current container.
+ * Unmount a terminal's element from its current container.
  * The terminal stays alive — just not in the DOM.
  */
 export function unmountElement(id: string): void {
@@ -742,7 +742,7 @@ export function swapTerminals(idA: string, idB: string): void {
   const containerA = entryA.element.parentElement;
   const containerB = entryB.element.parentElement;
 
-  // Detach both
+  // Unmount both
   entryA.element.remove();
   entryB.element.remove();
 
