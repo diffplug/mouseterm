@@ -15,13 +15,6 @@ import {
   toggleSessionTodo,
 } from '../lib/terminal-registry';
 
-let dialogKeyboardActive = false;
-
-/** Pond's command-mode keyboard handler consults this to avoid reacting to
- *  `a`/`t` while the dialog is open (the dialog has its own handlers). */
-export function isDialogKeyboardActive(): boolean {
-  return dialogKeyboardActive;
-}
 
 function pointInConvexPolygon(x: number, y: number, vertices: Array<{ x: number; y: number }>): boolean {
   let sign = 0;
@@ -96,10 +89,12 @@ export function TodoAlertDialog({
   triggerRect,
   sessionId,
   onClose,
+  onKeyboardActiveChange,
 }: {
   triggerRect: DOMRect;
   sessionId: string;
   onClose: () => void;
+  onKeyboardActiveChange: (active: boolean) => void;
 }) {
   const activityStates = useSyncExternalStore(subscribeToActivity, getActivitySnapshot);
   const activity = activityStates.get(sessionId) ?? DEFAULT_ACTIVITY_STATE;
@@ -137,7 +132,7 @@ export function TodoAlertDialog({
   useEffect(() => {
     const el = dialogRef.current;
     if (!el) return;
-    dialogKeyboardActive = true;
+    onKeyboardActiveChange(true);
     const handler = (e: KeyboardEvent) => {
       if (!el.contains(document.activeElement)) return;
       if (e.key === 'a') {
@@ -153,10 +148,10 @@ export function TodoAlertDialog({
     };
     window.addEventListener('keydown', handler, true);
     return () => {
-      dialogKeyboardActive = false;
+      onKeyboardActiveChange(false);
       window.removeEventListener('keydown', handler, true);
     };
-  }, [sessionId]);
+  }, [sessionId, onKeyboardActiveChange]);
 
   // Hot area: close when mouse leaves (dialog ∪ funnel from trigger button to dialog top).
   // Only arms after the cursor has entered the hot area, so a keyboard-triggered

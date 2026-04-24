@@ -16,7 +16,7 @@ import { Baseboard } from './Baseboard';
 import { tv } from 'tailwind-variants';
 import { PopupButtonRow, popupButton } from './design';
 import { HeaderActionButton } from './HeaderActionButton';
-import { TodoAlertDialog, isDialogKeyboardActive } from './TodoAlertDialog';
+import { TodoAlertDialog } from './TodoAlertDialog';
 import { KillConfirmOverlay, orchestrateKill, randomKillChar, type ConfirmKill } from './KillConfirm';
 import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
@@ -242,6 +242,10 @@ export const RenamingIdContext = createContext<string | null>(null);
 export const ZoomedContext = createContext(false);
 export const WindowFocusedContext = createContext(true);
 
+// Lets TodoAlertDialog notify Pond's command-mode keyboard handler to stand
+// down while the dialog is open (both listen on window capture, Pond first).
+export const DialogKeyboardContext = createContext<(active: boolean) => void>(() => {});
+
 // Transient map of pane ids that were just created → their spawn direction.
 // TerminalPanel consumes (and removes) its id on first mount to trigger a directional spawn animation.
 //   'left'     — born from horizontal split (new pane appeared to the right of the source)
@@ -328,6 +332,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const renamingId = useContext(RenamingIdContext);
   const zoomed = useContext(ZoomedContext);
   const windowFocused = useContext(WindowFocusedContext);
+  const setDialogKeyboardActive = useContext(DialogKeyboardContext);
   const activityStates = useSyncExternalStore(subscribeToActivity, getActivitySnapshot);
   const mouseStates = useSyncExternalStore(subscribeToMouseSelection, getMouseSelectionSnapshot);
   const actions = useContext(PondActionsContext);
@@ -550,6 +555,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           triggerRect={dialogTriggerRect}
           sessionId={api.id}
           onClose={closeDialog}
+          onKeyboardActiveChange={setDialogKeyboardActive}
         />
       )}
     </div>
@@ -801,6 +807,11 @@ export function Pond({
   // Ref to the SelectionOverlay's root element. orchestrateKill uses it to
   // animate the focus ring in sync with the killed pane's shrink (last-pane case).
   const overlayElRef = useRef<HTMLDivElement | null>(null);
+
+  const dialogKeyboardActiveRef = useRef(false);
+  const setDialogKeyboardActive = useCallback((active: boolean) => {
+    dialogKeyboardActiveRef.current = active;
+  }, []);
 
   // Consumed once in handleReady to restore existing sessions
   const initialPaneIdsRef = useRef(initialPaneIds);
@@ -1480,7 +1491,7 @@ export function Pond({
       }
 
       if (e.key === 't' && sid && selectedTypeRef.current === 'pane') {
-        if (isDialogKeyboardActive()) return;
+        if (dialogKeyboardActiveRef.current) return;
         e.preventDefault();
         e.stopPropagation();
         toggleSessionTodo(sid);
@@ -1488,7 +1499,7 @@ export function Pond({
       }
 
       if (e.key === 'a' && sid && selectedTypeRef.current === 'pane') {
-        if (isDialogKeyboardActive()) return;
+        if (dialogKeyboardActiveRef.current) return;
         e.preventDefault();
         e.stopPropagation();
         const alertButton = findAlertButtonForSession(sid);
@@ -1784,6 +1795,7 @@ export function Pond({
           <ZoomedContext.Provider value={zoomed}>
           <WindowFocusedContext.Provider value={windowFocused}>
           <FreshlySpawnedContext.Provider value={freshlySpawnedRef.current}>
+          <DialogKeyboardContext.Provider value={setDialogKeyboardActive}>
           <div className="flex-1 min-h-0 flex flex-col bg-surface text-foreground font-sans overflow-hidden">
             {/* Dockview */}
             <div className="flex-1 min-h-0 relative p-1.5">
@@ -1812,6 +1824,7 @@ export function Pond({
             )}
 
           </div>
+          </DialogKeyboardContext.Provider>
           </FreshlySpawnedContext.Provider>
           </WindowFocusedContext.Provider>
           </ZoomedContext.Provider>
