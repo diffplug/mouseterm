@@ -55,7 +55,10 @@ export function Door({
       {(todoPill.visible || alertEnabled) && (
         <span className="flex shrink-0 items-center gap-1.5">
           {todoPill.visible && (
-            <span className="rounded border border-border bg-surface-raised px-1 py-px text-[8px] font-semibold tracking-[0.08em] text-foreground">
+            <span
+              className="todo-pill-shell rounded border border-border bg-surface-raised px-1 py-px text-[8px] font-semibold tracking-[0.08em] text-foreground"
+              data-flourishing={todoPill.flourishing ? 'true' : 'false'}
+            >
               {todoPill.body}
             </span>
           )}

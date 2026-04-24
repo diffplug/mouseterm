@@ -18,8 +18,8 @@ mouseterm has two modes:
 
 | Key | Action | Description |
 |-----|--------|-------------|
-| `\|` or `%` | Split horizontal | Split the selected pane into two side-by-side panes. |
-| `-` or `"` | Split vertical | Split the selected pane into two stacked panes. |
+| `\|` or `%` | Split left/right | Split the selected pane into two side-by-side panes. |
+| `-` or `"` | Split top/bottom | Split the selected pane into two stacked panes. |
 | `z` | Toggle zoom | Fullscreen the selected pane, or return to the normal layout. |
 | `m` or `d` | Minimize / reattach | Minimize the selected pane to the baseboard, or reattach a minimized door. |
 | `k` or `x` | Kill | Kill the selected pane or door. Prompts for a random character to confirm. |

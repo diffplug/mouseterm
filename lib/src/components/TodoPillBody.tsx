@@ -7,8 +7,11 @@ const FLOURISH_MS = 500;
  * Shared render body + flourish state for the TODO pill.
  *
  * Returns `visible: false` when the pill should not render at all.
- * Returns `flourishing: true` briefly after a TODO clears, so the
- * caller can render a non-interactive wrapper (no click target).
+ * Returns `flourishing: true` briefly after a TODO clears so the
+ * caller can set `data-flourishing="true"` on its pill shell.
+ *
+ * The body is a grid-stacked <letters, check> so the pill width stays
+ * stable across steady/flourishing states — the CSS drives the animation.
  */
 export function useTodoPillContent(todo: TodoState): {
   visible: boolean;
@@ -41,19 +44,12 @@ export function useTodoPillContent(todo: TodoState): {
 
   const visible = todo || flourishing;
 
-  let body: ReactNode = null;
-  if (flourishing) {
-    body = (
-      <span className="todo-pill-flourish">
-        <span className="todo-pill-flourish__letters">TODO</span>
-        <span className="todo-pill-flourish__check" aria-hidden>
-          ✓
-        </span>
-      </span>
-    );
-  } else if (todo) {
-    body = <>TODO</>;
-  }
+  const body: ReactNode = visible ? (
+    <span className="todo-pill-stack">
+      <span className="todo-pill-stack__letters">TODO</span>
+      <span className="todo-pill-stack__check" aria-hidden>✓</span>
+    </span>
+  ) : null;
 
   return { visible, flourishing, body };
 }

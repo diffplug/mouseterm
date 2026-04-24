@@ -51,7 +51,7 @@ export function Shortcut({
 
 /**
  * Render a string with any `[...]` segments replaced by <Shortcut>. Use when
- * the shortcut is embedded inline in a label (e.g., "Split horizontal [" or |]").
+ * the shortcut is embedded inline in a label (e.g., "Split left/right [" or |]").
  */
 export function renderShortcuts(text: string): ReactNode[] {
   const parts: ReactNode[] = [];

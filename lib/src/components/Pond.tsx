@@ -700,6 +700,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
       triggerRect: rect,
     });
   }, []);
+  const closeDialog = useCallback(() => setDialogPosition(null), []);
 
   const triggerAlertButtonAction = useCallback((displayedStatus: SessionStatus, button: HTMLButtonElement) => {
     const result = actions.onAlertButton(api.id, displayedStatus);
@@ -794,28 +795,21 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           </span>
         </HeaderActionButton>
         {showTodoPill && (
-          todoPill.flourishing ? (
-            <span
-              className="shrink-0 rounded border border-muted px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted"
-              aria-hidden
-            >
-              {todoPill.body}
-            </span>
-          ) : (
-            <button
-              type="button"
-              data-session-todo-for={api.id}
-              className="shrink-0 rounded border border-muted px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10"
-              aria-label="Dismiss TODO"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                clearSessionTodo(api.id);
-              }}
-            >
-              {todoPill.body}
-            </button>
-          )
+          <button
+            type="button"
+            data-session-todo-for={api.id}
+            data-flourishing={todoPill.flourishing ? 'true' : 'false'}
+            className="todo-pill-shell shrink-0 rounded border border-muted px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10"
+            aria-label="Dismiss TODO"
+            aria-hidden={todoPill.flourishing ? true : undefined}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              clearSessionTodo(api.id);
+            }}
+          >
+            {todoPill.body}
+          </button>
         )}
       </div>
       {!isRenaming && (
@@ -855,14 +849,14 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
               <HeaderActionButton
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitH(api.id); }}
-                ariaLabel="Split horizontal"
-                tooltip='Split horizontal [|] or [%]'
+                ariaLabel="Split left/right"
+                tooltip='Split left/right [|] or [%]'
               ><SplitHorizontalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitV(api.id); }}
-                ariaLabel="Split vertical"
-                tooltip='Split vertical [-] or ["]'
+                ariaLabel="Split top/bottom"
+                tooltip='Split top/bottom [-] or ["]'
               ><SplitVerticalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
                 className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
@@ -893,7 +887,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         <TodoAlertDialog
           position={dialogPosition}
           sessionId={api.id}
-          onClose={() => setDialogPosition(null)}
+          onClose={closeDialog}
         />
       )}
     </div>

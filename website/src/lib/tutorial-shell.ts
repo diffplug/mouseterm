@@ -59,7 +59,7 @@ const STEPS: TutorialStep[] = [
     phase: 'Keyboard Power',
     title: 'Split using keyboard shortcuts',
     description: 'Split a pane without leaving the keyboard.',
-    hint: 'In command mode, press " to split horizontally or % to split vertically.',
+    hint: 'In command mode, press " to split top/bottom or % to split left/right.',
   },
 ];
 

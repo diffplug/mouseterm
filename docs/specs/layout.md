@@ -78,8 +78,8 @@ Elements from left to right:
 - Alert bell button (reflects session activity status)
 - TODO pill (if todo state is set; hidden in minimal tier)
 - Flexible gap
-- SplitHorizontalIcon `split horizontal ["]` (full tier only)
-- SplitVerticalIcon `split vertical [%]` (full tier only)
+- SplitHorizontalIcon `split left/right [|]` (full tier only)
+- SplitVerticalIcon `split top/bottom [-]` (full tier only)
 - ArrowsOutIcon / ArrowsInIcon `zoom / unzoom [z]` (full tier only)
 - ArrowLineDownIcon `minimize [m]`
 - XIcon `kill [x]` (hover turns error-red)
