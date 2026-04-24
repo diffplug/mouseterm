@@ -25,7 +25,7 @@ mouseterm has two modes:
 | `k` or `x` | Kill | Kill the selected pane or door. Prompts for a random character to confirm. |
 | `,` | Rename | Enter rename mode for the selected pane's title. |
 | `a` | Toggle alert | Dismiss or toggle the bell alert for the selected pane. |
-| `t` | Toggle todo | Toggle the TODO marker (soft / hard) on the selected pane. |
+| `t` | Toggle todo | Toggle the TODO marker on or off for the selected pane. |
 
 ## Navigation (workspace mode)
 
