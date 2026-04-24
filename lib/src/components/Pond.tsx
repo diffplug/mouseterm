@@ -711,15 +711,11 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef
 
       const targetRect = targetEl.getBoundingClientRect();
       const inflate = selectedType === 'door' ? 0 : INFLATE;
-      const dockviewRect = selectedType === 'pane'
-        ? targetEl.closest('.dv-dockview')?.getBoundingClientRect()
-        : null;
-      const bottom = Math.min(targetRect.bottom + inflate, dockviewRect?.bottom ?? Infinity);
       setRect({
         top: targetRect.top - inflate,
         left: targetRect.left - inflate,
         width: targetRect.width + inflate * 2,
-        height: bottom - (targetRect.top - inflate),
+        height: targetRect.height + inflate * 2,
       });
     };
 
@@ -1807,7 +1803,7 @@ export function Pond({
           <WindowFocusedContext.Provider value={windowFocused}>
           <FreshlySpawnedContext.Provider value={freshlySpawnedRef.current}>
           <DialogKeyboardContext.Provider value={setDialogKeyboardActive}>
-          <div className="flex-1 min-h-0 flex flex-col bg-surface text-foreground font-sans overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col bg-app-bg text-foreground font-sans overflow-hidden">
             {/* Dockview — no bottom padding so the last row of panes meets
                 the baseboard flush. */}
             <div className="flex-1 min-h-0 relative px-1.5 pt-1.5">

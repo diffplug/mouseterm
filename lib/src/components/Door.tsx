@@ -37,11 +37,6 @@ export function Door({
         'text-sm font-medium font-mono tracking-[0.02em]',
         'transition-colors hover:bg-header-active-bg hover:text-header-active-fg',
       ].join(' ')}
-      style={{
-        borderTop: '2px solid var(--color-border)',
-        borderLeft: '2px solid var(--color-border)',
-        borderRight: '2px solid var(--color-border)',
-      }}
       onClick={onClick}
       title={title}
     >

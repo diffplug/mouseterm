@@ -185,7 +185,6 @@ A fixed-positioned element rendered on top of dockview. Covers the active elemen
 - Border radius: `0.5rem` for panes, `0.375rem 0.375rem 0 0` for doors
 - Color from CSS custom property `--mt-selection-terminal`
 - `z-index: 50`, `pointer-events: none`, `transition: 150ms`
-- Pane inflation is clamped to the Dockview content bounds, so bottom-row pane rings do not cover the baseboard.
 
 ### Position tracking
 - Each `TerminalPanel` registers its DOM element in a `panelElements` Map on mount, removes on unmount
