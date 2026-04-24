@@ -39,7 +39,7 @@ export function Door({
         'relative flex h-6 max-w-[220px] min-w-[68px] items-center gap-2 overflow-hidden px-2.5',
         'rounded-t-md',
         'bg-surface',
-        'text-xs font-medium font-mono tracking-[0.02em]',
+        'text-sm font-medium font-mono tracking-[0.02em]',
         'transition-colors hover:bg-surface-raised',
       ].join(' ')}
       style={{
@@ -56,7 +56,7 @@ export function Door({
         <span className="flex shrink-0 items-center gap-1.5">
           {todoPill.visible && (
             <span
-              className="todo-pill-shell text-micro font-semibold tracking-[0.08em] text-foreground"
+              className="todo-pill-shell text-xs font-semibold tracking-[0.08em] text-foreground"
               data-flourishing={todoPill.flourishing ? 'true' : 'false'}
             >
               {todoPill.body}

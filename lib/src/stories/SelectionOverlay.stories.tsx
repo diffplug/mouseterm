@@ -36,7 +36,7 @@ function SelectionOverlayDemo({ initialMode = 'command' as PondMode }) {
   return (
     <div ref={containerRef} style={{ width: 500, height: 300 }} className="relative bg-surface">
       {/* Simulated terminal content */}
-      <div className="p-4 font-mono text-xs text-terminal-fg">
+      <div className="p-4 font-mono text-sm text-terminal-fg">
         <div>user@mouseterm:~$ ls -la</div>
         <div>total 48</div>
         <div>drwxr-xr-x  12 user staff  384 Mar 16 10:30 .</div>
@@ -52,11 +52,11 @@ function SelectionOverlayDemo({ initialMode = 'command' as PondMode }) {
       {/* Mode toggle */}
       <div className="absolute bottom-2 right-2 flex gap-2">
         <button
-          className={`px-3 py-1 rounded text-xs font-mono ${mode === 'passthrough' ? 'bg-accent text-white' : 'bg-surface-raised text-muted'}`}
+          className={`px-3 py-1 rounded text-sm font-mono ${mode === 'passthrough' ? 'bg-accent text-white' : 'bg-surface-raised text-muted'}`}
           onClick={() => setMode('passthrough')}
         >passthrough</button>
         <button
-          className={`px-3 py-1 rounded text-xs font-mono ${mode === 'command' ? 'bg-accent text-white' : 'bg-surface-raised text-muted'}`}
+          className={`px-3 py-1 rounded text-sm font-mono ${mode === 'command' ? 'bg-accent text-white' : 'bg-surface-raised text-muted'}`}
           onClick={() => setMode('command')}
         >command</button>
       </div>

@@ -26,9 +26,12 @@
   /* Fonts */
   --font-mono: var(--vscode-editor-font-family, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace);
 
-  /* Type scale — see design.tsx for the full five-step scale and usage rules. */
-  --text-micro: 0.625rem;
-  --text-micro--line-height: 1rem;
+  /* Type scale — see design.tsx for usage rules. Overrides Tailwind's
+   * defaults so the whole app sits on four rem-based steps. */
+  --text-xs: 0.625rem;          /*  10px */
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.75rem;           /*  12px */
+  --text-sm--line-height: 1rem;
 
   /* Surfaces */
   --color-surface: var(--vscode-editor-background, #1e1e1e);

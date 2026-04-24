@@ -22,7 +22,7 @@ export function KillConfirmCard({ char, onCancel, shaking }: { char: string; onC
       <div className="bg-black py-2 px-6 rounded border border-border inline-block mb-2">
         <span className="text-xl font-bold text-error">{char}</span>
       </div>
-      <div className="text-xs text-muted uppercase tracking-widest leading-relaxed">
+      <div className="text-sm text-muted uppercase tracking-widest leading-relaxed">
         <div>[{char}] to confirm</div>
         <button type="button" onClick={onCancel} className="uppercase hover:text-foreground transition-colors cursor-pointer">[ESC] to cancel</button>
       </div>

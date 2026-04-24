@@ -5,7 +5,7 @@ function KillModal({ char = 'G', onCancel, shaking }: { char?: string; onCancel?
   return (
     <div className="relative bg-surface" style={{ width: 600, height: 400 }}>
       {/* Simulated terminal content behind the overlay */}
-      <div className="p-4 font-mono text-xs text-terminal-fg">
+      <div className="p-4 font-mono text-sm text-terminal-fg">
         <div>user@mouseterm:~$ npm run build</div>
         <div className="text-muted">Building project...</div>
       </div>

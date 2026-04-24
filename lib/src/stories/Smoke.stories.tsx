@@ -8,27 +8,27 @@ function ThemeCheck() {
       <div className="flex gap-3">
         <div className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded bg-accent" />
-          <span className="text-xs text-muted">accent</span>
+          <span className="text-sm text-muted">accent</span>
         </div>
         <div className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded bg-surface-alt" />
-          <span className="text-xs text-muted">surface-alt</span>
+          <span className="text-sm text-muted">surface-alt</span>
         </div>
         <div className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded bg-surface-raised" />
-          <span className="text-xs text-muted">surface-raised</span>
+          <span className="text-sm text-muted">surface-raised</span>
         </div>
         <div className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded bg-error" />
-          <span className="text-xs text-muted">error</span>
+          <span className="text-sm text-muted">error</span>
         </div>
         <div className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded bg-tab-active-bg border border-border" />
-          <span className="text-xs text-muted">tab-active</span>
+          <span className="text-sm text-muted">tab-active</span>
         </div>
         <div className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded bg-terminal-bg border border-border" />
-          <span className="text-xs text-muted">terminal-bg</span>
+          <span className="text-sm text-muted">terminal-bg</span>
         </div>
       </div>
     </div>

@@ -3,17 +3,17 @@ import { tv, type VariantProps } from 'tailwind-variants';
 import type { HTMLAttributes, ReactNode } from 'react';
 
 /**
- * App-wide type scale. Use one of these five rem-based classes for every
+ * App-wide type scale. Use one of these four rem-based classes for every
  * font-size — never `text-[9px]` or other arbitrary pixel values.
  *
- *   text-micro  (10px) — TODO indicators (Door letters in baseboard, Pond tab pill)
- *   text-xs     (12px) — default UI body: everything else — tab titles, buttons,
- *                        dialog labels, popups, help text, baseboard, ThemePicker
- *   text-sm     (14px) — section headers inside dialogs
- *   text-base   (16px) — dialog titles
- *   text-xl     (20px) — single-purpose emphasis (the KillConfirm character)
+ *   text-xs    (10px) — TODO indicators (Door letters in baseboard, Pond tab pill)
+ *   text-sm    (12px) — default UI body: tab titles, buttons, dialog labels,
+ *                       popups, help text, baseboard, ThemePicker
+ *   text-base  (16px) — dialog titles
+ *   text-xl    (20px) — single-purpose emphasis (the KillConfirm character)
  *
- * `text-micro` is registered in theme.css; the rest are stock Tailwind.
+ * `text-xs` and `text-sm` are overridden in theme.css (Tailwind's defaults
+ * would be 12px and 14px); `text-base` and `text-xl` are stock.
  */
 
 export function PopupButtonRow({
@@ -23,7 +23,7 @@ export function PopupButtonRow({
   return (
     <div
       className={clsx(
-        'flex items-stretch overflow-hidden rounded border border-border bg-surface-raised font-mono text-xs text-foreground shadow-md',
+        'flex items-stretch overflow-hidden rounded border border-border bg-surface-raised font-mono text-sm text-foreground shadow-md',
         className,
       )}
       {...props}

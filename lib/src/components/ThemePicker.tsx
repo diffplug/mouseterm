@@ -200,7 +200,7 @@ function ThemeStoreDialog({
           <button
             type="button"
             onClick={onClose}
-            className="text-xs transition-opacity hover:opacity-100"
+            className="text-sm transition-opacity hover:opacity-100"
             style={styles.muted}
             aria-label="Close theme store"
           >
@@ -215,23 +215,23 @@ function ThemeStoreDialog({
             onChange={(event) => handleInput(event.target.value)}
             placeholder="Search themes..."
             autoFocus
-            className="w-full rounded border px-3 py-1.5 text-xs outline-none placeholder:opacity-65"
+            className="w-full rounded border px-3 py-1.5 text-sm outline-none placeholder:opacity-65"
             style={styles.trigger(false)}
           />
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 pb-3">
           {error ? (
-            <div className="rounded px-3 py-2 text-xs" style={styles.error}>
+            <div className="rounded px-3 py-2 text-sm" style={styles.error}>
               {error}
             </div>
           ) : null}
-          {loading ? <div className="py-8 text-center text-xs" style={styles.muted}>Searching...</div> : null}
+          {loading ? <div className="py-8 text-center text-sm" style={styles.muted}>Searching...</div> : null}
           {!loading && results.length === 0 && query.trim() ? (
-            <div className="py-8 text-center text-xs" style={styles.muted}>No themes found</div>
+            <div className="py-8 text-center text-sm" style={styles.muted}>No themes found</div>
           ) : null}
           {!loading && !query.trim() ? (
-            <div className="py-8 text-center text-xs" style={styles.muted}>
+            <div className="py-8 text-center text-sm" style={styles.muted}>
               Search for a VS Code theme to install
             </div>
           ) : null}
@@ -245,15 +245,15 @@ function ThemeStoreDialog({
                   <img src={extension.files.icon} alt="" className="h-8 w-8 shrink-0 rounded" />
                 ) : (
                   <div
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-xs"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-sm"
                     style={{ ...styles.trigger(false), ...styles.muted }}
                   >
                     VS
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium">{extension.displayName || extension.name}</div>
-                  <div className="truncate text-xs" style={styles.muted}>
+                  <div className="truncate text-sm font-medium">{extension.displayName || extension.name}</div>
+                  <div className="truncate text-sm" style={styles.muted}>
                     {extension.namespace} - {extension.downloadCount.toLocaleString()} downloads
                   </div>
                 </div>
@@ -261,7 +261,7 @@ function ThemeStoreDialog({
                   <button
                     type="button"
                     onClick={() => handleRemoveExtension(key)}
-                    className="shrink-0 rounded px-2 py-1 text-xs transition-opacity hover:opacity-100"
+                    className="shrink-0 rounded px-2 py-1 text-sm transition-opacity hover:opacity-100"
                     style={styles.muted}
                   >
                     Remove
@@ -271,7 +271,7 @@ function ThemeStoreDialog({
                     type="button"
                     onClick={() => handleInstall(extension)}
                     disabled={isInstallingThis}
-                    className="shrink-0 rounded px-2 py-1 text-xs transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="shrink-0 rounded px-2 py-1 text-sm transition-opacity hover:opacity-90 disabled:opacity-50"
                     style={styles.button}
                   >
                     {isInstallingThis ? 'Installing...' : 'Install'}
@@ -337,23 +337,23 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
   };
 
   const rootClass = isPlayground
-    ? 'relative flex min-w-0 items-center gap-1.5 text-xs'
+    ? 'relative flex min-w-0 items-center gap-1.5 text-sm'
     : 'relative flex items-center';
   const triggerClass = isPlayground
-    ? 'flex h-8 w-[116px] min-w-0 items-center gap-2 rounded border px-2 text-left text-xs transition-colors sm:w-40 md:w-56'
-    : 'flex h-6 max-w-[190px] items-center gap-1.5 rounded border border-transparent px-2 text-xs transition-colors hover:opacity-85';
+    ? 'flex h-8 w-[116px] min-w-0 items-center gap-2 rounded border px-2 text-left text-sm transition-colors sm:w-40 md:w-56'
+    : 'flex h-6 max-w-[190px] items-center gap-1.5 rounded border border-transparent px-2 text-sm transition-colors hover:opacity-85';
   const menuClass = isPlayground
     ? 'fixed top-16 right-4 left-4 z-50 overflow-hidden rounded border font-mono shadow-2xl md:absolute md:top-full md:right-0 md:left-auto md:mt-2 md:w-[22rem]'
     : 'absolute right-0 top-full z-50 mt-1 w-[280px] overflow-hidden rounded border font-mono shadow-2xl';
   const rowButtonClass = isPlayground
-    ? 'flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs'
-    : 'flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-xs';
+    ? 'flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm'
+    : 'flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-sm';
   const swatchSize = isPlayground ? 'md' : 'sm';
 
   return (
     <div ref={rootRef} className={`${rootClass} ${className}`}>
       {isPlayground ? (
-        <span id={labelId} className="shrink-0 text-xs font-medium" style={styles.muted}>
+        <span id={labelId} className="shrink-0 text-sm font-medium" style={styles.muted}>
           Theme:
         </span>
       ) : null}
@@ -369,8 +369,8 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
         style={styles.trigger(open)}
       >
         {activeTheme ? <ThemeSwatch theme={activeTheme} size={swatchSize} /> : null}
-        {!isPlayground ? <span className="hidden text-xs sm:inline">Theme:</span> : null}
-        <span id={currentId} className={`min-w-0 truncate ${isPlayground ? 'flex-1' : 'font-mono text-xs'}`}>
+        {!isPlayground ? <span className="hidden text-sm sm:inline">Theme:</span> : null}
+        <span id={currentId} className={`min-w-0 truncate ${isPlayground ? 'flex-1' : 'font-mono text-sm'}`}>
           {activeTheme?.label ?? 'Select theme'}
         </span>
         <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
@@ -404,7 +404,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
                       type="button"
                       aria-label={`Delete ${theme.label}`}
                       title={`Delete ${theme.label}`}
-                      className="mr-2 flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs opacity-60 transition-opacity hover:opacity-100 focus:opacity-100"
+                      className="mr-2 flex h-5 w-5 shrink-0 items-center justify-center rounded text-sm opacity-60 transition-opacity hover:opacity-100 focus:opacity-100"
                       style={{ color: 'inherit' }}
                       onClick={(event) => {
                         event.preventDefault();
@@ -427,7 +427,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
                 setOpen(false);
                 setStoreOpen(true);
               }}
-              className={`w-full rounded text-left text-xs font-medium transition-opacity hover:opacity-85 ${
+              className={`w-full rounded text-left text-sm font-medium transition-opacity hover:opacity-85 ${
                 isPlayground ? 'px-3 py-2' : 'px-3 py-1.5'
               }`}
               style={styles.link}

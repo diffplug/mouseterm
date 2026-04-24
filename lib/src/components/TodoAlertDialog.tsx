@@ -203,7 +203,7 @@ export function TodoAlertDialog({
       <div className="mb-3 grid w-fit grid-cols-[auto_auto_auto] items-center gap-x-2 gap-y-2">
         {/* TODO row */}
         <Shortcut>t</Shortcut>
-        <span className="text-xs font-medium text-foreground">TODO</span>
+        <span className="text-sm font-medium text-foreground">TODO</span>
         <OnOffSwitch
           on={activity.todo}
           onEnable={() => markSessionTodo(sessionId)}
@@ -213,7 +213,7 @@ export function TodoAlertDialog({
 
         {/* Alert row */}
         <Shortcut>a</Shortcut>
-        <span className="text-xs font-medium text-foreground">alert</span>
+        <span className="text-sm font-medium text-foreground">alert</span>
         <OnOffSwitch
           on={alertEnabled}
           onEnable={() => toggleSessionAlert(sessionId)}
@@ -222,7 +222,7 @@ export function TodoAlertDialog({
         />
       </div>
 
-      <div className="border-t border-border pt-2 text-xs leading-relaxed text-muted">
+      <div className="border-t border-border pt-2 text-sm leading-relaxed text-muted">
         When a tab with a ringing alert is selected,<br />
         the alert is cleared and the tab gets a TODO.<br />
         Pressing [Enter] into the tab will clear the TODO.
@@ -250,7 +250,7 @@ function OnOffSwitch({
       aria-checked={on}
       aria-label={`${label} ${on ? 'on' : 'off'}`}
       onClick={() => (on ? onDisable() : onEnable())}
-      className="relative inline-flex h-5 w-14 items-center rounded-full border border-border bg-surface text-xs font-medium"
+      className="relative inline-flex h-5 w-14 items-center rounded-full border border-border bg-surface text-sm font-medium"
     >
       <span
         aria-hidden
