@@ -159,21 +159,29 @@ export function TodoAlertDialog({
   }, [sessionId]);
 
   // Hot area: close when mouse leaves (dialog ∪ funnel from trigger button to dialog top).
+  // Only arms after the cursor has entered the hot area, so a keyboard-triggered
+  // open (cursor far away) doesn't auto-close on the first unrelated mousemove.
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
+    let armed = false;
     const handler = (e: MouseEvent) => {
       const dialogRect = dialog.getBoundingClientRect();
       const { clientX: x, clientY: y } = e;
-      if (x >= dialogRect.left && x <= dialogRect.right && y >= dialogRect.top && y <= dialogRect.bottom) return;
+      const inDialog = x >= dialogRect.left && x <= dialogRect.right && y >= dialogRect.top && y <= dialogRect.bottom;
       const funnel = [
         { x: triggerRect.left, y: triggerRect.top },
         { x: triggerRect.right, y: triggerRect.top },
         { x: dialogRect.right, y: dialogRect.top },
         { x: dialogRect.left, y: dialogRect.top },
       ];
-      if (pointInConvexPolygon(x, y, funnel)) return;
-      onClose();
+      const inFunnel = pointInConvexPolygon(x, y, funnel);
+      const inside = inDialog || inFunnel;
+      if (!armed) {
+        if (inside) armed = true;
+        return;
+      }
+      if (!inside) onClose();
     };
     window.addEventListener('mousemove', handler);
     return () => window.removeEventListener('mousemove', handler);
