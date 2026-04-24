@@ -49,3 +49,10 @@ See [.impeccable.md](.impeccable.md) for full design context. Key principles:
 3. **Status at a glance** — Scannable in under a second across many terminals.
 4. **No chrome, all content** — Minimize UI chrome. Terminals are the content.
 5. **Theme-adaptive** — Never hardcode colors. Support light and dark from day one.
+
+The concrete type scale, color strategy (surfaces, foregrounds, header palette, dynamic door bg, selection ring), and shared chrome constants live in
+[`lib/src/components/design.tsx`](lib/src/components/design.tsx) — read it
+before adding or changing any `text-*`, `bg-*`, `text-color-*`, or border
+class anywhere in `lib/src/`. The actual `@theme` token definitions are in
+[`lib/src/theme.css`](lib/src/theme.css); when adding or removing a token,
+update both files together.

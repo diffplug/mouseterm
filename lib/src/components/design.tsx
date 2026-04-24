@@ -17,6 +17,68 @@ import type { HTMLAttributes, ReactNode } from 'react';
  */
 
 /**
+ * Color strategy — see also `lib/src/theme.css` for the actual @theme tokens.
+ *
+ * Surfaces (4 distinct + 1 dynamic). All resolve through VSCode CSS vars,
+ * with hex fallbacks at the end of every chain so themes that omit a key
+ * still render something sensible:
+ *
+ *   --color-terminal-bg      terminal.background → editor.background
+ *                            xterm canvas + pane body
+ *   --color-app-bg           sideBar.background → editorGroupHeader.tabsBackground
+ *                            baseboard, dockview gutters, gaps around panes
+ *   --color-header-inactive-bg   list.inactiveSelectionBackground → sideBar.background
+ *                            unfocused pane headers
+ *   --color-header-active-bg     list.activeSelectionBackground
+ *                            focused pane header + the marching-ants ring
+ *   --color-door-bg          runtime: whichever of (header-inactive, terminal)
+ *                            has the larger ΔE OKLab vs app-bg
+ *                            (see Baseboard.usePickDoorPalette)
+ *
+ * Foregrounds:
+ *
+ *   --color-foreground       editor.foreground (generic body text)
+ *   --color-muted            descriptionForeground (hints, secondary)
+ *   --color-header-active-fg / --color-header-inactive-fg
+ *                            paired with their bg counterparts; inactive-fg
+ *                            falls through list.activeSelectionForeground →
+ *                            editor.foreground because list.inactiveSelectionFg
+ *                            is often left undefined by themes
+ *   --color-door-fg          runtime, paired with --color-door-bg
+ *
+ * Inside a pane header, **text and buttons inherit** the header's fg — never
+ * give them an explicit text-muted/text-foreground class. Hover feedback is
+ * `hover:bg-current/10` (currentColor at 10% alpha) so it follows whatever
+ * fg the header is currently using. Semantic exceptions: `text-warning` for
+ * a ringing bell; `hover:bg-error/10 hover:text-error` for the kill button.
+ *
+ * Selection ring: the marching-ants overlay and the terminal text-selection
+ * border both read --color-header-active-bg, so a focused pane reads as one
+ * unit (header + ring + selection all the same color).
+ *
+ * Doors: bg-only chrome with no border and no hover. The dynamic
+ * --color-door-bg is recomputed whenever the theme changes (Baseboard's
+ * MutationObserver on body class/style).
+ *
+ * Other tokens kept narrow: --color-surface-raised (dialog bodies),
+ * --color-border (dialog edges, dividers), --color-error / --color-warning /
+ * --color-success (semantic), --color-input-bg / --color-input-border
+ * (ThemePicker only).
+ *
+ * Things to avoid:
+ *   - Hardcoded colors (`bg-black`, hex values) — always go through a token.
+ *   - Reintroducing tokens we removed: tab-active-*, tab-inactive-*,
+ *     tab-selected-*, accent, surface-alt, badge-*, button-*. Use the
+ *     header-* / app-bg / surface set instead.
+ *   - Conditional `text-muted hover:text-foreground` inside a header — let
+ *     the inherited fg do the work and use bg-current/10 for hover.
+ *
+ * High-contrast VSCode themes are an accepted trade-off: bg-only chrome
+ * renders flat in HC themes (their design conveys structure via borders).
+ * Terminal content keeps its HC ANSI palette regardless.
+ */
+
+/**
  * Shared terminal chrome radius. Pane headers/doors own the top corners while
  * terminal bodies own the bottom corners; keep the CSS and SVG values aligned.
  */
