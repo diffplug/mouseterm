@@ -274,6 +274,19 @@ function MouseOverrideBanner({
   );
 }
 
+function pointInConvexPolygon(x: number, y: number, vertices: Array<{ x: number; y: number }>): boolean {
+  let sign = 0;
+  for (let i = 0; i < vertices.length; i++) {
+    const a = vertices[i];
+    const b = vertices[(i + 1) % vertices.length];
+    const cross = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
+    if (cross === 0) continue;
+    if (sign === 0) sign = cross > 0 ? 1 : -1;
+    else if ((cross > 0 ? 1 : -1) !== sign) return false;
+  }
+  return true;
+}
+
 function clampOverlayPosition({ left, top, width, height }: {
   left: number;
   top: number;
@@ -352,7 +365,7 @@ function TodoAlertDialog({
   sessionId,
   onClose,
 }: {
-  position: { x: number; y: number };
+  position: { x: number; y: number; triggerRect: DOMRect };
   sessionId: string;
   onClose: () => void;
 }) {
@@ -392,10 +405,32 @@ function TodoAlertDialog({
     };
   }, [sessionId]);
 
+  // Hot area: close when mouse leaves (dialog ∪ funnel from trigger button to dialog top).
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const trigger = position.triggerRect;
+    const handler = (e: MouseEvent) => {
+      const dialogRect = dialog.getBoundingClientRect();
+      const { clientX: x, clientY: y } = e;
+      if (x >= dialogRect.left && x <= dialogRect.right && y >= dialogRect.top && y <= dialogRect.bottom) return;
+      const funnel = [
+        { x: trigger.left, y: trigger.top },
+        { x: trigger.right, y: trigger.top },
+        { x: dialogRect.right, y: dialogRect.top },
+        { x: dialogRect.left, y: dialogRect.top },
+      ];
+      if (pointInConvexPolygon(x, y, funnel)) return;
+      onClose();
+    };
+    window.addEventListener('mousemove', handler);
+    return () => window.removeEventListener('mousemove', handler);
+  }, [position.triggerRect, onClose]);
+
   return createPortal(
     <div
       ref={dialogRef}
-      className="fixed z-[9999] w-[280px] rounded-lg border border-border bg-surface-raised p-3 shadow-lg"
+      className="fixed z-[9999] w-fit rounded-lg border border-border bg-surface-raised p-3 shadow-lg"
       style={{ left: position.x, top: position.y }}
       role="dialog"
       aria-modal="true"
@@ -640,7 +675,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const [mouseIconAnchor, setMouseIconAnchor] = useState<HTMLDivElement | null>(null);
   const suppressAlertClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
-  const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number } | null>(null);
+  const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number; triggerRect: DOMRect } | null>(null);
   const todoPill = useTodoPillContent(activity.todo);
   const showTodoPill = todoPill.visible && tier !== 'minimal';
   const alertButtonAriaLabel = activity.status === 'ALERT_RINGING'
@@ -660,8 +695,9 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const openDialogFromButton = useCallback((button: HTMLButtonElement) => {
     const rect = button.getBoundingClientRect();
     setDialogPosition({
-      x: rect.left + rect.width / 2 - 140,
-      y: rect.bottom + 6,
+      x: rect.left,
+      y: rect.bottom + 8,
+      triggerRect: rect,
     });
   }, []);
 
@@ -741,7 +777,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           onContextMenu={(e) => {
             e.preventDefault();
             const rect = e.currentTarget.getBoundingClientRect();
-            setDialogPosition({ x: rect.left, y: rect.bottom + 8 });
+            setDialogPosition({ x: rect.left, y: rect.bottom + 8, triggerRect: rect });
           }}
           ariaLabel={alertButtonAriaLabel}
           tooltip={alertButtonTooltip}
