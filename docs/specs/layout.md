@@ -26,7 +26,7 @@ The user can navigate between all elements using the mouse, or by entering `comm
 Pond
 ├── Context providers (Mode, SelectedId, PondActions, PanelElements, DoorElements, RenamingId, Zoomed, WindowFocused)
 │   └── div (h-screen, flex col)
-│       ├── Dockview wrapper (flex-1, 6px padding around edges)
+│       ├── Dockview wrapper (flex-1, 6px top/sides inset, 2px bottom inset)
 │       │   ├── DockviewReact (tiling layout engine, singleTabMode="fullwidth")
 │       │   │   └── Groups (one session per group, no tab stacking)
 │       │   │       ├── TerminalPanel → TerminalPane → xterm.js
@@ -100,7 +100,7 @@ The header adapts to available width via ResizeObserver in three tiers:
 
 ## Baseboard
 
-Below the content area is the baseboard (`h-8`, 32px). It is always visible and has no top divider. Its horizontal padding matches the Dockview wrapper's 6px inset, so doors align with the panes above. When empty, it shows keyboard shortcut hints when there are no doors and the container is wider than 350px (currently: `LCmd → RCmd to enter command mode`).
+Below the content area is the baseboard (`h-7`, 28px). It is always visible and has no top divider. The dockview area ends 2px above it, leaving a narrow theme-colored gap that keeps rounded pane corners distinct from the baseboard. Its horizontal padding matches the Dockview wrapper's 6px inset, so doors align with the panes above. When empty, it shows keyboard shortcut hints when there are no doors and the container is wider than 350px (currently: `LCmd → RCmd to enter command mode`).
 
 When a session is minimized, it becomes a **door** on the baseboard. The door displays the session's title, a TODO badge (if set), and an alert bell icon with activity dot. It uses the bottom edge of the window as its bottom border, with left, top, and right borders using the shared terminal top radius from `lib/src/components/design.tsx` — resembling a mouse hole and matching pane rounding. Door dimensions: `min-w-[68px] max-w-[220px] h-6`.
 
@@ -284,7 +284,7 @@ Custom `mousetermTheme` extends dockview's `themeAbyss`:
 - `gap: 6` — 6px between groups in both directions
 - `dndOverlayMounting: 'absolute'`, `dndPanelOverlay: 'group'`
 - Pane header height: `--dv-tabs-and-actions-container-height: 30px`
-- 6px padding around the dockview area (`p-1.5` on wrapper, `inset-1.5` on container)
+- 6px top/sides inset and 2px bottom inset around the dockview area (`px-1.5 pt-1.5 pb-0.5` on wrapper, `inset-x-1.5 top-1.5 bottom-0.5` on container)
 
 Colors use a two-layer CSS variable strategy: `@theme --color-*` tokens → `var(--vscode-*, <fallback>)`. In VSCode, host theme variables take precedence. In standalone mode, fallback values apply with `prefers-color-scheme: light` overrides. Tailwind v4 `@theme` block registers `--color-*` tokens as Tailwind colors (e.g., `bg-surface`, `text-foreground`, `border-border`). See `theme.css` for the full token map.
 
