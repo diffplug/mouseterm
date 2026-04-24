@@ -24,9 +24,6 @@ export function Door({
 }: DoorProps) {
   // Doors can only be active in command mode (navigated to via arrow keys).
   // Pressing Enter restores the door into a pane, so passthrough+active is impossible.
-  //
-  // Always use a 2px border on all sides to prevent layout shift when
-  // the dashed selection border appears. Inactive: bottom is transparent.
 
   const alertEnabled = status !== 'ALERT_DISABLED';
   const alertRinging = status === 'ALERT_RINGING';
@@ -43,13 +40,14 @@ export function Door({
         'transition-colors hover:bg-surface-raised',
       ].join(' ')}
       style={{
-        border: '2px solid var(--color-border)',
-        borderBottom: '2px solid transparent',
+        borderTop: '2px solid var(--color-border)',
+        borderLeft: '2px solid var(--color-border)',
+        borderRight: '2px solid var(--color-border)',
       }}
       onClick={onClick}
       title={title}
     >
-      <span className="min-w-0 flex-1 truncate text-muted">
+      <span className="min-w-0 flex-1 truncate text-foreground">
         {title}
       </span>
       {(todoPill.visible || alertEnabled) && (

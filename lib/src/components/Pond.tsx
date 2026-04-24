@@ -710,7 +710,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef
       if (!targetEl) return;
 
       const targetRect = targetEl.getBoundingClientRect();
-      const inflate = selectedType === 'door' ? 2 : INFLATE;
+      const inflate = selectedType === 'door' ? 0 : INFLATE;
       setRect({
         top: targetRect.top - inflate,
         left: targetRect.left - inflate,

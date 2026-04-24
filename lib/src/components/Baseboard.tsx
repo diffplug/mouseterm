@@ -132,7 +132,7 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
   return (
     <div
       ref={containerRef}
-      className="flex h-8 shrink-0 items-end gap-1.5 border-t border-border bg-surface-alt px-2.5 pt-1"
+      className="flex h-7 shrink-0 items-end gap-1.5 border-t border-border bg-surface px-2.5 pt-1"
     >
       {/* Hidden measurement pass — doors + overflow arrow */}
       <div ref={measureEl} className="absolute -left-[9999px] flex gap-1.5" aria-hidden>
