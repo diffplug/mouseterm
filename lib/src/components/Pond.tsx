@@ -394,55 +394,46 @@ function TodoAlertDialog({
     };
   }, [sessionId]);
 
-  const toggleBtn = (active: boolean) => [
-    'rounded px-2 py-1 text-[11px] font-medium transition-colors',
-    active
-      ? 'bg-accent/20 text-accent border border-accent/40'
-      : 'text-muted border border-border hover:bg-foreground/10 hover:text-foreground',
-  ].join(' ');
-
   return createPortal(
     <div
       ref={dialogRef}
-      className="z-[9999] w-[280px] rounded-lg border border-border bg-surface-raised p-3 shadow-lg"
-      style={clampOverlayPosition({ left: position.x, top: position.y, width: 280, height: 160 })}
+      className="fixed z-[9999] w-[280px] rounded-lg border border-border bg-surface-raised p-3 shadow-lg"
+      style={{ left: position.x, top: position.y }}
       role="dialog"
       aria-modal="true"
       aria-label="TODO and alert settings"
     >
-      {/* TODO row */}
-      <div className="mb-2 flex items-center gap-2">
+      <button
+        type="button"
+        aria-label="Close"
+        className="absolute right-2 top-2 rounded p-0.5 text-muted hover:bg-foreground/10 hover:text-foreground"
+        onClick={onClose}
+      >
+        <XIcon size={12} weight="bold" />
+      </button>
+
+      <div className="mb-3 grid w-fit grid-cols-[auto_auto_auto] items-center gap-x-2 gap-y-2">
+        {/* TODO row */}
         <Shortcut>t</Shortcut>
-        <span className="w-10 text-xs font-medium text-foreground">TODO</span>
-        <div className="ml-auto flex gap-1">
-          <button type="button" className={toggleBtn(activity.todo)}
-            onClick={() => { if (!activity.todo) markSessionTodo(sessionId); }}>
-            on
-          </button>
-          <button type="button" className={toggleBtn(!activity.todo)}
-            onClick={() => { if (activity.todo) clearSessionTodo(sessionId); }}>
-            off
-          </button>
-        </div>
-      </div>
+        <span className="text-xs font-medium text-foreground">TODO</span>
+        <OnOffSwitch
+          on={activity.todo}
+          onEnable={() => markSessionTodo(sessionId)}
+          onDisable={() => clearSessionTodo(sessionId)}
+          label="TODO"
+        />
 
-      {/* Alert row */}
-      <div className="mb-3 flex items-center gap-2">
+        {/* Alert row */}
         <Shortcut>a</Shortcut>
-        <span className="w-10 text-xs font-medium text-foreground">alert</span>
-        <div className="ml-auto flex gap-1">
-          <button type="button" className={toggleBtn(alertEnabled)}
-            onClick={() => { if (!alertEnabled) toggleSessionAlert(sessionId); }}>
-            on
-          </button>
-          <button type="button" className={toggleBtn(!alertEnabled)}
-            onClick={() => { if (alertEnabled) disableSessionAlert(sessionId); }}>
-            off
-          </button>
-        </div>
+        <span className="text-xs font-medium text-foreground">alert</span>
+        <OnOffSwitch
+          on={alertEnabled}
+          onEnable={() => toggleSessionAlert(sessionId)}
+          onDisable={() => disableSessionAlert(sessionId)}
+          label="alert"
+        />
       </div>
 
-      {/* Help text */}
       <div className="border-t border-border pt-2 text-xs leading-relaxed text-muted">
         When a tab with a ringing alert is selected,<br />
         the alert is cleared and the tab gets a TODO.<br />
@@ -450,6 +441,37 @@ function TodoAlertDialog({
       </div>
     </div>,
     document.body,
+  );
+}
+
+function OnOffSwitch({
+  on,
+  onEnable,
+  onDisable,
+  label,
+}: {
+  on: boolean;
+  onEnable: () => void;
+  onDisable: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={`${label} ${on ? 'on' : 'off'}`}
+      onClick={() => (on ? onDisable() : onEnable())}
+      className="relative inline-flex h-5 w-14 items-center rounded-full border border-border bg-surface text-xs font-medium"
+    >
+      <span
+        aria-hidden
+        className="absolute inset-y-0.5 w-[calc(50%-2px)] rounded-full bg-accent/25 transition-transform"
+        style={{ transform: on ? 'translateX(2px)' : 'translateX(calc(100% + 2px))' }}
+      />
+      <span className={['z-10 flex-1 text-center', on ? 'text-accent' : 'text-muted'].join(' ')}>on</span>
+      <span className={['z-10 flex-1 text-center', on ? 'text-muted' : 'text-accent'].join(' ')}>off</span>
+    </button>
   );
 }
 
@@ -718,7 +740,11 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             }
             triggerAlertButtonAction(activity.status, e.currentTarget);
           }}
-          onContextMenu={(e) => { e.preventDefault(); setDialogPosition({ x: e.clientX, y: e.clientY }); }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            const rect = e.currentTarget.getBoundingClientRect();
+            setDialogPosition({ x: rect.left, y: rect.bottom + 8 });
+          }}
           ariaLabel={alertButtonAriaLabel}
           tooltip={alertButtonTooltip}
           tooltipDetail={alertButtonTooltipDetail}
