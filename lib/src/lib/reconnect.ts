@@ -20,7 +20,7 @@ export interface ReconnectResult {
 export async function resumeOrRestore(platform: PlatformAdapter): Promise<ReconnectResult> {
   // First, try to resume over live PTYs
   const liveResult = await resumeLiveSessions(platform);
-  if (liveResult.paneIds.length > 0) return liveResult;
+  if (liveResult) return liveResult;
 
   // No live PTYs — try cold restore
   const restored = await restoreSession(platform);
@@ -29,8 +29,8 @@ export async function resumeOrRestore(platform: PlatformAdapter): Promise<Reconn
   return { paneIds: [] };
 }
 
-function resumeLiveSessions(platform: PlatformAdapter): Promise<ReconnectResult> {
-  return new Promise<ReconnectResult>((resolve) => {
+function resumeLiveSessions(platform: PlatformAdapter): Promise<ReconnectResult | null> {
+  return new Promise<ReconnectResult | null>((resolve) => {
     const replayBuffer = new Map<string, string>();
     let ptyList: PtyInfo[] | null = null;
 
@@ -59,7 +59,7 @@ function resumeLiveSessions(platform: PlatformAdapter): Promise<ReconnectResult>
       platform.offPtyReplay(handleReplay);
 
       if (!ptyList || ptyList.length === 0) {
-        resolve({ paneIds: [] });
+        resolve(null);
         return;
       }
 

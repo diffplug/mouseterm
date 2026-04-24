@@ -137,6 +137,48 @@ describe('resumeOrRestore', () => {
     });
   });
 
+  it('returns the live resume plan when every live session is minimized', async () => {
+    const doors = [{
+      id: 'pane-a',
+      title: 'Pane A',
+      neighborId: 'pane-b',
+      direction: 'right' as const,
+      remainingPaneIds: ['pane-b'],
+      layoutAtMinimize: { panels: { 'pane-b': {} } },
+      layoutAtMinimizeSignature: 'sig-a',
+    }, {
+      id: 'pane-b',
+      title: 'Pane B',
+      neighborId: 'pane-a',
+      direction: 'left' as const,
+      remainingPaneIds: ['pane-a'],
+      layoutAtMinimize: { panels: { 'pane-a': {} } },
+      layoutAtMinimizeSignature: 'sig-b',
+    }];
+    const saved: PersistedSession = {
+      version: 2,
+      layout: { panels: {} },
+      doors,
+      panes: [
+        { id: 'pane-a', title: 'Pane A', cwd: null, scrollback: null, resumeCommand: null },
+        { id: 'pane-b', title: 'Pane B', cwd: null, scrollback: null, resumeCommand: null },
+        { id: 'stale-pane', title: 'Stale Pane', cwd: null, scrollback: null, resumeCommand: null },
+      ],
+    };
+
+    const result = await resumeOrRestore(createPlatform([
+      { id: 'pane-a', alive: true },
+      { id: 'pane-b', alive: true },
+    ], saved));
+
+    expect(result).toEqual({
+      paneIds: [],
+      doors,
+      layout: { panels: {} },
+    });
+    expect(terminalRegistryMocks.restoreTerminal).not.toHaveBeenCalled();
+  });
+
   it('ignores stale saved panes when the saved layout still matches live visible panes', async () => {
     const layout = { panels: { 'pane-a': {}, 'pane-b': {} } };
     const saved: PersistedSession = {
