@@ -37,7 +37,6 @@ function pointInConvexPolygon(x: number, y: number, vertices: Array<{ x: number;
 function usePopoverFocusTrap(
   ref: React.RefObject<HTMLElement | null>,
   onClose: () => void,
-  restoreFocusSelector?: string,
 ) {
   useEffect(() => {
     const el = ref.current;
@@ -78,11 +77,8 @@ function usePopoverFocusTrap(
     return () => {
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('keydown', handleKeyDown, true);
-      if (restoreFocusSelector) {
-        document.querySelector<HTMLElement>(restoreFocusSelector)?.focus();
-      }
     };
-  }, [ref, onClose, restoreFocusSelector]);
+  }, [ref, onClose]);
 }
 
 export function TodoAlertDialog({
@@ -122,10 +118,13 @@ export function TodoAlertDialog({
     });
   }, [triggerRect]);
 
-  usePopoverFocusTrap(dialogRef, onClose, `[data-alert-button-for="${sessionId}"]`);
+  usePopoverFocusTrap(dialogRef, onClose);
 
+  // Focus the dialog container itself (not a button inside) so our keyboard
+  // handlers fire via `el.contains(document.activeElement)`, without painting
+  // a native focus ring on any interactive element.
   useEffect(() => {
-    dialogRef.current?.querySelector<HTMLElement>('button')?.focus();
+    dialogRef.current?.focus();
   }, []);
 
   // Keyboard shortcuts within dialog
@@ -185,7 +184,8 @@ export function TodoAlertDialog({
   return createPortal(
     <div
       ref={dialogRef}
-      className="fixed z-[9999] w-fit rounded-lg border border-border bg-surface-raised p-3 shadow-lg"
+      tabIndex={-1}
+      className="fixed z-[9999] w-fit rounded-lg border border-border bg-surface-raised p-3 shadow-lg focus:outline-none"
       style={position}
       role="dialog"
       aria-modal="true"
