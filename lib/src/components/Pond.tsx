@@ -341,7 +341,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const [mouseIconAnchor, setMouseIconAnchor] = useState<HTMLDivElement | null>(null);
   const suppressAlertClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
-  const [dialogPosition, setDialogPosition] = useState<{ x: number; y: number; triggerRect: DOMRect } | null>(null);
+  const [dialogTriggerRect, setDialogTriggerRect] = useState<DOMRect | null>(null);
   const todoPill = useTodoPillContent(activity.todo);
   const showTodoPill = todoPill.visible && tier !== 'minimal';
   const alertButtonAriaLabel = activity.status === 'ALERT_RINGING'
@@ -358,22 +358,14 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
     ? 'Click to dismiss and show options'
     : 'Right-click for options';
 
-  const openDialogFromButton = useCallback((button: HTMLButtonElement) => {
-    const rect = button.getBoundingClientRect();
-    setDialogPosition({
-      x: rect.left,
-      y: rect.bottom + 8,
-      triggerRect: rect,
-    });
-  }, []);
-  const closeDialog = useCallback(() => setDialogPosition(null), []);
+  const closeDialog = useCallback(() => setDialogTriggerRect(null), []);
 
   const triggerAlertButtonAction = useCallback((displayedStatus: SessionStatus, button: HTMLButtonElement) => {
     const result = actions.onAlertButton(api.id, displayedStatus);
     if (result === 'dismissed') {
-      openDialogFromButton(button);
+      setDialogTriggerRect(button.getBoundingClientRect());
     }
-  }, [actions, api.id, openDialogFromButton]);
+  }, [actions, api.id]);
 
   useEffect(() => {
     const el = tabRef.current;
@@ -443,8 +435,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           }}
           onContextMenu={(e) => {
             e.preventDefault();
-            const rect = e.currentTarget.getBoundingClientRect();
-            setDialogPosition({ x: rect.left, y: rect.bottom + 8, triggerRect: rect });
+            setDialogTriggerRect(e.currentTarget.getBoundingClientRect());
           }}
           ariaLabel={alertButtonAriaLabel}
           tooltip={alertButtonTooltip}
@@ -549,9 +540,9 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           </div>
         </>
       )}
-      {dialogPosition && (
+      {dialogTriggerRect && (
         <TodoAlertDialog
-          position={dialogPosition}
+          triggerRect={dialogTriggerRect}
           sessionId={api.id}
           onClose={closeDialog}
         />

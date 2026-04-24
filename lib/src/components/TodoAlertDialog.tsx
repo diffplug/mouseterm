@@ -93,11 +93,11 @@ function usePopoverFocusTrap(
 }
 
 export function TodoAlertDialog({
-  position,
+  triggerRect,
   sessionId,
   onClose,
 }: {
-  position: { x: number; y: number; triggerRect: DOMRect };
+  triggerRect: DOMRect;
   sessionId: string;
   onClose: () => void;
 }) {
@@ -141,14 +141,13 @@ export function TodoAlertDialog({
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    const trigger = position.triggerRect;
     const handler = (e: MouseEvent) => {
       const dialogRect = dialog.getBoundingClientRect();
       const { clientX: x, clientY: y } = e;
       if (x >= dialogRect.left && x <= dialogRect.right && y >= dialogRect.top && y <= dialogRect.bottom) return;
       const funnel = [
-        { x: trigger.left, y: trigger.top },
-        { x: trigger.right, y: trigger.top },
+        { x: triggerRect.left, y: triggerRect.top },
+        { x: triggerRect.right, y: triggerRect.top },
         { x: dialogRect.right, y: dialogRect.top },
         { x: dialogRect.left, y: dialogRect.top },
       ];
@@ -157,13 +156,13 @@ export function TodoAlertDialog({
     };
     window.addEventListener('mousemove', handler);
     return () => window.removeEventListener('mousemove', handler);
-  }, [position.triggerRect, onClose]);
+  }, [triggerRect, onClose]);
 
   return createPortal(
     <div
       ref={dialogRef}
       className="fixed z-[9999] w-fit rounded-lg border border-border bg-surface-raised p-3 shadow-lg"
-      style={{ left: position.x, top: position.y }}
+      style={{ left: triggerRect.left, top: triggerRect.bottom + 8 }}
       role="dialog"
       aria-modal="true"
       aria-label="TODO and alert settings"
