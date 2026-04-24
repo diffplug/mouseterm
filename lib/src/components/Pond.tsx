@@ -186,8 +186,6 @@ function HeaderActionButton({
         aria-label={ariaLabel}
         onMouseEnter={() => setIsVisible(true)}
         onMouseLeave={() => setIsVisible(false)}
-        onFocus={() => setIsVisible(true)}
-        onBlur={() => setIsVisible(false)}
       >
         {children}
       </button>
