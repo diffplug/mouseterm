@@ -26,6 +26,10 @@
   /* Fonts */
   --font-mono: var(--vscode-editor-font-family, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace);
 
+  /* Type scale — see design.tsx for the full five-step scale and usage rules. */
+  --text-micro: 0.625rem;
+  --text-micro--line-height: 1rem;
+
   /* Surfaces */
   --color-surface: var(--vscode-editor-background, #1e1e1e);
   --color-surface-alt: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #252526));

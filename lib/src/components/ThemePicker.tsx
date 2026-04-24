@@ -253,7 +253,7 @@ function ThemeStoreDialog({
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-xs font-medium">{extension.displayName || extension.name}</div>
-                  <div className="truncate text-[10px]" style={styles.muted}>
+                  <div className="truncate text-micro" style={styles.muted}>
                     {extension.namespace} - {extension.downloadCount.toLocaleString()} downloads
                   </div>
                 </div>
@@ -261,7 +261,7 @@ function ThemeStoreDialog({
                   <button
                     type="button"
                     onClick={() => handleRemoveExtension(key)}
-                    className="shrink-0 rounded px-2 py-1 text-[10px] transition-opacity hover:opacity-100"
+                    className="shrink-0 rounded px-2 py-1 text-micro transition-opacity hover:opacity-100"
                     style={styles.muted}
                   >
                     Remove
@@ -271,7 +271,7 @@ function ThemeStoreDialog({
                     type="button"
                     onClick={() => handleInstall(extension)}
                     disabled={isInstallingThis}
-                    className="shrink-0 rounded px-2 py-1 text-[10px] transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="shrink-0 rounded px-2 py-1 text-micro transition-opacity hover:opacity-90 disabled:opacity-50"
                     style={styles.button}
                   >
                     {isInstallingThis ? 'Installing...' : 'Install'}
@@ -340,7 +340,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
     ? 'relative flex min-w-0 items-center gap-1.5 text-xs'
     : 'relative flex items-center';
   const triggerClass = isPlayground
-    ? 'flex h-8 w-[116px] min-w-0 items-center gap-2 rounded border px-2 text-left text-[12px] transition-colors sm:w-40 md:w-56'
+    ? 'flex h-8 w-[116px] min-w-0 items-center gap-2 rounded border px-2 text-left text-xs transition-colors sm:w-40 md:w-56'
     : 'flex h-6 max-w-[190px] items-center gap-1.5 rounded border border-transparent px-2 text-xs transition-colors hover:opacity-85';
   const menuClass = isPlayground
     ? 'fixed top-16 right-4 left-4 z-50 overflow-hidden rounded border font-mono shadow-2xl md:absolute md:top-full md:right-0 md:left-auto md:mt-2 md:w-[22rem]'
@@ -353,7 +353,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
   return (
     <div ref={rootRef} className={`${rootClass} ${className}`}>
       {isPlayground ? (
-        <span id={labelId} className="shrink-0 text-[11px] font-medium" style={styles.muted}>
+        <span id={labelId} className="shrink-0 text-xs font-medium" style={styles.muted}>
           Theme:
         </span>
       ) : null}
@@ -369,8 +369,8 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
         style={styles.trigger(open)}
       >
         {activeTheme ? <ThemeSwatch theme={activeTheme} size={swatchSize} /> : null}
-        {!isPlayground ? <span className="hidden text-[11px] sm:inline">Theme:</span> : null}
-        <span id={currentId} className={`min-w-0 truncate ${isPlayground ? 'flex-1' : 'font-mono text-[11px]'}`}>
+        {!isPlayground ? <span className="hidden text-xs sm:inline">Theme:</span> : null}
+        <span id={currentId} className={`min-w-0 truncate ${isPlayground ? 'flex-1' : 'font-mono text-xs'}`}>
           {activeTheme?.label ?? 'Select theme'}
         </span>
         <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
@@ -404,7 +404,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
                       type="button"
                       aria-label={`Delete ${theme.label}`}
                       title={`Delete ${theme.label}`}
-                      className="mr-2 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[11px] opacity-60 transition-opacity hover:opacity-100 focus:opacity-100"
+                      className="mr-2 flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs opacity-60 transition-opacity hover:opacity-100 focus:opacity-100"
                       style={{ color: 'inherit' }}
                       onClick={(event) => {
                         event.preventDefault();

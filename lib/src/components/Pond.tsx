@@ -87,7 +87,7 @@ export type PondEvent =
 // --- Variants ---
 
 const tabVariant = tv({
-  base: 'flex h-full w-full cursor-grab items-center gap-1.5 rounded-t pl-2 pr-[5px] text-[12px] leading-none font-mono tracking-normal select-none active:cursor-grabbing',
+  base: 'flex h-full w-full cursor-grab items-center gap-1.5 rounded-t pl-2 pr-[5px] text-xs leading-none font-mono tracking-normal select-none active:cursor-grabbing',
   variants: {
     state: {
       selected: 'bg-tab-selected-bg text-tab-selected-fg',
@@ -466,7 +466,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             type="button"
             data-session-todo-for={api.id}
             data-flourishing={todoPill.flourishing ? 'true' : 'false'}
-            className="todo-pill-shell shrink-0 rounded border border-muted px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10"
+            className="todo-pill-shell shrink-0 rounded border border-muted px-1.5 py-px text-micro font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10"
             aria-label="Dismiss TODO"
             aria-hidden={todoPill.flourishing ? true : undefined}
             onMouseDown={(e) => e.stopPropagation()}
