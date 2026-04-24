@@ -530,6 +530,20 @@ describe('terminal-registry alert behavior', () => {
     expect(getActivity(id).todo).toBe(true);
   });
 
+  it('Enter that dismisses a ringing alert leaves the auto-created TODO visible', () => {
+    const id = 'enter-dismisses-ringing';
+    const entry = createSession(id);
+    toggleSessionAlert(id);
+
+    driveToRingingNeedsAttention(id);
+    entry.terminal.emitInput('\r');
+
+    expect(getActivity(id)).toEqual({
+      status: 'NOTHING_TO_SHOW',
+      todo: true,
+    });
+  });
+
   it('no monitor is created until alert is enabled', () => {
     const id = 'no-monitor';
     createSession(id);

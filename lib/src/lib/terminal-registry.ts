@@ -358,9 +358,10 @@ function setupTerminalEntry(id: string): TerminalEntry {
     const isSyntheticTerminalReport = inputIsSyntheticTerminalReport(data);
 
     if (!isSyntheticTerminalReport) {
-      getPlatform().alertAttend(id);
       const entry = registry.get(id);
-      if (entry && entry.todo && inputContainsEnter(data)) {
+      const hadTodo = entry?.todo === true;
+      getPlatform().alertAttend(id);
+      if (hadTodo && inputContainsEnter(data)) {
         getPlatform().alertClearTodo(id);
       }
     }
