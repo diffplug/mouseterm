@@ -10,7 +10,7 @@ function KillModal({ char = 'G', onCancel, shaking }: { char?: string; onCancel?
         <div className="text-muted">Building project...</div>
       </div>
       {/* Kill confirmation overlay — positioned over the pane */}
-      <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded">
+      <div className="absolute inset-0 flex items-center justify-center bg-surface/50 rounded">
         <KillConfirmCard char={char} onCancel={onCancel} shaking={shaking} />
       </div>
     </div>

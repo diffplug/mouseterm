@@ -2,6 +2,7 @@ import { useLayoutEffect, useState } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import { resolvePanelElement } from '../lib/spatial-nav';
 import { disposeSession } from '../lib/terminal-registry';
+import { Shortcut } from './design';
 
 export interface ConfirmKill {
   id: string;
@@ -9,22 +10,26 @@ export interface ConfirmKill {
   shaking?: boolean;
 }
 
-/** Random A-Z excluding X (prevents accidental double-tap on kill shortcut) */
-const KILL_CONFIRM_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWYZ'; // no X
+/** Random a-z excluding x (prevents accidental double-tap on kill shortcut) */
+const KILL_CONFIRM_CHARS = 'abcdefghijklmnopqrstuvwyz'; // no x
 export function randomKillChar(): string {
   return KILL_CONFIRM_CHARS[Math.floor(Math.random() * KILL_CONFIRM_CHARS.length)];
 }
 
 export function KillConfirmCard({ char, onCancel, shaking }: { char: string; onCancel?: () => void; shaking?: boolean }) {
   return (
-    <div className={`bg-surface-raised border border-error/30 px-6 py-4 rounded-lg text-center shadow-lg${shaking ? ' motion-safe:animate-shake-x' : ''}`}>
-      <h2 className="text-base font-bold mb-3 text-foreground">Kill Session?</h2>
-      <div className="bg-black py-2 px-6 rounded border border-border inline-block mb-2">
+    <div className={`bg-surface-raised border border-border px-6 py-4 rounded-lg text-center shadow-lg font-mono${shaking ? ' motion-safe:animate-shake-x' : ''}`}>
+      <h2 className="text-base font-bold mb-3 text-foreground">Confirm kill</h2>
+      <div className="bg-surface py-2 px-6 rounded border border-border inline-block mb-2">
         <span className="text-xl font-bold text-error">{char}</span>
       </div>
-      <div className="text-sm text-muted uppercase tracking-widest leading-relaxed">
-        <div>[{char}] to confirm</div>
-        <button type="button" onClick={onCancel} className="uppercase hover:text-foreground transition-colors cursor-pointer">[ESC] to cancel</button>
+      <div className="text-sm text-muted leading-relaxed grid grid-cols-[auto_auto] gap-x-2 justify-center">
+        <Shortcut className="justify-self-end">{char}</Shortcut>
+        <span className="justify-self-start">to confirm</span>
+        <button type="button" onClick={onCancel} className="contents group cursor-pointer">
+          <Shortcut className="justify-self-end group-hover:text-foreground transition-colors">Esc</Shortcut>
+          <span className="justify-self-start group-hover:text-foreground transition-colors">to cancel</span>
+        </button>
       </div>
     </div>
   );
