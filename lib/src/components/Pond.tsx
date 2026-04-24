@@ -1389,6 +1389,9 @@ export function Pond({
       if (e.key === 'Enter' && sid) {
         e.preventDefault();
         e.stopPropagation();
+        // Read todo before entering terminal mode so the clearSessionTodo call
+        // below is a no-op when there was nothing to clear (avoids spurious
+        // re-renders), and so the pill dismiss animation plays before passthrough.
         const hadTodo = getActivity(sid).todo;
         if (selectedTypeRef.current === 'door') {
           const item = doorsRef.current.find(d => d.id === sid);
