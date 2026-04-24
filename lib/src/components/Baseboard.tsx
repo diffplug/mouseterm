@@ -1,19 +1,17 @@
 import { useRef, useState, useMemo, useLayoutEffect, useContext, useSyncExternalStore, type ReactNode } from 'react';
 import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { Door } from './Door';
-import { DoorElementsContext, WindowFocusedContext, type DooredItem } from './Pond';
+import { DoorElementsContext, type DooredItem } from './Pond';
 import { DEFAULT_ACTIVITY_STATE, getActivitySnapshot, subscribeToActivity } from '../lib/terminal-registry';
 
 export interface BaseboardProps {
   items: DooredItem[];
-  activeId: string | null;
   onReattach: (item: DooredItem) => void;
   notice?: ReactNode;
 }
 
-export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProps) {
+export function Baseboard({ items, onReattach, notice }: BaseboardProps) {
   const { elements: doorElements, bumpVersion } = useContext(DoorElementsContext);
-  const windowFocused = useContext(WindowFocusedContext);
   const activityStates = useSyncExternalStore(subscribeToActivity, getActivitySnapshot);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -176,8 +174,6 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
             key={item.id}
             doorId={item.id}
             title={item.title}
-            isActive={activeId === item.id}
-            windowFocused={windowFocused}
             status={activity.status}
             todo={activity.todo}
             onClick={() => onReattach(item)}

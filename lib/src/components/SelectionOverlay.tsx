@@ -128,12 +128,13 @@ export function SelectionOverlay({ terminalId }: Props) {
     zIndex: 10,
   };
 
-  // Border-only highlight. Pick a color with reliable contrast across themes:
-  // prefer focusBorder (typically fully opaque accent), fall back to the
-  // terminal foreground, then selectionBackground, then a hard-coded cornflower.
-  const styles = getComputedStyle(document.body);
+  // Border-only highlight. Share the active-header bg so every emphasis
+  // surface in the app (pane focus ring, selection border, etc.) reads as one
+  // color; fall back through terminal-fg/selection-bg for themes that leave
+  // the header token empty.
+  const styles = getComputedStyle(document.documentElement);
   const borderColor =
-    styles.getPropertyValue('--vscode-focusBorder').trim()
+    styles.getPropertyValue('--color-header-active-bg').trim()
     || styles.getPropertyValue('--vscode-terminal-foreground').trim()
     || styles.getPropertyValue('--vscode-terminal-selectionBackground').trim()
     || 'rgb(100, 149, 237)';

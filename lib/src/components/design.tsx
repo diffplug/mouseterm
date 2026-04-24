@@ -39,7 +39,7 @@ export const popupButton = tv({
       muted: 'text-muted hover:text-foreground',
     },
     flashed: {
-      true: 'animate-copy-flash bg-accent/25 text-accent',
+      true: 'animate-copy-flash bg-header-active-bg/25 text-header-active-bg',
       false: 'hover:bg-foreground/10',
     },
   },

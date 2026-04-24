@@ -35,46 +35,36 @@
 
   /* Surfaces */
   --color-surface: var(--vscode-editor-background, #1e1e1e);
-  --color-surface-alt: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #252526));
   --color-surface-raised: var(--vscode-editorWidget-background, #252526);
 
   /* Text */
   --color-foreground: var(--vscode-editor-foreground, #cccccc);
   --color-muted: var(--vscode-descriptionForeground, #858585);
 
-  /* Accent & borders */
-  --color-accent: var(--vscode-focusBorder, #007fd4);
+  /* Borders */
   --color-border: var(--vscode-panel-border, #2b2b2b);
 
-  /* Tabs */
-  --color-tab-active-bg: var(--vscode-tab-activeBackground, #1e1e1e);
-  --color-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #2d2d2d);
-  --color-tab-active-fg: var(--vscode-tab-activeForeground, #ffffff);
-  --color-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #969696);
-  --color-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #094771);
-  --color-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #ffffff);
+  /* Chrome palette — anchored on VSCode file-tree styling. Panel headers and
+   * doors use only these four tokens. The focus ring (marching-ants +
+   * passthrough border) shares --color-header-active-bg so a focused pane's
+   * header and its surrounding ring read as one unit. */
+  --color-header-active-bg: var(--vscode-list-activeSelectionBackground, #094771);
+  --color-header-active-fg: var(--vscode-list-activeSelectionForeground, #ffffff);
+  --color-header-inactive-bg: var(--vscode-sideBar-background, var(--vscode-editorGroupHeader-tabsBackground, #252526));
+  --color-header-inactive-fg: var(--vscode-sideBar-foreground, var(--vscode-foreground, #cccccc));
 
-  /* Terminal */
+  /* Terminal — xterm.js content, orthogonal to chrome */
   --color-terminal-bg: var(--vscode-terminal-background, #1e1e1e);
   --color-terminal-fg: var(--vscode-terminal-foreground, #cccccc);
-
-  /* Badges */
-  --color-badge-bg: var(--vscode-badge-background, #007acc);
-  --color-badge-fg: var(--vscode-badge-foreground, #ffffff);
 
   /* Semantic status */
   --color-error: var(--vscode-errorForeground, #f48771);
   --color-success: #73c991;
   --color-warning: var(--vscode-editorWarning-foreground, #cca700);
 
-  /* Inputs */
+  /* Inputs — used by ThemePicker */
   --color-input-bg: var(--vscode-input-background, #3c3c3c);
   --color-input-border: var(--vscode-input-border, #3c3c3c);
-
-  /* Buttons */
-  --color-button-bg: var(--vscode-button-background, #0e639c);
-  --color-button-fg: var(--vscode-button-foreground, #ffffff);
-  --color-button-hover-bg: var(--vscode-button-hoverBackground, #1177bb);
 
   /* Animation */
   --animate-bell-ring: bell-ring 800ms ease-in-out infinite;
@@ -86,60 +76,42 @@
  * applyTheme() also sets this class for imported light themes. */
 body.vscode-light {
   --color-surface: var(--vscode-editor-background, #ffffff);
-  --color-surface-alt: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #f3f3f3));
   --color-surface-raised: var(--vscode-editorWidget-background, #f3f3f3);
   --color-foreground: var(--vscode-editor-foreground, #333333);
   --color-muted: var(--vscode-descriptionForeground, #717171);
-  --color-accent: var(--vscode-focusBorder, #0090f1);
   --color-border: var(--vscode-panel-border, #e5e5e5);
-  --color-tab-active-bg: var(--vscode-tab-activeBackground, #ffffff);
-  --color-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #ececec);
-  --color-tab-active-fg: var(--vscode-tab-activeForeground, #333333);
-  --color-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #8e8e8e);
-  --color-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
-  --color-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #000000);
+  --color-header-active-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
+  --color-header-active-fg: var(--vscode-list-activeSelectionForeground, #000000);
+  --color-header-inactive-bg: var(--vscode-sideBar-background, var(--vscode-editorGroupHeader-tabsBackground, #f3f3f3));
+  --color-header-inactive-fg: var(--vscode-sideBar-foreground, var(--vscode-foreground, #6f6f6f));
   --color-terminal-bg: var(--vscode-terminal-background, #ffffff);
   --color-terminal-fg: var(--vscode-terminal-foreground, #333333);
-  --color-badge-bg: var(--vscode-badge-background, #007acc);
-  --color-badge-fg: var(--vscode-badge-foreground, #ffffff);
   --color-error: var(--vscode-errorForeground, #a1260d);
   --color-success: #388a34;
   --color-warning: var(--vscode-editorWarning-foreground, #bf8803);
   --color-input-bg: var(--vscode-input-background, #ffffff);
   --color-input-border: var(--vscode-input-border, #cecece);
-  --color-button-bg: var(--vscode-button-background, #007acc);
-  --color-button-fg: var(--vscode-button-foreground, #ffffff);
-  --color-button-hover-bg: var(--vscode-button-hoverBackground, #0062a3);
 }
 
 /* Standalone: use OS preference when no VSCode body class */
 @media (prefers-color-scheme: light) {
   body:not(.vscode-light):not(.vscode-dark) {
     --color-surface: var(--vscode-editor-background, #ffffff);
-    --color-surface-alt: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #f3f3f3));
     --color-surface-raised: var(--vscode-editorWidget-background, #f3f3f3);
     --color-foreground: var(--vscode-editor-foreground, #333333);
     --color-muted: var(--vscode-descriptionForeground, #717171);
-    --color-accent: var(--vscode-focusBorder, #0090f1);
     --color-border: var(--vscode-panel-border, #e5e5e5);
-    --color-tab-active-bg: var(--vscode-tab-activeBackground, #ffffff);
-    --color-tab-inactive-bg: var(--vscode-tab-inactiveBackground, #ececec);
-    --color-tab-active-fg: var(--vscode-tab-activeForeground, #333333);
-    --color-tab-inactive-fg: var(--vscode-tab-inactiveForeground, #8e8e8e);
-    --color-tab-selected-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
-    --color-tab-selected-fg: var(--vscode-list-activeSelectionForeground, #000000);
+    --color-header-active-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
+    --color-header-active-fg: var(--vscode-list-activeSelectionForeground, #000000);
+    --color-header-inactive-bg: var(--vscode-sideBar-background, var(--vscode-editorGroupHeader-tabsBackground, #f3f3f3));
+    --color-header-inactive-fg: var(--vscode-sideBar-foreground, var(--vscode-foreground, #6f6f6f));
     --color-terminal-bg: var(--vscode-terminal-background, #ffffff);
     --color-terminal-fg: var(--vscode-terminal-foreground, #333333);
-    --color-badge-bg: var(--vscode-badge-background, #007acc);
-    --color-badge-fg: var(--vscode-badge-foreground, #ffffff);
     --color-error: var(--vscode-errorForeground, #a1260d);
     --color-success: #388a34;
     --color-warning: var(--vscode-editorWarning-foreground, #bf8803);
     --color-input-bg: var(--vscode-input-background, #ffffff);
     --color-input-border: var(--vscode-input-border, #cecece);
-    --color-button-bg: var(--vscode-button-background, #007acc);
-    --color-button-fg: var(--vscode-button-foreground, #ffffff);
-    --color-button-hover-bg: var(--vscode-button-hoverBackground, #0062a3);
   }
 }
 

@@ -90,8 +90,8 @@ const tabVariant = tv({
   base: 'flex h-full w-full cursor-grab items-center gap-1.5 rounded-t pl-2 pr-[5px] text-sm leading-none font-mono tracking-normal select-none active:cursor-grabbing',
   variants: {
     state: {
-      selected: 'bg-tab-selected-bg text-tab-selected-fg',
-      inactive: 'bg-tab-inactive-bg text-tab-inactive-fg',
+      active: 'bg-header-active-bg text-header-active-fg',
+      inactive: 'bg-header-inactive-bg text-header-inactive-fg',
     },
   },
 });
@@ -345,7 +345,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
     : 'TUI is intercepting mouse commands. Click to override.';
   const mouseIconAriaLabel = inOverride ? 'Restore mouse capture' : 'Override mouse capture';
   const isSelected = selectedId === api.id;
-  const showSelectedHeader = mode === 'passthrough' && isSelected && windowFocused;
+  const isActiveHeader = mode === 'passthrough' && isSelected && windowFocused;
   const isRenaming = renamingId === api.id;
   const tabRef = useRef<HTMLDivElement>(null);
   const [mouseIconAnchor, setMouseIconAnchor] = useState<HTMLDivElement | null>(null);
@@ -393,7 +393,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   return (
     <div
       ref={tabRef}
-      className={tabVariant({ state: showSelectedHeader ? 'selected' : 'inactive' })}
+      className={tabVariant({ state: isActiveHeader ? 'active' : 'inactive' })}
       onMouseDown={() => actions.onClickPanel(api.id)}
     >
       <div className="flex flex-1 min-w-0 items-center gap-2">
@@ -423,10 +423,8 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         )}
         <HeaderActionButton
           className={[
-            'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 hover:bg-foreground/10',
-            activity.status === 'ALERT_RINGING'
-              ? 'text-warning'
-              : 'text-muted hover:text-foreground',
+            'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 hover:bg-current/10',
+            activity.status === 'ALERT_RINGING' ? 'text-warning' : '',
           ].join(' ')}
           onMouseDownCapture={(e) => {
             if (e.button !== 0) return;
@@ -466,7 +464,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             type="button"
             data-session-todo-for={api.id}
             data-flourishing={todoPill.flourishing ? 'true' : 'false'}
-            className="todo-pill-shell shrink-0 rounded border border-muted px-1.5 py-px text-xs font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10"
+            className="todo-pill-shell shrink-0 rounded border border-current px-1.5 py-px text-xs font-semibold tracking-[0.08em] transition-colors hover:bg-current/10"
             aria-label="Dismiss TODO"
             aria-hidden={todoPill.flourishing ? true : undefined}
             onMouseDown={(e) => e.stopPropagation()}
@@ -484,7 +482,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           {showMouseIcon && (
             <div ref={setMouseIconAnchor} className="ml-1 shrink-0">
               <HeaderActionButton
-                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 text-muted hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 hover:bg-current/10"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -514,19 +512,19 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           {tier === 'full' && (
             <div className="ml-1 flex shrink-0 items-center gap-0.5">
               <HeaderActionButton
-                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-current/10"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitH(api.id); }}
                 ariaLabel="Split left/right"
                 tooltip='Split left/right [|] or [%]'
               ><SplitHorizontalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
-                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-current/10"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitV(api.id); }}
                 ariaLabel="Split top/bottom"
                 tooltip='Split top/bottom [-] or ["]'
               ><SplitVerticalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
-                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-current/10"
                 onClick={(e) => { e.stopPropagation(); actions.onZoom(api.id); }}
                 ariaLabel={zoomed ? 'Unzoom' : 'Zoom'}
                 tooltip={zoomed ? 'Unzoom [z]' : 'Zoom [z]'}
@@ -536,13 +534,13 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           {/* Minimize / Kill controls — always visible */}
           <div className="ml-1 flex shrink-0 items-center gap-0.5">
             <HeaderActionButton
-              className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+              className="flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-current/10"
               onClick={(e) => { e.stopPropagation(); actions.onMinimize(api.id); }}
               ariaLabel="Minimize"
               tooltip="Minimize [m] or [d]"
             ><ArrowLineDownIcon size={14} /></HeaderActionButton>
             <HeaderActionButton
-              className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-error/10 hover:text-error"
+              className="flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-error/10 hover:text-error"
               onClick={(e) => { e.stopPropagation(); actions.onKill(api.id); }}
               ariaLabel="Kill"
               tooltip="Kill [k] or [x]"
@@ -583,7 +581,9 @@ function useWindowFocused(): boolean {
 }
 
 function readSelectionColor() {
-  return getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim();
+  // Read from body so we pick up theme overrides declared on `body.vscode-light`
+  // (reading from documentElement would always return the :root/dark value).
+  return getComputedStyle(document.body).getPropertyValue('--color-header-active-bg').trim();
 }
 
 function useSelectionColor() {
@@ -591,7 +591,7 @@ function useSelectionColor() {
 
   useEffect(() => {
     const mo = new MutationObserver(() => setColor(readSelectionColor()));
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+    mo.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
     return () => mo.disconnect();
   }, []);
 
@@ -1819,7 +1819,7 @@ export function Pond({
             </div>
 
             {/* Baseboard — always visible */}
-            <Baseboard items={doors} activeId={selectedType === 'door' ? selectedId : null} onReattach={handleReattach} notice={baseboardNotice} />
+            <Baseboard items={doors} onReattach={handleReattach} notice={baseboardNotice} />
 
             {/* Kill confirmation overlay — centered over the pane being killed */}
             {confirmKill && (

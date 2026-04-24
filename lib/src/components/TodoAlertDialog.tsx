@@ -254,11 +254,11 @@ function OnOffSwitch({
     >
       <span
         aria-hidden
-        className="absolute inset-y-0.5 w-[calc(50%-2px)] rounded-full bg-accent/25 transition-transform"
+        className="absolute inset-y-0.5 w-[calc(50%-2px)] rounded-full bg-header-active-bg/25 transition-transform"
         style={{ transform: on ? 'translateX(2px)' : 'translateX(calc(100% + 2px))' }}
       />
-      <span className={['z-10 flex-1 text-center', on ? 'text-accent' : 'text-muted'].join(' ')}>on</span>
-      <span className={['z-10 flex-1 text-center', on ? 'text-muted' : 'text-accent'].join(' ')}>off</span>
+      <span className={['z-10 flex-1 text-center', on ? 'text-header-active-bg' : 'text-muted'].join(' ')}>on</span>
+      <span className={['z-10 flex-1 text-center', on ? 'text-muted' : 'text-header-active-bg'].join(' ')}>off</span>
     </button>
   );
 }

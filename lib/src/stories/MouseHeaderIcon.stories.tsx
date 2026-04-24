@@ -61,7 +61,7 @@ function MouseIconStoryFrame({
         <PondActionsContext.Provider value={noopActions}>
           <RenamingIdContext.Provider value={null}>
             <div style={{ width }}>
-              <div className="bg-surface-alt" style={{ height: 26 }}>
+              <div className="bg-surface" style={{ height: 26 }}>
                 <TerminalPaneHeader
                   api={mockApi}
                   containerApi={{} as Parameters<typeof TerminalPaneHeader>[0]['containerApi']}
