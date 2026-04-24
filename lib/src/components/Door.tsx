@@ -49,14 +49,14 @@ export function Door({
       onClick={onClick}
       title={title}
     >
-      <span className={['min-w-0 flex-1 truncate', (isActive && windowFocused) ? 'text-foreground' : 'text-muted'].join(' ')}>
+      <span className="min-w-0 flex-1 truncate text-muted">
         {title}
       </span>
       {(todoPill.visible || alertEnabled) && (
         <span className="flex shrink-0 items-center gap-1.5">
           {todoPill.visible && (
             <span
-              className="todo-pill-shell text-xs font-semibold tracking-[0.08em] text-foreground"
+              className="todo-pill-shell text-xs font-semibold tracking-[0.08em] text-muted"
               data-flourishing={todoPill.flourishing ? 'true' : 'false'}
             >
               {todoPill.body}
