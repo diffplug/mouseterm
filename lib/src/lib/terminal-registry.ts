@@ -64,12 +64,18 @@ export { setDefaultShellOpts, getDefaultShellOpts } from './shell-defaults';
 // --- Watch for VSCode theme changes and re-apply xterm themes ---
 // VSCode signals theme changes by updating CSS variables and body classes.
 let themeObserverStarted = false;
+let lastAppliedThemeKey: string | null = null;
 function startThemeObserver(): void {
   if (themeObserverStarted) return;
   themeObserverStarted = true;
 
   const observer = new MutationObserver(() => {
     const theme = getTerminalTheme();
+    // body.style mutations fire often (focus-ring writes, etc.); only walk
+    // the registry when the terminal palette actually changed.
+    const key = JSON.stringify(theme);
+    if (key === lastAppliedThemeKey) return;
+    lastAppliedThemeKey = key;
     for (const entry of registry.values()) {
       entry.terminal.options.theme = theme;
       paintTerminalHost(entry.element, entry.terminal, theme.background);
