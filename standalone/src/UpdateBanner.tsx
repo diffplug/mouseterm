@@ -39,7 +39,8 @@ export function UpdateBanner({ state, onDismiss, onOpenChangelog }: UpdateBanner
       {showChangelog && (
         <button
           onClick={onOpenChangelog}
-          className="shrink-0 text-accent hover:underline"
+          className="shrink-0 hover:underline"
+          style={{ color: 'var(--vscode-textLink-foreground)' }}
         >
           Changelog
         </button>
