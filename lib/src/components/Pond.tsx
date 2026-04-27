@@ -946,10 +946,16 @@ export function Pond({
   const renamingRef = useRef(renamingPaneId);
   renamingRef.current = renamingPaneId;
   const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSavePromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
+
+  useEffect(() => () => {
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+  }, []);
 
   // Confirm runs orchestrateKill concurrently with the letter flash so the
   // pane fade begins while the flash is still playing.
@@ -964,7 +970,7 @@ export function Pond({
     if (!ck || ck.exit) return;
     setConfirmKill({ ...ck, exit: 'confirm' });
     onExit();
-    setTimeout(() => setConfirmKill(null), KILL_CONFIRM_MS);
+    confirmTimerRef.current = setTimeout(() => setConfirmKill(null), KILL_CONFIRM_MS);
   }, []);
 
   // --- External event notifications ---
