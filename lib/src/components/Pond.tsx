@@ -608,34 +608,37 @@ function useDynamicPalette() {
     const ctx = document.createElement('canvas').getContext('2d');
     if (!ctx) return;
 
+    // Skip writes when value is unchanged. The MutationObserver below watches
+    // body's style attribute, so any unconditional setProperty would re-fire
+    // it (and ping-pong with the resolver in vscode-color-resolver.ts, which
+    // also writes to body.style).
+    const lastPublished = new Map<string, string>();
+    const publish = (name: string, value: string) => {
+      if (lastPublished.get(name) === value) return;
+      lastPublished.set(name, value);
+      document.body.style.setProperty(name, value);
+    };
+
     const update = () => {
       const styles = getComputedStyle(document.body);
       const app = rgbOf(styles.getPropertyValue('--color-app-bg').trim(), ctx);
       if (!app) return;
       const oApp = rgbToOklab(app);
 
-      // --- Door palette: (panel-inactive bg/fg) or (terminal-bg / terminal-fg)
-      // Both candidates are typically near-greyscale, so plain max ΔE is fine.
       const panel = rgbOf(styles.getPropertyValue('--color-header-inactive-bg').trim(), ctx);
       const term = rgbOf(styles.getPropertyValue('--color-terminal-bg').trim(), ctx);
       if (panel && term) {
         const usePanel = deltaEOklab(rgbToOklab(panel), oApp) >= deltaEOklab(rgbToOklab(term), oApp);
         const bg = usePanel ? '--color-header-inactive-bg' : '--color-terminal-bg';
         const fg = usePanel ? '--color-header-inactive-fg' : '--color-terminal-fg';
-        document.body.style.setProperty('--color-door-bg', `var(${bg})`);
-        document.body.style.setProperty('--color-door-fg', `var(${fg})`);
+        publish('--color-door-bg', `var(${bg})`);
+        publish('--color-door-fg', `var(${fg})`);
       }
 
-      // --- Focus ring: 3-tier preference.
-      //   1. Match panel-active-bg if it's chromatic in absolute terms
-      //      (OKLab chroma ≥ SATURATION_FLOOR). Visually unifies the ring
-      //      with the focused header. We use *absolute* chroma instead of
-      //      chroma-vs-app-bg because some themes (e.g. Solarized) have a
-      //      mildly-saturated app-bg, which would shrink the delta even
-      //      when panel-active-bg is clearly a "real" color.
-      //   2. Else the most-saturated other candidate (header-active-fg,
-      //      focusBorder) that clears the same floor.
-      //   3. Else max ΔE OKLab among all three (greyscale-theme fallback).
+      // Focus ring: prefer header-active-bg when chromatic in absolute terms
+      // (so themes like Solarized — whose app-bg is mildly saturated — don't
+      // underweight a clearly-chromatic candidate). Else most-saturated of
+      // the alternatives clearing the floor; else max ΔE for greyscale themes.
       const SATURATION_FLOOR = 0.05;
       type Candidate = { varName: string; lab: [number, number, number]; preferred?: boolean };
       const candidates: Candidate[] = [];
@@ -647,12 +650,10 @@ function useDynamicPalette() {
       if (focusBorder) candidates.push({ varName: '--vscode-focusBorder', lab: rgbToOklab(focusBorder) });
 
       let pick: Candidate | null = null;
-      // Tier 1: preferred candidate first.
       const preferred = candidates.find(c => c.preferred);
       if (preferred && chromaOklab(preferred.lab) >= SATURATION_FLOOR) {
         pick = preferred;
       }
-      // Tier 2: most-saturated qualifying alternative.
       if (!pick) {
         let bestChroma = -Infinity;
         for (const c of candidates) {
@@ -664,7 +665,6 @@ function useDynamicPalette() {
           }
         }
       }
-      // Tier 3: max ΔE OKLab.
       if (!pick && candidates.length > 0) {
         let bestDist = -Infinity;
         for (const c of candidates) {
@@ -672,7 +672,7 @@ function useDynamicPalette() {
           if (d > bestDist) { pick = c; bestDist = d; }
         }
       }
-      if (pick) document.body.style.setProperty('--color-focus-ring', `var(${pick.varName})`);
+      if (pick) publish('--color-focus-ring', `var(${pick.varName})`);
     };
 
     update();
@@ -680,6 +680,7 @@ function useDynamicPalette() {
     mo.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
     return () => {
       mo.disconnect();
+      lastPublished.clear();
       document.body.style.removeProperty('--color-door-bg');
       document.body.style.removeProperty('--color-door-fg');
       document.body.style.removeProperty('--color-focus-ring');
@@ -746,14 +747,11 @@ export function MarchingAntsRect({ width, height, isDoor, color, paused }: {
 
   // Door: rounded top, flat bottom. Pane: all corners rounded.
   const r = TERMINAL_BORDER_RADIUS_PX;
-  const rDoor = TERMINAL_BORDER_RADIUS_PX;
-  const tl = isDoor ? rDoor : r;
-  const tr = isDoor ? rDoor : r;
   const br = isDoor ? 0 : r;
   const bl = isDoor ? 0 : r;
   const inset = ma.strokeWidth / 2;
 
-  const d = roundedRectPath(width, height, tl, tr, br, bl, inset);
+  const d = roundedRectPath(width, height, r, r, br, bl, inset);
 
   useLayoutEffect(() => {
     const path = svgRef.current;
