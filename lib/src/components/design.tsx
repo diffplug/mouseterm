@@ -33,7 +33,7 @@ import type { HTMLAttributes, ReactNode } from 'react';
  *                            focused pane header + the marching-ants ring
  *   --color-door-bg          runtime: whichever of (header-inactive, terminal)
  *                            has the larger ΔE OKLab vs app-bg
- *                            (see Baseboard.usePickDoorPalette)
+ *                            (see Pond.useDynamicPalette)
  *
  * Foregrounds:
  *
@@ -52,9 +52,11 @@ import type { HTMLAttributes, ReactNode } from 'react';
  * fg the header is currently using. Semantic exceptions: `text-warning` for
  * a ringing bell; `hover:bg-error/10 hover:text-error` for the kill button.
  *
- * Selection ring: the marching-ants overlay and the terminal text-selection
- * border both read --color-header-active-bg, so a focused pane reads as one
- * unit (header + ring + selection all the same color).
+ * Selection ring: --color-focus-ring is published by Pond.useDynamicPalette,
+ * which picks whichever of (header-active-fg, --vscode-focusBorder) has the
+ * larger ΔE OKLab vs app-bg. Both the marching-ants overlay and the terminal
+ * text-selection border read this same var so the ring is theme-aware and
+ * always pops vs the surrounding chrome.
  *
  * Doors: bg-only chrome with no border and no hover. The dynamic
  * --color-door-bg is recomputed whenever the theme changes (Baseboard's

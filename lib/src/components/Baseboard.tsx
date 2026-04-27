@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, useLayoutEffect, useContext, useSyncExternalStore, type ReactNode } from 'react';
+import { useRef, useState, useMemo, useLayoutEffect, useContext, useSyncExternalStore, type ReactNode } from 'react';
 import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { Door } from './Door';
 import { DoorElementsContext, type DooredItem } from './Pond';
@@ -10,79 +10,7 @@ export interface BaseboardProps {
   notice?: ReactNode;
 }
 
-/** Resolve any CSS color string (hex, rgb, hsl, named, color-mix...) to RGB
- *  by letting the canvas do the heavy lifting. Returns null on failure. */
-function rgbOf(color: string, ctx: CanvasRenderingContext2D): [number, number, number] | null {
-  if (!color) return null;
-  ctx.fillStyle = '#000'; // reset to a known value if `color` is invalid
-  ctx.fillStyle = color;
-  ctx.fillRect(0, 0, 1, 1);
-  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-  return [r, g, b];
-}
-
-/** Convert sRGB (0-255) to OKLab — Björn Ottosson's perceptually-uniform
- *  color space. ΔE in OKLab is just Euclidean distance and accounts for
- *  lightness, hue, and chroma together. */
-function rgbToOklab([r, g, b]: [number, number, number]): [number, number, number] {
-  const toLinear = (c: number) => {
-    const v = c / 255;
-    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-  };
-  const lr = toLinear(r), lg = toLinear(g), lb = toLinear(b);
-  const l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
-  const m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
-  const s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb;
-  const lp = Math.cbrt(l), mp = Math.cbrt(m), sp = Math.cbrt(s);
-  return [
-    0.2104542553 * lp + 0.7936177850 * mp - 0.0040720468 * sp,
-    1.9779984951 * lp - 2.4285922050 * mp + 0.4505937099 * sp,
-    0.0259040371 * lp + 0.7827717662 * mp - 0.8086757660 * sp,
-  ];
-}
-
-function deltaEOklab(a: [number, number, number], b: [number, number, number]): number {
-  const dL = a[0] - b[0], da = a[1] - b[1], db = a[2] - b[2];
-  return Math.sqrt(dL * dL + da * da + db * db);
-}
-
-/** Doors should pop against the baseboard. Pick the door bg/fg pair —
- *  panel-inactive vs terminal — that has the larger ΔE (perceptual color
- *  distance in OKLab) from app-bg, since which one wins depends on the
- *  theme's lightness *and* hue. Sets --color-door-* on body so Door's
- *  `bg-door-bg` / `text-door-fg` resolve correctly. */
-function usePickDoorPalette() {
-  useEffect(() => {
-    const ctx = document.createElement('canvas').getContext('2d');
-    if (!ctx) return;
-
-    const update = () => {
-      const styles = getComputedStyle(document.body);
-      const app = rgbOf(styles.getPropertyValue('--color-app-bg').trim(), ctx);
-      const panel = rgbOf(styles.getPropertyValue('--color-header-inactive-bg').trim(), ctx);
-      const term = rgbOf(styles.getPropertyValue('--color-surface').trim(), ctx);
-      if (!app || !panel || !term) return;
-      const oApp = rgbToOklab(app);
-      const usePanel = deltaEOklab(rgbToOklab(panel), oApp) >= deltaEOklab(rgbToOklab(term), oApp);
-      const bg = usePanel ? '--color-header-inactive-bg' : '--color-surface';
-      const fg = usePanel ? '--color-header-inactive-fg' : '--color-foreground';
-      document.body.style.setProperty('--color-door-bg', `var(${bg})`);
-      document.body.style.setProperty('--color-door-fg', `var(${fg})`);
-    };
-
-    update();
-    const mo = new MutationObserver(update);
-    mo.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
-    return () => {
-      mo.disconnect();
-      document.body.style.removeProperty('--color-door-bg');
-      document.body.style.removeProperty('--color-door-fg');
-    };
-  }, []);
-}
-
 export function Baseboard({ items, onReattach, notice }: BaseboardProps) {
-  usePickDoorPalette();
   const { elements: doorElements, bumpVersion } = useContext(DoorElementsContext);
   const activityStates = useSyncExternalStore(subscribeToActivity, getActivitySnapshot);
   const containerRef = useRef<HTMLDivElement>(null);

@@ -26,6 +26,7 @@ import {
 import { HeaderActionButton } from './HeaderActionButton';
 import { TodoAlertDialog } from './TodoAlertDialog';
 import { KILL_CONFIRM_MS, KILL_SHAKE_MS, KillConfirmOverlay, orchestrateKill, randomKillChar, type ConfirmKill } from './KillConfirm';
+import { deltaEOklab, rgbOf, rgbToOklab } from '../lib/color-contrast';
 import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
@@ -370,8 +371,8 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const alertButtonTooltip = activity.status === 'ALERT_RINGING'
     ? 'Alert ringing'
     : activity.status === 'ALERT_DISABLED'
-      ? 'Enable [a]lert'
-      : 'Disable [a]lert';
+      ? '[a] Enable alerts'
+      : '[a] Disable alerts';
   const alertButtonTooltipDetail = activity.status === 'ALERT_RINGING'
     ? 'Click to dismiss and show options'
     : 'Right-click for options';
@@ -588,10 +589,81 @@ function useWindowFocused(): boolean {
   return focused;
 }
 
+/**
+ * Theme-aware "biggest delta" picker that publishes runtime CSS vars via
+ * body inline style. ΔE in OKLab handles lightness + hue + chroma together,
+ * so the picker behaves correctly in both greyscale and saturated themes.
+ *
+ *   --color-door-bg / --color-door-fg
+ *     Doors live on app-bg. Whichever of (header-inactive, terminal) has
+ *     the larger ΔE vs app-bg wins, and door-fg is paired to its bg's
+ *     foreground (header-inactive-fg or editor.foreground).
+ *
+ *   --color-focus-ring
+ *     The pane focus ring + terminal text-selection border. Whichever of
+ *     (header-active-fg, focusBorder) has the larger ΔE vs app-bg wins.
+ */
+function useDynamicPalette() {
+  useEffect(() => {
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!ctx) return;
+
+    const update = () => {
+      const styles = getComputedStyle(document.body);
+      const app = rgbOf(styles.getPropertyValue('--color-app-bg').trim(), ctx);
+      if (!app) return;
+      const oApp = rgbToOklab(app);
+      const pickByDelta = (
+        candidates: ReadonlyArray<{ varName: string; rgb: [number, number, number] }>,
+      ): string | null => {
+        if (candidates.length === 0) return null;
+        let best = candidates[0];
+        let bestDist = deltaEOklab(rgbToOklab(best.rgb), oApp);
+        for (let i = 1; i < candidates.length; i++) {
+          const d = deltaEOklab(rgbToOklab(candidates[i].rgb), oApp);
+          if (d > bestDist) { best = candidates[i]; bestDist = d; }
+        }
+        return best.varName;
+      };
+
+      // --- Door palette: (panel-inactive bg/fg) or (terminal-bg / foreground)
+      const panel = rgbOf(styles.getPropertyValue('--color-header-inactive-bg').trim(), ctx);
+      const term = rgbOf(styles.getPropertyValue('--color-surface').trim(), ctx);
+      if (panel && term) {
+        const usePanel = deltaEOklab(rgbToOklab(panel), oApp) >= deltaEOklab(rgbToOklab(term), oApp);
+        const bg = usePanel ? '--color-header-inactive-bg' : '--color-surface';
+        const fg = usePanel ? '--color-header-inactive-fg' : '--color-foreground';
+        document.body.style.setProperty('--color-door-bg', `var(${bg})`);
+        document.body.style.setProperty('--color-door-fg', `var(${fg})`);
+      }
+
+      // --- Focus ring: (panel-active foreground) or (focusBorder)
+      const candidates: Array<{ varName: string; rgb: [number, number, number] }> = [];
+      const headerFg = rgbOf(styles.getPropertyValue('--color-header-active-fg').trim(), ctx);
+      if (headerFg) candidates.push({ varName: '--color-header-active-fg', rgb: headerFg });
+      const focusBorder = rgbOf(styles.getPropertyValue('--vscode-focusBorder').trim(), ctx);
+      if (focusBorder) candidates.push({ varName: '--vscode-focusBorder', rgb: focusBorder });
+      const ringVar = pickByDelta(candidates);
+      if (ringVar) document.body.style.setProperty('--color-focus-ring', `var(${ringVar})`);
+    };
+
+    update();
+    const mo = new MutationObserver(update);
+    mo.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+    return () => {
+      mo.disconnect();
+      document.body.style.removeProperty('--color-door-bg');
+      document.body.style.removeProperty('--color-door-fg');
+      document.body.style.removeProperty('--color-focus-ring');
+    };
+  }, []);
+}
+
 function readSelectionColor() {
-  // Read from body so we pick up theme overrides declared on `body.vscode-light`
-  // (reading from documentElement would always return the :root/dark value).
-  return getComputedStyle(document.body).getPropertyValue('--color-header-active-bg').trim();
+  // --color-focus-ring is dynamically chosen by useDynamicPalette below.
+  // Read from body so we pick up the body-level override and any
+  // body.vscode-light token cascade.
+  return getComputedStyle(document.body).getPropertyValue('--color-focus-ring').trim();
 }
 
 function useSelectionColor() {
@@ -847,6 +919,7 @@ export function Pond({
   const [selectedType, setSelectedType] = useState<PondSelectionKind>('pane');
 
   const windowFocused = useWindowFocused();
+  useDynamicPalette();
 
   // UI state
   const [confirmKill, setConfirmKill] = useState<ConfirmKill | null>(null);

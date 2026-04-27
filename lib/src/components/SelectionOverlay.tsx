@@ -128,13 +128,13 @@ export function SelectionOverlay({ terminalId }: Props) {
     zIndex: 10,
   };
 
-  // Border-only highlight. Share the active-header bg so every emphasis
-  // surface in the app (pane focus ring, selection border, etc.) reads as one
-  // color; fall back through terminal-fg/selection-bg for themes that leave
-  // the header token empty.
-  const styles = getComputedStyle(document.documentElement);
+  // Share --color-focus-ring with the pane focus ring (chosen dynamically by
+  // useDynamicPalette in Pond.tsx for highest perceptual contrast vs app-bg).
+  // Fall back through terminal-fg / selection-bg for themes that leave it
+  // empty.
+  const styles = getComputedStyle(document.body);
   const borderColor =
-    styles.getPropertyValue('--color-header-active-bg').trim()
+    styles.getPropertyValue('--color-focus-ring').trim()
     || styles.getPropertyValue('--vscode-terminal-foreground').trim()
     || styles.getPropertyValue('--vscode-terminal-selectionBackground').trim()
     || 'rgb(100, 149, 237)';
