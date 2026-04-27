@@ -86,9 +86,38 @@
   --animate-shake-x: shake-x 400ms ease-out;
 }
 
-/* --- Light mode fallback defaults ---
- * VSCode adds body.vscode-light for light themes.
- * applyTheme() also sets this class for imported light themes. */
+/* --- Body-level dynamic theme bindings ---
+ *
+ * These mirror the @theme block above but are declared on `body`. CSS
+ * resolves var() inside a custom-property declaration at the *element where
+ * the property is declared*, so the @theme block — compiled to :root — sees
+ * an empty cascade for --vscode-* (those live on body, set by applyTheme).
+ * The :root values therefore always collapse to the static fallback.
+ *
+ * Re-declaring at body level makes var() resolve in body's cascade where
+ * applyTheme's --vscode-* overrides are visible, so theme switching
+ * actually drives the chrome colors instead of just the static fallback.
+ *
+ * body.vscode-light below overrides this block with light hex fallbacks. */
+body {
+  --color-surface: var(--vscode-editor-background, #1e1e1e);
+  --color-surface-raised: var(--vscode-editorWidget-background, #252526);
+  --color-app-bg: var(--vscode-sideBar-background, var(--vscode-editorGroupHeader-tabsBackground, #252526));
+  --color-foreground: var(--vscode-editor-foreground, #cccccc);
+  --color-muted: var(--vscode-descriptionForeground, #858585);
+  --color-border: var(--vscode-panel-border, #2b2b2b);
+  --color-header-active-bg: var(--vscode-list-activeSelectionBackground, #094771);
+  --color-header-active-fg: var(--vscode-list-activeSelectionForeground, #ffffff);
+  --color-header-inactive-bg: var(--vscode-list-inactiveSelectionBackground, var(--vscode-sideBar-background, #37373d));
+  --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground, var(--vscode-list-activeSelectionForeground, var(--vscode-foreground, #cccccc)));
+  --color-terminal-bg: var(--vscode-terminal-background, var(--vscode-editor-background, #1e1e1e));
+  --color-terminal-fg: var(--vscode-terminal-foreground, #cccccc);
+  --color-error: var(--vscode-errorForeground, #f48771);
+  --color-warning: var(--vscode-editorWarning-foreground, #cca700);
+  --color-input-bg: var(--vscode-input-background, #3c3c3c);
+  --color-input-border: var(--vscode-input-border, #3c3c3c);
+}
+
 body.vscode-light {
   --color-surface: var(--vscode-editor-background, #ffffff);
   --color-surface-raised: var(--vscode-editorWidget-background, #f3f3f3);

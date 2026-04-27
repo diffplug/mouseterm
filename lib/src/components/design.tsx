@@ -52,11 +52,19 @@ import type { HTMLAttributes, ReactNode } from 'react';
  * fg the header is currently using. Semantic exceptions: `text-warning` for
  * a ringing bell; `hover:bg-error/10 hover:text-error` for the kill button.
  *
- * Selection ring: --color-focus-ring is published by Pond.useDynamicPalette,
- * which picks whichever of (header-active-fg, --vscode-focusBorder) has the
- * larger ΔE OKLab vs app-bg. Both the marching-ants overlay and the terminal
- * text-selection border read this same var so the ring is theme-aware and
- * always pops vs the surrounding chrome.
+ * Selection ring: --color-focus-ring is published by Pond.useDynamicPalette
+ * by ranking (header-active-bg, header-active-fg, --vscode-focusBorder)
+ * with a 3-tier rule:
+ *   1. **Match panel-active-bg** if its absolute OKLab chroma is ≥ 0.05
+ *      — i.e., it's a "real color", not a translucent grey overlay.
+ *      Visually unifies the ring with the focused header.
+ *   2. Else the most-saturated of (header-active-fg, focusBorder) that
+ *      clears the same absolute chroma floor.
+ *   3. Else max ΔE OKLab against app-bg (greyscale-theme fallback).
+ * Absolute chroma is used (not chroma-vs-app-bg) so themes whose app-bg is
+ * itself mildly saturated (e.g. Solarized) don't underweight clearly-
+ * chromatic candidates. Both the marching-ants overlay and the terminal
+ * text-selection border read --color-focus-ring.
  *
  * Doors: bg-only chrome with no border and no hover. The dynamic
  * --color-door-bg is recomputed whenever the theme changes (Baseboard's

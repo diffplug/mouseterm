@@ -7,10 +7,18 @@
  */
 
 /** Convert any CSS color string (hex, rgb, hsl, named, color-mix...) to sRGB
- *  bytes by letting the canvas do the heavy lifting. Returns null on failure. */
+ *  bytes by letting the canvas do the heavy lifting. Returns null on failure.
+ *
+ *  Uses `globalCompositeOperation = 'copy'` so each fillRect *replaces* the
+ *  pixel rather than alpha-compositing over the previous fill — without
+ *  this, semi-transparent colors like `#b3880088` blend with whatever
+ *  the picker read last, washing out their saturation. The `#000`
+ *  fallback covers invalid `color` strings (fillStyle is a no-op for those,
+ *  so it would otherwise leak the previous fillStyle through to the read). */
 export function rgbOf(color: string, ctx: CanvasRenderingContext2D): [number, number, number] | null {
   if (!color) return null;
-  ctx.fillStyle = '#000'; // reset to a known value if `color` is invalid
+  ctx.globalCompositeOperation = 'copy';
+  ctx.fillStyle = '#000';
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, 1, 1);
   const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
@@ -40,4 +48,12 @@ export function rgbToOklab([r, g, b]: [number, number, number]): [number, number
 export function deltaEOklab(a: [number, number, number], b: [number, number, number]): number {
   const dL = a[0] - b[0], da = a[1] - b[1], db = a[2] - b[2];
   return Math.sqrt(dL * dL + da * da + db * db);
+}
+
+/** OKLab chroma C = √(a² + b²). Approximates perceptual saturation; ≈0 for
+ *  greys, ~0.10 for visible accents, ~0.20+ for vivid colors in the sRGB
+ *  gamut. Independent of lightness, so it isolates "how colorful" rather
+ *  than "how light/dark". */
+export function chromaOklab([, a, b]: [number, number, number]): number {
+  return Math.sqrt(a * a + b * b);
 }

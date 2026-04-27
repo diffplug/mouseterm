@@ -25,6 +25,12 @@ Two consumers read `--vscode-*` variables:
 
 A MutationObserver on `document.body` (in `terminal-registry.ts`) detects style changes and re-reads the theme for all xterm.js terminals. Dockview overrides and Tailwind classes update automatically because they reference `--color-*`.
 
+### Why the `--color-*` declarations live on `body`, not `:root`
+
+CSS resolves `var()` references inside a custom property's value at the cascade of the **element where the property is declared**, not where it's used. `applyTheme()` sets `--vscode-*` on `body`, so any `--color-foo: var(--vscode-bar, fallback)` declared on `:root` (e.g. via `@theme`) sees an empty cascade for `--vscode-bar` and collapses to its static fallback. Body and descendants then inherit that already-resolved fallback, never picking up the actual theme value.
+
+To make theme switching actually drive the chrome, `theme.css` re-declares all theme-dependent `--color-*` tokens inside a `body { ... }` block (with parallel `body.vscode-light` and `prefers-color-scheme: light` blocks for the light variants). On `body`, `--vscode-*` are in scope, so `var()` resolves correctly. The `@theme` block above keeps the same declarations for Tailwind's utility-class generation, but its values aren't load-bearing for runtime theming — the body-level declarations win in the cascade for the elements that consume them.
+
 In addition, `Pond.useDynamicPalette` runs a second body-level MutationObserver to publish a few **runtime-chosen** `--color-*` vars (door bg/fg, focus ring) by perceptual contrast (ΔE in OKLab) against `--color-app-bg`. See **Surface hierarchy** below.
 
 ## Surface hierarchy
@@ -38,9 +44,17 @@ The chrome is anchored on VSCode's **file-tree** styling: `list.activeSelectionB
 | `--color-header-inactive-bg` / `-fg` | `list.inactiveSelectionBackground` / `…Foreground` | unfocused panel headers |
 | `--color-header-active-bg` / `-fg` | `list.activeSelectionBackground` / `…Foreground` | focused panel header |
 | **`--color-door-bg` / `-fg`** *(runtime)* | larger ΔE pick: (header-inactive bg/fg) vs (terminal / foreground) | baseboard doors |
-| **`--color-focus-ring`** *(runtime)* | larger ΔE pick: `--color-header-active-fg` vs `--vscode-focusBorder` | marching-ants ring + terminal text-selection border |
+| **`--color-focus-ring`** *(runtime)* | 3-tier pick (see below) among `--color-header-active-bg`, `--color-header-active-fg`, `--vscode-focusBorder` | marching-ants ring + terminal text-selection border |
 
-The two runtime pickers live in `Pond.useDynamicPalette` and write CSS vars onto `body.style`. They use Euclidean distance in OKLab (Björn Ottosson's perceptually-uniform color space) rather than WCAG luminance, so themes whose candidate colors differ in hue or chroma — not just lightness — still pick correctly. The math is in `lib/src/lib/color-contrast.ts`.
+The two runtime pickers live in `Pond.useDynamicPalette` and write CSS vars onto `body.style`. The math (sRGB→OKLab, ΔE, chroma) is in `lib/src/lib/color-contrast.ts`.
+
+- **Door bg/fg** uses plain max ΔE OKLab. Both candidates (panel-inactive bg vs terminal bg) are typically near-greyscale, so perceptual distance correctly picks whichever has the larger lightness gap from app-bg.
+- **Focus ring** uses a 3-tier rule:
+  1. **Match panel-active-bg** (`list.activeSelectionBackground`) if its *absolute* OKLab chroma is ≥ 0.05 — i.e., it's a meaningful color, not a translucent grey overlay. Visually unifying the ring with the focused header is the ideal outcome.
+  2. Else the most-saturated of (`list.activeSelectionForeground`, `focusBorder`) that clears the same absolute chroma floor.
+  3. Else max ΔE OKLab vs app-bg among all three candidates (greyscale-theme fallback).
+
+  Absolute chroma is used (rather than chroma-vs-app-bg) because some themes have a mildly-saturated app-bg of their own (e.g. Solarized's teal `#003641`); a delta-based gate would underweight an obviously-chromatic panel-active-bg in those themes. Selection reads more cleanly when the ring stands out in saturation than in lightness alone — most app-bg values are near-grey, and a chromatic ring colors the eye decisively even when luminance contrast is modest.
 
 `list.inactiveSelectionForeground` is often left undefined by themes; the cascade falls through `list.activeSelectionForeground` → `--vscode-foreground` → hex.
 

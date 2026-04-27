@@ -26,7 +26,7 @@ import {
 import { HeaderActionButton } from './HeaderActionButton';
 import { TodoAlertDialog } from './TodoAlertDialog';
 import { KILL_CONFIRM_MS, KILL_SHAKE_MS, KillConfirmOverlay, orchestrateKill, randomKillChar, type ConfirmKill } from './KillConfirm';
-import { deltaEOklab, rgbOf, rgbToOklab } from '../lib/color-contrast';
+import { chromaOklab, deltaEOklab, rgbOf, rgbToOklab } from '../lib/color-contrast';
 import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
@@ -613,20 +613,9 @@ function useDynamicPalette() {
       const app = rgbOf(styles.getPropertyValue('--color-app-bg').trim(), ctx);
       if (!app) return;
       const oApp = rgbToOklab(app);
-      const pickByDelta = (
-        candidates: ReadonlyArray<{ varName: string; rgb: [number, number, number] }>,
-      ): string | null => {
-        if (candidates.length === 0) return null;
-        let best = candidates[0];
-        let bestDist = deltaEOklab(rgbToOklab(best.rgb), oApp);
-        for (let i = 1; i < candidates.length; i++) {
-          const d = deltaEOklab(rgbToOklab(candidates[i].rgb), oApp);
-          if (d > bestDist) { best = candidates[i]; bestDist = d; }
-        }
-        return best.varName;
-      };
 
       // --- Door palette: (panel-inactive bg/fg) or (terminal-bg / foreground)
+      // Both candidates are typically near-greyscale, so plain max ΔE is fine.
       const panel = rgbOf(styles.getPropertyValue('--color-header-inactive-bg').trim(), ctx);
       const term = rgbOf(styles.getPropertyValue('--color-surface').trim(), ctx);
       if (panel && term) {
@@ -637,14 +626,53 @@ function useDynamicPalette() {
         document.body.style.setProperty('--color-door-fg', `var(${fg})`);
       }
 
-      // --- Focus ring: (panel-active foreground) or (focusBorder)
-      const candidates: Array<{ varName: string; rgb: [number, number, number] }> = [];
-      const headerFg = rgbOf(styles.getPropertyValue('--color-header-active-fg').trim(), ctx);
-      if (headerFg) candidates.push({ varName: '--color-header-active-fg', rgb: headerFg });
+      // --- Focus ring: 3-tier preference.
+      //   1. Match panel-active-bg if it's chromatic in absolute terms
+      //      (OKLab chroma ≥ SATURATION_FLOOR). Visually unifies the ring
+      //      with the focused header. We use *absolute* chroma instead of
+      //      chroma-vs-app-bg because some themes (e.g. Solarized) have a
+      //      mildly-saturated app-bg, which would shrink the delta even
+      //      when panel-active-bg is clearly a "real" color.
+      //   2. Else the most-saturated other candidate (header-active-fg,
+      //      focusBorder) that clears the same floor.
+      //   3. Else max ΔE OKLab among all three (greyscale-theme fallback).
+      const SATURATION_FLOOR = 0.05;
+      type Candidate = { varName: string; lab: [number, number, number]; preferred?: boolean };
+      const candidates: Candidate[] = [];
+      const headerActiveBg = rgbOf(styles.getPropertyValue('--color-header-active-bg').trim(), ctx);
+      if (headerActiveBg) candidates.push({ varName: '--color-header-active-bg', lab: rgbToOklab(headerActiveBg), preferred: true });
+      const headerActiveFg = rgbOf(styles.getPropertyValue('--color-header-active-fg').trim(), ctx);
+      if (headerActiveFg) candidates.push({ varName: '--color-header-active-fg', lab: rgbToOklab(headerActiveFg) });
       const focusBorder = rgbOf(styles.getPropertyValue('--vscode-focusBorder').trim(), ctx);
-      if (focusBorder) candidates.push({ varName: '--vscode-focusBorder', rgb: focusBorder });
-      const ringVar = pickByDelta(candidates);
-      if (ringVar) document.body.style.setProperty('--color-focus-ring', `var(${ringVar})`);
+      if (focusBorder) candidates.push({ varName: '--vscode-focusBorder', lab: rgbToOklab(focusBorder) });
+
+      let pick: Candidate | null = null;
+      // Tier 1: preferred candidate first.
+      const preferred = candidates.find(c => c.preferred);
+      if (preferred && chromaOklab(preferred.lab) >= SATURATION_FLOOR) {
+        pick = preferred;
+      }
+      // Tier 2: most-saturated qualifying alternative.
+      if (!pick) {
+        let bestChroma = -Infinity;
+        for (const c of candidates) {
+          if (c.preferred) continue;
+          const cc = chromaOklab(c.lab);
+          if (cc >= SATURATION_FLOOR && cc > bestChroma) {
+            pick = c;
+            bestChroma = cc;
+          }
+        }
+      }
+      // Tier 3: max ΔE OKLab.
+      if (!pick && candidates.length > 0) {
+        let bestDist = -Infinity;
+        for (const c of candidates) {
+          const d = deltaEOklab(c.lab, oApp);
+          if (d > bestDist) { pick = c; bestDist = d; }
+        }
+      }
+      if (pick) document.body.style.setProperty('--color-focus-ring', `var(${pick.varName})`);
     };
 
     update();
