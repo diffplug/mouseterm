@@ -310,10 +310,12 @@ function paintTerminalHost(element: HTMLDivElement, terminal: Terminal, backgrou
     xtermElement.style.borderRadius = 'inherit';
   }
 
-  element.querySelectorAll<HTMLElement>('.xterm-screen, .xterm-scrollable-element, .xterm-viewport')
-    .forEach((el) => {
-      el.style.backgroundColor = background;
-    });
+  if (typeof element.querySelectorAll === 'function') {
+    element.querySelectorAll<HTMLElement>('.xterm-screen, .xterm-scrollable-element, .xterm-viewport')
+      .forEach((el) => {
+        el.style.backgroundColor = background;
+      });
+  }
 }
 
 // --- Input analysis ---
