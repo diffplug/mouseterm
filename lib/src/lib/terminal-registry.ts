@@ -300,6 +300,13 @@ function getTerminalTheme(): Record<string, string> {
   };
 }
 
+// Coupled to xterm's internal class names. If xterm renames any of these in
+// a future upgrade we'd silently regress to a sub-row gap at the bottom of
+// the pane (the very thing this paints over) — warn loudly the first time
+// it happens so the upgrade is caught in dev/staging instead of prod.
+const XTERM_HOST_SELECTOR = '.xterm-screen, .xterm-scrollable-element, .xterm-viewport';
+let xtermSelectorWarned = false;
+
 function paintTerminalHost(element: HTMLDivElement, terminal: Terminal, background: string): void {
   element.style.backgroundColor = background;
   element.style.borderRadius = 'inherit';
@@ -310,12 +317,16 @@ function paintTerminalHost(element: HTMLDivElement, terminal: Terminal, backgrou
     xtermElement.style.borderRadius = 'inherit';
   }
 
-  if (typeof element.querySelectorAll === 'function') {
-    element.querySelectorAll<HTMLElement>('.xterm-screen, .xterm-scrollable-element, .xterm-viewport')
-      .forEach((el) => {
-        el.style.backgroundColor = background;
-      });
+  if (typeof element.querySelectorAll !== 'function') return;
+  const hosts = element.querySelectorAll<HTMLElement>(XTERM_HOST_SELECTOR);
+  if (hosts.length === 0 && xtermElement && !xtermSelectorWarned) {
+    xtermSelectorWarned = true;
+    console.warn(`[mouseterm] paintTerminalHost: no elements matched ${XTERM_HOST_SELECTOR} — xterm DOM may have changed.`);
+    return;
   }
+  hosts.forEach((el) => {
+    el.style.backgroundColor = background;
+  });
 }
 
 // --- Input analysis ---
