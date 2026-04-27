@@ -26,7 +26,12 @@ export function KillConfirmCard({ char, onCancel, exit }: { char: string; onCanc
     <div className={`bg-surface-raised border border-border px-6 py-4 rounded-lg text-center shadow-lg font-mono${exit === 'shake' ? ' motion-safe:animate-shake-x' : ''}`}>
       <h2 className="text-base font-bold mb-3 text-foreground">Confirm kill</h2>
       <div className="bg-app-bg py-2 px-6 rounded border border-border inline-block mb-2">
-        <span className={`text-xl font-bold text-error${exit === 'confirm' ? ' kill-letter-flash' : ''}`}>{char}</span>
+        <span
+          className={`text-xl font-bold${exit === 'confirm' ? ' kill-letter-flash' : ''}`}
+          style={{ color: 'var(--color-error)' }}
+        >
+          {char}
+        </span>
       </div>
       <div className="text-sm text-muted leading-relaxed grid grid-cols-[auto_auto] gap-x-2 justify-center">
         <Shortcut className="justify-self-end">{char}</Shortcut>
