@@ -25,6 +25,31 @@ Two consumers read `--vscode-*` variables:
 
 A MutationObserver on `document.body` (in `terminal-registry.ts`) detects style changes and re-reads the theme for all xterm.js terminals. Dockview overrides and Tailwind classes update automatically because they reference `--color-*`.
 
+In addition, `Pond.useDynamicPalette` runs a second body-level MutationObserver to publish a few **runtime-chosen** `--color-*` vars (door bg/fg, focus ring) by perceptual contrast (ΔE in OKLab) against `--color-app-bg`. See **Surface hierarchy** below.
+
+## Surface hierarchy
+
+The chrome is anchored on VSCode's **file-tree** styling: `list.activeSelectionBackground` for the focused panel header, `list.inactiveSelectionBackground` for unfocused headers and parked doors, `sideBar.background` for the host area, and `editor.background` for the pane content. Four bg surfaces, hue-shifted active panel for prominence:
+
+| Token | VSCode key | Where used |
+|---|---|---|
+| `--color-surface` (terminal-bg) | `editor.background` | xterm canvas, pane body |
+| `--color-app-bg` | `sideBar.background` → `editorGroupHeader.tabsBackground` | baseboard, dockview gutters, gaps around panes |
+| `--color-header-inactive-bg` / `-fg` | `list.inactiveSelectionBackground` / `…Foreground` | unfocused panel headers |
+| `--color-header-active-bg` / `-fg` | `list.activeSelectionBackground` / `…Foreground` | focused panel header |
+| **`--color-door-bg` / `-fg`** *(runtime)* | larger ΔE pick: (header-inactive bg/fg) vs (terminal / foreground) | baseboard doors |
+| **`--color-focus-ring`** *(runtime)* | larger ΔE pick: `--color-header-active-fg` vs `--vscode-focusBorder` | marching-ants ring + terminal text-selection border |
+
+The two runtime pickers live in `Pond.useDynamicPalette` and write CSS vars onto `body.style`. They use Euclidean distance in OKLab (Björn Ottosson's perceptually-uniform color space) rather than WCAG luminance, so themes whose candidate colors differ in hue or chroma — not just lightness — still pick correctly. The math is in `lib/src/lib/color-contrast.ts`.
+
+`list.inactiveSelectionForeground` is often left undefined by themes; the cascade falls through `list.activeSelectionForeground` → `--vscode-foreground` → hex.
+
+**Header-internal text and buttons inherit the header's fg.** No `text-muted` for buttons inside a header — let inherited color do the work and use `hover:bg-current/10` (currentColor at 10%) for hover. Semantic exceptions: `text-warning` for the ringing bell; `hover:bg-error/10 hover:text-error` for the kill button.
+
+**Bg-only chrome** is the rule. In high-contrast VSCode themes (where structure is conveyed via borders, not fills), the chrome renders flat — accepted trade-off; terminal content keeps its HC ANSI palette regardless.
+
+The full strategy and "things to avoid" list lives in [`lib/src/components/design.tsx`](../../lib/src/components/design.tsx) at the top of the file. Any change to chrome colors should update that comment first.
+
 ### Cleanup from previous `--mt-*` layer
 
 The old three-layer system (`--vscode-*` → `--mt-*` → `--color-*`) had a redundant middle layer. The `--mt-*` variables were a pure passthrough — every one was immediately re-exported as `--color-*` with no transformation. The cleanup:
@@ -34,6 +59,15 @@ The old three-layer system (`--vscode-*` → `--mt-*` → `--color-*`) had a red
 - **Eliminated duplicate mappings**: `--vscode-focusBorder` was aliased as `--mt-accent`, `--mt-gutter-active`, and `--mt-selection-terminal` — three names for one token. Now just `--color-accent`.
 - **Dropped `testing.iconPassed` mapping**: `--mt-success-fg` stole `testing.iconPassed` as a generic success color. Most themes don't define this key, and it's the wrong semantic. `--color-success` now uses a hardcoded green.
 - **Kept defensible cross-domain mappings**: `--color-tab-selected-bg/fg` ← `list.activeSelectionBackground/Foreground` (closest VSCode approximation of our command-mode tab selection). `--color-accent` ← `focusBorder` (most themes treat this as their brand/accent color).
+
+### Chrome simplification (later)
+
+A second pass collapsed the chrome to four anchored tokens (described above) and removed the rest:
+
+- **Removed tokens**: `--color-tab-active-bg/fg`, `--color-tab-inactive-bg/fg`, `--color-tab-selected-bg/fg`, `--color-accent`, `--color-surface-alt`, `--color-badge-bg/fg`, `--color-button-hover-bg`. The previous "kept" cross-domain mappings turned out not to pull their weight once panel headers and doors all shared `list.*` tokens.
+- **Anchored on file-tree** (`list.*` + `sideBar.background`) instead of editor tabs (`tab.*`). Editor-tab bgs typically equal `editor.background` in many themes (so an "active tab" disappears against the editor in a bg-only design), while `list.activeSelectionBackground` is built to stand out against `sideBar.background` — exactly the contrast we want.
+- **Introduced runtime `--color-door-bg/-fg` and `--color-focus-ring`** picked by ΔE OKLab (see Surface hierarchy). Static fallback chains can't always guarantee enough contrast across the open universe of imported themes; a perceptual picker handles the long tail.
+- **Bg-only**: removed door borders entirely, headers and doors no longer use `--color-border`. The 1-2px border + transparent-bottom-edge pattern (which produced visible 45° miters where the visible border met the transparent edge) is gone.
 
 ### Light theme body class
 
@@ -66,20 +100,25 @@ This replaced the old `PlaygroundTheme` interface (previously in `website/src/li
 
 ### `CONSUMED_VSCODE_KEYS`
 
-Not all VSCode theme color keys matter to MouseTerm — only the ~45 keys that are actually read. The conversion function filters to this set and drops the rest. The keys come from two consumers:
+Not all VSCode theme color keys matter to MouseTerm — only the ~40 keys that are actually read. The conversion function filters to this set and drops the rest. The keys come from four consumers:
 
-**Read by `@theme` fallbacks** (UI colors, ~25 keys):
+**Read by `@theme` fallbacks in `theme.css`** (chrome surfaces and text, ~17 keys):
 - **Surfaces**: `editor.background`, `editorGroupHeader.tabsBackground`, `sideBar.background`, `editorWidget.background`
-- **Text**: `editor.foreground`, `descriptionForeground`
-- **Accent/borders**: `focusBorder`, `panel.border`
-- **Tabs**: `tab.activeBackground`, `tab.inactiveBackground`, `tab.activeForeground`, `tab.inactiveForeground`, `list.activeSelectionBackground`, `list.activeSelectionForeground`
+- **Text**: `editor.foreground`, `descriptionForeground`, `foreground` (used in the inactive-header foreground fallback chain)
+- **Borders**: `panel.border`
+- **File-tree palette** (chrome anchor): `list.activeSelectionBackground`, `list.activeSelectionForeground`, `list.inactiveSelectionBackground`, `list.inactiveSelectionForeground`
 - **Terminal**: `terminal.background`, `terminal.foreground`
-- **Status**: `badge.background`, `badge.foreground`, `errorForeground`, `editorWarning.foreground`
+- **Status**: `errorForeground`, `editorWarning.foreground`
 - **Inputs**: `input.background`, `input.border`
-- **Buttons**: `button.background`, `button.foreground`, `button.hoverBackground`
-- **Links**: `textLink.foreground`
 
-**Read by `getTerminalTheme()` directly** (terminal colors, ~20 keys):
+**Read by `Pond.useDynamicPalette` directly** (focus ring picker):
+- `focusBorder`
+
+**Read by `ThemePicker.tsx` inline styles** (dialog chrome only):
+- `button.background`, `button.foreground`, `textLink.foreground` *(theme-installer dialog)*
+- All other `--vscode-*` references in `ThemePicker.tsx` are already covered by the `@theme` set above.
+
+**Read by `getTerminalTheme()` and `SelectionOverlay.tsx`** (terminal content, ~19 keys):
 - `terminal.background`, `terminal.foreground` (also in `@theme`)
 - `terminalCursor.foreground`, `terminal.selectionBackground`
 - `terminal.ansiBlack` through `terminal.ansiBrightWhite` (16 ANSI colors)
@@ -196,6 +235,9 @@ user searches OpenVSX
 | [`lib/src/lib/themes/index.ts`](../../lib/src/lib/themes/index.ts) | Barrel export |
 | [`lib/scripts/bundle-themes.mjs`](../../lib/scripts/bundle-themes.mjs) | Build-time script to download and convert themes from OpenVSX |
 | [`lib/src/theme.css`](../../lib/src/theme.css) | `@theme` tokens with `var(--vscode-*, fallback)` + light mode overrides |
+| [`lib/src/components/design.tsx`](../../lib/src/components/design.tsx) | Authoritative chrome-color strategy comment (surfaces, fg rules, focus ring, things to avoid) |
+| [`lib/src/lib/color-contrast.ts`](../../lib/src/lib/color-contrast.ts) | sRGB → OKLab + ΔE math for the runtime palette pickers |
+| [`lib/src/components/Pond.tsx`](../../lib/src/components/Pond.tsx) | `useDynamicPalette` runtime picker — publishes `--color-door-bg/-fg` and `--color-focus-ring` via body inline style |
 | [`lib/src/lib/terminal-registry.ts`](../../lib/src/lib/terminal-registry.ts) | MutationObserver + `getTerminalTheme()` — no changes needed |
 | [`lib/src/components/ThemePicker.tsx`](../../lib/src/components/ThemePicker.tsx) | Shared website/standalone dropdown and OpenVSX dialog for selecting, installing, and deleting themes |
 | [`website/src/components/SiteHeader.tsx`](../../website/src/components/SiteHeader.tsx) | Shared site header; playground enables `themeAware` so header chrome follows the active theme |
@@ -211,7 +253,13 @@ user searches OpenVSX
 
 **Why two layers, not three?** The old `--mt-*` middle layer was a pure passthrough — every variable was immediately re-exported as `--color-*`. Collapsing it into `@theme` eliminates 114 lines of dead CSS and removes a layer of indirection with no loss of functionality.
 
-**Why keep semantic names (`surface`, `accent`) instead of VSCode names (`editor-background`, `focusBorder`)?** `bg-surface` reads better in JSX than `bg-editor-background`, and some mappings are genuinely semantic (`surface-alt` communicates intent better than `editorGroupHeader-tabsBackground`). The mapping is documented in one place (`theme.css`).
+**Why keep semantic names (`surface`, `header-active-bg`) instead of VSCode names (`editor-background`, `list-activeSelectionBackground`)?** `bg-surface` reads better in JSX than `bg-editor-background`, and some mappings are genuinely semantic (`header-active-bg` communicates intent better than `list-activeSelectionBackground`). The mapping is documented in one place (`theme.css`).
+
+**Why anchor the chrome on `list.*` (file-tree) tokens instead of `tab.*`?** In many VSCode themes, `tab.activeBackground` equals `editor.background` so an "active tab" would disappear against editor bg in a bg-only design. `list.activeSelectionBackground` is engineered to be visible against `sideBar.background`, which gives us exactly the contrast we want for "this panel is focused" vs "this panel is parked". Anchoring on the same family also means the four chrome surfaces have a coherent design lineage (file-tree row + sidebar host + selected row + editor content).
+
+**Why dynamic ΔE OKLab pickers for `--color-door-bg` and `--color-focus-ring`?** Static fallback chains pick a single key per surface, but across the open universe of imported themes some themes will have low contrast between any two specific keys. A perceptual picker that chooses between a small set of candidates (e.g. door-bg = whichever of `header-inactive-bg` or `terminal-bg` has higher ΔE vs `app-bg`) handles the long tail without per-theme tweaks. ΔE OKLab (Euclidean distance in OKLab) is used rather than WCAG luminance because saturated themes can have similar L between two colors with very different hue, and the eye still perceives contrast — luminance alone misses that.
+
+**Why bg-only chrome (no borders) in the panel/door surfaces?** Bg-only is simpler and reads cleanly in modern themes. The trade-off is that high-contrast VSCode themes (which convey structure via borders, not fills) render the chrome flat. We accept this; their terminal content still uses HC ANSI colors.
 
 **Why hardcode `success` instead of mapping to `testing.iconPassed`?** Most VSCode themes don't define `testing.iconPassed` — it's an optional, domain-specific key. Using it as generic "success green" means imported themes either get our fallback (fine) or get a color chosen for test runner icons (wrong semantic). A hardcoded green is more reliable.
 
