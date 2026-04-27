@@ -313,12 +313,23 @@ const REPORT_SS3 = /\x1bO[@-~]/;
 const REPORT_OSC = /\x1b\][\s\S]*?(?:\x07|\x1b\\)/;
 const REPORT_TOKENS = new RegExp(`${REPORT_CSI.source}|${REPORT_SS3.source}|${REPORT_OSC.source}|.`, 'gs');
 const REPORT_VALIDATE = new RegExp(`^(?:${REPORT_CSI.source}|${REPORT_SS3.source}|${REPORT_OSC.source})$`);
+const REPLAY_REPORT_CSI = /\x1b\[(?:\??\d+(?:;\d+)*[Rn]|[?>=]?\d*(?:;\d+)*c)/;
+const REPLAY_REPORT_FOCUS = /\x1b\[[IO]/;
+const REPLAY_REPORT_TOKENS = new RegExp(`${REPLAY_REPORT_CSI.source}|${REPLAY_REPORT_FOCUS.source}|${REPORT_OSC.source}|.`, 'gs');
+const REPLAY_REPORT_VALIDATE = new RegExp(`^(?:${REPLAY_REPORT_CSI.source}|${REPLAY_REPORT_FOCUS.source}|${REPORT_OSC.source})$`);
 
 function inputIsSyntheticTerminalReport(data: string): boolean {
   if (data.length === 0) return false;
   const chunks = data.match(REPORT_TOKENS) ?? [];
   if (chunks.length === 0) return false;
   return chunks.every((chunk) => REPORT_VALIDATE.test(chunk));
+}
+
+function inputIsReplayTerminalReport(data: string): boolean {
+  if (data.length === 0) return false;
+  const chunks = data.match(REPLAY_REPORT_TOKENS) ?? [];
+  if (chunks.length === 0) return false;
+  return chunks.every((chunk) => REPLAY_REPORT_VALIDATE.test(chunk));
 }
 
 /**
@@ -382,7 +393,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
   const inputDisposable = terminal.onData((data) => {
     const isSyntheticTerminalReport = inputIsSyntheticTerminalReport(data);
 
-    if (isSyntheticTerminalReport && registry.get(id)?.isReplaying) {
+    if (inputIsReplayTerminalReport(data) && registry.get(id)?.isReplaying) {
       return;
     }
 

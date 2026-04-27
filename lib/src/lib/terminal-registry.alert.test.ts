@@ -30,7 +30,7 @@ vi.mock('@xterm/xterm', () => {
 
     open(): void {}
 
-    write(data: string): void {
+    write(data: string, _callback?: () => void): void {
       this.writes.push(data);
     }
 
@@ -103,6 +103,7 @@ import {
   initAlertStateReceiver,
   markSessionAttention,
   markSessionTodo,
+  restoreTerminal,
   swapTerminals,
   toggleSessionAlert,
   toggleSessionTodo,
@@ -616,6 +617,20 @@ describe('terminal-registry alert behavior', () => {
     entry.terminal.emitInput('\x1b[I');
 
     expect(getActivity(id).todo).toBe(true);
+  });
+
+  it('preserves keyboard CSI input during restore replay while dropping query replies', () => {
+    const id = 'restore-replay-input';
+    const received: string[] = [];
+    const entry = restoreTerminal(id, { scrollback: 'saved output' }) as TestTerminalEntry;
+    fakePlatform.setInputHandler(id, (data) => received.push(data));
+
+    entry.terminal.emitInput('\x1b[A');
+    entry.terminal.emitInput('\x1b[?1;2c');
+    entry.terminal.emitInput('\x1b]10;rgb:aaaa/bbbb/cccc\x07');
+    fakePlatform.clearInputHandler(id);
+
+    expect(received).toEqual(['\x1b[A']);
   });
 
   it('toggleSessionTodo cycles: false → true → false', () => {
