@@ -1,4 +1,5 @@
 import type { MouseTermTheme } from './types';
+import { completeThemeVars } from './vscode-color-resolver';
 
 /** Previously applied variable names — tracked for cleanup. */
 let appliedVarNames: string[] = [];
@@ -10,49 +11,6 @@ const HOST_TYPOGRAPHY_VARS: Record<string, string> = {
   '--vscode-editor-font-family':
     "'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
 };
-
-const DERIVED_VAR_ALIASES: ReadonlyArray<readonly [string, readonly string[]]> = [
-  ['--vscode-editorWidget-background', ['--vscode-editor-background']],
-  ['--vscode-panel-border', ['--vscode-input-border', '--vscode-sideBar-background']],
-  [
-    '--vscode-list-activeSelectionForeground',
-    ['--vscode-editor-foreground', '--vscode-terminal-foreground'],
-  ],
-  [
-    '--vscode-list-inactiveSelectionBackground',
-    ['--vscode-sideBar-background', '--vscode-editor-background'],
-  ],
-  [
-    '--vscode-list-inactiveSelectionForeground',
-    [
-      '--vscode-list-activeSelectionForeground',
-      '--vscode-editor-foreground',
-      '--vscode-terminal-foreground',
-    ],
-  ],
-  ['--vscode-terminal-background', ['--vscode-editor-background']],
-  ['--vscode-terminal-foreground', ['--vscode-editor-foreground']],
-  ['--vscode-descriptionForeground', ['--vscode-editor-foreground', '--vscode-terminal-foreground']],
-  ['--vscode-input-background', ['--vscode-editorWidget-background', '--vscode-editor-background']],
-  ['--vscode-input-border', ['--vscode-panel-border', '--vscode-input-background']],
-  ['--vscode-textLink-foreground', ['--vscode-focusBorder', '--vscode-terminal-ansiBlue']],
-  ['--vscode-button-background', ['--vscode-list-activeSelectionBackground', '--vscode-focusBorder']],
-  [
-    '--vscode-button-foreground',
-    ['--vscode-list-activeSelectionForeground', '--vscode-editor-foreground'],
-  ],
-  ['--vscode-errorForeground', ['--vscode-terminal-ansiRed']],
-] as const;
-
-function completeThemeVars(vars: Record<string, string>): Record<string, string> {
-  const complete = { ...vars };
-  for (const [target, sources] of DERIVED_VAR_ALIASES) {
-    if (complete[target]) continue;
-    const source = sources.find((name) => complete[name]);
-    if (source) complete[target] = complete[source];
-  }
-  return complete;
-}
 
 /**
  * Apply a theme by setting --vscode-* CSS variables on document.body.
@@ -71,9 +29,9 @@ export function applyTheme(theme: MouseTermTheme): void {
     document.body.style.removeProperty(name);
   }
 
-  // Apply new variables. Some VSCode color keys are optional in source theme
-  // JSON; materialize the aliases we need here so theme.css can stay direct.
-  const vars = completeThemeVars({ ...HOST_TYPOGRAPHY_VARS, ...theme.vars });
+  // Apply new variables. Imported theme JSON usually omits VSCode registry
+  // defaults; materialize them here so theme.css can stay direct.
+  const vars = completeThemeVars({ ...HOST_TYPOGRAPHY_VARS, ...theme.vars }, theme.type);
   appliedVarNames = Object.keys(vars);
   for (const [name, value] of Object.entries(vars)) {
     document.body.style.setProperty(name, value);

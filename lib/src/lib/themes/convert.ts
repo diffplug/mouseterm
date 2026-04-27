@@ -7,13 +7,16 @@
  */
 
 /** VSCode theme color keys consumed by MouseTerm. Derived from theme.css,
- *  Pond.useDynamicPalette, ThemePicker inline styles, SelectionOverlay, and
- *  terminal-registry. */
+ *  Pond.useDynamicPalette, ThemePicker inline styles, SelectionOverlay,
+ *  terminal-registry, and the VSCode fallback resolver. */
 export const CONSUMED_VSCODE_KEYS: readonly string[] = [
+  // Resolver dependencies
+  'foreground',
   // Surfaces (theme.css @theme)
   'editor.background',
   'sideBar.background',
   'editorWidget.background',
+  'editor.selectionBackground',
   // Text
   'editor.foreground',
   'descriptionForeground',

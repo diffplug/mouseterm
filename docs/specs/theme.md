@@ -6,7 +6,10 @@ theme-appropriate xterm.js colors.
 
 VSCode extension mode gets `--vscode-*` variables from VSCode. Standalone and
 website mode apply the same shape of variables to `document.body` with
-`applyTheme()` from a bundled or installed MouseTerm theme.
+`applyTheme()` from a bundled or installed MouseTerm theme. Both paths run the
+same consumed-token resolver from `lib/src/lib/themes/vscode-color-resolver.ts`
+so omitted theme JSON keys behave like VSCode registry defaults before
+MouseTerm renders.
 
 ## Surface hierarchy
 
@@ -49,26 +52,49 @@ MouseTerm has two theme layers:
 2. `--color-*` variables in `lib/src/theme.css` provide semantic Tailwind
    tokens such as `bg-app-bg`, `bg-header-active-bg`, and `text-foreground`.
 
-`applyTheme()` sets imported `--vscode-*` variables on `document.body` and
-adds either `vscode-light` or `vscode-dark` for consumers that need the theme
-type. `theme.css` declares the theme-dependent `--color-*` tokens on `body`
-because `--vscode-*` variables also live there. Keep the parallel `@theme`
-declarations so Tailwind can generate utility classes, but treat the
-body-level declarations as the runtime source of truth.
+`applyTheme()` sets imported `--vscode-*` variables on `document.body`, fills
+missing consumed variables through the VSCode resolver, and adds either
+`vscode-light` or `vscode-dark` for consumers that need the theme type. In real
+VSCode webviews, `installVscodeThemeVarResolver()` runs before React renders;
+it reads host-provided variables, materializes only missing MouseTerm-consumed
+variables on `body.style`, and removes stale materialized variables when the
+host starts providing a real value.
+
+`theme.css` declares the theme-dependent `--color-*` tokens on `body` because
+`--vscode-*` variables also live there. Keep the parallel `@theme`
+declarations so Tailwind can generate utility classes, but treat the body-level
+declarations as the runtime source of truth.
 
 `theme.css` must not contain hardcoded color defaults or `var(..., fallback)`
-chains. Runtime hosts are responsible for providing the consumed `--vscode-*`
-variables before MouseTerm renders.
+chains. Runtime hosts plus the shared resolver are responsible for providing
+the consumed `--vscode-*` variables before MouseTerm renders.
+
+VSCode color IDs with `null` registry defaults need component-equivalent
+materialization because MouseTerm consumes them through direct CSS variables.
+Important cases:
+
+- `list.inactiveSelectionForeground` resolves to normal foreground
+  (`editor.foreground`, then base `foreground`), not
+  `list.activeSelectionForeground`. This matches VSCode list/tree behavior
+  where an inactive selected row does not force active-selection white text.
+- Null foregrounds inherit the nearest normal foreground.
+- Null backgrounds inherit the relevant surface.
+- Null border colors materialize as `transparent` so MouseTerm's existing
+  border geometry does not accidentally draw in `currentColor`.
 
 ## Terminal color contract
 
 Terminal content is orthogonal to the chrome. xterm.js reads terminal colors
-directly from `--vscode-*` in `getTerminalTheme()`:
+directly from `--vscode-*` in `getTerminalTheme()`. The resolver materializes
+the VSCode terminal defaults before those values are read:
 
-- `terminal.background` and `terminal.foreground`, with editor background and
-  foreground fallbacks.
-- `terminalCursor.foreground`.
-- `terminal.selectionBackground`.
+- `terminal.background` inherits `editor.background` when the terminal color is
+  unset.
+- `terminal.foreground` uses VSCode's terminal foreground registry default when
+  unset.
+- `terminalCursor.foreground` inherits `terminal.foreground` when unset.
+- `terminal.selectionBackground` inherits `editor.selectionBackground` when
+  unset.
 - The 16 ANSI colors from `terminal.ansiBlack` through
   `terminal.ansiBrightWhite`.
 
@@ -80,11 +106,11 @@ terminals.
 
 Bundled and installed themes are represented by `MouseTermTheme` objects in
 `lib/src/lib/themes/`. A theme's `vars` map contains only consumed
-`--vscode-*` variables. `convertVscodeThemeColors()` filters imported VSCode
-theme JSON to `CONSUMED_VSCODE_KEYS`; themes used outside VSCode must provide
-the variables consumed by `theme.css`. `applyTheme()` materializes a small set
-of missing optional VSCode variables from other variables already present in the
-same theme so `theme.css` can stay direct.
+`--vscode-*` variables plus resolver dependencies. `convertVscodeThemeColors()`
+filters imported VSCode theme JSON to `CONSUMED_VSCODE_KEYS`; themes used
+outside VSCode can omit keys that VSCode itself would omit because
+`completeThemeVars()` fills those from registry defaults and the component
+inheritance rules above.
 
 Theme discovery, OpenVSX download/extraction, picker UI, and localStorage
 persistence are implementation details of `lib/src/lib/themes/` and
@@ -97,9 +123,10 @@ When changing theme behavior:
 
 - Update `lib/src/theme.css` and `lib/src/components/design.tsx` together for
   any chrome token change.
-- Update `CONSUMED_VSCODE_KEYS` when adding or removing any `--vscode-*`
-  dependency used by chrome, terminal rendering, selection UI, or theme-picker
-  inline styles.
+- Update `CONSUMED_VSCODE_KEYS` and the matching list in
+  `lib/scripts/bundle-themes.mjs` when adding or removing any `--vscode-*`
+  dependency used by chrome, terminal rendering, selection UI, theme-picker
+  inline styles, or resolver fallback paths.
 - Keep xterm.js terminal colors sourced from `--vscode-terminal-*` variables,
   not from MouseTerm chrome tokens.
 - Do not add hardcoded color defaults or CSS variable fallback chains to
