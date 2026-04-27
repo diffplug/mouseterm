@@ -35,13 +35,13 @@
   --text-sm--line-height: 1rem;
 
   /* Surfaces — bg-only:
-   *   --color-app              (chrome host)    sideBar.background
+   *   --color-app-bg           (chrome host)    sideBar.background
    *   --color-terminal-bg                       terminal.background
    *   --color-header-inactive-bg                list.inactiveSelectionBackground
    *   --color-header-active-bg                  list.activeSelectionBackground */
   --color-surface-raised: var(--vscode-editorWidget-background);
-  --color-app: var(--vscode-sideBar-background);
-  --color-on-app: var(--vscode-sideBar-foreground);
+  --color-app-bg: var(--vscode-sideBar-background);
+  --color-app-fg: var(--vscode-sideBar-foreground);
 
   /* Text */
   --color-foreground: var(--vscode-editor-foreground);
@@ -60,8 +60,7 @@
   --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground);
 
   /* Dynamic palette — Pond's useDynamicPalette hook overrides these on body
-   * at runtime, picking whichever candidate has the largest ΔE OKLab vs the
-   * app background.
+   * at runtime, picking whichever candidate has the largest ΔE OKLab vs app-bg.
    *
    *   --color-door-*    pick: (header-inactive bg/fg) or (terminal bg/fg)
    *   --color-focus-ring  pick: (header-active-bg/fg) or (focusBorder) */
@@ -95,8 +94,8 @@
  * applyTheme() writes to body.style. */
 body {
   --color-surface-raised: var(--vscode-editorWidget-background);
-  --color-app: var(--vscode-sideBar-background);
-  --color-on-app: var(--vscode-sideBar-foreground);
+  --color-app-bg: var(--vscode-sideBar-background);
+  --color-app-fg: var(--vscode-sideBar-foreground);
   --color-foreground: var(--vscode-editor-foreground);
   --color-muted: var(--vscode-descriptionForeground);
   --color-border: var(--vscode-panel-border);

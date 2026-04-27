@@ -14,7 +14,7 @@ function DoorStory({
       className={reducedMotion ? '[&_button]:!animate-none [&_*]:!transition-none' : undefined}
       style={{ width }}
     >
-      <div className="bg-app flex h-16 items-end border-t border-border px-4">
+      <div className="bg-app-bg flex h-16 items-end border-t border-border px-4">
         <Door {...props} />
       </div>
     </div>

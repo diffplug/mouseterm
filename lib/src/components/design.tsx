@@ -23,7 +23,7 @@ import type { HTMLAttributes, ReactNode } from 'react';
  * vars. Real VSCode provides them in extension mode; standalone/website apply
  * them from bundled or installed MouseTerm themes before rendering.
  *
- *   --color-app           sideBar.background
+ *   --color-app-bg           sideBar.background
  *                            baseboard, dockview gutters, gaps around panes
  *   --color-terminal-bg      terminal.background
  *                            terminal container + xterm default bg
@@ -32,12 +32,12 @@ import type { HTMLAttributes, ReactNode } from 'react';
  *   --color-header-active-bg     list.activeSelectionBackground
  *                            focused pane header + the marching-ants ring
  *   --color-door-bg          runtime: whichever of (header-inactive, terminal)
- *                            has the larger ΔE OKLab vs the app background
+ *                            has the larger ΔE OKLab vs app-bg
  *                            (see Pond.useDynamicPalette)
  *
  * Foregrounds:
  *
- *   --color-on-app           sideBar.foreground (text on the app background)
+ *   --color-app-fg           sideBar.foreground (text on app-bg)
  *   --color-foreground       editor.foreground (generic body text)
  *   --color-muted            descriptionForeground (hints, secondary)
  *   --color-header-active-fg / --color-header-inactive-fg
@@ -58,9 +58,9 @@ import type { HTMLAttributes, ReactNode } from 'react';
  *      Visually unifies the ring with the focused header.
  *   2. Else the most-saturated of (header-active-fg, focusBorder) that
  *      clears the same absolute chroma floor.
- *   3. Else max ΔE OKLab against the app background (greyscale-theme fallback).
- * Absolute chroma is used (not chroma-vs-app-background) so themes whose app
- * background is itself mildly saturated (e.g. Solarized) don't underweight clearly-
+ *   3. Else max ΔE OKLab against app-bg (greyscale-theme fallback).
+ * Absolute chroma is used (not chroma-vs-app-bg) so themes whose app-bg is
+ * itself mildly saturated (e.g. Solarized) don't underweight clearly-
  * chromatic candidates. Both the marching-ants overlay and the terminal
  * text-selection border read --color-focus-ring.
  *

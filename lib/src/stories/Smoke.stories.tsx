@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react';
 
 function ThemeCheck() {
   return (
-    <div className="p-8 bg-app text-on-app min-h-screen">
+    <div className="p-8 bg-app-bg text-app-fg min-h-screen">
       <h1 className="text-lg font-bold mb-2">Storybook Smoke Test</h1>
       <p className="text-muted mb-4">Theme tokens are working if you see colored squares below.</p>
       <div className="flex gap-3">
@@ -15,7 +15,7 @@ function ThemeCheck() {
           <span className="text-sm text-muted">header-inactive-bg</span>
         </div>
         <div className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 rounded bg-app" />
+          <div className="w-12 h-12 rounded bg-app-bg" />
           <span className="text-sm text-muted">surface</span>
         </div>
         <div className="flex flex-col items-center gap-1">

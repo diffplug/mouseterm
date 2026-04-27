@@ -61,7 +61,7 @@ function TabStory({
               className={reducedMotion ? '[&_button]:!animate-none [&_*]:!transition-none' : undefined}
               style={{ width }}
             >
-              <div className="bg-app" style={{ height: 26 }}>
+              <div className="bg-app-bg" style={{ height: 26 }}>
                 <TerminalPaneHeader api={mockApi} containerApi={{} as any} params={{}} tabLocation={'header' as any} />
               </div>
             </div>

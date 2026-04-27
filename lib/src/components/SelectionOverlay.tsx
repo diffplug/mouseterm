@@ -129,7 +129,7 @@ export function SelectionOverlay({ terminalId }: Props) {
   };
 
   // Share --color-focus-ring with the pane focus ring (chosen dynamically by
-  // useDynamicPalette in Pond.tsx for highest perceptual contrast vs the app background).
+  // useDynamicPalette in Pond.tsx for highest perceptual contrast vs app-bg).
   // Fall back through terminal-fg / selection-bg for themes that leave it
   // empty.
   const styles = getComputedStyle(document.body);

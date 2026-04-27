@@ -3,7 +3,7 @@ import { UpdateBanner, type UpdateBannerState } from '../../../standalone/src/Up
 
 function UpdateBannerStory({ state }: { state: UpdateBannerState }) {
   return (
-    <div className="bg-app" style={{ width: '100%' }}>
+    <div className="bg-app-bg" style={{ width: '100%' }}>
       <UpdateBanner
         state={state}
         onDismiss={() => console.log('Dismiss')}

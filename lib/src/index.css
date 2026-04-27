@@ -42,9 +42,9 @@ body {
 }
 
 /* Outermost dockview container shows through pane-to-pane gaps — paint it
- * with the app background so the gutters read as host chrome, not pane content. */
+ * with app-bg so the gutters read as host chrome, not pane content. */
 .dockview-theme-abyss.dv-dockview {
-  background-color: var(--color-app) !important;
+  background-color: var(--color-app-bg) !important;
 }
 
 .dockview-theme-abyss .dv-groupview,

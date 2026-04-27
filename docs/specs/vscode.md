@@ -241,8 +241,8 @@ Two-layer CSS variable system: VS Code injects `--vscode-*` tokens; `lib/src/the
 Example of the pattern:
 ```css
 /* theme.css: direct semantic binding */
---color-app: var(--vscode-sideBar-background);
---color-on-app: var(--vscode-sideBar-foreground);
+--color-app-bg: var(--vscode-sideBar-background);
+--color-app-fg: var(--vscode-sideBar-foreground);
 --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground);
 ```
 

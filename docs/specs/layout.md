@@ -286,9 +286,9 @@ Custom `mousetermTheme` extends dockview's `themeAbyss`:
 - Pane header height: `--dv-tabs-and-actions-container-height: 30px`
 - 6px top/sides inset and 2px bottom inset around the dockview area (`px-1.5 pt-1.5 pb-0.5` on wrapper, `inset-x-1.5 top-1.5 bottom-0.5` on container)
 
-Colors use a two-layer CSS variable strategy: `@theme --color-*` tokens → `var(--vscode-*)`. VSCode provides host theme variables in extension mode; standalone and website mode apply bundled or installed theme variables before rendering. Tailwind v4 `@theme` block registers `--color-*` tokens as Tailwind colors (e.g., `bg-app`, `text-on-app`, `border-border`). See `theme.css` for the full token map.
+Colors use a two-layer CSS variable strategy: `@theme --color-*` tokens → `var(--vscode-*)`. VSCode provides host theme variables in extension mode; standalone and website mode apply bundled or installed theme variables before rendering. Tailwind v4 `@theme` block registers `--color-*` tokens as Tailwind colors (e.g., `bg-app-bg`, `text-app-fg`, `border-border`). See `theme.css` for the full token map.
 
-Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. The outer dockview container paints `var(--color-app)` so gutters match host chrome, while group internals flatten to `var(--color-terminal-bg)`.
+Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. The outer dockview container paints `var(--color-app-bg)` so gutters match host chrome, while group internals flatten to `var(--color-terminal-bg)`.
 
 ## Animations
 

@@ -250,7 +250,7 @@ function OnOffSwitch({
       aria-checked={on}
       aria-label={`${label} ${on ? 'on' : 'off'}`}
       onClick={() => (on ? onDisable() : onEnable())}
-      className="relative inline-flex h-5 w-14 items-center rounded-full border border-border bg-app text-sm font-medium"
+      className="relative inline-flex h-5 w-14 items-center rounded-full border border-border bg-app-bg text-sm font-medium"
     >
       <span
         aria-hidden

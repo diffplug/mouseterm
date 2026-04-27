@@ -180,7 +180,7 @@ export function AppBar({ shells }: AppBarProps) {
   return (
     <div
       data-tauri-drag-region
-      className={`flex h-[30px] shrink-0 select-none items-center border-b border-border bg-app text-on-app text-xs ${
+      className={`flex h-[30px] shrink-0 select-none items-center border-b border-border bg-app-bg text-app-fg text-xs ${
         IS_MAC ? 'pl-[78px]' : ''
       }`}
     >

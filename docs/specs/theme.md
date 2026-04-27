@@ -20,7 +20,7 @@ panes and doors; do not add borders to make the hierarchy work.
 | Token | VSCode key | Where used |
 | --- | --- | --- |
 | `--color-terminal-bg` / `-fg` | `terminal.background` / `terminal.foreground` | terminal container and xterm defaults |
-| `--color-app` / `--color-on-app` | `sideBar.background` / `sideBar.foreground` | baseboard, dockview gutters, gaps around panes |
+| `--color-app-bg` / `--color-app-fg` | `sideBar.background` / `sideBar.foreground` | baseboard, dockview gutters, gaps around panes |
 | `--color-header-inactive-bg` / `-fg` | `list.inactiveSelectionBackground` / `list.inactiveSelectionForeground` | unfocused pane headers |
 | `--color-header-active-bg` / `-fg` | `list.activeSelectionBackground` / `list.activeSelectionForeground` | focused pane header |
 | `--color-door-bg` / `-fg` | runtime pick from inactive header vs terminal bg/fg | baseboard doors |
@@ -32,7 +32,7 @@ Door colors and the focus ring are chosen at runtime in
 
 - Door bg/fg chooses whichever pair, inactive-header or terminal bg/fg, has
   stronger perceptual separation from
-  `--color-app`.
+  `--color-app-bg`.
 - Focus ring prefers a chromatic active-header background, then a chromatic
   active-header foreground or `focusBorder`, then the highest contrast fallback.
 - Header-internal text and buttons inherit the header foreground. Do not add
@@ -49,7 +49,7 @@ MouseTerm has two theme layers:
 
 1. `--vscode-*` variables hold imported or host-provided VSCode color data.
 2. `--color-*` variables in `lib/src/theme.css` provide semantic Tailwind
-   tokens such as `bg-app`, `text-on-app`, and `bg-header-active-bg`.
+   tokens such as `bg-app-bg`, `text-app-fg`, and `bg-header-active-bg`.
 
 `applyTheme()` sets imported `--vscode-*` variables on `document.body`, fills
 missing consumed variables through the VSCode resolver, and adds either

@@ -21,7 +21,7 @@ function withState(byId: Record<string, Record<string, unknown>>) {
 
 function BaseboardStory({ items }: { items: DooredItem[] }) {
   return (
-    <div className="bg-app" style={{ width: '100%' }}>
+    <div className="bg-app-bg" style={{ width: '100%' }}>
       <Baseboard
         items={items}
         onReattach={(item) => console.log('Reattach:', item.id)}
