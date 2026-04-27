@@ -50,6 +50,11 @@ interface TerminalEntry {
   todo: TodoState;
   /** Cached flag from the platform's AlertManager */
   attentionDismissedRing: boolean;
+  /** True while saved scrollback is being replayed into xterm. Synthetic
+   * reports xterm.js emits in response to OSC/CSI queries embedded in the
+   * replay must be dropped — the original consumer is gone, so the response
+   * would land in the new shell's input buffer as cruft. */
+  isReplaying: boolean;
 }
 
 const registry = new Map<string, TerminalEntry>();
@@ -300,16 +305,48 @@ function inputContainsEnter(data: string): boolean {
   return data.includes('\r');
 }
 
+// Recognizable terminal-report sequences. OSC uses lazy matching so the
+// tokenizer doesn't merge adjacent reports; the validator below anchors the
+// same patterns to a single chunk.
+const REPORT_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/;
+const REPORT_SS3 = /\x1bO[@-~]/;
+const REPORT_OSC = /\x1b\][\s\S]*?(?:\x07|\x1b\\)/;
+const REPORT_TOKENS = new RegExp(`${REPORT_CSI.source}|${REPORT_SS3.source}|${REPORT_OSC.source}|.`, 'gs');
+const REPORT_VALIDATE = new RegExp(`^(?:${REPORT_CSI.source}|${REPORT_SS3.source}|${REPORT_OSC.source})$`);
+const REPLAY_REPORT_CSI = /\x1b\[(?:\??\d+(?:;\d+)*[Rn]|[?>=]?\d*(?:;\d+)*c|\d+(?:;\d+)*[tx]|\??\d+(?:;\d+)*\$y)/;
+const REPLAY_REPORT_FOCUS = /\x1b\[[IO]/;
+const REPORT_DCS = /\x1bP[\s\S]*?\x1b\\/;
+const REPLAY_REPORT_TOKENS = new RegExp(`${REPLAY_REPORT_CSI.source}|${REPLAY_REPORT_FOCUS.source}|${REPORT_OSC.source}|${REPORT_DCS.source}|.`, 'gs');
+const REPLAY_REPORT_VALIDATE = new RegExp(`^(?:${REPLAY_REPORT_CSI.source}|${REPLAY_REPORT_FOCUS.source}|${REPORT_OSC.source}|${REPORT_DCS.source})$`);
+
 function inputIsSyntheticTerminalReport(data: string): boolean {
   if (data.length === 0) return false;
-
-  const chunks = data.match(/\x1b\[[0-?]*[ -/]*[@-~]|\x1bO[@-~]|./gs) ?? [];
+  const chunks = data.match(REPORT_TOKENS) ?? [];
   if (chunks.length === 0) return false;
+  return chunks.every((chunk) => REPORT_VALIDATE.test(chunk));
+}
 
-  return chunks.every((chunk) => (
-    /^\x1b\[[0-?]*[ -/]*[@-~]$/.test(chunk) ||
-    /^\x1bO[@-~]$/.test(chunk)
-  ));
+function inputIsReplayTerminalReport(data: string): boolean {
+  if (data.length === 0) return false;
+  const chunks = data.match(REPLAY_REPORT_TOKENS) ?? [];
+  if (chunks.length === 0) return false;
+  return chunks.every((chunk) => REPLAY_REPORT_VALIDATE.test(chunk));
+}
+
+/**
+ * Write saved scrollback into xterm with the entry's `isReplaying` flag held
+ * across the entire write so synthetic reports xterm emits in response to
+ * embedded OSC/CSI queries are dropped before they reach the new shell.
+ */
+function writeReplay(entry: TerminalEntry, ...chunks: string[]): void {
+  if (chunks.length === 0) return;
+  entry.isReplaying = true;
+  for (let i = 0; i < chunks.length - 1; i++) {
+    entry.terminal.write(chunks[i]);
+  }
+  entry.terminal.write(chunks[chunks.length - 1], () => {
+    entry.isReplaying = false;
+  });
 }
 
 // --- Terminal lifecycle ---
@@ -356,6 +393,10 @@ function setupTerminalEntry(id: string): TerminalEntry {
   // User input → PTY + alert actions
   const inputDisposable = terminal.onData((data) => {
     const isSyntheticTerminalReport = inputIsSyntheticTerminalReport(data);
+
+    if (inputIsReplayTerminalReport(data) && registry.get(id)?.isReplaying) {
+      return;
+    }
 
     if (!isSyntheticTerminalReport) {
       const entry = registry.get(id);
@@ -556,6 +597,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
     alertStatus: 'ALERT_DISABLED',
     todo: false,
     attentionDismissedRing: false,
+    isReplaying: false,
   };
 
   // Apply any primed alert state (from platform resume)
@@ -619,7 +661,7 @@ export function resumeTerminal(
   const entry = setupTerminalEntry(id);
 
   if (replayData) {
-    entry.terminal.write(replayData);
+    writeReplay(entry, replayData);
   }
   if (exitInfo && !exitInfo.alive) {
     entry.terminal.write(`\r\n[Process exited with code ${exitInfo.exitCode ?? -1}]\r\n`);
@@ -645,10 +687,9 @@ export function restoreTerminal(
   // immediately rather than a blank terminal while the shell starts.
   // The shell prompt will appear below the restored scrollback once it's ready.
   if (opts.scrollback) {
-    entry.terminal.write(opts.scrollback);
-    // Ensure cursor is at column 0 so the new shell prompt starts clean.
-    // Without this, zsh's PROMPT_SP prints an inverse '%' partial-line marker.
-    entry.terminal.write('\r\n');
+    // Append \r\n so the cursor is at column 0 when the shell prompt arrives;
+    // without it, zsh's PROMPT_SP prints an inverse '%' partial-line marker.
+    writeReplay(entry, opts.scrollback, '\r\n');
   }
   if (opts.cwdWarning) {
     entry.terminal.write(`\r\n\x1b[33m${opts.cwdWarning}\x1b[0m\r\n`);
