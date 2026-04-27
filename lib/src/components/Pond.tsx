@@ -919,23 +919,6 @@ export function Pond({
 
   // UI state
   const [confirmKill, setConfirmKill] = useState<ConfirmKill | null>(null);
-  useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
-
-  // Confirm runs orchestrateKill concurrently with the letter flash so the
-  // pane fade begins while the flash is still playing.
-  const rejectKill = useCallback(() => {
-    const ck = confirmKillRef.current;
-    if (!ck || ck.exit) return;
-    setConfirmKill({ ...ck, exit: 'shake' });
-    shakeTimerRef.current = setTimeout(() => setConfirmKill(null), KILL_SHAKE_MS);
-  }, []);
-  const acceptKill = useCallback((onExit: () => void) => {
-    const ck = confirmKillRef.current;
-    if (!ck || ck.exit) return;
-    setConfirmKill({ ...ck, exit: 'confirm' });
-    onExit();
-    setTimeout(() => setConfirmKill(null), KILL_CONFIRM_MS);
-  }, []);
   const [renamingPaneId, setRenamingPaneId] = useState<string | null>(null);
   const [doors, setDoors] = useState<DooredItem[]>(() => (initialDoors ?? []) as DooredItem[]);
   const [zoomed, setZoomed] = useState(false);
@@ -965,6 +948,24 @@ export function Pond({
   const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSavePromiseRef = useRef<Promise<void> | null>(null);
+
+  useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
+
+  // Confirm runs orchestrateKill concurrently with the letter flash so the
+  // pane fade begins while the flash is still playing.
+  const rejectKill = useCallback(() => {
+    const ck = confirmKillRef.current;
+    if (!ck || ck.exit) return;
+    setConfirmKill({ ...ck, exit: 'shake' });
+    shakeTimerRef.current = setTimeout(() => setConfirmKill(null), KILL_SHAKE_MS);
+  }, []);
+  const acceptKill = useCallback((onExit: () => void) => {
+    const ck = confirmKillRef.current;
+    if (!ck || ck.exit) return;
+    setConfirmKill({ ...ck, exit: 'confirm' });
+    onExit();
+    setTimeout(() => setConfirmKill(null), KILL_CONFIRM_MS);
+  }, []);
 
   // --- External event notifications ---
   const onEventRef = useRef(onEvent);
