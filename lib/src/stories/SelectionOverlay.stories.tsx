@@ -34,7 +34,7 @@ function SelectionOverlayDemo({ initialMode = 'command' as PondMode }) {
   }
 
   return (
-    <div ref={containerRef} style={{ width: 500, height: 300 }} className="relative bg-surface">
+    <div ref={containerRef} style={{ width: 500, height: 300 }} className="relative bg-app">
       {/* Simulated terminal content */}
       <div className="p-4 font-mono text-sm text-terminal-fg">
         <div>user@mouseterm:~$ ls -la</div>

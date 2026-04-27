@@ -34,14 +34,14 @@
   --text-sm: 0.75rem;           /*  12px */
   --text-sm--line-height: 1rem;
 
-  /* Surfaces — four-step hierarchy, bg-only:
-   *   --color-surface     (terminal-bg)    editor.background
-   *   --color-app-bg      (chrome host)    sideBar.background
-   *   panel-inactive-bg                    list.inactiveSelectionBackground
-   *   panel-active-bg                      list.activeSelectionBackground (hue-shifted) */
-  --color-surface: var(--vscode-editor-background);
+  /* Surfaces — bg-only:
+   *   --color-app              (chrome host)    sideBar.background
+   *   --color-terminal-bg                       terminal.background
+   *   --color-header-inactive-bg                list.inactiveSelectionBackground
+   *   --color-header-active-bg                  list.activeSelectionBackground */
   --color-surface-raised: var(--vscode-editorWidget-background);
-  --color-app-bg: var(--vscode-sideBar-background);
+  --color-app: var(--vscode-sideBar-background);
+  --color-on-app: var(--vscode-sideBar-foreground);
 
   /* Text */
   --color-foreground: var(--vscode-editor-foreground);
@@ -60,10 +60,10 @@
   --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground);
 
   /* Dynamic palette — Pond's useDynamicPalette hook overrides these on body
-   * at runtime, picking whichever candidate has the largest ΔE OKLab vs
-   * app-bg.
+   * at runtime, picking whichever candidate has the largest ΔE OKLab vs the
+   * app background.
    *
-   *   --color-door-*    pick: (header-inactive bg/fg) or (surface / fg)
+   *   --color-door-*    pick: (header-inactive bg/fg) or (terminal bg/fg)
    *   --color-focus-ring  pick: (header-active-bg/fg) or (focusBorder) */
   --color-door-bg: var(--color-header-inactive-bg);
   --color-door-fg: var(--color-header-inactive-fg);
@@ -94,9 +94,9 @@
  * is declared, so body-level declarations can see --vscode-* variables that
  * applyTheme() writes to body.style. */
 body {
-  --color-surface: var(--vscode-editor-background);
   --color-surface-raised: var(--vscode-editorWidget-background);
-  --color-app-bg: var(--vscode-sideBar-background);
+  --color-app: var(--vscode-sideBar-background);
+  --color-on-app: var(--vscode-sideBar-foreground);
   --color-foreground: var(--vscode-editor-foreground);
   --color-muted: var(--vscode-descriptionForeground);
   --color-border: var(--vscode-panel-border);

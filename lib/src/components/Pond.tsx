@@ -595,13 +595,13 @@ function useWindowFocused(): boolean {
  * so the picker behaves correctly in both greyscale and saturated themes.
  *
  *   --color-door-bg / --color-door-fg
- *     Doors live on app-bg. Whichever of (header-inactive, terminal) has
- *     the larger ΔE vs app-bg wins, and door-fg is paired to its bg's
- *     foreground (header-inactive-fg or editor.foreground).
+ *     Doors live on the app background. Whichever of (header-inactive, terminal) has
+ *     the larger ΔE vs the app background wins, and door-fg is paired to its bg's
+ *     foreground (header-inactive-fg or terminal-fg).
  *
  *   --color-focus-ring
  *     The pane focus ring + terminal text-selection border. Whichever of
- *     (header-active-fg, focusBorder) has the larger ΔE vs app-bg wins.
+ *     (header-active-fg, focusBorder) has the larger ΔE vs the app background wins.
  */
 function useDynamicPalette() {
   useEffect(() => {
@@ -610,18 +610,18 @@ function useDynamicPalette() {
 
     const update = () => {
       const styles = getComputedStyle(document.body);
-      const app = rgbOf(styles.getPropertyValue('--color-app-bg').trim(), ctx);
+      const app = rgbOf(styles.getPropertyValue('--color-app').trim(), ctx);
       if (!app) return;
       const oApp = rgbToOklab(app);
 
-      // --- Door palette: (panel-inactive bg/fg) or (terminal-bg / foreground)
+      // --- Door palette: (panel-inactive bg/fg) or (terminal-bg / terminal-fg)
       // Both candidates are typically near-greyscale, so plain max ΔE is fine.
       const panel = rgbOf(styles.getPropertyValue('--color-header-inactive-bg').trim(), ctx);
-      const term = rgbOf(styles.getPropertyValue('--color-surface').trim(), ctx);
+      const term = rgbOf(styles.getPropertyValue('--color-terminal-bg').trim(), ctx);
       if (panel && term) {
         const usePanel = deltaEOklab(rgbToOklab(panel), oApp) >= deltaEOklab(rgbToOklab(term), oApp);
-        const bg = usePanel ? '--color-header-inactive-bg' : '--color-surface';
-        const fg = usePanel ? '--color-header-inactive-fg' : '--color-foreground';
+        const bg = usePanel ? '--color-header-inactive-bg' : '--color-terminal-bg';
+        const fg = usePanel ? '--color-header-inactive-fg' : '--color-terminal-fg';
         document.body.style.setProperty('--color-door-bg', `var(${bg})`);
         document.body.style.setProperty('--color-door-fg', `var(${fg})`);
       }
@@ -630,8 +630,8 @@ function useDynamicPalette() {
       //   1. Match panel-active-bg if it's chromatic in absolute terms
       //      (OKLab chroma ≥ SATURATION_FLOOR). Visually unifies the ring
       //      with the focused header. We use *absolute* chroma instead of
-      //      chroma-vs-app-bg because some themes (e.g. Solarized) have a
-      //      mildly-saturated app-bg, which would shrink the delta even
+      //      chroma-vs-app-background because some themes (e.g. Solarized) have a
+      //      mildly-saturated app background, which would shrink the delta even
       //      when panel-active-bg is clearly a "real" color.
       //   2. Else the most-saturated other candidate (header-active-fg,
       //      focusBorder) that clears the same floor.
@@ -1911,7 +1911,7 @@ export function Pond({
           <WindowFocusedContext.Provider value={windowFocused}>
           <FreshlySpawnedContext.Provider value={freshlySpawnedRef.current}>
           <DialogKeyboardContext.Provider value={setDialogKeyboardActive}>
-          <div className="flex-1 min-h-0 flex flex-col bg-app-bg text-foreground font-sans overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col bg-app text-on-app font-sans overflow-hidden">
             {/* Dockview — 2px bottom inset keeps rounded panes distinct from the baseboard. */}
             <div className="flex-1 min-h-0 relative px-1.5 pt-1.5 pb-0.5">
               <div ref={dockviewContainerRef} className="absolute inset-x-1.5 top-1.5 bottom-0.5">

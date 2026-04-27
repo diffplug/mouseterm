@@ -29,7 +29,7 @@ export function KillConfirmCard({ char, onCancel, shaking, confirming }: { char:
   return (
     <div className={`bg-surface-raised border border-border px-6 py-4 rounded-lg text-center shadow-lg font-mono${shaking ? ' motion-safe:animate-shake-x' : ''}`}>
       <h2 className="text-base font-bold mb-3 text-foreground">Confirm kill</h2>
-      <div className="bg-surface py-2 px-6 rounded border border-border inline-block mb-2">
+      <div className="bg-app py-2 px-6 rounded border border-border inline-block mb-2">
         <span className={`text-xl font-bold text-error${confirming ? ' kill-letter-flash' : ''}`}>{char}</span>
       </div>
       <div className="text-sm text-muted leading-relaxed grid grid-cols-[auto_auto] gap-x-2 justify-center">
@@ -75,7 +75,7 @@ export function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
     return (
       <div
         style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width, height: rect.height, zIndex: 100 }}
-        className={`flex items-center justify-center bg-surface/50 rounded${exitClass}`}
+        className={`flex items-center justify-center bg-app/50 rounded${exitClass}`}
       >
         <KillConfirmCard char={confirmKill.char} onCancel={onCancel} shaking={confirmKill.shaking} confirming={confirmKill.confirming} />
       </div>
@@ -84,7 +84,7 @@ export function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
 
   // Fallback: centered in viewport
   return (
-    <div className={`fixed inset-0 bg-surface/50 z-[100] flex items-center justify-center${exitClass}`}>
+    <div className={`fixed inset-0 bg-app/50 z-[100] flex items-center justify-center${exitClass}`}>
       <KillConfirmCard char={confirmKill.char} onCancel={onCancel} shaking={confirmKill.shaking} confirming={confirmKill.confirming} />
     </div>
   );

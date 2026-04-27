@@ -3,14 +3,14 @@ import { KillConfirmCard } from '../components/KillConfirm';
 
 function KillModal({ char = 'G', onCancel, shaking }: { char?: string; onCancel?: () => void; shaking?: boolean }) {
   return (
-    <div className="relative bg-surface" style={{ width: 600, height: 400 }}>
+    <div className="relative bg-app" style={{ width: 600, height: 400 }}>
       {/* Simulated terminal content behind the overlay */}
       <div className="p-4 font-mono text-sm text-terminal-fg">
         <div>user@mouseterm:~$ npm run build</div>
         <div className="text-muted">Building project...</div>
       </div>
       {/* Kill confirmation overlay — positioned over the pane */}
-      <div className="absolute inset-0 flex items-center justify-center bg-surface/50 rounded">
+      <div className="absolute inset-0 flex items-center justify-center bg-app/50 rounded">
         <KillConfirmCard char={char} onCancel={onCancel} shaking={shaking} />
       </div>
     </div>

@@ -155,7 +155,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
                 key={shell.path}
                 role="menuitemradio"
                 aria-checked={isSelected}
-                className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-surface-alt"
+                className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-surface-raised"
                 onClick={() => {
                   setSelected(shell);
                   setOpen(false);
@@ -180,7 +180,7 @@ export function AppBar({ shells }: AppBarProps) {
   return (
     <div
       data-tauri-drag-region
-      className={`flex h-[30px] shrink-0 select-none items-center border-b border-border bg-surface-alt text-xs ${
+      className={`flex h-[30px] shrink-0 select-none items-center border-b border-border bg-app text-on-app text-xs ${
         IS_MAC ? 'pl-[78px]' : ''
       }`}
     >

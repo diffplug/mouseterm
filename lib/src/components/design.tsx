@@ -19,26 +19,25 @@ import type { HTMLAttributes, ReactNode } from 'react';
 /**
  * Color strategy — see also `lib/src/theme.css` for the actual @theme tokens.
  *
- * Surfaces (4 distinct + 1 dynamic). All resolve directly through VSCode CSS
+ * Surfaces (3 distinct + 1 dynamic). All resolve directly through VSCode CSS
  * vars. Real VSCode provides them in extension mode; standalone/website apply
  * them from bundled or installed MouseTerm themes before rendering.
  *
- *   --color-surface          editor.background
- *                            generic editor surface + door candidate
+ *   --color-app           sideBar.background
+ *                            baseboard, dockview gutters, gaps around panes
  *   --color-terminal-bg      terminal.background
  *                            terminal container + xterm default bg
- *   --color-app-bg           sideBar.background
- *                            baseboard, dockview gutters, gaps around panes
  *   --color-header-inactive-bg   list.inactiveSelectionBackground
  *                            unfocused pane headers
  *   --color-header-active-bg     list.activeSelectionBackground
  *                            focused pane header + the marching-ants ring
- *   --color-door-bg          runtime: whichever of (header-inactive, surface)
- *                            has the larger ΔE OKLab vs app-bg
+ *   --color-door-bg          runtime: whichever of (header-inactive, terminal)
+ *                            has the larger ΔE OKLab vs the app background
  *                            (see Pond.useDynamicPalette)
  *
  * Foregrounds:
  *
+ *   --color-on-app           sideBar.foreground (text on the app background)
  *   --color-foreground       editor.foreground (generic body text)
  *   --color-muted            descriptionForeground (hints, secondary)
  *   --color-header-active-fg / --color-header-inactive-fg
@@ -59,9 +58,9 @@ import type { HTMLAttributes, ReactNode } from 'react';
  *      Visually unifies the ring with the focused header.
  *   2. Else the most-saturated of (header-active-fg, focusBorder) that
  *      clears the same absolute chroma floor.
- *   3. Else max ΔE OKLab against app-bg (greyscale-theme fallback).
- * Absolute chroma is used (not chroma-vs-app-bg) so themes whose app-bg is
- * itself mildly saturated (e.g. Solarized) don't underweight clearly-
+ *   3. Else max ΔE OKLab against the app background (greyscale-theme fallback).
+ * Absolute chroma is used (not chroma-vs-app-background) so themes whose app
+ * background is itself mildly saturated (e.g. Solarized) don't underweight clearly-
  * chromatic candidates. Both the marching-ants overlay and the terminal
  * text-selection border read --color-focus-ring.
  *
@@ -77,8 +76,8 @@ import type { HTMLAttributes, ReactNode } from 'react';
  * Things to avoid:
  *   - Hardcoded colors (`bg-black`, hex values) — always go through a token.
  *   - Reintroducing tokens we removed: tab-active-*, tab-inactive-*,
- *     tab-selected-*, accent, surface-alt, badge-*, button-*. Use the
- *     header-* / app-bg / surface set instead.
+ *     tab-selected-*, accent, surface, surface-alt, badge-*, button-*. Use the
+ *     header-* / app-* / terminal-* set instead.
  *   - Conditional `text-muted hover:text-foreground` inside a header — let
  *     the inherited fg do the work and use bg-current/10 for hover.
  *

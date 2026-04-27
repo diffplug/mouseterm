@@ -26,7 +26,7 @@ body {
 .dockview-theme-abyss {
   --dv-tabs-and-actions-container-height: 30px !important;
   --dv-tabs-and-actions-container-font-size: var(--mt-font-size) !important;
-  --dv-group-view-background-color: var(--color-surface) !important;
+  --dv-group-view-background-color: var(--color-terminal-bg) !important;
   --dv-tabs-and-actions-container-background-color: var(--color-header-inactive-bg) !important;
   --dv-activegroup-visiblepanel-tab-background-color: var(--color-header-active-bg) !important;
   --dv-activegroup-hiddenpanel-tab-background-color: var(--color-header-inactive-bg) !important;
@@ -42,15 +42,15 @@ body {
 }
 
 /* Outermost dockview container shows through pane-to-pane gaps — paint it
- * with app-bg so the gutters read as host chrome, not pane content. */
+ * with the app background so the gutters read as host chrome, not pane content. */
 .dockview-theme-abyss.dv-dockview {
-  background-color: var(--color-app-bg) !important;
+  background-color: var(--color-app) !important;
 }
 
 .dockview-theme-abyss .dv-groupview,
 .dockview-theme-abyss .dv-split-view-container,
 .dockview-theme-abyss .dv-split-view-container .dv-view-container {
-  background-color: var(--color-surface) !important;
+  background-color: var(--color-terminal-bg) !important;
 }
 
 /* Remove tab-bar background/border — the tab itself provides the bg */

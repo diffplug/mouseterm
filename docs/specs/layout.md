@@ -70,7 +70,7 @@ The content area is a tiling layout of panes, powered by dockview. Each pane occ
 
 ### Pane header
 
-Each pane has a 30px header that doubles as a drag handle. The header uses `cursor-grab` / `active:cursor-grabbing`, `select-none`, and the shared terminal top radius from `lib/src/components/design.tsx`. Background uses `--color-tab-*` theme tokens (adapts to VSCode host theme). Dockview's default close button and right-actions container are hidden via CSS.
+Each pane has a 30px header that doubles as a drag handle. The header uses `cursor-grab` / `active:cursor-grabbing`, `select-none`, and the shared terminal top radius from `lib/src/components/design.tsx`. Background and foreground use the `--color-header-active-*` / `--color-header-inactive-*` token pairs, which map to VSCode file-tree list colors. Dockview's default close button and right-actions container are hidden via CSS.
 
 Elements from left to right:
 
@@ -286,9 +286,9 @@ Custom `mousetermTheme` extends dockview's `themeAbyss`:
 - Pane header height: `--dv-tabs-and-actions-container-height: 30px`
 - 6px top/sides inset and 2px bottom inset around the dockview area (`px-1.5 pt-1.5 pb-0.5` on wrapper, `inset-x-1.5 top-1.5 bottom-0.5` on container)
 
-Colors use a two-layer CSS variable strategy: `@theme --color-*` tokens → `var(--vscode-*, <fallback>)`. In VSCode, host theme variables take precedence. In standalone mode, fallback values apply with `prefers-color-scheme: light` overrides. Tailwind v4 `@theme` block registers `--color-*` tokens as Tailwind colors (e.g., `bg-surface`, `text-foreground`, `border-border`). See `theme.css` for the full token map.
+Colors use a two-layer CSS variable strategy: `@theme --color-*` tokens → `var(--vscode-*)`. VSCode provides host theme variables in extension mode; standalone and website mode apply bundled or installed theme variables before rendering. Tailwind v4 `@theme` block registers `--color-*` tokens as Tailwind colors (e.g., `bg-app`, `text-on-app`, `border-border`). See `theme.css` for the full token map.
 
-Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. All dockview container backgrounds are flattened to `var(--color-surface)`.
+Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. The outer dockview container paints `var(--color-app)` so gutters match host chrome, while group internals flatten to `var(--color-terminal-bg)`.
 
 ## Animations
 
