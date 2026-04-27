@@ -86,21 +86,9 @@ export function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
 }
 
 
-// --- Kill animation ---
-//
-// Orchestrates the visual reclaim when a pane is killed:
-//   1. Fade the real killed pane's group element in place (its actual content
-//      dissolves — a solid-color ghost over a same-colored background would be
-//      invisible).
-//   2. After the fade completes, capture pre-rects of surviving panes, remove
-//      the panel (dockview snaps the layout), and FLIP each grower via
-//      clip-path so its newly claimed territory is hidden at start and swept
-//      in by the transition. clip-path (not transform) keeps
-//      getBoundingClientRect accurate so the SelectionOverlay doesn't lag.
-//
 // killInProgressRef is set across api.removePanel so the onDidRemovePanel
-// auto-spawn handler knows we already waited for our own fade and can skip
-// its own 440ms delay (avoids stacking 440ms + 440ms on last-pane kill).
+// auto-spawn handler skips its own 440ms delay — otherwise a last-pane kill
+// stacks two 440ms waits.
 export function orchestrateKill(
   api: DockviewApi,
   killedId: string,
@@ -129,13 +117,8 @@ export function orchestrateKill(
     return;
   }
 
-  // Fade the killed pane in place. Block input on it during the fade.
-  // For a last-pane kill (auto-spawn will create a replacement), also shrink
-  // the pane toward the bottom-right so the disappearance is visible — a plain
-  // fade offers no visual cue since the pane's space is reclaimed by a new one
-  // appearing in exactly the same rect from the opposite corner. The focus
-  // ring (SelectionOverlay element) gets a matching shrink animation so it
-  // scales with the pane rather than sitting over empty space.
+  // Last-pane kill also shrinks toward bottom-right: the auto-spawn fills the
+  // same rect from the top-left, so a plain fade would offer no cue.
   const isLastPane = api.panels.length === 1;
   const fadeClass = isLastPane ? 'pane-fading-and-shrinking-to-br' : 'pane-fading-out';
   const fadeAnimationName = isLastPane ? 'pane-fade-and-shrink-to-br' : 'pane-fade-out';
@@ -149,7 +132,6 @@ export function orchestrateKill(
     if (finalized) return;
     finalized = true;
 
-    // Snapshot pre-rects just before removal.
     interface Pre { el: HTMLElement; rect: DOMRect; }
     const preRects = new Map<string, Pre>();
     for (const p of api.panels) {
@@ -160,7 +142,6 @@ export function orchestrateKill(
 
     bareRemove();
 
-    // FLIP each grower.
     for (const p of api.panels) {
       const pre = preRects.get(p.id);
       if (!pre) continue;
@@ -169,7 +150,6 @@ export function orchestrateKill(
       const dh = postRect.height - pre.rect.height;
       if (Math.abs(dw) < 0.5 && Math.abs(dh) < 0.5) continue;
 
-      // Clear any in-progress spawn animation before applying FLIP.
       pre.el.classList.remove('pane-spawning-from-left', 'pane-spawning-from-top', 'pane-spawning-from-top-left');
 
       const clipTop    = Math.max(0, (pre.rect.top - postRect.top)       / postRect.height * 100);
@@ -190,9 +170,9 @@ export function orchestrateKill(
       setTimeout(cleanup, 1000);
     }
 
-    // Peel the ring-shrink class so the next selection's overlay renders at
-    // full scale. The element may have been reused by React for the next
-    // selected pane's overlay by the time the animation finishes.
+    // The overlay element may already have been reused by React for the next
+    // selected pane by the time the animation finishes — peel the class so it
+    // doesn't render at scale 0.
     if (overlayEl) overlayEl.classList.remove('ring-shrinking-to-br');
   };
 

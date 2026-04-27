@@ -2,7 +2,7 @@ import { BellIcon } from '@phosphor-icons/react';
 import type { SessionStatus, TodoState } from '../lib/terminal-registry';
 import { useTodoPillContent } from './TodoPillBody';
 import { bellIconClass } from './bell-icon-class';
-import { DOOR_RADIUS_CLASS } from './design';
+import { TERMINAL_TOP_RADIUS_CLASS } from './design';
 
 export interface DoorProps {
   doorId?: string;
@@ -19,11 +19,6 @@ export function Door({
   todo = false,
   onClick,
 }: DoorProps) {
-  // Command-mode focus is shown by the shared marching-ants selection ring
-  // (from Pond.tsx SelectionOverlay), so the door doesn't track active state
-  // itself — it always renders with inactive-header colors and lets the ring
-  // do the signaling.
-
   const alertEnabled = status !== 'ALERT_DISABLED';
   const alertRinging = status === 'ALERT_RINGING';
   const todoPill = useTodoPillContent(todo);
@@ -33,7 +28,7 @@ export function Door({
       data-door-id={doorId}
       className={[
         'relative flex h-6 max-w-[220px] min-w-[68px] items-center gap-2 overflow-hidden px-2.5',
-        DOOR_RADIUS_CLASS,
+        TERMINAL_TOP_RADIUS_CLASS,
         'bg-door-bg text-door-fg',
         'text-sm font-medium font-mono tracking-[0.02em]',
       ].join(' ')}

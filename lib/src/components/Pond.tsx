@@ -590,20 +590,8 @@ function useWindowFocused(): boolean {
   return focused;
 }
 
-/**
- * Theme-aware "biggest delta" picker that publishes runtime CSS vars via
- * body inline style. ΔE in OKLab handles lightness + hue + chroma together,
- * so the picker behaves correctly in both greyscale and saturated themes.
- *
- *   --color-door-bg / --color-door-fg
- *     Doors live on app-bg. Whichever of (header-inactive, terminal) has
- *     the larger ΔE vs app-bg wins, and door-fg is paired to its bg's
- *     foreground (header-inactive-fg or terminal-fg).
- *
- *   --color-focus-ring
- *     The pane focus ring + terminal text-selection border. Whichever of
- *     (header-active-fg, focusBorder) has the larger ΔE vs app-bg wins.
- */
+// Picks --color-door-* and --color-focus-ring at runtime by ΔE OKLab against
+// app-bg. Algorithm and rationale: docs/specs/theme.md.
 function useDynamicPalette() {
   useEffect(() => {
     const ctx = document.createElement('canvas').getContext('2d');

@@ -128,11 +128,7 @@ body {
   to { stroke-dashoffset: var(--march-offset); }
 }
 
-/* --- Kill-dialog confirm animation ---
- *
- * The focal letter pulses while the overlay fades and shrinks, overlapping
- * the orchestrated pane-fade so the eye is handed off cleanly. Cancel and
- * wrong-letter share the existing shake-x rejection gesture. */
+/* --- Kill-dialog confirm animation --- */
 
 @keyframes kill-overlay-confirm {
   0%   { opacity: 1; transform: scale(1); }
