@@ -627,11 +627,45 @@ describe('terminal-registry alert behavior', () => {
 
     entry.terminal.emitInput('\x1b[A');
     entry.terminal.emitInput('\x1b[?1;2c');
+    entry.terminal.emitInput('\x1b[4;600;800t');
+    entry.terminal.emitInput('\x1b[?2004;1$y');
     entry.terminal.emitInput('\x1b]10;rgb:aaaa/bbbb/cccc\x07');
     fakePlatform.clearInputHandler(id);
 
     expect(received).toEqual(['\x1b[A']);
   });
+
+  it('preserves keyboard CSI input during resume replay while dropping query replies', () => {
+    const id = 'resume-replay-input';
+    const received: string[] = [];
+    fakePlatform.spawnPty(id);
+    const entry = resumeTerminal(id, 'saved output') as TestTerminalEntry;
+    fakePlatform.setInputHandler(id, (data) => received.push(data));
+
+    entry.terminal.emitInput('\x1b[A');
+    entry.terminal.emitInput('\x1b[15~');
+    entry.terminal.emitInput('\x1b[?1;2c');
+    entry.terminal.emitInput('\x1b[8;24;80t');
+    entry.terminal.emitInput('\x1b]10;rgb:aaaa/bbbb/cccc\x07');
+    fakePlatform.clearInputHandler(id);
+
+    expect(received).toEqual(['\x1b[A', '\x1b[15~']);
+  });
+
+  it('stops dropping query replies once restore replay completes', () => {
+    const id = 'restore-replay-done';
+    const received: string[] = [];
+    const entry = restoreTerminal(id, { scrollback: 'saved output' }) as TestTerminalEntry;
+    fakePlatform.setInputHandler(id, (data) => received.push(data));
+
+    entry.terminal.flushWriteCallbacks();
+
+    entry.terminal.emitInput('\x1b[?1;2c');
+    fakePlatform.clearInputHandler(id);
+
+    expect(received).toEqual(['\x1b[?1;2c']);
+  });
+
 
   it('toggleSessionTodo cycles: false → true → false', () => {
     const id = 'toggle-cycle';
