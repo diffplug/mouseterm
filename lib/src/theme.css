@@ -59,8 +59,8 @@
   --color-header-inactive-bg: var(--vscode-list-inactiveSelectionBackground);
   --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground);
 
-  /* Dynamic palette — Pond's useDynamicPalette hook overrides these on body
-   * at runtime, picking whichever candidate has the largest ΔE OKLab vs app-bg.
+  /* Dynamic palette — Pond overrides these on body at runtime from the shared
+   * dynamic-palette helper, picking by OKLab distance/chroma.
    *
    *   --color-door-*    pick: (header-inactive bg/fg) or (terminal bg/fg)
    *   --color-focus-ring  pick: (header-active-bg/fg) or (focusBorder) */

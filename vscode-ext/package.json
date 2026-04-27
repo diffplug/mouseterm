@@ -49,6 +49,10 @@
         "title": "MouseTerm: Open in Editor"
       },
       {
+        "command": "mouseterm.debugTheme",
+        "title": "MouseTerm: Debug Theme"
+      },
+      {
         "command": "mouseterm.newTerminal",
         "title": "MouseTerm: New Terminal",
         "icon": "$(add)"

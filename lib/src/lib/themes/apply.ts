@@ -4,6 +4,13 @@ import { completeThemeVars } from './vscode-color-resolver';
 
 let appliedVarNames: string[] = [];
 let lastApplied: MouseTermTheme | null = null;
+let appliedThemeSnapshot: AppliedThemeSnapshot | null = null;
+
+export interface AppliedThemeSnapshot {
+  theme: MouseTermTheme;
+  providedVars: Record<string, string>;
+  resolvedVars: Record<string, string>;
+}
 
 const HOST_TYPOGRAPHY_VARS: Record<string, string> = {
   '--vscode-font-size': '13px',
@@ -23,7 +30,9 @@ export function applyTheme(theme: MouseTermTheme): void {
 
   // Imported theme JSON usually omits VSCode registry defaults; materialize
   // them here so theme.css can read --vscode-* directly without fallbacks.
-  const vars = completeThemeVars({ ...HOST_TYPOGRAPHY_VARS, ...theme.vars }, theme.type);
+  const providedVars = { ...HOST_TYPOGRAPHY_VARS, ...theme.vars };
+  const vars = completeThemeVars(providedVars, theme.type);
+  appliedThemeSnapshot = { theme, providedVars, resolvedVars: vars };
   appliedVarNames = Object.keys(vars);
   for (const [name, value] of Object.entries(vars)) {
     document.body.style.setProperty(name, value);
@@ -51,4 +60,8 @@ export function restoreActiveTheme(): MouseTermTheme | null {
   setActiveThemeId(theme.id);
   applyTheme(theme);
   return theme;
+}
+
+export function getAppliedThemeSnapshot(): AppliedThemeSnapshot | null {
+  return appliedThemeSnapshot;
 }

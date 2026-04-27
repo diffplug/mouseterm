@@ -253,6 +253,105 @@ const REGISTRY_DEFAULTS: Record<string, ThemePalette> = {
 
 export const RESOLVABLE_VSCODE_VAR_NAMES: readonly string[] = Object.keys(REGISTRY_DEFAULTS);
 
+export type VscodeThemeVarTraceOrigin = 'provided' | 'registry-default' | 'fallback' | 'unresolved';
+
+export interface VscodeThemeVarTrace {
+  name: string;
+  providedValue: string | null;
+  registryDefault: string | null;
+  fallbackPath: readonly string[];
+  fallbackSource: string | null;
+  fallbackValue: string | null;
+  resolvedValue: string | null;
+  origin: VscodeThemeVarTraceOrigin;
+}
+
+export interface VscodeThemeResolverTrace {
+  themeKind: VscodeThemeKind;
+  vars: Record<string, string>;
+  traces: VscodeThemeVarTrace[];
+}
+
+type NullFallbackRule =
+  | { kind: 'literal'; value: string }
+  | { kind: 'firstDefined'; names: readonly string[] };
+
+interface ResolutionRule {
+  name: string;
+  nullFallback?: NullFallbackRule;
+}
+
+const literal = (value: string): NullFallbackRule => ({ kind: 'literal', value });
+const firstDefined = (names: readonly string[]): NullFallbackRule => ({ kind: 'firstDefined', names });
+
+const RESOLUTION_RULES: readonly ResolutionRule[] = [
+  { name: '--vscode-foreground' },
+  { name: '--vscode-editor-background' },
+  { name: '--vscode-editor-foreground', nullFallback: firstDefined(['--vscode-foreground']) },
+  { name: '--vscode-editorWidget-background' },
+  { name: '--vscode-sideBar-background' },
+  { name: '--vscode-sideBar-foreground', nullFallback: firstDefined(['--vscode-foreground']) },
+  { name: '--vscode-descriptionForeground', nullFallback: firstDefined(['--vscode-foreground']) },
+  { name: '--vscode-panel-border', nullFallback: literal('transparent') },
+  { name: '--vscode-focusBorder' },
+
+  {
+    name: '--vscode-list-activeSelectionBackground',
+    nullFallback: firstDefined(['--vscode-sideBar-background', '--vscode-editor-background']),
+  },
+  {
+    name: '--vscode-list-activeSelectionForeground',
+    nullFallback: firstDefined([
+      '--vscode-editor-foreground',
+      '--vscode-foreground',
+      '--vscode-terminal-foreground',
+    ]),
+  },
+  {
+    name: '--vscode-list-inactiveSelectionBackground',
+    nullFallback: firstDefined(['--vscode-sideBar-background', '--vscode-editor-background']),
+  },
+  {
+    name: '--vscode-list-inactiveSelectionForeground',
+    nullFallback: firstDefined([
+      '--vscode-sideBar-foreground',
+      '--vscode-foreground',
+      '--vscode-editor-foreground',
+      '--vscode-terminal-foreground',
+    ]),
+  },
+
+  { name: '--vscode-errorForeground' },
+  { name: '--vscode-input-background' },
+  { name: '--vscode-input-border', nullFallback: literal('transparent') },
+  { name: '--vscode-button-background' },
+  { name: '--vscode-button-foreground' },
+  { name: '--vscode-textLink-foreground' },
+
+  { name: '--vscode-terminal-background', nullFallback: firstDefined(['--vscode-editor-background']) },
+  { name: '--vscode-terminal-foreground' },
+  { name: '--vscode-terminalCursor-foreground', nullFallback: firstDefined(['--vscode-terminal-foreground']) },
+  { name: '--vscode-editor-selectionBackground' },
+  { name: '--vscode-terminal-selectionBackground', nullFallback: firstDefined(['--vscode-editor-selectionBackground']) },
+
+  { name: '--vscode-terminal-ansiBlack' },
+  { name: '--vscode-terminal-ansiRed' },
+  { name: '--vscode-terminal-ansiGreen' },
+  { name: '--vscode-terminal-ansiYellow' },
+  { name: '--vscode-terminal-ansiBlue' },
+  { name: '--vscode-terminal-ansiMagenta' },
+  { name: '--vscode-terminal-ansiCyan' },
+  { name: '--vscode-terminal-ansiWhite' },
+  { name: '--vscode-terminal-ansiBrightBlack' },
+  { name: '--vscode-terminal-ansiBrightRed' },
+  { name: '--vscode-terminal-ansiBrightGreen' },
+  { name: '--vscode-terminal-ansiBrightYellow' },
+  { name: '--vscode-terminal-ansiBrightBlue' },
+  { name: '--vscode-terminal-ansiBrightMagenta' },
+  { name: '--vscode-terminal-ansiBrightCyan' },
+  { name: '--vscode-terminal-ansiBrightWhite' },
+];
+
 let materializedVars = new Map<string, string>();
 let scheduled = false;
 
@@ -273,33 +372,34 @@ function registryDefault(name: string, themeKind: VscodeThemeKind): ResolvedColo
   return NULL_COLOR;
 }
 
-function firstDefined(vars: Record<string, string>, names: readonly string[]): string {
-  for (const name of names) {
-    const value = read(vars, name);
-    if (value) return value;
-  }
-  return '';
-}
-
-function setDefault(
-  vars: Record<string, string>,
-  name: string,
-  themeKind: VscodeThemeKind,
-  nullFallback: string | ((vars: Record<string, string>) => string) = '',
-): void {
-  if (read(vars, name)) return;
-
+function registryDefaultValue(name: string, themeKind: VscodeThemeKind): string | null {
   const value = registryDefault(name, themeKind);
-  if (value !== NULL_COLOR) {
-    vars[name] = value;
-    return;
-  }
-
-  const fallback = typeof nullFallback === 'function' ? nullFallback(vars) : nullFallback;
-  if (fallback) vars[name] = fallback;
+  return value === NULL_COLOR ? null : value;
 }
 
-function inferThemeKind(): VscodeThemeKind {
+function fallbackPath(fallback?: NullFallbackRule): readonly string[] {
+  if (!fallback) return [];
+  return fallback.kind === 'literal' ? [fallback.value] : fallback.names;
+}
+
+function resolveNullFallback(
+  vars: Record<string, string>,
+  fallback?: NullFallbackRule,
+): { source: string | null; value: string | null } {
+  if (!fallback) return { source: null, value: null };
+
+  if (fallback.kind === 'literal') {
+    return { source: fallback.value, value: fallback.value };
+  }
+
+  for (const name of fallback.names) {
+    const value = read(vars, name);
+    if (value) return { source: name, value };
+  }
+  return { source: null, value: null };
+}
+
+export function inferVscodeThemeKind(): VscodeThemeKind {
   if (typeof document === 'undefined') return 'dark';
 
   const body = document.body;
@@ -315,79 +415,64 @@ function coerceThemeKind(themeKind: VscodeThemeKind | 'dark' | 'light'): VscodeT
   return THEME_KINDS.includes(themeKind as VscodeThemeKind) ? themeKind as VscodeThemeKind : 'dark';
 }
 
-function completeInRegistryOrder(vars: Record<string, string>, themeKind: VscodeThemeKind): Record<string, string> {
+function resolveInRegistryOrder(vars: Record<string, string>, themeKind: VscodeThemeKind): VscodeThemeResolverTrace {
   const complete = { ...vars };
+  const traces: VscodeThemeVarTrace[] = [];
 
-  setDefault(complete, '--vscode-foreground', themeKind);
-  setDefault(complete, '--vscode-editor-background', themeKind);
-  setDefault(complete, '--vscode-editor-foreground', themeKind, (current) => read(current, '--vscode-foreground'));
-  setDefault(complete, '--vscode-editorWidget-background', themeKind);
-  setDefault(complete, '--vscode-sideBar-background', themeKind);
-  setDefault(complete, '--vscode-sideBar-foreground', themeKind, (current) => read(current, '--vscode-foreground'));
-  setDefault(complete, '--vscode-descriptionForeground', themeKind, (current) => read(current, '--vscode-foreground'));
-  setDefault(complete, '--vscode-panel-border', themeKind, 'transparent');
-  setDefault(complete, '--vscode-focusBorder', themeKind);
+  for (const rule of RESOLUTION_RULES) {
+    const providedValue = read(vars, rule.name) || null;
+    const registryDefaultForKind = registryDefaultValue(rule.name, themeKind);
+    let fallbackSource: string | null = null;
+    let fallbackValue: string | null = null;
+    let resolvedValue: string | null = null;
+    let origin: VscodeThemeVarTraceOrigin = 'unresolved';
 
-  setDefault(complete, '--vscode-list-activeSelectionBackground', themeKind, (current) => (
-    firstDefined(current, ['--vscode-sideBar-background', '--vscode-editor-background'])
-  ));
-  setDefault(complete, '--vscode-list-activeSelectionForeground', themeKind, (current) => (
-    firstDefined(current, ['--vscode-editor-foreground', '--vscode-foreground', '--vscode-terminal-foreground'])
-  ));
-  setDefault(complete, '--vscode-list-inactiveSelectionBackground', themeKind, (current) => (
-    firstDefined(current, ['--vscode-sideBar-background', '--vscode-editor-background'])
-  ));
-  setDefault(complete, '--vscode-list-inactiveSelectionForeground', themeKind, (current) => (
-    firstDefined(current, [
-      '--vscode-sideBar-foreground',
-      '--vscode-foreground',
-      '--vscode-editor-foreground',
-      '--vscode-terminal-foreground',
-    ])
-  ));
+    if (providedValue) {
+      resolvedValue = providedValue;
+      origin = 'provided';
+      complete[rule.name] = providedValue;
+    } else if (registryDefaultForKind) {
+      resolvedValue = registryDefaultForKind;
+      origin = 'registry-default';
+      complete[rule.name] = registryDefaultForKind;
+    } else {
+      const fallback = resolveNullFallback(complete, rule.nullFallback);
+      fallbackSource = fallback.source;
+      fallbackValue = fallback.value;
+      if (fallbackValue) {
+        resolvedValue = fallbackValue;
+        origin = 'fallback';
+        complete[rule.name] = fallbackValue;
+      }
+    }
 
-  setDefault(complete, '--vscode-errorForeground', themeKind);
-  setDefault(complete, '--vscode-input-background', themeKind);
-  setDefault(complete, '--vscode-input-border', themeKind, 'transparent');
-  setDefault(complete, '--vscode-button-background', themeKind);
-  setDefault(complete, '--vscode-button-foreground', themeKind);
-  setDefault(complete, '--vscode-textLink-foreground', themeKind);
+    traces.push({
+      name: rule.name,
+      providedValue,
+      registryDefault: registryDefaultForKind,
+      fallbackPath: fallbackPath(rule.nullFallback),
+      fallbackSource,
+      fallbackValue,
+      resolvedValue,
+      origin,
+    });
+  }
 
-  setDefault(complete, '--vscode-terminal-background', themeKind, (current) => read(current, '--vscode-editor-background'));
-  setDefault(complete, '--vscode-terminal-foreground', themeKind);
-  setDefault(complete, '--vscode-terminalCursor-foreground', themeKind, (current) => (
-    read(current, '--vscode-terminal-foreground')
-  ));
-  setDefault(complete, '--vscode-editor-selectionBackground', themeKind);
-  setDefault(complete, '--vscode-terminal-selectionBackground', themeKind, (current) => (
-    read(current, '--vscode-editor-selectionBackground')
-  ));
-
-  setDefault(complete, '--vscode-terminal-ansiBlack', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiRed', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiGreen', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiYellow', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiBlue', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiMagenta', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiCyan', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiWhite', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiBrightBlack', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiBrightRed', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiBrightGreen', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiBrightYellow', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiBrightBlue', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiBrightMagenta', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiBrightCyan', themeKind);
-  setDefault(complete, '--vscode-terminal-ansiBrightWhite', themeKind);
-
-  return complete;
+  return { themeKind, vars: complete, traces };
 }
 
 export function completeThemeVars(
   vars: Record<string, string>,
   themeKind: VscodeThemeKind | 'dark' | 'light',
 ): Record<string, string> {
-  return completeInRegistryOrder(vars, coerceThemeKind(themeKind));
+  return resolveInRegistryOrder(vars, coerceThemeKind(themeKind)).vars;
+}
+
+export function traceThemeVars(
+  vars: Record<string, string>,
+  themeKind: VscodeThemeKind | 'dark' | 'light',
+): VscodeThemeResolverTrace {
+  return resolveInRegistryOrder(vars, coerceThemeKind(themeKind));
 }
 
 export function resolveMissingVscodeThemeVars(
@@ -446,7 +531,7 @@ function recomputeDocumentVars(): void {
   scheduled = false;
   if (typeof document === 'undefined') return;
 
-  const desired = resolveMissingVscodeThemeVars(readHostVars(), inferThemeKind());
+  const desired = resolveMissingVscodeThemeVars(readHostVars(), inferVscodeThemeKind());
   materializedVars = reconcileMaterializedVars(document.body.style, materializedVars, desired);
 }
 
@@ -477,4 +562,8 @@ export function installVscodeThemeVarResolver(): () => void {
     materializedVars = new Map();
     scheduled = false;
   };
+}
+
+export function getMaterializedVscodeThemeVars(): ReadonlyMap<string, string> {
+  return materializedVars;
 }

@@ -74,7 +74,8 @@ Frontend Library (lib/src/)
     "commands": [
       { "command": "mouseterm.focus", "title": "MouseTerm: Focus",
         "icon": { "light": "icon-tiny-light.png", "dark": "icon-tiny-dark.png" } },
-      { "command": "mouseterm.open", "title": "MouseTerm: Open in Editor" }
+      { "command": "mouseterm.open", "title": "MouseTerm: Open in Editor" },
+      { "command": "mouseterm.debugTheme", "title": "MouseTerm: Debug Theme" }
     ],
     "viewsContainers": {
       "panel": [
@@ -181,6 +182,7 @@ All types defined in `message-types.ts`. Webview-side handling in `vscode-adapte
 | `pty:scrollback` | Scrollback query response (matched by requestId) |
 | `pty:shells` | Available shells list response (matched by requestId) |
 | `mouseterm:flushSessionSave` | Request webview to save state now (deactivate trigger, matched by requestId) |
+| `mouseterm:openThemeDebugger` | Command-triggered request to open the shared theme debugger dialog |
 | `alert:state` | Alert state change (status, todo, attentionDismissedRing) |
 
 ### Serialization and restore
@@ -250,6 +252,13 @@ Example of the pattern:
 `theme.css` intentionally has no hardcoded color defaults or CSS variable fallback chains. The resolver duplicates VSCode registry defaults for the MouseTerm-consumed color IDs, including `null` default behavior where MouseTerm needs a concrete CSS variable. In particular, `list.inactiveSelectionForeground` resolves to normal foreground inheritance, not `list.activeSelectionForeground`; this matches VSCode's list/tree selected-row behavior for built-in Light.
 
 A `MutationObserver` in `terminal-registry.ts` watches for VS Code theme changes on `body`/`html` (class and style attribute mutations) and live-updates all xterm.js instances. The theme resolver has its own observer on the same attributes so derived `--vscode-*` variables stay in sync before xterm rereads the terminal palette.
+
+`mouseterm.debugTheme` focuses the MouseTerm WebviewView and posts
+`mouseterm:openThemeDebugger` to the webview. `VSCodeAdapter` converts that
+message into the browser event consumed by the shared Theme Debugger. The
+debugger traces VSCode-exposed `--vscode-*` variables and MouseTerm
+materialized fallbacks, but it does not attempt to read raw built-in VSCode
+theme files.
 
 ### CSP policy
 

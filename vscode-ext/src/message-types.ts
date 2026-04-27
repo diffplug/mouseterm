@@ -46,6 +46,7 @@ export type ExtensionMessage =
   | { type: 'clipboard:image'; path: string | null; requestId: string }
   | { type: 'mouseterm:newTerminal'; shell?: string; args?: string[] }
   | { type: 'mouseterm:selectedShell'; shell?: string; args?: string[] }
+  | { type: 'mouseterm:openThemeDebugger' }
   | { type: 'mouseterm:flushSessionSave'; requestId: string }
   // Alert state updates
   | { type: 'alert:state'; id: string; status: SessionStatus; todo: TodoState; attentionDismissedRing: boolean };

@@ -3,6 +3,7 @@ import {
   completeThemeVars,
   reconcileMaterializedVars,
   resolveMissingVscodeThemeVars,
+  traceThemeVars,
 } from './vscode-color-resolver';
 
 class MockStyle {
@@ -73,6 +74,60 @@ describe('completeThemeVars', () => {
     }, 'dark');
 
     expect(vars['--vscode-terminal-selectionBackground']).toBe('#abcdef');
+  });
+});
+
+describe('traceThemeVars', () => {
+  it('reports provided theme values without changing the resolved value', () => {
+    const trace = traceThemeVars({
+      '--vscode-list-inactiveSelectionForeground': '#123456',
+    }, 'light').traces.find((item) => item.name === '--vscode-list-inactiveSelectionForeground');
+
+    expect(trace).toMatchObject({
+      providedValue: '#123456',
+      resolvedValue: '#123456',
+      origin: 'provided',
+    });
+  });
+
+  it('reports registry defaults as the origin', () => {
+    const trace = traceThemeVars({}, 'light').traces.find((item) => item.name === '--vscode-focusBorder');
+
+    expect(trace).toMatchObject({
+      registryDefault: '#0090F1',
+      resolvedValue: '#0090F1',
+      origin: 'registry-default',
+    });
+  });
+
+  it('reports null-default fallback chains', () => {
+    const trace = traceThemeVars({
+      '--vscode-foreground': '#616161',
+    }, 'light').traces.find((item) => item.name === '--vscode-sideBar-foreground');
+
+    expect(trace).toMatchObject({
+      registryDefault: null,
+      fallbackPath: ['--vscode-foreground'],
+      fallbackSource: '--vscode-foreground',
+      fallbackValue: '#616161',
+      resolvedValue: '#616161',
+      origin: 'fallback',
+    });
+  });
+
+  it('traces Light inactive selection foreground through normal foreground, not active selection foreground', () => {
+    const trace = traceThemeVars({
+      '--vscode-foreground': '#616161',
+      '--vscode-editor-foreground': '#333333',
+      '--vscode-list-activeSelectionForeground': '#ffffff',
+    }, 'light').traces.find((item) => item.name === '--vscode-list-inactiveSelectionForeground');
+
+    expect(trace).toMatchObject({
+      resolvedValue: '#616161',
+      origin: 'fallback',
+    });
+    expect(trace?.fallbackPath).toContain('--vscode-sideBar-foreground');
+    expect(trace?.fallbackPath).not.toContain('--vscode-list-activeSelectionForeground');
   });
 });
 

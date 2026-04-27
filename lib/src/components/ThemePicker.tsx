@@ -13,6 +13,7 @@ import {
   searchThemes,
   setActiveThemeId,
 } from '../lib/themes';
+import { ThemeDebuggerDialog } from './ThemeDebugger';
 
 export type ThemePickerVariant = 'playground-header' | 'standalone-appbar';
 
@@ -292,6 +293,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
   const [activeId, setActiveId] = useState(() => restoreActiveTheme()?.id ?? getAllThemes()[0]?.id ?? '');
   const [open, setOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
+  const [debuggerOpen, setDebuggerOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const isPlayground = variant === 'playground-header';
@@ -418,6 +420,19 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
               type="button"
               onClick={() => {
                 setOpen(false);
+                setDebuggerOpen(true);
+              }}
+              className={`w-full rounded text-left text-sm font-medium transition-opacity hover:opacity-85 ${
+                isPlayground ? 'px-3 py-2' : 'px-3 py-1.5'
+              }`}
+              style={styles.foreground}
+            >
+              Debug current theme
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
                 setStoreOpen(true);
               }}
               className={`w-full rounded text-left text-sm font-medium transition-opacity hover:opacity-85 ${
@@ -432,6 +447,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
       ) : null}
 
       <ThemeStoreDialog open={storeOpen} onClose={() => setStoreOpen(false)} onThemesChanged={refreshThemes} />
+      <ThemeDebuggerDialog open={debuggerOpen} onClose={() => setDebuggerOpen(false)} />
     </div>
   );
 }
