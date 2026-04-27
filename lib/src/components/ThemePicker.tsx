@@ -5,11 +5,11 @@ import {
   addInstalledTheme,
   applyTheme,
   fetchExtensionThemes,
-  getActiveThemeId,
   getAllThemes,
   getInstalledThemes,
   getTheme,
   removeInstalledTheme,
+  restoreActiveTheme,
   searchThemes,
   setActiveThemeId,
 } from '../lib/themes';
@@ -48,14 +48,6 @@ const styles = {
   },
 };
 
-function applyActiveThemeFallback(): MouseTermTheme | null {
-  const allThemes = getAllThemes();
-  const theme = getTheme(getActiveThemeId()) ?? allThemes[0];
-  if (!theme) return null;
-  setActiveThemeId(theme.id);
-  applyTheme(theme);
-  return theme;
-}
 
 function ThemeSwatch({ theme, size }: { theme: MouseTermTheme; size: 'sm' | 'md' }) {
   const swatchClass = size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4';
@@ -174,7 +166,7 @@ function ThemeStoreDialog({
         removeInstalledTheme(theme.id);
       }
     }
-    applyActiveThemeFallback();
+    restoreActiveTheme();
     onThemesChanged();
   };
 
@@ -289,8 +281,15 @@ function ThemeStoreDialog({
 export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
   const labelId = useId();
   const currentId = useId();
-  const [themes, setThemes] = useState(getAllThemes);
-  const [activeId, setActiveId] = useState(() => getAllThemes()[0]?.id ?? '');
+  // Apply the persisted theme during render initialization, before commit, so
+  // the first paint already has --vscode-* on body — eliminates the flash of
+  // unstyled chrome on the website playground where ThemePicker mounts before
+  // any other entry point has a chance to apply a theme.
+  const [themes, setThemes] = useState(() => {
+    restoreActiveTheme();
+    return getAllThemes();
+  });
+  const [activeId, setActiveId] = useState(() => restoreActiveTheme()?.id ?? getAllThemes()[0]?.id ?? '');
   const [open, setOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -298,18 +297,12 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
   const isPlayground = variant === 'playground-header';
   const activeTheme = themes.find((theme) => theme.id === activeId) ?? themes[0];
 
-  useEffect(() => {
-    const theme = applyActiveThemeFallback();
-    if (theme) setActiveId(theme.id);
-    setThemes(getAllThemes());
-  }, []);
-
   const closeDropdown = useCallback(() => setOpen(false), []);
   useCloseOnOutsideAndEscape(open, rootRef, closeDropdown);
 
   const refreshThemes = useCallback(() => {
     setThemes(getAllThemes());
-    const theme = applyActiveThemeFallback();
+    const theme = restoreActiveTheme();
     if (theme) setActiveId(theme.id);
   }, []);
 
@@ -331,7 +324,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
     setThemes(getAllThemes());
 
     if (theme.id === activeId) {
-      const fallback = applyActiveThemeFallback();
+      const fallback = restoreActiveTheme();
       if (fallback) setActiveId(fallback.id);
     }
   };

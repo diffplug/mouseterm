@@ -1,6 +1,6 @@
 export type { MouseTermTheme, BundledOrigin, InstalledOrigin } from './types';
 export { CONSUMED_VSCODE_KEYS, convertVscodeThemeColors, uiThemeToType } from './convert';
-export { applyTheme } from './apply';
+export { applyTheme, restoreActiveTheme } from './apply';
 export { completeThemeVars, installVscodeThemeVarResolver } from './vscode-color-resolver';
 export {
   getBundledThemes,
