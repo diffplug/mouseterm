@@ -4,7 +4,7 @@
 // palettes — Solarized-style mildly-saturated app-bg, fully greyscale themes,
 // HC themes with no focusBorder, etc.
 
-import { chromaOklab, deltaEOklab } from './color-contrast';
+import { chromaOklab, deltaEOklab, rgbOf, rgbToOklab } from './color-contrast';
 
 type Lab = [number, number, number];
 
@@ -75,4 +75,45 @@ export function pickDoorPair(panelLab: Lab, terminalLab: Lab, appLab: Lab): Door
   return panelDist >= termDist
     ? { bg: '--color-header-inactive-bg', fg: '--color-header-inactive-fg' }
     : { bg: '--color-terminal-bg', fg: '--color-terminal-fg' };
+}
+
+export interface DynamicPaletteVars {
+  '--color-door-bg'?: string;
+  '--color-door-fg'?: string;
+  '--color-focus-ring'?: string;
+}
+
+export function computeDynamicPalette(
+  styles: Pick<CSSStyleDeclaration, 'getPropertyValue'>,
+  ctx: CanvasRenderingContext2D,
+): DynamicPaletteVars {
+  const labOf = (varName: string): Lab | null => {
+    const rgb = rgbOf(styles.getPropertyValue(varName).trim(), ctx);
+    return rgb ? rgbToOklab(rgb) : null;
+  };
+
+  const result: DynamicPaletteVars = {};
+  const oApp = labOf('--color-app-bg');
+  if (!oApp) return result;
+
+  const panelLab = labOf('--color-header-inactive-bg');
+  const termLab = labOf('--color-terminal-bg');
+  if (panelLab && termLab) {
+    const choice = pickDoorPair(panelLab, termLab, oApp);
+    result['--color-door-bg'] = `var(${choice.bg})`;
+    result['--color-door-fg'] = `var(${choice.fg})`;
+  }
+
+  const candidates: FocusRingCandidate[] = [];
+  const headerActiveBg = labOf('--color-header-active-bg');
+  if (headerActiveBg) candidates.push({ varName: '--color-header-active-bg', lab: headerActiveBg, preferred: true });
+  const headerActiveFg = labOf('--color-header-active-fg');
+  if (headerActiveFg) candidates.push({ varName: '--color-header-active-fg', lab: headerActiveFg });
+  const focusBorder = labOf('--vscode-focusBorder');
+  if (focusBorder) candidates.push({ varName: '--vscode-focusBorder', lab: focusBorder });
+
+  const pick = pickFocusRing(candidates, oApp);
+  if (pick) result['--color-focus-ring'] = `var(${pick.varName})`;
+
+  return result;
 }

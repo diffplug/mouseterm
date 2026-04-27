@@ -116,6 +116,15 @@ persistence are implementation details of `lib/src/lib/themes/` and
 `ThemePicker.tsx`. They must preserve the rendering contract above but do not
 need separate spec rules here.
 
+Storybook simulates VSCode themes through `lib/.storybook/themes.ts`. It must
+also run bundled theme vars through `completeThemeVars()` (with the same host
+typography defaults as `applyTheme()`) before injecting them, so isolated
+component stories see the same materialized `--vscode-*` token set as the app.
+The Storybook preview decorator also computes and publishes the dynamic palette
+vars (`--color-door-bg`, `--color-door-fg`, `--color-focus-ring`) through the
+shared `computeDynamicPalette()` helper, matching `Pond` for stories that render
+doors, baseboards, or focus rings outside a full Pond instance.
+
 ## Maintainer checklist
 
 When changing theme behavior:

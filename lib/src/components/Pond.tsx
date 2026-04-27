@@ -26,8 +26,7 @@ import {
 import { HeaderActionButton } from './HeaderActionButton';
 import { TodoAlertDialog } from './TodoAlertDialog';
 import { KILL_CONFIRM_MS, KILL_SHAKE_MS, KillConfirmOverlay, orchestrateKill, randomKillChar, type ConfirmKill } from './KillConfirm';
-import { rgbOf, rgbToOklab } from '../lib/color-contrast';
-import { pickDoorPair, pickFocusRing, type FocusRingCandidate } from '../lib/dynamic-palette';
+import { computeDynamicPalette } from '../lib/dynamic-palette';
 import { useFocusRingColor } from '../lib/themes/use-focus-ring-color';
 import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
@@ -610,35 +609,10 @@ function useDynamicPalette() {
     };
 
     const update = () => {
-      const styles = getComputedStyle(document.body);
-      const labOf = (varName: string): [number, number, number] | null => {
-        const rgb = rgbOf(styles.getPropertyValue(varName).trim(), ctx);
-        return rgb ? rgbToOklab(rgb) : null;
-      };
-
-      const oApp = labOf('--color-app-bg');
-      if (!oApp) return;
-
-      const panelLab = labOf('--color-header-inactive-bg');
-      const termLab = labOf('--color-terminal-bg');
-      if (panelLab && termLab) {
-        const choice = pickDoorPair(panelLab, termLab, oApp);
-        publish('--color-door-bg', `var(${choice.bg})`);
-        publish('--color-door-fg', `var(${choice.fg})`);
+      const dynamicPalette = computeDynamicPalette(getComputedStyle(document.body), ctx);
+      for (const [name, value] of Object.entries(dynamicPalette)) {
+        publish(name, value);
       }
-
-      // See pickFocusRing for the ranking rules and why preferred wins above
-      // the chroma floor.
-      const candidates: FocusRingCandidate[] = [];
-      const headerActiveBg = labOf('--color-header-active-bg');
-      if (headerActiveBg) candidates.push({ varName: '--color-header-active-bg', lab: headerActiveBg, preferred: true });
-      const headerActiveFg = labOf('--color-header-active-fg');
-      if (headerActiveFg) candidates.push({ varName: '--color-header-active-fg', lab: headerActiveFg });
-      const focusBorder = labOf('--vscode-focusBorder');
-      if (focusBorder) candidates.push({ varName: '--vscode-focusBorder', lab: focusBorder });
-
-      const pick = pickFocusRing(candidates, oApp);
-      if (pick) publish('--color-focus-ring', `var(${pick.varName})`);
     };
 
     update();
