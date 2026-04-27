@@ -26,7 +26,8 @@ import {
 import { HeaderActionButton } from './HeaderActionButton';
 import { TodoAlertDialog } from './TodoAlertDialog';
 import { KILL_CONFIRM_MS, KILL_SHAKE_MS, KillConfirmOverlay, orchestrateKill, randomKillChar, type ConfirmKill } from './KillConfirm';
-import { chromaOklab, deltaEOklab, rgbOf, rgbToOklab } from '../lib/color-contrast';
+import { rgbOf, rgbToOklab } from '../lib/color-contrast';
+import { pickDoorPair, pickFocusRing, type FocusRingCandidate } from '../lib/dynamic-palette';
 import { useFocusRingColor } from '../lib/themes/use-focus-ring-color';
 import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
@@ -610,57 +611,33 @@ function useDynamicPalette() {
 
     const update = () => {
       const styles = getComputedStyle(document.body);
-      const app = rgbOf(styles.getPropertyValue('--color-app-bg').trim(), ctx);
-      if (!app) return;
-      const oApp = rgbToOklab(app);
+      const labOf = (varName: string): [number, number, number] | null => {
+        const rgb = rgbOf(styles.getPropertyValue(varName).trim(), ctx);
+        return rgb ? rgbToOklab(rgb) : null;
+      };
 
-      const panel = rgbOf(styles.getPropertyValue('--color-header-inactive-bg').trim(), ctx);
-      const term = rgbOf(styles.getPropertyValue('--color-terminal-bg').trim(), ctx);
-      if (panel && term) {
-        const usePanel = deltaEOklab(rgbToOklab(panel), oApp) >= deltaEOklab(rgbToOklab(term), oApp);
-        const bg = usePanel ? '--color-header-inactive-bg' : '--color-terminal-bg';
-        const fg = usePanel ? '--color-header-inactive-fg' : '--color-terminal-fg';
-        publish('--color-door-bg', `var(${bg})`);
-        publish('--color-door-fg', `var(${fg})`);
+      const oApp = labOf('--color-app-bg');
+      if (!oApp) return;
+
+      const panelLab = labOf('--color-header-inactive-bg');
+      const termLab = labOf('--color-terminal-bg');
+      if (panelLab && termLab) {
+        const choice = pickDoorPair(panelLab, termLab, oApp);
+        publish('--color-door-bg', `var(${choice.bg})`);
+        publish('--color-door-fg', `var(${choice.fg})`);
       }
 
-      // Focus ring: prefer header-active-bg when chromatic in absolute terms
-      // (so themes like Solarized — whose app-bg is mildly saturated — don't
-      // underweight a clearly-chromatic candidate). Else most-saturated of
-      // the alternatives clearing the floor; else max ΔE for greyscale themes.
-      const SATURATION_FLOOR = 0.05;
-      type Candidate = { varName: string; lab: [number, number, number]; preferred?: boolean };
-      const candidates: Candidate[] = [];
-      const headerActiveBg = rgbOf(styles.getPropertyValue('--color-header-active-bg').trim(), ctx);
-      if (headerActiveBg) candidates.push({ varName: '--color-header-active-bg', lab: rgbToOklab(headerActiveBg), preferred: true });
-      const headerActiveFg = rgbOf(styles.getPropertyValue('--color-header-active-fg').trim(), ctx);
-      if (headerActiveFg) candidates.push({ varName: '--color-header-active-fg', lab: rgbToOklab(headerActiveFg) });
-      const focusBorder = rgbOf(styles.getPropertyValue('--vscode-focusBorder').trim(), ctx);
-      if (focusBorder) candidates.push({ varName: '--vscode-focusBorder', lab: rgbToOklab(focusBorder) });
+      // See pickFocusRing for the ranking rules and why preferred wins above
+      // the chroma floor.
+      const candidates: FocusRingCandidate[] = [];
+      const headerActiveBg = labOf('--color-header-active-bg');
+      if (headerActiveBg) candidates.push({ varName: '--color-header-active-bg', lab: headerActiveBg, preferred: true });
+      const headerActiveFg = labOf('--color-header-active-fg');
+      if (headerActiveFg) candidates.push({ varName: '--color-header-active-fg', lab: headerActiveFg });
+      const focusBorder = labOf('--vscode-focusBorder');
+      if (focusBorder) candidates.push({ varName: '--vscode-focusBorder', lab: focusBorder });
 
-      let pick: Candidate | null = null;
-      const preferred = candidates.find(c => c.preferred);
-      if (preferred && chromaOklab(preferred.lab) >= SATURATION_FLOOR) {
-        pick = preferred;
-      }
-      if (!pick) {
-        let bestChroma = -Infinity;
-        for (const c of candidates) {
-          if (c.preferred) continue;
-          const cc = chromaOklab(c.lab);
-          if (cc >= SATURATION_FLOOR && cc > bestChroma) {
-            pick = c;
-            bestChroma = cc;
-          }
-        }
-      }
-      if (!pick && candidates.length > 0) {
-        let bestDist = -Infinity;
-        for (const c of candidates) {
-          const d = deltaEOklab(c.lab, oApp);
-          if (d > bestDist) { pick = c; bestDist = d; }
-        }
-      }
+      const pick = pickFocusRing(candidates, oApp);
       if (pick) publish('--color-focus-ring', `var(${pick.varName})`);
     };
 
