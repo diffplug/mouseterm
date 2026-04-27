@@ -635,6 +635,23 @@ describe('terminal-registry alert behavior', () => {
     expect(received).toEqual(['\x1b[A']);
   });
 
+  it('drops DCS status-string replies during replay', () => {
+    const id = 'restore-replay-dcs-input';
+    const received: string[] = [];
+    const entry = restoreTerminal(id, { scrollback: 'saved output' }) as TestTerminalEntry;
+    fakePlatform.setInputHandler(id, (data) => received.push(data));
+
+    // xterm.js emits DECRPSS replies for replayed DECRQSS queries such as
+    // DCS $ q m ST. These are terminal reports, not user input for the shell.
+    entry.terminal.emitInput('\x1bP1$r0m\x1b\\');
+    entry.terminal.emitInput('\x1bP1$r24;80r\x1b\\');
+    entry.terminal.emitInput('\x1bP0$r\x1b\\');
+    entry.terminal.emitInput('a');
+    fakePlatform.clearInputHandler(id);
+
+    expect(received).toEqual(['a']);
+  });
+
   it('preserves keyboard CSI input during resume replay while dropping query replies', () => {
     const id = 'resume-replay-input';
     const received: string[] = [];

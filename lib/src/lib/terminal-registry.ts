@@ -315,8 +315,9 @@ const REPORT_TOKENS = new RegExp(`${REPORT_CSI.source}|${REPORT_SS3.source}|${RE
 const REPORT_VALIDATE = new RegExp(`^(?:${REPORT_CSI.source}|${REPORT_SS3.source}|${REPORT_OSC.source})$`);
 const REPLAY_REPORT_CSI = /\x1b\[(?:\??\d+(?:;\d+)*[Rn]|[?>=]?\d*(?:;\d+)*c|\d+(?:;\d+)*t|\??\d+(?:;\d+)*\$y)/;
 const REPLAY_REPORT_FOCUS = /\x1b\[[IO]/;
-const REPLAY_REPORT_TOKENS = new RegExp(`${REPLAY_REPORT_CSI.source}|${REPLAY_REPORT_FOCUS.source}|${REPORT_OSC.source}|.`, 'gs');
-const REPLAY_REPORT_VALIDATE = new RegExp(`^(?:${REPLAY_REPORT_CSI.source}|${REPLAY_REPORT_FOCUS.source}|${REPORT_OSC.source})$`);
+const REPLAY_REPORT_DCS_DECRQSS = /\x1bP(?:1\$r[\s\S]*?|0\$r)\x1b\\/;
+const REPLAY_REPORT_TOKENS = new RegExp(`${REPLAY_REPORT_CSI.source}|${REPLAY_REPORT_FOCUS.source}|${REPORT_OSC.source}|${REPLAY_REPORT_DCS_DECRQSS.source}|.`, 'gs');
+const REPLAY_REPORT_VALIDATE = new RegExp(`^(?:${REPLAY_REPORT_CSI.source}|${REPLAY_REPORT_FOCUS.source}|${REPORT_OSC.source}|${REPLAY_REPORT_DCS_DECRQSS.source})$`);
 
 function inputIsSyntheticTerminalReport(data: string): boolean {
   if (data.length === 0) return false;
