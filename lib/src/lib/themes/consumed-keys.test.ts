@@ -17,7 +17,7 @@ describe('CONSUMED_VSCODE_KEYS / bundle-themes.mjs parity', () => {
   const consumedBlock = scriptSource.match(/const CONSUMED_KEYS = new Set\(\[([\s\S]*?)\]\);/);
   if (!consumedBlock) throw new Error('Could not locate CONSUMED_KEYS in bundle-themes.mjs');
   const scriptKeys = new Set(
-    Array.from(consumedBlock[1].matchAll(/'([^']+)'/g), (m) => m[1]),
+    Array.from(consumedBlock[1].matchAll(/'([^']+)'/g), (match: RegExpExecArray) => match[1]),
   );
 
   it('every key in convert.ts CONSUMED_VSCODE_KEYS is in bundle-themes.mjs CONSUMED_KEYS', () => {
