@@ -950,20 +950,18 @@ export function Pond({
   const [confirmKill, setConfirmKill] = useState<ConfirmKill | null>(null);
   useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
 
-  // Drive the kill-dialog exit animation before unmount. Rejection paths
-  // (Esc, cancel button, wrong letter) share the shake gesture; the correct
-  // letter runs the confirm flash and fires orchestrateKill concurrently so
-  // the pane fade begins while the letter flash is still playing.
+  // Confirm runs orchestrateKill concurrently with the letter flash so the
+  // pane fade begins while the flash is still playing.
   const rejectKill = useCallback(() => {
     const ck = confirmKillRef.current;
-    if (!ck || ck.shaking || ck.confirming) return;
-    setConfirmKill({ ...ck, shaking: true });
+    if (!ck || ck.exit) return;
+    setConfirmKill({ ...ck, exit: 'shake' });
     shakeTimerRef.current = setTimeout(() => setConfirmKill(null), KILL_SHAKE_MS);
   }, []);
   const acceptKill = useCallback((onExit: () => void) => {
     const ck = confirmKillRef.current;
-    if (!ck || ck.confirming) return;
-    setConfirmKill({ ...ck, confirming: true });
+    if (!ck || ck.exit) return;
+    setConfirmKill({ ...ck, exit: 'confirm' });
     onExit();
     setTimeout(() => setConfirmKill(null), KILL_CONFIRM_MS);
   }, []);
@@ -1490,7 +1488,7 @@ export function Pond({
         e.stopPropagation();
         // Already exiting — swallow further input so a second key doesn't
         // stack dismissals or fire orchestrateKill twice.
-        if (ck.confirming || ck.shaking) return;
+        if (ck.exit) return;
         if (e.key.toLowerCase() === ck.char.toLowerCase()) {
           acceptKill(() => orchestrateKill(api, ck.id, selectPanel, setSelectedId, killInProgressRef, overlayElRef));
           return;
