@@ -39,6 +39,12 @@ const REGISTRY_DEFAULTS: Record<string, ThemePalette> = {
     hcDark: '#000000',
     hcLight: '#ffffff',
   },
+  '--vscode-sideBar-foreground': {
+    dark: null,
+    light: null,
+    hcDark: null,
+    hcLight: null,
+  },
   '--vscode-descriptionForeground': {
     dark: '#ccccccb3',
     light: '#717171',
@@ -317,6 +323,7 @@ function completeInRegistryOrder(vars: Record<string, string>, themeKind: Vscode
   setDefault(complete, '--vscode-editor-foreground', themeKind, (current) => read(current, '--vscode-foreground'));
   setDefault(complete, '--vscode-editorWidget-background', themeKind);
   setDefault(complete, '--vscode-sideBar-background', themeKind);
+  setDefault(complete, '--vscode-sideBar-foreground', themeKind, (current) => read(current, '--vscode-foreground'));
   setDefault(complete, '--vscode-descriptionForeground', themeKind, (current) => read(current, '--vscode-foreground'));
   setDefault(complete, '--vscode-panel-border', themeKind, 'transparent');
   setDefault(complete, '--vscode-focusBorder', themeKind);
@@ -331,7 +338,12 @@ function completeInRegistryOrder(vars: Record<string, string>, themeKind: Vscode
     firstDefined(current, ['--vscode-sideBar-background', '--vscode-editor-background'])
   ));
   setDefault(complete, '--vscode-list-inactiveSelectionForeground', themeKind, (current) => (
-    firstDefined(current, ['--vscode-editor-foreground', '--vscode-foreground', '--vscode-terminal-foreground'])
+    firstDefined(current, [
+      '--vscode-sideBar-foreground',
+      '--vscode-foreground',
+      '--vscode-editor-foreground',
+      '--vscode-terminal-foreground',
+    ])
   ));
 
   setDefault(complete, '--vscode-errorForeground', themeKind);

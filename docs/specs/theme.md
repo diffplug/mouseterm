@@ -74,7 +74,7 @@ materialization because MouseTerm consumes them through direct CSS variables.
 Important cases:
 
 - `list.inactiveSelectionForeground` resolves to normal foreground
-  (`editor.foreground`, then base `foreground`), not
+  (`sideBar.foreground`, then base `foreground`), not
   `list.activeSelectionForeground`. This matches VSCode list/tree behavior
   where an inactive selected row does not force active-selection white text.
 - Null foregrounds inherit the nearest normal foreground.

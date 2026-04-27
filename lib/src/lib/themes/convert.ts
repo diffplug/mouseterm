@@ -15,6 +15,7 @@ export const CONSUMED_VSCODE_KEYS: readonly string[] = [
   // Surfaces (theme.css @theme)
   'editor.background',
   'sideBar.background',
+  'sideBar.foreground',
   'editorWidget.background',
   'editor.selectionBackground',
   // Text

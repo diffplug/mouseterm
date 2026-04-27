@@ -30,22 +30,24 @@ class MockStyle {
 }
 
 describe('completeThemeVars', () => {
-  it('resolves Light-style inactive selection foreground to normal foreground, not active selection foreground', () => {
+  it('resolves Light-style inactive selection foreground to workbench foreground, not active selection foreground', () => {
     const vars = completeThemeVars({
+      '--vscode-foreground': '#616161',
       '--vscode-editor-foreground': '#333333',
       '--vscode-list-activeSelectionForeground': '#ffffff',
     }, 'light');
 
-    expect(vars['--vscode-list-inactiveSelectionForeground']).toBe('#333333');
+    expect(vars['--vscode-list-inactiveSelectionForeground']).toBe('#616161');
   });
 
-  it('uses the resolved editor foreground when editor foreground is absent', () => {
+  it('uses side bar foreground before base foreground when it is defined', () => {
     const vars = completeThemeVars({
       '--vscode-foreground': '#616161',
+      '--vscode-sideBar-foreground': '#444444',
       '--vscode-list-activeSelectionForeground': '#ffffff',
     }, 'light');
 
-    expect(vars['--vscode-list-inactiveSelectionForeground']).toBe('#333333');
+    expect(vars['--vscode-list-inactiveSelectionForeground']).toBe('#444444');
   });
 
   it('uses base foreground when the VSCode editor foreground default is null', () => {
