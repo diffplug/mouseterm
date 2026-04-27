@@ -27,6 +27,7 @@ import { HeaderActionButton } from './HeaderActionButton';
 import { TodoAlertDialog } from './TodoAlertDialog';
 import { KILL_CONFIRM_MS, KILL_SHAKE_MS, KillConfirmOverlay, orchestrateKill, randomKillChar, type ConfirmKill } from './KillConfirm';
 import { chromaOklab, deltaEOklab, rgbOf, rgbToOklab } from '../lib/color-contrast';
+import { useFocusRingColor } from '../lib/themes/use-focus-ring-color';
 import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
@@ -688,24 +689,6 @@ function useDynamicPalette() {
   }, []);
 }
 
-function readSelectionColor() {
-  // --color-focus-ring is dynamically chosen by useDynamicPalette below.
-  // Read from body so we pick up the body-level override.
-  return getComputedStyle(document.body).getPropertyValue('--color-focus-ring').trim();
-}
-
-function useSelectionColor() {
-  const [color, setColor] = useState(readSelectionColor);
-
-  useEffect(() => {
-    const mo = new MutationObserver(() => setColor(readSelectionColor()));
-    mo.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
-    return () => mo.disconnect();
-  }, []);
-
-  return color;
-}
-
 /** Build a closed SVG path for a rounded rectangle.
  *  Starts at the midpoint of the top edge so the seam falls in a straight segment. */
 export function roundedRectPath(
@@ -795,7 +778,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef
 }) {
   const { elements: panelElements, version: panelVersion } = useContext(PanelElementsContext);
   const { elements: doorElements, version: doorVersion } = useContext(DoorElementsContext);
-  const selectionColor = useSelectionColor();
+  const selectionColor = useFocusRingColor();
   const windowFocused = useContext(WindowFocusedContext);
   const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const isDoor = selectedType === 'door';
