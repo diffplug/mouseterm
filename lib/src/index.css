@@ -50,7 +50,7 @@ body {
 .dockview-theme-abyss .dv-groupview,
 .dockview-theme-abyss .dv-split-view-container,
 .dockview-theme-abyss .dv-split-view-container .dv-view-container {
-  background-color: var(--color-terminal-bg) !important;
+  background-color: var(--color-app-bg) !important;
 }
 
 /* Remove tab-bar background/border — the tab itself provides the bg */

@@ -288,7 +288,7 @@ Custom `mousetermTheme` extends dockview's `themeAbyss`:
 
 Colors use a two-layer CSS variable strategy: `@theme --color-*` tokens → `var(--vscode-*)`. VSCode provides host theme variables in extension mode; standalone and website mode apply bundled or installed theme variables before rendering. Tailwind v4 `@theme` block registers `--color-*` tokens as Tailwind colors (e.g., `bg-app-bg`, `text-app-fg`, `border-border`). See `theme.css` for the full token map.
 
-Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. The outer dockview container paints `var(--color-app-bg)` so gutters match host chrome, while group internals flatten to `var(--color-terminal-bg)`.
+Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. Dockview infrastructure paints `var(--color-app-bg)` so gutters and rounded pane/header corner cutouts match host chrome. Terminal content backgrounds are painted by the React terminal wrappers and xterm host elements, not by dockview containers.
 
 ## Animations
 
