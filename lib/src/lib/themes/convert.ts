@@ -2,7 +2,7 @@
  * Conversion from VSCode theme JSON `colors` to --vscode-* CSS variables.
  *
  * Two consumers read --vscode-* variables:
- *   1. @theme fallbacks in theme.css — UI colors (surfaces, tabs, etc.)
+ *   1. @theme/body bindings in theme.css — UI colors (surfaces, tabs, etc.)
  *   2. getTerminalTheme() in terminal-registry.ts — ANSI, cursor, selection
  */
 
@@ -12,13 +12,11 @@
 export const CONSUMED_VSCODE_KEYS: readonly string[] = [
   // Surfaces (theme.css @theme)
   'editor.background',
-  'editorGroupHeader.tabsBackground',
   'sideBar.background',
   'editorWidget.background',
   // Text
   'editor.foreground',
   'descriptionForeground',
-  'foreground',
   // Borders
   'panel.border',
   // Focus / file-tree palette — anchors the four-surface chrome hierarchy
@@ -32,9 +30,8 @@ export const CONSUMED_VSCODE_KEYS: readonly string[] = [
   // Terminal
   'terminal.background',
   'terminal.foreground',
-  // Status
+  // Status / dialogs
   'errorForeground',
-  'editorWarning.foreground',
   // Inputs (ThemePicker dialog)
   'input.background',
   'input.border',

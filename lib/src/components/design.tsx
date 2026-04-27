@@ -19,19 +19,21 @@ import type { HTMLAttributes, ReactNode } from 'react';
 /**
  * Color strategy — see also `lib/src/theme.css` for the actual @theme tokens.
  *
- * Surfaces (4 distinct + 1 dynamic). All resolve through VSCode CSS vars,
- * with hex fallbacks at the end of every chain so themes that omit a key
- * still render something sensible:
+ * Surfaces (4 distinct + 1 dynamic). All resolve directly through VSCode CSS
+ * vars. Real VSCode provides them in extension mode; standalone/website apply
+ * them from bundled or installed MouseTerm themes before rendering.
  *
- *   --color-terminal-bg      terminal.background → editor.background
- *                            xterm canvas + pane body
- *   --color-app-bg           sideBar.background → editorGroupHeader.tabsBackground
+ *   --color-surface          editor.background
+ *                            generic editor surface + door candidate
+ *   --color-terminal-bg      terminal.background
+ *                            terminal container + xterm default bg
+ *   --color-app-bg           sideBar.background
  *                            baseboard, dockview gutters, gaps around panes
- *   --color-header-inactive-bg   list.inactiveSelectionBackground → sideBar.background
+ *   --color-header-inactive-bg   list.inactiveSelectionBackground
  *                            unfocused pane headers
  *   --color-header-active-bg     list.activeSelectionBackground
  *                            focused pane header + the marching-ants ring
- *   --color-door-bg          runtime: whichever of (header-inactive, terminal)
+ *   --color-door-bg          runtime: whichever of (header-inactive, surface)
  *                            has the larger ΔE OKLab vs app-bg
  *                            (see Pond.useDynamicPalette)
  *
@@ -40,10 +42,7 @@ import type { HTMLAttributes, ReactNode } from 'react';
  *   --color-foreground       editor.foreground (generic body text)
  *   --color-muted            descriptionForeground (hints, secondary)
  *   --color-header-active-fg / --color-header-inactive-fg
- *                            paired with their bg counterparts; inactive-fg
- *                            falls through list.activeSelectionForeground →
- *                            editor.foreground because list.inactiveSelectionFg
- *                            is often left undefined by themes
+ *                            paired with their bg counterparts
  *   --color-door-fg          runtime, paired with --color-door-bg
  *
  * Inside a pane header, **text and buttons inherit** the header's fg — never
@@ -72,8 +71,8 @@ import type { HTMLAttributes, ReactNode } from 'react';
  *
  * Other tokens kept narrow: --color-surface-raised (dialog bodies),
  * --color-border (dialog edges, dividers), --color-error / --color-warning /
- * --color-success (semantic), --color-input-bg / --color-input-border
- * (ThemePicker only).
+ * --color-success (mapped to terminal ANSI red/yellow/green),
+ * --color-input-bg / --color-input-border (ThemePicker only).
  *
  * Things to avoid:
  *   - Hardcoded colors (`bg-black`, hex values) — always go through a token.

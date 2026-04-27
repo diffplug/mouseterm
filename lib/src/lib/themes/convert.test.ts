@@ -41,11 +41,11 @@ describe('convertVscodeThemeColors', () => {
 
   it('preserves camelCase in key conversion', () => {
     const result = convertVscodeThemeColors({
-      'editorGroupHeader.tabsBackground': '#252526',
+      'terminalCursor.foreground': '#aeafad',
       'terminal.ansiBrightMagenta': '#d670d6',
     });
     expect(result).toEqual({
-      '--vscode-editorGroupHeader-tabsBackground': '#252526',
+      '--vscode-terminalCursor-foreground': '#aeafad',
       '--vscode-terminal-ansiBrightMagenta': '#d670d6',
     });
   });

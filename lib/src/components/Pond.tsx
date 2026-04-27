@@ -689,8 +689,7 @@ function useDynamicPalette() {
 
 function readSelectionColor() {
   // --color-focus-ring is dynamically chosen by useDynamicPalette below.
-  // Read from body so we pick up the body-level override and any
-  // body.vscode-light token cascade.
+  // Read from body so we pick up the body-level override.
   return getComputedStyle(document.body).getPropertyValue('--color-focus-ring').trim();
 }
 

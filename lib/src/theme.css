@@ -1,30 +1,31 @@
 /* MouseTerm Theme System
  *
  * Two-layer CSS variable strategy:
- *   @theme --color-* tokens → var(--vscode-*, <fallback>)
+ *   @theme --color-* tokens -> var(--vscode-*)
  *
- * In VSCode: --vscode-* variables are auto-injected and take precedence.
+ * In VSCode: --vscode-* variables are auto-injected.
  * In standalone/website: applyTheme() sets --vscode-* on document.body.
- *   Also sets body class vscode-light for light themes.
- * For standalone without explicit theme: prefers-color-scheme picks
- *   dark vs light defaults.
+ *
+ * This file intentionally does not provide hardcoded color defaults. Runtime
+ * hosts must provide real VSCode variables, either from VSCode itself or from
+ * a bundled/installed MouseTerm theme.
  *
  * Two consumers read --vscode-* variables:
- *   1. @theme fallbacks below — for UI colors (surfaces, tabs, etc.)
+ *   1. @theme/body bindings below — for UI colors (surfaces, tabs, etc.)
  *   2. getTerminalTheme() in terminal-registry.ts — reads ANSI colors,
  *      cursor, and selection directly as --vscode-* for xterm.js
  */
 
 /* --- Font tokens (not Tailwind colors) --- */
 :root {
-  --mt-font-size: var(--vscode-font-size, 13px);
-  --mt-font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  --mt-font-size: var(--vscode-font-size);
+  --mt-font-family: var(--vscode-font-family);
 }
 
-/* --- Dark mode fallback defaults --- */
+/* --- Tailwind token declarations --- */
 @theme {
   /* Fonts */
-  --font-mono: var(--vscode-editor-font-family, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace);
+  --font-mono: var(--vscode-editor-font-family);
 
   /* Type scale — see design.tsx for usage rules. Overrides Tailwind's
    * defaults so the whole app sits on four rem-based steps. */
@@ -33,53 +34,53 @@
   --text-sm: 0.75rem;           /*  12px */
   --text-sm--line-height: 1rem;
 
-  /* Surfaces — four-step hierarchy, bg-only (dark → light by luminance):
+  /* Surfaces — four-step hierarchy, bg-only:
    *   --color-surface     (terminal-bg)    editor.background
    *   --color-app-bg      (chrome host)    sideBar.background
    *   panel-inactive-bg                    list.inactiveSelectionBackground
    *   panel-active-bg                      list.activeSelectionBackground (hue-shifted) */
-  --color-surface: var(--vscode-editor-background, #1e1e1e);
-  --color-surface-raised: var(--vscode-editorWidget-background, #252526);
-  --color-app-bg: var(--vscode-sideBar-background, var(--vscode-editorGroupHeader-tabsBackground, #252526));
+  --color-surface: var(--vscode-editor-background);
+  --color-surface-raised: var(--vscode-editorWidget-background);
+  --color-app-bg: var(--vscode-sideBar-background);
 
   /* Text */
-  --color-foreground: var(--vscode-editor-foreground, #cccccc);
-  --color-muted: var(--vscode-descriptionForeground, #858585);
+  --color-foreground: var(--vscode-editor-foreground);
+  --color-muted: var(--vscode-descriptionForeground);
 
   /* Borders */
-  --color-border: var(--vscode-panel-border, #2b2b2b);
+  --color-border: var(--vscode-panel-border);
 
   /* Chrome palette — anchored on VSCode file-tree list.* tokens. Panel
    * headers and doors use only these four tokens. The focus ring (marching-
    * ants + passthrough border) shares --color-header-active-bg so a focused
    * pane's header and its surrounding ring read as one unit. */
-  --color-header-active-bg: var(--vscode-list-activeSelectionBackground, #094771);
-  --color-header-active-fg: var(--vscode-list-activeSelectionForeground, #ffffff);
-  --color-header-inactive-bg: var(--vscode-list-inactiveSelectionBackground, var(--vscode-sideBar-background, #37373d));
-  --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground, var(--vscode-list-activeSelectionForeground, var(--vscode-foreground, #cccccc)));
+  --color-header-active-bg: var(--vscode-list-activeSelectionBackground);
+  --color-header-active-fg: var(--vscode-list-activeSelectionForeground);
+  --color-header-inactive-bg: var(--vscode-list-inactiveSelectionBackground);
+  --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground);
 
   /* Dynamic palette — Pond's useDynamicPalette hook overrides these on body
    * at runtime, picking whichever candidate has the largest ΔE OKLab vs
-   * app-bg. The fallbacks below cover first paint before the hook runs.
+   * app-bg.
    *
-   *   --color-door-*    pick: (header-inactive bg/fg) or (terminal-bg / fg)
-   *   --color-focus-ring  pick: (header-active-fg) or (focusBorder) */
+   *   --color-door-*    pick: (header-inactive bg/fg) or (surface / fg)
+   *   --color-focus-ring  pick: (header-active-bg/fg) or (focusBorder) */
   --color-door-bg: var(--color-header-inactive-bg);
   --color-door-fg: var(--color-header-inactive-fg);
   --color-focus-ring: var(--color-header-active-fg);
 
   /* Terminal — xterm.js content, orthogonal to chrome */
-  --color-terminal-bg: var(--vscode-terminal-background, var(--vscode-editor-background, #1e1e1e));
-  --color-terminal-fg: var(--vscode-terminal-foreground, #cccccc);
+  --color-terminal-bg: var(--vscode-terminal-background);
+  --color-terminal-fg: var(--vscode-terminal-foreground);
 
-  /* Semantic status */
-  --color-error: var(--vscode-errorForeground, #f48771);
-  --color-success: #73c991;
-  --color-warning: var(--vscode-editorWarning-foreground, #cca700);
+  /* Semantic status — use the active terminal palette. */
+  --color-error: var(--vscode-terminal-ansiRed);
+  --color-success: var(--vscode-terminal-ansiGreen);
+  --color-warning: var(--vscode-terminal-ansiYellow);
 
   /* Inputs — used by ThemePicker */
-  --color-input-bg: var(--vscode-input-background, #3c3c3c);
-  --color-input-border: var(--vscode-input-border, #3c3c3c);
+  --color-input-bg: var(--vscode-input-background);
+  --color-input-border: var(--vscode-input-border);
 
   /* Animation */
   --animate-bell-ring: bell-ring 800ms ease-in-out infinite;
@@ -88,77 +89,28 @@
 
 /* --- Body-level dynamic theme bindings ---
  *
- * These mirror the @theme block above but are declared on `body`. CSS
- * resolves var() inside a custom-property declaration at the *element where
- * the property is declared*, so the @theme block — compiled to :root — sees
- * an empty cascade for --vscode-* (those live on body, set by applyTheme).
- * The :root values therefore always collapse to the static fallback.
- *
- * Re-declaring at body level makes var() resolve in body's cascade where
- * applyTheme's --vscode-* overrides are visible, so theme switching
- * actually drives the chrome colors instead of just the static fallback.
- *
- * body.vscode-light below overrides this block with light hex fallbacks. */
+ * These mirror the @theme block above but are declared on `body`. CSS resolves
+ * var() inside a custom-property declaration at the element where the property
+ * is declared, so body-level declarations can see --vscode-* variables that
+ * applyTheme() writes to body.style. */
 body {
-  --color-surface: var(--vscode-editor-background, #1e1e1e);
-  --color-surface-raised: var(--vscode-editorWidget-background, #252526);
-  --color-app-bg: var(--vscode-sideBar-background, var(--vscode-editorGroupHeader-tabsBackground, #252526));
-  --color-foreground: var(--vscode-editor-foreground, #cccccc);
-  --color-muted: var(--vscode-descriptionForeground, #858585);
-  --color-border: var(--vscode-panel-border, #2b2b2b);
-  --color-header-active-bg: var(--vscode-list-activeSelectionBackground, #094771);
-  --color-header-active-fg: var(--vscode-list-activeSelectionForeground, #ffffff);
-  --color-header-inactive-bg: var(--vscode-list-inactiveSelectionBackground, var(--vscode-sideBar-background, #37373d));
-  --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground, var(--vscode-list-activeSelectionForeground, var(--vscode-foreground, #cccccc)));
-  --color-terminal-bg: var(--vscode-terminal-background, var(--vscode-editor-background, #1e1e1e));
-  --color-terminal-fg: var(--vscode-terminal-foreground, #cccccc);
-  --color-error: var(--vscode-errorForeground, #f48771);
-  --color-warning: var(--vscode-editorWarning-foreground, #cca700);
-  --color-input-bg: var(--vscode-input-background, #3c3c3c);
-  --color-input-border: var(--vscode-input-border, #3c3c3c);
-}
-
-body.vscode-light {
-  --color-surface: var(--vscode-editor-background, #ffffff);
-  --color-surface-raised: var(--vscode-editorWidget-background, #f3f3f3);
-  --color-app-bg: var(--vscode-sideBar-background, var(--vscode-editorGroupHeader-tabsBackground, #f3f3f3));
-  --color-foreground: var(--vscode-editor-foreground, #333333);
-  --color-muted: var(--vscode-descriptionForeground, #717171);
-  --color-border: var(--vscode-panel-border, #e5e5e5);
-  --color-header-active-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
-  --color-header-active-fg: var(--vscode-list-activeSelectionForeground, #000000);
-  --color-header-inactive-bg: var(--vscode-list-inactiveSelectionBackground, var(--vscode-sideBar-background, #e4e6f1));
-  --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground, var(--vscode-list-activeSelectionForeground, var(--vscode-foreground, #000000)));
-  --color-terminal-bg: var(--vscode-terminal-background, var(--vscode-editor-background, #ffffff));
-  --color-terminal-fg: var(--vscode-terminal-foreground, #333333);
-  --color-error: var(--vscode-errorForeground, #a1260d);
-  --color-success: #388a34;
-  --color-warning: var(--vscode-editorWarning-foreground, #bf8803);
-  --color-input-bg: var(--vscode-input-background, #ffffff);
-  --color-input-border: var(--vscode-input-border, #cecece);
-}
-
-/* Standalone: use OS preference when no VSCode body class */
-@media (prefers-color-scheme: light) {
-  body:not(.vscode-light):not(.vscode-dark) {
-    --color-surface: var(--vscode-editor-background, #ffffff);
-    --color-surface-raised: var(--vscode-editorWidget-background, #f3f3f3);
-    --color-app-bg: var(--vscode-sideBar-background, var(--vscode-editorGroupHeader-tabsBackground, #f3f3f3));
-    --color-foreground: var(--vscode-editor-foreground, #333333);
-    --color-muted: var(--vscode-descriptionForeground, #717171);
-    --color-border: var(--vscode-panel-border, #e5e5e5);
-    --color-header-active-bg: var(--vscode-list-activeSelectionBackground, #cce6ff);
-    --color-header-active-fg: var(--vscode-list-activeSelectionForeground, #000000);
-    --color-header-inactive-bg: var(--vscode-list-inactiveSelectionBackground, var(--vscode-sideBar-background, #e4e6f1));
-    --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground, var(--vscode-list-activeSelectionForeground, var(--vscode-foreground, #000000)));
-    --color-terminal-bg: var(--vscode-terminal-background, var(--vscode-editor-background, #ffffff));
-    --color-terminal-fg: var(--vscode-terminal-foreground, #333333);
-    --color-error: var(--vscode-errorForeground, #a1260d);
-    --color-success: #388a34;
-    --color-warning: var(--vscode-editorWarning-foreground, #bf8803);
-    --color-input-bg: var(--vscode-input-background, #ffffff);
-    --color-input-border: var(--vscode-input-border, #cecece);
-  }
+  --color-surface: var(--vscode-editor-background);
+  --color-surface-raised: var(--vscode-editorWidget-background);
+  --color-app-bg: var(--vscode-sideBar-background);
+  --color-foreground: var(--vscode-editor-foreground);
+  --color-muted: var(--vscode-descriptionForeground);
+  --color-border: var(--vscode-panel-border);
+  --color-header-active-bg: var(--vscode-list-activeSelectionBackground);
+  --color-header-active-fg: var(--vscode-list-activeSelectionForeground);
+  --color-header-inactive-bg: var(--vscode-list-inactiveSelectionBackground);
+  --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground);
+  --color-terminal-bg: var(--vscode-terminal-background);
+  --color-terminal-fg: var(--vscode-terminal-foreground);
+  --color-error: var(--vscode-terminal-ansiRed);
+  --color-success: var(--vscode-terminal-ansiGreen);
+  --color-warning: var(--vscode-terminal-ansiYellow);
+  --color-input-bg: var(--vscode-input-background);
+  --color-input-border: var(--vscode-input-border);
 }
 
 @keyframes bell-ring {
