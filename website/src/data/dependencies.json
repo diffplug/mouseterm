@@ -84,27 +84,6 @@
     "homepage": "https://101arrowz.github.io/fflate"
   },
   {
-    "name": "GitHub Theme",
-    "version": "6.3.5",
-    "license": "MIT",
-    "author": "open-vsx",
-    "homepage": "https://github.com/primer/github-vscode-theme#readme"
-  },
-  {
-    "name": "Gruvbox Theme",
-    "version": "1.29.1",
-    "license": "MIT",
-    "author": "jdinhify",
-    "homepage": "https://github.com/jdinhify/vscode-theme-gruvbox"
-  },
-  {
-    "name": "Iceberg Theme",
-    "version": "2.0.5",
-    "license": "MIT",
-    "author": "cocopon",
-    "homepage": "https://cocopon.github.io/iceberg.vim/"
-  },
-  {
     "name": "jsonc-parser",
     "version": "3.3.1",
     "license": "MIT",
@@ -187,5 +166,12 @@
     "license": "MIT",
     "author": "Tailwind Labs, Inc.",
     "homepage": "https://tailwindcss.com"
+  },
+  {
+    "name": "VS Code built-in themes",
+    "version": "1.95.3",
+    "license": "MIT",
+    "author": "Microsoft Corporation",
+    "homepage": "https://github.com/microsoft/vscode/tree/main/extensions"
   }
 ]
