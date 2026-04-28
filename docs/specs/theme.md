@@ -117,6 +117,11 @@ persistence are implementation details of `lib/src/lib/themes/` and
 `ThemePicker.tsx`. They must preserve the rendering contract above but do not
 need separate spec rules here.
 
+The website `SiteHeader` uses the theme-aware path on the playground only for
+color, border, and backdrop values. Header geometry, typography, nav spacing,
+and control placement stay shared with the marketing pages so switching between
+`/` and `/playground` does not move or resize the top-right controls.
+
 Storybook simulates VSCode themes through `lib/.storybook/themes.ts`. It must
 also run bundled theme vars through `completeThemeVars()` (with the same host
 typography defaults as `applyTheme()`) before injecting them, so isolated

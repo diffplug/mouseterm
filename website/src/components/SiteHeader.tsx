@@ -38,8 +38,6 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
     const headerStyle: React.CSSProperties = themeAware
       ? {
           color: "var(--vscode-editor-foreground, #cccccc)",
-          fontFamily:
-            "var(--vscode-editor-font-family, var(--font-display))",
           backgroundColor:
             "color-mix(in oklab, var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #252526)) 92%, transparent)",
           borderColor: "var(--vscode-panel-border, #2b2b2b)",
@@ -53,8 +51,8 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
       <>
         <header
           ref={ref}
-          className={`fixed top-0 left-0 right-0 z-20 flex items-center justify-between gap-3 px-4 md:px-8 font-display text-lg${
-            themeAware ? " h-16 border-b py-0 md:h-20" : " py-4 md:py-6"
+          className={`fixed top-0 left-0 right-0 z-20 flex h-16 items-center justify-between gap-3 px-4 py-0 font-display text-lg md:h-20 md:px-8${
+            themeAware ? " border-b" : ""
           }`}
           style={headerStyle}
         >
