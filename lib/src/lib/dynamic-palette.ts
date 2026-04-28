@@ -11,9 +11,8 @@ type Lab = [number, number, number];
 export interface FocusRingCandidate {
   varName: string;
   lab: Lab;
-  /** True for the always-first-choice candidate (header-active-bg), so a
-   *  clearly chromatic accent wins even when other candidates score higher
-   *  by chroma or ΔE. */
+  /** True for the top-priority candidate, so a clearly chromatic focus color
+   *  wins even when lower-priority candidates score higher by chroma or ΔE. */
   preferred?: boolean;
 }
 
@@ -24,10 +23,9 @@ export interface FocusRingCandidate {
 export const FOCUS_RING_SATURATION_FLOOR = 0.05;
 
 /** Pick the focus-ring candidate. Order:
- *   1. preferred (header-active-bg) if it clears the saturation floor —
- *      keeps brand color even when app-bg itself is mildly chromatic
- *      (Solarized).
- *   2. else most-saturated non-preferred candidate clearing the floor.
+ *   1. preferred (focusBorder) if it clears the saturation floor.
+ *   2. else most-saturated non-preferred candidate clearing the floor
+ *      (currently activeSelectionBackground).
  *   3. else max-ΔE candidate against app-bg (greyscale fallback).
  *   4. null when no candidates supplied.
  */
@@ -105,12 +103,10 @@ export function computeDynamicPalette(
   }
 
   const candidates: FocusRingCandidate[] = [];
-  const headerActiveBg = labOf('--color-header-active-bg');
-  if (headerActiveBg) candidates.push({ varName: '--color-header-active-bg', lab: headerActiveBg, preferred: true });
-  const headerActiveFg = labOf('--color-header-active-fg');
-  if (headerActiveFg) candidates.push({ varName: '--color-header-active-fg', lab: headerActiveFg });
   const focusBorder = labOf('--vscode-focusBorder');
-  if (focusBorder) candidates.push({ varName: '--vscode-focusBorder', lab: focusBorder });
+  if (focusBorder) candidates.push({ varName: '--vscode-focusBorder', lab: focusBorder, preferred: true });
+  const headerActiveBg = labOf('--color-header-active-bg');
+  if (headerActiveBg) candidates.push({ varName: '--color-header-active-bg', lab: headerActiveBg });
 
   const pick = pickFocusRing(candidates, oApp);
   if (pick) result['--color-focus-ring'] = `var(${pick.varName})`;

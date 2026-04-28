@@ -19,7 +19,6 @@ const baseValues = {
   terminalBg: '#000000',
   terminalFg: '#f5f5f5',
   headerActiveBg: '#0060c0',
-  headerActiveFg: '#ffffff',
   focusBorder: '#ff0000',
 };
 
@@ -31,20 +30,19 @@ describe('pickDynamicPalette', () => {
     expect(picks.door?.fgVar).toBe('--color-terminal-fg');
   });
 
-  it('prefers a chromatic active header background for the focus ring', () => {
+  it('prefers a chromatic focusBorder for the focus ring', () => {
     const picks = pickDynamicPalette(baseValues, hexToRgb);
 
-    expect(picks.focusRing?.sourceVar).toBe('--color-header-active-bg');
+    expect(picks.focusRing?.sourceVar).toBe('--vscode-focusBorder');
   });
 
-  it('falls through to the most saturated chromatic non-background focus candidate', () => {
+  it('falls through to active header background when focusBorder is flat', () => {
     const picks = pickDynamicPalette({
       ...baseValues,
-      headerActiveBg: '#333333',
-      headerActiveFg: '#777777',
-      focusBorder: '#0090f1',
+      headerActiveBg: '#0090f1',
+      focusBorder: '#333333',
     }, hexToRgb);
 
-    expect(picks.focusRing?.sourceVar).toBe('--vscode-focusBorder');
+    expect(picks.focusRing?.sourceVar).toBe('--color-header-active-bg');
   });
 });

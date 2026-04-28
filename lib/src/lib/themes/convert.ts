@@ -24,8 +24,9 @@ export const CONSUMED_VSCODE_KEYS: readonly string[] = [
   // Borders
   'panel.border',
   // Focus / file-tree palette — anchors the four-surface chrome hierarchy
-  // (active panel = list active selection, inactive = list inactive selection)
-  // and is read by Pond's useDynamicPalette for the focus ring.
+  // (active panel = list active selection, inactive = list inactive selection).
+  // Pond's useDynamicPalette reads focusBorder and activeSelectionBackground
+  // for the focus ring.
   'focusBorder',
   'list.activeSelectionBackground',
   'list.activeSelectionForeground',

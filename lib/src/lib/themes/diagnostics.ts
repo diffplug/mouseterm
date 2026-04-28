@@ -136,7 +136,6 @@ function captureDynamicPalette(styles: CSSStyleDeclaration): DynamicPaletteSnaps
     terminalBg: readVar(styles, '--color-terminal-bg') ?? '',
     terminalFg: readVar(styles, '--color-terminal-fg') ?? '',
     headerActiveBg: readVar(styles, '--color-header-active-bg') ?? '',
-    headerActiveFg: readVar(styles, '--color-header-active-fg') ?? '',
     focusBorder: readVar(styles, '--vscode-focusBorder') ?? '',
   }, (color) => rgbOf(color, ctx));
 }

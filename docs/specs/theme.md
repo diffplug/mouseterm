@@ -24,7 +24,7 @@ panes and doors; do not add borders to make the hierarchy work.
 | `--color-header-inactive-bg` / `-fg` | `list.inactiveSelectionBackground` / `list.inactiveSelectionForeground` | unfocused pane headers |
 | `--color-header-active-bg` / `-fg` | `list.activeSelectionBackground` / `list.activeSelectionForeground` | focused pane header |
 | `--color-door-bg` / `-fg` | runtime pick from inactive header vs terminal bg/fg | baseboard doors |
-| `--color-focus-ring` | runtime pick from active header colors and `focusBorder` | marching-ants ring and terminal text-selection border |
+| `--color-focus-ring` | runtime pick from `focusBorder` and active header background | marching-ants ring and terminal text-selection border |
 
 Door colors and the focus ring are chosen at runtime by
 `computeDynamicPalette()` in `lib/src/lib/dynamic-palette.ts`, using OKLab
@@ -34,8 +34,8 @@ the chosen variables on `document.body`.
 - Door bg/fg chooses whichever pair, inactive-header or terminal bg/fg, has
   stronger perceptual separation from
   `--color-app-bg`.
-- Focus ring prefers a chromatic active-header background, then a chromatic
-  active-header foreground or `focusBorder`, then the highest contrast fallback.
+- Focus ring prefers a chromatic `focusBorder`, then a chromatic active-header
+  background, then the highest contrast fallback.
 - Header-internal text and buttons inherit the header foreground. Do not add
   `text-muted` inside headers; use `hover:bg-current/10` for neutral hover
   feedback. Semantic exceptions are `text-warning` for ringing alerts and

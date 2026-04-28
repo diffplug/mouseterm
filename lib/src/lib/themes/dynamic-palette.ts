@@ -16,7 +16,6 @@ export interface DynamicPaletteValues {
   terminalBg: string;
   terminalFg: string;
   headerActiveBg: string;
-  headerActiveFg: string;
   focusBorder: string;
 }
 
@@ -38,7 +37,7 @@ export interface DynamicDoorPick {
 }
 
 export interface DynamicFocusRingPick {
-  sourceVar: '--color-header-active-bg' | '--color-header-active-fg' | '--vscode-focusBorder';
+  sourceVar: '--vscode-focusBorder' | '--color-header-active-bg';
   value: string;
   reason: string;
   candidates: DynamicPaletteCandidate[];
@@ -119,9 +118,8 @@ export function pickDynamicPalette(
   }
 
   const focusCandidates: DetailedCandidate[] = [
-    candidate('--color-header-active-bg', values.headerActiveBg, colorToRgb, appLab, true),
-    candidate('--color-header-active-fg', values.headerActiveFg, colorToRgb, appLab),
-    candidate('--vscode-focusBorder', values.focusBorder, colorToRgb, appLab),
+    candidate('--vscode-focusBorder', values.focusBorder, colorToRgb, appLab, true),
+    candidate('--color-header-active-bg', values.headerActiveBg, colorToRgb, appLab),
   ].filter((item): item is DetailedCandidate => item !== null);
 
   const focusPick = pickFocusRing(focusCandidates, appLab) as DetailedCandidate | null;
@@ -129,9 +127,9 @@ export function pickDynamicPalette(
   const focusReason = !focusPick
     ? ''
     : focusPick.preferred && focusChroma >= FOCUS_RING_SATURATION_FLOOR
-      ? 'active header background is chromatic, so the ring matches the focused header'
+      ? 'focusBorder is chromatic, so the ring uses the VS Code focus color'
       : !focusPick.preferred && focusChroma >= FOCUS_RING_SATURATION_FLOOR
-        ? 'most saturated chromatic non-background candidate clears the chroma floor'
+        ? 'active header background is the next chromatic focus-ring candidate'
         : 'highest OKLab distance from app background among available candidates';
 
   const focusRing = focusPick

@@ -52,8 +52,8 @@
 
   /* Chrome palette — anchored on VSCode file-tree list.* tokens. Panel
    * headers and doors use only these four tokens. The focus ring (marching-
-   * ants + passthrough border) shares --color-header-active-bg so a focused
-   * pane's header and its surrounding ring read as one unit. */
+   * ants + passthrough border) prefers VSCode's focusBorder and falls back to
+   * the focused header background when focusBorder is not usable. */
   --color-header-active-bg: var(--vscode-list-activeSelectionBackground);
   --color-header-active-fg: var(--vscode-list-activeSelectionForeground);
   --color-header-inactive-bg: var(--vscode-list-inactiveSelectionBackground);
@@ -63,10 +63,10 @@
    * dynamic-palette helper, picking by OKLab distance/chroma.
    *
    *   --color-door-*    pick: (header-inactive bg/fg) or (terminal bg/fg)
-   *   --color-focus-ring  pick: (header-active-bg/fg) or (focusBorder) */
+   *   --color-focus-ring  pick: focusBorder or header-active-bg */
   --color-door-bg: var(--color-header-inactive-bg);
   --color-door-fg: var(--color-header-inactive-fg);
-  --color-focus-ring: var(--color-header-active-fg);
+  --color-focus-ring: var(--vscode-focusBorder);
 
   /* Terminal — xterm.js content, orthogonal to chrome */
   --color-terminal-bg: var(--vscode-terminal-background);
