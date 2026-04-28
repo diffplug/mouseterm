@@ -69,14 +69,21 @@ export { setDefaultShellOpts, getDefaultShellOpts } from './shell-defaults';
 // --- Watch for VSCode theme changes and re-apply xterm themes ---
 // VSCode signals theme changes by updating CSS variables and body classes.
 let themeObserverStarted = false;
+let lastAppliedThemeKey: string | null = null;
 function startThemeObserver(): void {
   if (themeObserverStarted) return;
   themeObserverStarted = true;
 
   const observer = new MutationObserver(() => {
     const theme = getTerminalTheme();
+    // body.style mutations fire often (focus-ring writes, etc.); only walk
+    // the registry when the terminal palette actually changed.
+    const key = JSON.stringify(theme);
+    if (key === lastAppliedThemeKey) return;
+    lastAppliedThemeKey = key;
     for (const entry of registry.values()) {
       entry.terminal.options.theme = theme;
+      paintTerminalHost(entry.element, entry.terminal, theme.background);
     }
   });
 
@@ -298,6 +305,35 @@ function getTerminalTheme(): Record<string, string> {
   };
 }
 
+// Coupled to xterm's internal class names. If xterm renames any of these in
+// a future upgrade we'd silently regress to a sub-row gap at the bottom of
+// the pane (the very thing this paints over) — warn loudly the first time
+// it happens so the upgrade is caught in dev/staging instead of prod.
+const XTERM_HOST_SELECTOR = '.xterm-screen, .xterm-scrollable-element, .xterm-viewport';
+let xtermSelectorWarned = false;
+
+function paintTerminalHost(element: HTMLDivElement, terminal: Terminal, background: string): void {
+  element.style.backgroundColor = background;
+  element.style.borderRadius = 'inherit';
+
+  const xtermElement = terminal.element as HTMLElement | undefined;
+  if (xtermElement) {
+    xtermElement.style.backgroundColor = background;
+    xtermElement.style.borderRadius = 'inherit';
+  }
+
+  if (typeof element.querySelectorAll !== 'function') return;
+  const hosts = element.querySelectorAll<HTMLElement>(XTERM_HOST_SELECTOR);
+  if (hosts.length === 0 && xtermElement && !xtermSelectorWarned) {
+    xtermSelectorWarned = true;
+    console.warn(`[mouseterm] paintTerminalHost: no elements matched ${XTERM_HOST_SELECTOR} — xterm DOM may have changed.`);
+    return;
+  }
+  hosts.forEach((el) => {
+    el.style.backgroundColor = background;
+  });
+}
+
 // --- Input analysis ---
 
 function inputContainsEnter(data: string): boolean {
@@ -360,11 +396,12 @@ function setupTerminalEntry(id: string): TerminalEntry {
   const editorFontSize = parseInt(styles.getPropertyValue('--vscode-editor-font-size'), 10) || 12;
   const editorFontFamily = styles.getPropertyValue('--vscode-editor-font-family').trim() || "'SF Mono', Menlo, Monaco, monospace";
 
+  const theme = getTerminalTheme();
   const terminal = new Terminal({
     fontSize: editorFontSize,
     fontFamily: editorFontFamily,
     cursorBlink: true,
-    theme: getTerminalTheme(),
+    theme,
   });
 
   const fit = new FitAddon();
@@ -374,6 +411,7 @@ function setupTerminalEntry(id: string): TerminalEntry {
   element.style.width = '100%';
   element.style.height = '100%';
   terminal.open(element);
+  paintTerminalHost(element, terminal, theme.background);
 
   // Wire PTY events
   const handleData = (detail: { id: string; data: string }) => {

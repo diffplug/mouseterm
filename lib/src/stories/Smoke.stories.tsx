@@ -2,33 +2,33 @@ import type { Meta, StoryObj } from '@storybook/react';
 
 function ThemeCheck() {
   return (
-    <div className="p-8 bg-surface text-foreground min-h-screen">
+    <div className="p-8 bg-app-bg text-app-fg min-h-screen">
       <h1 className="text-lg font-bold mb-2">Storybook Smoke Test</h1>
       <p className="text-muted mb-4">Theme tokens are working if you see colored squares below.</p>
       <div className="flex gap-3">
         <div className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 rounded bg-accent" />
-          <span className="text-[10px] text-muted">accent</span>
+          <div className="w-12 h-12 rounded bg-header-active-bg" />
+          <span className="text-sm text-muted">header-active-bg</span>
         </div>
         <div className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 rounded bg-surface-alt" />
-          <span className="text-[10px] text-muted">surface-alt</span>
+          <div className="w-12 h-12 rounded bg-header-inactive-bg" />
+          <span className="text-sm text-muted">header-inactive-bg</span>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <div className="w-12 h-12 rounded bg-app-bg" />
+          <span className="text-sm text-muted">surface</span>
         </div>
         <div className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded bg-surface-raised" />
-          <span className="text-[10px] text-muted">surface-raised</span>
+          <span className="text-sm text-muted">surface-raised</span>
         </div>
         <div className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded bg-error" />
-          <span className="text-[10px] text-muted">error</span>
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 rounded bg-tab-active-bg border border-border" />
-          <span className="text-[10px] text-muted">tab-active</span>
+          <span className="text-sm text-muted">error</span>
         </div>
         <div className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 rounded bg-terminal-bg border border-border" />
-          <span className="text-[10px] text-muted">terminal-bg</span>
+          <span className="text-sm text-muted">terminal-bg</span>
         </div>
       </div>
     </div>

@@ -1,32 +1,34 @@
 import type { MouseTermTheme } from './types';
+import { getActiveThemeId, getAllThemes, getTheme, setActiveThemeId } from './store';
+import { completeThemeVars } from './vscode-color-resolver';
 
-/** Previously applied variable names — tracked for cleanup. */
 let appliedVarNames: string[] = [];
+let lastApplied: MouseTermTheme | null = null;
 
-/**
- * Apply a theme by setting --vscode-* CSS variables on document.body.
- *
- * Also manages body classes (vscode-light / vscode-dark) so that
- * theme.css fallback selectors activate correctly.
- *
- * The MutationObserver in terminal-registry.ts detects the style change
- * and re-reads the theme for all xterm.js terminals.
- */
+const HOST_TYPOGRAPHY_VARS: Record<string, string> = {
+  '--vscode-font-size': '13px',
+  '--vscode-editor-font-size': '13px',
+  '--vscode-font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  '--vscode-editor-font-family':
+    "'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+};
+
 export function applyTheme(theme: MouseTermTheme): void {
   if (typeof document === 'undefined') return;
+  if (theme === lastApplied) return;
 
-  // Clear previously applied variables
   for (const name of appliedVarNames) {
     document.body.style.removeProperty(name);
   }
 
-  // Apply new variables
-  appliedVarNames = Object.keys(theme.vars);
-  for (const [name, value] of Object.entries(theme.vars)) {
+  // Imported theme JSON usually omits VSCode registry defaults; materialize
+  // them here so theme.css can read --vscode-* directly without fallbacks.
+  const vars = completeThemeVars({ ...HOST_TYPOGRAPHY_VARS, ...theme.vars }, theme.type);
+  appliedVarNames = Object.keys(vars);
+  for (const [name, value] of Object.entries(vars)) {
     document.body.style.setProperty(name, value);
   }
 
-  // Set body class for light/dark so theme.css fallbacks work
   if (theme.type === 'light') {
     document.body.classList.add('vscode-light');
     document.body.classList.remove('vscode-dark');
@@ -34,4 +36,19 @@ export function applyTheme(theme: MouseTermTheme): void {
     document.body.classList.add('vscode-dark');
     document.body.classList.remove('vscode-light');
   }
+
+  lastApplied = theme;
+}
+
+/** Apply the persisted active theme (or the first bundled theme when the
+ *  stored ID no longer exists). Idempotent and safe to call before render so
+ *  the first paint already has --vscode-* set on body. Returns the theme that
+ *  was applied, or null when no themes are available (e.g. SSR). */
+export function restoreActiveTheme(): MouseTermTheme | null {
+  const all = getAllThemes();
+  const theme = getTheme(getActiveThemeId()) ?? all[0];
+  if (!theme) return null;
+  setActiveThemeId(theme.id);
+  applyTheme(theme);
+  return theme;
 }

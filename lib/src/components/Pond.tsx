@@ -14,10 +14,20 @@ import { createPortal } from 'react-dom';
 import { TerminalPane } from './TerminalPane';
 import { Baseboard } from './Baseboard';
 import { tv } from 'tailwind-variants';
-import { PopupButtonRow, popupButton } from './design';
+import {
+  DOOR_SELECTION_BORDER_RADIUS,
+  PopupButtonRow,
+  TERMINAL_BORDER_RADIUS_PX,
+  TERMINAL_BOTTOM_RADIUS_CLASS,
+  TERMINAL_SELECTION_BORDER_RADIUS,
+  TERMINAL_TOP_RADIUS_CLASS,
+  popupButton,
+} from './design';
 import { HeaderActionButton } from './HeaderActionButton';
 import { TodoAlertDialog } from './TodoAlertDialog';
-import { KillConfirmOverlay, orchestrateKill, randomKillChar, type ConfirmKill } from './KillConfirm';
+import { KILL_CONFIRM_MS, KILL_SHAKE_MS, KillConfirmOverlay, orchestrateKill, randomKillChar, type ConfirmKill } from './KillConfirm';
+import { computeDynamicPalette } from '../lib/dynamic-palette';
+import { useFocusRingColor } from '../lib/themes/use-focus-ring-color';
 import { BellIcon, BellSlashIcon, SplitHorizontalIcon, SplitVerticalIcon, ArrowsOutIcon, ArrowsInIcon, ArrowLineDownIcon, XIcon, CursorClickIcon, SelectionSlashIcon } from '@phosphor-icons/react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
@@ -87,11 +97,11 @@ export type PondEvent =
 // --- Variants ---
 
 const tabVariant = tv({
-  base: 'flex h-full w-full cursor-grab items-center gap-1.5 rounded-t pl-2 pr-[5px] text-[12px] leading-none font-mono tracking-normal select-none active:cursor-grabbing',
+  base: `flex h-full w-full cursor-grab items-center gap-1.5 ${TERMINAL_TOP_RADIUS_CLASS} pl-2 pr-[5px] text-sm leading-none font-mono tracking-normal select-none active:cursor-grabbing`,
   variants: {
     state: {
-      selected: 'bg-tab-selected-bg text-tab-selected-fg',
-      inactive: 'bg-tab-inactive-bg text-tab-inactive-fg',
+      active: 'bg-header-active-bg text-header-active-fg',
+      inactive: 'bg-header-inactive-bg text-header-inactive-fg',
     },
   },
 });
@@ -316,7 +326,7 @@ function TerminalPanel({ api }: IDockviewPanelProps) {
   }, [api, freshlySpawned]);
 
   return (
-    <div ref={elRef} className="h-full w-full" onMouseDown={() => actions.onClickPanel(api.id)}>
+    <div ref={elRef} className={`h-full w-full overflow-hidden bg-terminal-bg ${TERMINAL_BOTTOM_RADIUS_CLASS}`} onMouseDown={() => actions.onClickPanel(api.id)}>
       <TerminalPane id={api.id} isFocused={isFocused} />
     </div>
   );
@@ -345,7 +355,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
     : 'TUI is intercepting mouse commands. Click to override.';
   const mouseIconAriaLabel = inOverride ? 'Restore mouse capture' : 'Override mouse capture';
   const isSelected = selectedId === api.id;
-  const showSelectedHeader = mode === 'passthrough' && isSelected && windowFocused;
+  const isActiveHeader = mode === 'passthrough' && isSelected && windowFocused;
   const isRenaming = renamingId === api.id;
   const tabRef = useRef<HTMLDivElement>(null);
   const [mouseIconAnchor, setMouseIconAnchor] = useState<HTMLDivElement | null>(null);
@@ -362,8 +372,8 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const alertButtonTooltip = activity.status === 'ALERT_RINGING'
     ? 'Alert ringing'
     : activity.status === 'ALERT_DISABLED'
-      ? 'Enable [a]lert'
-      : 'Disable [a]lert';
+      ? '[a] Enable alerts'
+      : '[a] Disable alerts';
   const alertButtonTooltipDetail = activity.status === 'ALERT_RINGING'
     ? 'Click to dismiss and show options'
     : 'Right-click for options';
@@ -393,7 +403,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   return (
     <div
       ref={tabRef}
-      className={tabVariant({ state: showSelectedHeader ? 'selected' : 'inactive' })}
+      className={tabVariant({ state: isActiveHeader ? 'active' : 'inactive' })}
       onMouseDown={() => actions.onClickPanel(api.id)}
     >
       <div className="flex flex-1 min-w-0 items-center gap-2">
@@ -423,10 +433,8 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         )}
         <HeaderActionButton
           className={[
-            'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 hover:bg-foreground/10',
-            activity.status === 'ALERT_RINGING'
-              ? 'text-warning'
-              : 'text-muted hover:text-foreground',
+            'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 hover:bg-current/10',
+            activity.status === 'ALERT_RINGING' ? 'text-warning' : '',
           ].join(' ')}
           onMouseDownCapture={(e) => {
             if (e.button !== 0) return;
@@ -466,7 +474,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             type="button"
             data-session-todo-for={api.id}
             data-flourishing={todoPill.flourishing ? 'true' : 'false'}
-            className="todo-pill-shell shrink-0 rounded border border-muted px-1.5 py-px text-[9px] font-semibold tracking-[0.08em] text-muted transition-colors hover:bg-foreground/10"
+            className="todo-pill-shell shrink-0 rounded border border-current px-1.5 py-px text-xs font-semibold tracking-[0.08em] transition-colors hover:bg-current/10"
             aria-label="Dismiss TODO"
             aria-hidden={todoPill.flourishing ? true : undefined}
             onMouseDown={(e) => e.stopPropagation()}
@@ -484,7 +492,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           {showMouseIcon && (
             <div ref={setMouseIconAnchor} className="ml-1 shrink-0">
               <HeaderActionButton
-                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 text-muted hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 hover:bg-current/10"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -514,19 +522,19 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           {tier === 'full' && (
             <div className="ml-1 flex shrink-0 items-center gap-0.5">
               <HeaderActionButton
-                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-current/10"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitH(api.id); }}
                 ariaLabel="Split left/right"
                 tooltip='Split left/right [|] or [%]'
               ><SplitHorizontalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
-                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-current/10"
                 onClick={(e) => { e.stopPropagation(); actions.onSplitV(api.id); }}
                 ariaLabel="Split top/bottom"
                 tooltip='Split top/bottom [-] or ["]'
               ><SplitVerticalIcon size={14} /></HeaderActionButton>
               <HeaderActionButton
-                className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+                className="flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-current/10"
                 onClick={(e) => { e.stopPropagation(); actions.onZoom(api.id); }}
                 ariaLabel={zoomed ? 'Unzoom' : 'Zoom'}
                 tooltip={zoomed ? 'Unzoom [z]' : 'Zoom [z]'}
@@ -536,13 +544,13 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
           {/* Minimize / Kill controls — always visible */}
           <div className="ml-1 flex shrink-0 items-center gap-0.5">
             <HeaderActionButton
-              className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-foreground/10 hover:text-foreground"
+              className="flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-current/10"
               onClick={(e) => { e.stopPropagation(); actions.onMinimize(api.id); }}
               ariaLabel="Minimize"
               tooltip="Minimize [m] or [d]"
             ><ArrowLineDownIcon size={14} /></HeaderActionButton>
             <HeaderActionButton
-              className="flex h-5 min-w-5 items-center justify-center rounded text-muted transition-colors hover:bg-error/10 hover:text-error"
+              className="flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-error/10 hover:text-error"
               onClick={(e) => { e.stopPropagation(); actions.onKill(api.id); }}
               ariaLabel="Kill"
               tooltip="Kill [k] or [x]"
@@ -582,20 +590,42 @@ function useWindowFocused(): boolean {
   return focused;
 }
 
-function readSelectionColor() {
-  return getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim();
-}
-
-function useSelectionColor() {
-  const [color, setColor] = useState(readSelectionColor);
-
+// Picks --color-door-* and --color-focus-ring at runtime by ΔE OKLab against
+// app-bg. Algorithm and rationale: docs/specs/theme.md.
+function useDynamicPalette() {
   useEffect(() => {
-    const mo = new MutationObserver(() => setColor(readSelectionColor()));
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
-    return () => mo.disconnect();
-  }, []);
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!ctx) return;
 
-  return color;
+    // Skip writes when value is unchanged. The MutationObserver below watches
+    // body's style attribute, so any unconditional setProperty would re-fire
+    // it (and ping-pong with the resolver in vscode-color-resolver.ts, which
+    // also writes to body.style).
+    const lastPublished = new Map<string, string>();
+    const publish = (name: string, value: string) => {
+      if (lastPublished.get(name) === value) return;
+      lastPublished.set(name, value);
+      document.body.style.setProperty(name, value);
+    };
+
+    const update = () => {
+      const dynamicPalette = computeDynamicPalette(getComputedStyle(document.body), ctx);
+      for (const [name, value] of Object.entries(dynamicPalette)) {
+        publish(name, value);
+      }
+    };
+
+    update();
+    const mo = new MutationObserver(update);
+    mo.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+    return () => {
+      mo.disconnect();
+      lastPublished.clear();
+      document.body.style.removeProperty('--color-door-bg');
+      document.body.style.removeProperty('--color-door-fg');
+      document.body.style.removeProperty('--color-focus-ring');
+    };
+  }, []);
 }
 
 /** Build a closed SVG path for a rounded rectangle.
@@ -637,16 +667,13 @@ export function MarchingAntsRect({ width, height, isDoor, color, paused }: {
   const [dashStyle, setDashStyle] = useState<{ dasharray: string; offset: number } | null>(null);
   const ma = cfg.marchingAnts;
 
-  // Door: rounded top, flat bottom.  Pane: all corners rounded.
-  const r = 8; // ~0.5rem
-  const rDoor = 6; // ~0.375rem
-  const tl = isDoor ? rDoor : r;
-  const tr = isDoor ? rDoor : r;
+  // Door: rounded top, flat bottom. Pane: all corners rounded.
+  const r = TERMINAL_BORDER_RADIUS_PX;
   const br = isDoor ? 0 : r;
   const bl = isDoor ? 0 : r;
   const inset = ma.strokeWidth / 2;
 
-  const d = roundedRectPath(width, height, tl, tr, br, bl, inset);
+  const d = roundedRectPath(width, height, r, r, br, bl, inset);
 
   useLayoutEffect(() => {
     const path = svgRef.current;
@@ -690,7 +717,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef
 }) {
   const { elements: panelElements, version: panelVersion } = useContext(PanelElementsContext);
   const { elements: doorElements, version: doorVersion } = useContext(DoorElementsContext);
-  const selectionColor = useSelectionColor();
+  const selectionColor = useFocusRingColor();
   const windowFocused = useContext(WindowFocusedContext);
   const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const isDoor = selectedType === 'door';
@@ -710,7 +737,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef
       if (!targetEl) return;
 
       const targetRect = targetEl.getBoundingClientRect();
-      const inflate = selectedType === 'door' ? 2 : INFLATE;
+      const inflate = selectedType === 'door' ? 0 : INFLATE;
       setRect({
         top: targetRect.top - inflate,
         left: targetRect.left - inflate,
@@ -747,7 +774,7 @@ function SelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef
   };
 
   if (mode === 'passthrough') {
-    style.borderRadius = isDoor ? '0.375rem 0.375rem 0 0' : '0.5rem';
+    style.borderRadius = isDoor ? DOOR_SELECTION_BORDER_RADIUS : TERMINAL_SELECTION_BORDER_RADIUS;
     style.border = `1px solid ${selectionColor}`;
     return <div ref={overlayElRef} style={style} />;
   }
@@ -839,10 +866,10 @@ export function Pond({
   const [selectedType, setSelectedType] = useState<PondSelectionKind>('pane');
 
   const windowFocused = useWindowFocused();
+  useDynamicPalette();
 
   // UI state
   const [confirmKill, setConfirmKill] = useState<ConfirmKill | null>(null);
-  useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
   const [renamingPaneId, setRenamingPaneId] = useState<string | null>(null);
   const [doors, setDoors] = useState<DooredItem[]>(() => (initialDoors ?? []) as DooredItem[]);
   const [zoomed, setZoomed] = useState(false);
@@ -870,8 +897,32 @@ export function Pond({
   const renamingRef = useRef(renamingPaneId);
   renamingRef.current = renamingPaneId;
   const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSavePromiseRef = useRef<Promise<void> | null>(null);
+
+  useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
+
+  useEffect(() => () => {
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+  }, []);
+
+  // Confirm runs orchestrateKill concurrently with the letter flash so the
+  // pane fade begins while the flash is still playing.
+  const rejectKill = useCallback(() => {
+    const ck = confirmKillRef.current;
+    if (!ck || ck.exit) return;
+    setConfirmKill({ ...ck, exit: 'shake' });
+    shakeTimerRef.current = setTimeout(() => setConfirmKill(null), KILL_SHAKE_MS);
+  }, []);
+  const acceptKill = useCallback((onExit: () => void) => {
+    const ck = confirmKillRef.current;
+    if (!ck || ck.exit) return;
+    setConfirmKill({ ...ck, exit: 'confirm' });
+    onExit();
+    confirmTimerRef.current = setTimeout(() => setConfirmKill(null), KILL_CONFIRM_MS);
+  }, []);
 
   // --- External event notifications ---
   const onEventRef = useRef(onEvent);
@@ -1364,24 +1415,15 @@ export function Pond({
       if (ck) {
         e.preventDefault();
         e.stopPropagation();
-        if (e.key === 'Escape') {
-          setConfirmKill(null);
-          return;
-        }
+        // Already exiting — swallow further input so a second key doesn't
+        // stack dismissals or fire orchestrateKill twice.
+        if (ck.exit) return;
         if (e.key.toLowerCase() === ck.char.toLowerCase()) {
-          // Dismiss the modal first so it doesn't hover over the kill animation.
-          // orchestrateKill fades the pane in place, then removes + FLIPs the
-          // survivors, handling selection updates itself (since the fade is
-          // async and selection must wait until the actual removal fires).
-          setConfirmKill(null);
-          orchestrateKill(api, ck.id, selectPanel, setSelectedId, killInProgressRef, overlayElRef);
+          acceptKill(() => orchestrateKill(api, ck.id, selectPanel, setSelectedId, killInProgressRef, overlayElRef));
           return;
         }
-        // Wrong key — shake then dismiss
-        if (!ck.shaking) {
-          setConfirmKill({ ...ck, shaking: true });
-          shakeTimerRef.current = setTimeout(() => setConfirmKill(null), 400);
-        }
+        // Escape and wrong letter both reject via the shake gesture.
+        rejectKill();
         return;
       }
 
@@ -1794,10 +1836,10 @@ export function Pond({
           <WindowFocusedContext.Provider value={windowFocused}>
           <FreshlySpawnedContext.Provider value={freshlySpawnedRef.current}>
           <DialogKeyboardContext.Provider value={setDialogKeyboardActive}>
-          <div className="flex-1 min-h-0 flex flex-col bg-surface text-foreground font-sans overflow-hidden">
-            {/* Dockview */}
-            <div className="flex-1 min-h-0 relative p-1.5">
-              <div ref={dockviewContainerRef} className="absolute inset-1.5">
+          <div className="flex-1 min-h-0 flex flex-col bg-app-bg text-app-fg font-sans overflow-hidden">
+            {/* Dockview — 2px bottom inset keeps rounded panes distinct from the baseboard. */}
+            <div className="flex-1 min-h-0 relative px-1.5 pt-1.5 pb-0.5">
+              <div ref={dockviewContainerRef} className="absolute inset-x-1.5 top-1.5 bottom-0.5">
                 <DockviewReact
                   components={components}
                   tabComponents={tabComponents}
@@ -1810,14 +1852,14 @@ export function Pond({
             </div>
 
             {/* Baseboard — always visible */}
-            <Baseboard items={doors} activeId={selectedType === 'door' ? selectedId : null} onReattach={handleReattach} notice={baseboardNotice} />
+            <Baseboard items={doors} onReattach={handleReattach} notice={baseboardNotice} />
 
             {/* Kill confirmation overlay — centered over the pane being killed */}
             {confirmKill && (
               <KillConfirmOverlay
                 confirmKill={confirmKill}
                 panelElements={panelElements}
-                onCancel={() => setConfirmKill(null)}
+                onCancel={() => rejectKill()}
               />
             )}
 

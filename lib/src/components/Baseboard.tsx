@@ -1,19 +1,17 @@
 import { useRef, useState, useMemo, useLayoutEffect, useContext, useSyncExternalStore, type ReactNode } from 'react';
 import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { Door } from './Door';
-import { DoorElementsContext, WindowFocusedContext, type DooredItem } from './Pond';
+import { DoorElementsContext, type DooredItem } from './Pond';
 import { DEFAULT_ACTIVITY_STATE, getActivitySnapshot, subscribeToActivity } from '../lib/terminal-registry';
 
 export interface BaseboardProps {
   items: DooredItem[];
-  activeId: string | null;
   onReattach: (item: DooredItem) => void;
   notice?: ReactNode;
 }
 
-export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProps) {
+export function Baseboard({ items, onReattach, notice }: BaseboardProps) {
   const { elements: doorElements, bumpVersion } = useContext(DoorElementsContext);
-  const windowFocused = useContext(WindowFocusedContext);
   const activityStates = useSyncExternalStore(subscribeToActivity, getActivitySnapshot);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -132,7 +130,7 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
   return (
     <div
       ref={containerRef}
-      className="flex h-8 shrink-0 items-end gap-1.5 border-t border-border bg-surface-alt px-2.5 pt-1"
+      className="flex h-7 shrink-0 items-end gap-1.5 bg-app-bg px-1.5 pt-1"
     >
       {/* Hidden measurement pass — doors + overflow arrow */}
       <div ref={measureEl} className="absolute -left-[9999px] flex gap-1.5" aria-hidden>
@@ -149,19 +147,19 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
           );
         })}
       </div>
-      <button ref={arrowMeasureEl} className="absolute -left-[9999px] flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-[9px] font-medium font-mono tracking-[0.06em] text-muted" aria-hidden tabIndex={-1}>
+      <button ref={arrowMeasureEl} className="absolute -left-[9999px] flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-sm font-medium font-mono tracking-[0.06em] text-muted" aria-hidden tabIndex={-1}>
         9 more <CaretRightIcon size={10} weight="bold" />
       </button>
 
       {items.length === 0 && showHint && (
-        <span className="truncate pb-1 text-[9px] font-mono tracking-[0.06em] text-muted">
+        <span className="truncate pb-1 text-sm font-mono tracking-[0.06em] text-muted">
           {shortcutHint}
         </span>
       )}
 
       {hiddenLeft > 0 && (
         <button
-          className="flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-[9px] font-medium font-mono tracking-[0.06em] text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          className="flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-sm font-medium font-mono tracking-[0.06em] text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
           onClick={scrollLeft}
         >
           <CaretLeftIcon size={10} weight="bold" />
@@ -176,8 +174,6 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
             key={item.id}
             doorId={item.id}
             title={item.title}
-            isActive={activeId === item.id}
-            windowFocused={windowFocused}
             status={activity.status}
             todo={activity.todo}
             onClick={() => onReattach(item)}
@@ -187,7 +183,7 @@ export function Baseboard({ items, activeId, onReattach, notice }: BaseboardProp
 
       {hiddenRight > 0 && (
         <button
-          className="ml-auto flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-[9px] font-medium font-mono tracking-[0.06em] text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          className="ml-auto flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-sm font-medium font-mono tracking-[0.06em] text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
           onClick={scrollRight}
         >
           {hiddenRight} more

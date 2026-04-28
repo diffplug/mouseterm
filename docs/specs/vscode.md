@@ -2,7 +2,7 @@
 
 ## What's built
 
-MouseTerm has two hosting modes: a `WebviewView` in the bottom panel (alongside Terminal, Problems, Output) and `WebviewPanel` editor tabs (via `mouseterm.open`, supports multiple instances). Both restore across "Developer: Reload Window". PTY lifecycle is fully decoupled from the webview — PTYs live in the extension host via `pty-manager.ts`, survive panel visibility toggling, and replay buffered output on **resume**. Session persistence works across cold **restore**: pane layout, CWD, scrollback, alert state (enabled/disabled + todo), and resume commands are saved and restored on cold start. The view uses `workspaceState` for persistence; editor panels use VS Code's per-panel `vscode.setState()` so multiple panels don't clobber each other. Alert state is merged into every periodic save (not just deactivate) so it survives even if VS Code kills the extension host before deactivate completes. A `WebviewPanelSerializer` handles editor tab restoration; `onWebviewPanel:mouseterm` activation event ensures the extension activates early enough. Theme integration uses a two-layer CSS variable system mapping `--vscode-*` tokens to semantic `--mt-*` variables, covering all 16 ANSI colors, surfaces, typography, and borders. CSP is strict with nonce-gated scripts.
+MouseTerm has two hosting modes: a `WebviewView` in the bottom panel (alongside Terminal, Problems, Output) and `WebviewPanel` editor tabs (via `mouseterm.open`, supports multiple instances). Both restore across "Developer: Reload Window". PTY lifecycle is fully decoupled from the webview — PTYs live in the extension host via `pty-manager.ts`, survive panel visibility toggling, and replay buffered output on **resume**. Session persistence works across cold **restore**: pane layout, CWD, scrollback, alert state (enabled/disabled + todo), and resume commands are saved and restored on cold start. The view uses `workspaceState` for persistence; editor panels use VS Code's per-panel `vscode.setState()` so multiple panels don't clobber each other. Alert state is merged into every periodic save (not just deactivate) so it survives even if VS Code kills the extension host before deactivate completes. A `WebviewPanelSerializer` handles editor tab restoration; `onWebviewPanel:mouseterm` activation event ensures the extension activates early enough. Theme integration uses VSCode `--vscode-*` tokens plus MouseTerm semantic `--color-*` tokens, with a small resolver that materializes missing consumed VSCode colors from registry defaults. CSP is strict with nonce-gated scripts.
 
 **Architecture:**
 
@@ -25,7 +25,7 @@ Frontend Library (lib/src/)
 ├── App.tsx                       — error boundary wrapper
 ├── main.tsx                      — entry point
 ├── cfg.ts                        — timing config (marching ants, alert thresholds)
-├── theme.css                     — --vscode-* -> --mt-* variable system
+├── theme.css                     — --vscode-* -> semantic --color-* tokens
 ├── index.css                     — dockview overrides, marching-ants keyframe
 ├── components/
 │   ├── Pond.tsx                  — pane manager (dockview), mode system, keyboard shortcuts
@@ -237,21 +237,19 @@ interface PersistedDoor {
 
 ### Theme integration
 
-Three-layer CSS variable system: VS Code injects `--vscode-*` tokens; `lib/src/theme.css` maps them to semantic `--mt-*` variables with hardcoded fallbacks; a Tailwind v4 `@theme` block re-exports them as `--color-*` tokens for use in utility classes.
+Two-layer CSS variable system: VS Code injects `--vscode-*` tokens; `lib/src/theme.css` maps them directly to semantic `--color-*` tokens for use in Tailwind utility classes. The webview entry point installs `installVscodeThemeVarResolver()` before React renders. That resolver reads VSCode-provided variables, materializes only missing MouseTerm-consumed variables on `body.style`, and watches `body`/`html` class and style mutations so theme changes recompute those materialized values.
 
 Example of the pattern:
 ```css
-/* theme.css: --mt-* layer with --vscode-* source and fallback */
---mt-surface: var(--vscode-editor-background, #1e1e1e);
---mt-ansi-red: var(--vscode-terminal-ansiRed, #cd3131);
-
-/* theme.css: Tailwind @theme registration */
---color-surface: var(--mt-surface);
+/* theme.css: direct semantic binding */
+--color-app-bg: var(--vscode-sideBar-background);
+--color-app-fg: var(--vscode-sideBar-foreground);
+--color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground);
 ```
 
-Full mapping in `lib/src/theme.css` covers: surfaces (3), text (2), accent/borders (4), tabs (6), terminal bg/fg/cursor/selection (4), all 16 ANSI colors + bright variants, badges (2), semantic status (3), inputs (2), buttons (3), and selection (2). Dark mode fallbacks are in `:root`; light mode overrides are in `body.vscode-light`; a standalone fallback uses `@media (prefers-color-scheme: light)` for non-VS Code contexts.
+`theme.css` intentionally has no hardcoded color defaults or CSS variable fallback chains. The resolver duplicates VSCode registry defaults for the MouseTerm-consumed color IDs, including `null` default behavior where MouseTerm needs a concrete CSS variable. In particular, `list.inactiveSelectionForeground` resolves to normal foreground inheritance, not `list.activeSelectionForeground`; this matches VSCode's list/tree selected-row behavior for built-in Light.
 
-A `MutationObserver` in `terminal-registry.ts` watches for VS Code theme changes on `body`/`html` (class and style attribute mutations) and live-updates all xterm.js instances.
+A `MutationObserver` in `terminal-registry.ts` watches for VS Code theme changes on `body`/`html` (class and style attribute mutations) and live-updates all xterm.js instances. The theme resolver has its own observer on the same attributes so derived `--vscode-*` variables stay in sync before xterm rereads the terminal palette.
 
 ### CSP policy
 

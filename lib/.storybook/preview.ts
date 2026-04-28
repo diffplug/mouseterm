@@ -11,7 +11,8 @@ import {
   primeActivity,
   type ActivityState,
 } from '../src/lib/terminal-registry';
-import { VSCODE_THEMES } from './themes';
+import { computeDynamicPalette } from '../src/lib/dynamic-palette';
+import { VSCODE_THEMES, VSCODE_THEME_TYPES } from './themes';
 import { cfg } from '../src/cfg';
 
 // Initialize fake platform once at module scope
@@ -27,6 +28,12 @@ if (window?.navigator?.userAgent?.includes('Chromatic')) {
 const ALL_THEME_VARS = new Set(
   Object.values(VSCODE_THEMES).flatMap((theme) => Object.keys(theme)),
 );
+
+const DYNAMIC_PALETTE_VARS = [
+  '--color-door-bg',
+  '--color-door-fg',
+  '--color-focus-ring',
+] as const;
 
 const preview: Preview = {
   parameters: {
@@ -51,14 +58,29 @@ const preview: Preview = {
     (Story, context) => {
       const themeName = context.globals.theme as string;
       const theme = VSCODE_THEMES[themeName];
+      const themeType = VSCODE_THEME_TYPES[themeName];
       const root = document.documentElement;
+      const body = document.body;
       // Clear all theme variables first to prevent stale values from previous theme
       for (const key of ALL_THEME_VARS) {
         root.style.removeProperty(key);
       }
+      for (const key of DYNAMIC_PALETTE_VARS) {
+        body.style.removeProperty(key);
+      }
       if (theme) {
         for (const [key, value] of Object.entries(theme)) {
           root.style.setProperty(key, value);
+        }
+      }
+      body.classList.toggle('vscode-light', themeType === 'light');
+      body.classList.toggle('vscode-dark', themeType !== 'light');
+
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (ctx) {
+        const dynamicPalette = computeDynamicPalette(getComputedStyle(body), ctx);
+        for (const [key, value] of Object.entries(dynamicPalette)) {
+          body.style.setProperty(key, value);
         }
       }
       // Force remount on theme change so terminals pick up new colors

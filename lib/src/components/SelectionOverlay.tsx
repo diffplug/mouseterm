@@ -10,6 +10,7 @@ import {
 import { normalizeSelection } from '../lib/selection-text';
 import { getTerminalOverlayDims } from '../lib/terminal-registry';
 import { IS_MAC } from '../lib/platform';
+import { useFocusRingColor } from '../lib/themes/use-focus-ring-color';
 import { PopupButtonRow } from './design';
 
 interface Rect {
@@ -106,6 +107,9 @@ export function SelectionOverlay({ terminalId }: Props) {
   const states = useSyncExternalStore(subscribeToMouseSelection, getMouseSelectionSnapshot);
   // Subscribe to render tick so we re-render whenever xterm scrolls or resizes.
   useSyncExternalStore(subscribeToRenderTick, getRenderTick);
+  // Pulled outside render-tick reads: --color-focus-ring only changes on theme
+  // switch, but onRender fires every output frame.
+  const focusRingColor = useFocusRingColor();
 
   const state = states.get(terminalId) ?? DEFAULT_MOUSE_SELECTION_STATE;
   const selection = state.selection;
@@ -128,15 +132,7 @@ export function SelectionOverlay({ terminalId }: Props) {
     zIndex: 10,
   };
 
-  // Border-only highlight. Pick a color with reliable contrast across themes:
-  // prefer focusBorder (typically fully opaque accent), fall back to the
-  // terminal foreground, then selectionBackground, then a hard-coded cornflower.
-  const styles = getComputedStyle(document.body);
-  const borderColor =
-    styles.getPropertyValue('--vscode-focusBorder').trim()
-    || styles.getPropertyValue('--vscode-terminal-foreground').trim()
-    || styles.getPropertyValue('--vscode-terminal-selectionBackground').trim()
-    || 'rgb(100, 149, 237)';
+  const borderColor = focusRingColor || 'rgb(100, 149, 237)';
   const pathD = rectsToPath(rects);
 
   // Mid-drag hint. Placed outside the selection on the side opposite the

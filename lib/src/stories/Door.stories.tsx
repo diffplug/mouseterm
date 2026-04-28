@@ -14,7 +14,7 @@ function DoorStory({
       className={reducedMotion ? '[&_button]:!animate-none [&_*]:!transition-none' : undefined}
       style={{ width }}
     >
-      <div className="bg-surface-alt flex h-16 items-end border-t border-border px-4">
+      <div className="bg-app-bg flex h-16 items-end border-t border-border px-4">
         <Door {...props} />
       </div>
     </div>
@@ -26,7 +26,6 @@ const meta: Meta<typeof DoorStory> = {
   component: DoorStory,
   args: {
     title: 'build-server',
-    isActive: false,
     status: 'ALERT_DISABLED',
     todo: false,
     width: 260,
@@ -34,7 +33,6 @@ const meta: Meta<typeof DoorStory> = {
   },
   argTypes: {
     title: { control: 'text' },
-    isActive: { control: 'boolean' },
     status: { control: 'radio', options: ['ALERT_DISABLED', 'NOTHING_TO_SHOW', 'MIGHT_BE_BUSY', 'BUSY', 'MIGHT_NEED_ATTENTION', 'ALERT_RINGING'] },
     todo: { control: 'boolean' },
     width: { control: 'number' },
@@ -61,4 +59,3 @@ export const LongTitleWithIndicators: Story = {
     status: 'NOTHING_TO_SHOW',
   },
 };
-export const ActiveDoorRinging: Story = { args: { isActive: true, status: 'ALERT_RINGING' } };

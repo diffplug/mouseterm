@@ -26,7 +26,7 @@ The user can navigate between all elements using the mouse, or by entering `comm
 Pond
 ├── Context providers (Mode, SelectedId, PondActions, PanelElements, DoorElements, RenamingId, Zoomed, WindowFocused)
 │   └── div (h-screen, flex col)
-│       ├── Dockview wrapper (flex-1, 6px padding around edges)
+│       ├── Dockview wrapper (flex-1, 6px top/sides inset, 2px bottom inset)
 │       │   ├── DockviewReact (tiling layout engine, singleTabMode="fullwidth")
 │       │   │   └── Groups (one session per group, no tab stacking)
 │       │   │       ├── TerminalPanel → TerminalPane → xterm.js
@@ -70,7 +70,7 @@ The content area is a tiling layout of panes, powered by dockview. Each pane occ
 
 ### Pane header
 
-Each pane has a 30px header that doubles as a drag handle. The header uses `cursor-grab` / `active:cursor-grabbing` and `select-none`. Background uses `--color-tab-*` theme tokens (adapts to VSCode host theme). Dockview's default close button and right-actions container are hidden via CSS.
+Each pane has a 30px header that doubles as a drag handle. The header uses `cursor-grab` / `active:cursor-grabbing`, `select-none`, and the shared terminal top radius from `lib/src/components/design.tsx`. Background and foreground use the `--color-header-active-*` / `--color-header-inactive-*` token pairs, which map to VSCode file-tree list colors. Dockview's default close button and right-actions container are hidden via CSS.
 
 Elements from left to right:
 
@@ -86,6 +86,10 @@ Elements from left to right:
 
 The alert bell and TODO pill are defined in `docs/specs/alert.md` (visual states, interaction, context menu, and hardening).
 
+### Pane body
+
+The pane body paints `--color-terminal-bg` on the React pane wrapper and the `TerminalPane` mount point. The persistent xterm host element, `.xterm-screen`, and xterm scroll container are also painted with the concrete background from `getTerminalTheme()`. This is intentional: xterm.js only paints its own rendered terminal surface, and integer row fitting can leave a sub-row remainder at the bottom of the pane. The host background must match the terminal screen exactly and clip to the pane's shared rounded bottom corners so the terminal surface reaches the selection overlay cleanly.
+
 ### Pane header responsive sizing
 
 The header adapts to available width via ResizeObserver in three tiers:
@@ -96,9 +100,9 @@ The header adapts to available width via ResizeObserver in three tiers:
 
 ## Baseboard
 
-Below the content area is the baseboard (`h-8`, 32px). It is always visible — a thin strip when empty, showing keyboard shortcut hints when there are no doors and the container is wider than 350px (currently: `LCmd → RCmd to enter command mode`).
+Below the content area is the baseboard (`h-7`, 28px). It is always visible and has no top divider. The dockview area ends 2px above it, leaving a narrow theme-colored gap that keeps rounded pane corners distinct from the baseboard. Its horizontal padding matches the Dockview wrapper's 6px inset, so doors align with the panes above. When empty, it shows keyboard shortcut hints when there are no doors and the container is wider than 350px (currently: `LCmd → RCmd to enter command mode`).
 
-When a session is minimized, it becomes a **door** on the baseboard. The door displays the session's title, a TODO badge (if set), and an alert bell icon with activity dot. It uses the bottom edge of the window as its bottom border, with left, top, and right borders with `rounded-t-md` — resembling a mouse hole. Door dimensions: `min-w-[68px] max-w-[220px] h-6`.
+When a session is minimized, it becomes a **door** on the baseboard. The door displays the session's title, a TODO badge (if set), and an alert bell icon with activity dot. It uses the bottom edge of the window as its bottom border, with left, top, and right borders using the shared terminal top radius from `lib/src/components/design.tsx` — resembling a mouse hole and matching pane rounding. Door dimensions: `min-w-[68px] max-w-[220px] h-6`.
 
 ### Door interaction
 
@@ -164,7 +168,7 @@ All handled in a single capture-phase `keydown` listener on `window`. Every hand
 | `x` | Kill with confirmation | Restore session + kill confirmation |
 | `d` | Minimize to door | Restore session (stay in command) |
 | `z` | Toggle maximize/restore | — |
-| `t` | Toggle TODO flag (none/soft → hard → none) | — |
+| `t` | Toggle TODO flag | — |
 | `a` | Dismiss or toggle alert | — |
 
 ### Kill confirmation
@@ -178,7 +182,7 @@ A fixed-positioned element rendered on top of dockview. Covers the active elemen
 - A pane or door can be **active** or **inactive**. Only one element is active at a time.
 - **Passthrough:** `border: 2px solid ${color}` + `box-shadow: 0 0 15px color-mix(in srgb, ${color} 30%, transparent)`
 - **Command:** animated SVG marching-ants border — rounded rectangle path with `stroke-dasharray` animation (10px segment, 60% dash / 40% gap, 0.4s cycle, 2px stroke)
-- Border radius: `0.5rem` for panes, `0.375rem 0.375rem 0 0` for doors
+- Border radius: shared terminal radius from `lib/src/components/design.tsx`: full `0.5rem` for panes, `0.5rem 0.5rem 0 0` for doors
 - Color from CSS custom property `--mt-selection-terminal`
 - `z-index: 50`, `pointer-events: none`, `transition: 150ms`
 
@@ -281,11 +285,11 @@ Custom `mousetermTheme` extends dockview's `themeAbyss`:
 - `gap: 6` — 6px between groups in both directions
 - `dndOverlayMounting: 'absolute'`, `dndPanelOverlay: 'group'`
 - Pane header height: `--dv-tabs-and-actions-container-height: 30px`
-- 6px padding around the dockview area (`p-1.5` on wrapper, `inset-1.5` on container)
+- 6px top/sides inset and 2px bottom inset around the dockview area (`px-1.5 pt-1.5 pb-0.5` on wrapper, `inset-x-1.5 top-1.5 bottom-0.5` on container)
 
-Colors use a two-layer CSS variable strategy: `@theme --color-*` tokens → `var(--vscode-*, <fallback>)`. In VSCode, host theme variables take precedence. In standalone mode, fallback values apply with `prefers-color-scheme: light` overrides. Tailwind v4 `@theme` block registers `--color-*` tokens as Tailwind colors (e.g., `bg-surface`, `text-foreground`, `border-border`). See `theme.css` for the full token map.
+Colors use a two-layer CSS variable strategy: `@theme --color-*` tokens → `var(--vscode-*)`. VSCode provides host theme variables in extension mode; standalone and website mode apply bundled or installed theme variables before rendering. Tailwind v4 `@theme` block registers `--color-*` tokens as Tailwind colors (e.g., `bg-app-bg`, `text-app-fg`, `border-border`). See `theme.css` for the full token map.
 
-Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. All dockview container backgrounds are flattened to `var(--color-surface)`.
+Dockview's separator borders, sash handles, and groupview borders are all set to transparent/none — the 6px gap is the only visual separator between panes. Dockview infrastructure paints `var(--color-app-bg)` so gutters and rounded pane/header corner cutouts match host chrome. Terminal content backgrounds are painted by the React terminal wrappers and xterm host elements, not by dockview containers.
 
 ## Animations
 

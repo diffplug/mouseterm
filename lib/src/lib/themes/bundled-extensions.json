@@ -14,13 +14,6 @@
     "homepage": "https://github.com/santoso-wijaya/vscode-helios-selene"
   },
   {
-    "name": "Gruvbox Theme",
-    "version": "1.29.1",
-    "license": "MIT",
-    "author": "jdinhify",
-    "homepage": "https://github.com/jdinhify/vscode-theme-gruvbox"
-  },
-  {
     "name": "Iceberg Theme",
     "version": "2.0.5",
     "license": "MIT",

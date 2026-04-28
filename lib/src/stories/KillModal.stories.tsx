@@ -1,17 +1,17 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import { KillConfirmCard } from '../components/KillConfirm';
+import { KillConfirmCard, type KillExit } from '../components/KillConfirm';
 
-function KillModal({ char = 'G', onCancel, shaking }: { char?: string; onCancel?: () => void; shaking?: boolean }) {
+function KillModal({ char = 'G', onCancel, exit }: { char?: string; onCancel?: () => void; exit?: KillExit }) {
   return (
-    <div className="relative bg-surface" style={{ width: 600, height: 400 }}>
+    <div className="relative bg-app-bg" style={{ width: 600, height: 400 }}>
       {/* Simulated terminal content behind the overlay */}
-      <div className="p-4 font-mono text-xs text-terminal-fg">
+      <div className="p-4 font-mono text-sm text-terminal-fg">
         <div>user@mouseterm:~$ npm run build</div>
         <div className="text-muted">Building project...</div>
       </div>
       {/* Kill confirmation overlay — positioned over the pane */}
-      <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded">
-        <KillConfirmCard char={char} onCancel={onCancel} shaking={shaking} />
+      <div className="absolute inset-0 flex items-center justify-center bg-app-bg/50 rounded">
+        <KillConfirmCard char={char} onCancel={onCancel} exit={exit} />
       </div>
     </div>
   );
@@ -37,5 +37,5 @@ export const RandomChar: Story = {
 };
 
 export const Shaking: Story = {
-  args: { char: 'G', shaking: true },
+  args: { char: 'G', exit: 'shake' },
 };

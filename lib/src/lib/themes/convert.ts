@@ -2,47 +2,47 @@
  * Conversion from VSCode theme JSON `colors` to --vscode-* CSS variables.
  *
  * Two consumers read --vscode-* variables:
- *   1. @theme fallbacks in theme.css — UI colors (surfaces, tabs, etc.)
+ *   1. @theme/body bindings in theme.css — UI colors (surfaces, tabs, etc.)
  *   2. getTerminalTheme() in terminal-registry.ts — ANSI, cursor, selection
  */
 
-/** VSCode theme color keys consumed by MouseTerm. Derived from theme.css and terminal-registry.ts. */
+/** VSCode theme color keys consumed by MouseTerm. Derived from theme.css,
+ *  Pond.useDynamicPalette, ThemePicker inline styles, SelectionOverlay,
+ *  terminal-registry, and the VSCode fallback resolver. */
 export const CONSUMED_VSCODE_KEYS: readonly string[] = [
+  // Resolver dependencies
+  'foreground',
   // Surfaces (theme.css @theme)
   'editor.background',
-  'editorGroupHeader.tabsBackground',
   'sideBar.background',
+  'sideBar.foreground',
   'editorWidget.background',
+  'editor.selectionBackground',
   // Text
   'editor.foreground',
   'descriptionForeground',
-  // Accent & borders
-  'focusBorder',
+  // Borders
   'panel.border',
-  // Tabs
-  'tab.activeBackground',
-  'tab.inactiveBackground',
-  'tab.activeForeground',
-  'tab.inactiveForeground',
+  // Focus / file-tree palette — anchors the four-surface chrome hierarchy
+  // (active panel = list active selection, inactive = list inactive selection)
+  // and is read by Pond's useDynamicPalette for the focus ring.
+  'focusBorder',
   'list.activeSelectionBackground',
   'list.activeSelectionForeground',
+  'list.inactiveSelectionBackground',
+  'list.inactiveSelectionForeground',
   // Terminal
   'terminal.background',
   'terminal.foreground',
-  // Badges
-  'badge.background',
-  'badge.foreground',
-  // Status
+  // Status / dialogs
   'errorForeground',
-  'editorWarning.foreground',
-  // Inputs
+  // Inputs (ThemePicker dialog)
   'input.background',
   'input.border',
-  // Buttons
+  // Buttons (ThemePicker dialog only)
   'button.background',
   'button.foreground',
-  'button.hoverBackground',
-  // Links
+  // Links (ThemePicker dialog only)
   'textLink.foreground',
   // Terminal (read directly by getTerminalTheme())
   'terminalCursor.foreground',
