@@ -10,11 +10,11 @@ import type { HTMLAttributes, ReactNode } from 'react';
 // class, the SVG-friendly px value, and the inline-style rem string can't
 // drift apart. Tailwind's `lg` step is 0.5rem; if that ever changes, both
 // the class names and BASE_REM must move together.
+// Keep the class names as literals so Tailwind's scanner emits them.
 const TERMINAL_BORDER_RADIUS_REM = 0.5;
-const TAILWIND_LG_RADIUS_CLASS = 'lg' as const;
 export const TERMINAL_BORDER_RADIUS_PX = TERMINAL_BORDER_RADIUS_REM * 16;
-export const TERMINAL_TOP_RADIUS_CLASS = `rounded-t-${TAILWIND_LG_RADIUS_CLASS}` as const;
-export const TERMINAL_BOTTOM_RADIUS_CLASS = `rounded-b-${TAILWIND_LG_RADIUS_CLASS}` as const;
+export const TERMINAL_TOP_RADIUS_CLASS = 'rounded-t-lg';
+export const TERMINAL_BOTTOM_RADIUS_CLASS = 'rounded-b-lg';
 export const TERMINAL_SELECTION_BORDER_RADIUS = `${TERMINAL_BORDER_RADIUS_REM}rem`;
 export const DOOR_SELECTION_BORDER_RADIUS = `${TERMINAL_BORDER_RADIUS_REM}rem ${TERMINAL_BORDER_RADIUS_REM}rem 0 0`;
 
