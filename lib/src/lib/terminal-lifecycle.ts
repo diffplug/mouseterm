@@ -52,17 +52,18 @@ function createXtermHost(): { terminal: Terminal; fit: FitAddon; element: HTMLDi
 
 /** PTY data/exit listeners. Returns the unsubscribe pair. */
 function wirePtyEvents(id: string, terminal: Terminal): () => void {
+  const platform = getPlatform();
   const handleData = (detail: { id: string; data: string }) => {
     if (detail.id === id) terminal.write(detail.data);
   };
   const handleExit = (detail: { id: string; exitCode: number }) => {
     if (detail.id === id) terminal.write(`\r\n[Process exited with code ${detail.exitCode}]\r\n`);
   };
-  getPlatform().onPtyData(handleData);
-  getPlatform().onPtyExit(handleExit);
+  platform.onPtyData(handleData);
+  platform.onPtyExit(handleExit);
   return () => {
-    getPlatform().offPtyData(handleData);
-    getPlatform().offPtyExit(handleExit);
+    platform.offPtyData(handleData);
+    platform.offPtyExit(handleExit);
   };
 }
 
