@@ -1,5 +1,5 @@
 import { findPaneInDirection } from '../../../lib/spatial-nav';
-import { ARROW_OPPOSITES, type NavHistoryRef, type WallKeyboardCtx } from './types';
+import { ARROW_OPPOSITES, isArrowKey, type NavHistoryRef, type WallKeyboardCtx } from './types';
 
 /**
  * Plain arrow navigation: across panes (in dockview), or across doors (in
@@ -10,7 +10,7 @@ export function handlePaneNavigation(
   ctx: WallKeyboardCtx,
   navHistory: NavHistoryRef,
 ): boolean {
-  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) || e.metaKey) {
+  if (!isArrowKey(e.key) || e.metaKey) {
     return false;
   }
   e.preventDefault();
@@ -42,7 +42,7 @@ export function handlePaneNavigation(
     return true;
   }
 
-  const targetId = findPaneInDirection(sid, dir as 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown', api, ctx.paneElements);
+  const targetId = findPaneInDirection(sid, dir, api, ctx.paneElements);
   if (targetId) {
     navHistory.current = { direction: dir, fromId: sid };
     ctx.selectPane(targetId);

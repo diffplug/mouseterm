@@ -46,7 +46,13 @@ export interface NavHistoryRef {
   current: { direction: string; fromId: string } | null;
 }
 
-export const ARROW_OPPOSITES: Record<string, string> = {
+export const ARROW_OPPOSITES = {
   ArrowLeft: 'ArrowRight', ArrowRight: 'ArrowLeft',
   ArrowUp: 'ArrowDown', ArrowDown: 'ArrowUp',
-};
+} as const;
+
+export type ArrowKey = keyof typeof ARROW_OPPOSITES;
+
+export function isArrowKey(key: string): key is ArrowKey {
+  return key in ARROW_OPPOSITES;
+}

@@ -6,7 +6,7 @@ import {
   toggleSessionTodo,
 } from '../../../lib/terminal-registry';
 import { randomKillChar } from '../../KillConfirm';
-import { ARROW_OPPOSITES, type NavHistoryRef, type WallKeyboardCtx } from './types';
+import { ARROW_OPPOSITES, isArrowKey, type NavHistoryRef, type WallKeyboardCtx } from './types';
 
 function findAlertButtonForSession(id: string): HTMLButtonElement | null {
   return Array.from(document.querySelectorAll<HTMLButtonElement>('[data-alert-button-for]'))
@@ -53,7 +53,7 @@ export function handlePaneShortcuts(
     return true;
   }
 
-  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && e.metaKey) {
+  if (isArrowKey(e.key) && e.metaKey) {
     e.preventDefault();
     e.stopPropagation();
     if (!sid) return true;
@@ -64,7 +64,7 @@ export function handlePaneShortcuts(
     if (hist && ARROW_OPPOSITES[dir] === hist.direction && api.getPanel(hist.fromId)) {
       targetId = hist.fromId;
     } else {
-      targetId = findPaneInDirection(sid, dir as 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown', api, ctx.paneElements);
+      targetId = findPaneInDirection(sid, dir, api, ctx.paneElements);
     }
     if (!targetId) return true;
 
