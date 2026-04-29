@@ -37,13 +37,13 @@ const UNPIN_THRESHOLD = 0.8;
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 const downloadAccentStyle = {
-  "--download-accent": "color-mix(in oklch, var(--color-caramel) 70%, var(--color-text))",
-  "--download-accent-strong": "color-mix(in oklch, var(--color-caramel) 82%, var(--color-text))",
-  "--download-border": "color-mix(in oklch, var(--color-caramel) 68%, transparent)",
-  "--download-primary": "color-mix(in oklch, var(--color-caramel) 86%, var(--color-bg))",
-  "--download-primary-hover": "color-mix(in oklch, var(--color-caramel) 94%, var(--color-text))",
+  "--download-accent": "oklch(72% 0.15 72)",
+  "--download-accent-strong": "oklch(77% 0.16 72)",
+  "--download-border": "color-mix(in oklch, var(--download-accent) 58%, transparent)",
+  "--download-primary": "color-mix(in oklch, var(--download-accent) 72%, var(--color-bg))",
+  "--download-primary-hover": "color-mix(in oklch, var(--download-accent-strong) 82%, var(--color-bg))",
   "--download-panel": "color-mix(in oklch, var(--color-surface) 82%, var(--color-bg))",
-  "--download-panel-hover": "color-mix(in oklch, var(--color-caramel) 10%, var(--color-surface))",
+  "--download-panel-hover": "color-mix(in oklch, var(--download-accent) 12%, var(--download-panel))",
 } as CSSProperties;
 
 const DOWNLOAD_BUTTON_BASE =
@@ -51,7 +51,7 @@ const DOWNLOAD_BUTTON_BASE =
 
 const DOWNLOAD_BUTTON_VARIANTS = {
   primary:
-    "min-h-14 w-full gap-4 px-6 py-3 text-lg sm:w-auto border-[var(--download-accent)] bg-[var(--download-primary)] text-[var(--color-text)] shadow-[0_0_18px_color-mix(in_oklch,var(--color-caramel)_18%,transparent)] hover:border-[var(--download-accent-strong)] hover:bg-[var(--download-primary-hover)]",
+    "min-h-14 w-full gap-4 px-6 py-3 text-lg sm:w-auto border-[var(--download-accent)] bg-[var(--download-primary)] text-[var(--color-text)] shadow-[0_0_18px_color-mix(in_oklch,var(--download-accent)_18%,transparent)] hover:border-[var(--download-accent-strong)] hover:bg-[var(--download-primary-hover)]",
   wide:
     "min-h-12 w-full gap-3 px-5 py-3 text-base sm:w-auto sm:text-lg border-[var(--download-border)] bg-[var(--download-panel)] text-[var(--download-accent)] hover:border-[var(--download-accent)] hover:bg-[var(--download-panel-hover)]",
   compact:
@@ -129,7 +129,7 @@ function VsCodeIcon({ className = "" }: { className?: string }) {
   return (
     <span
       aria-hidden="true"
-      className={`inline-block shrink-0 bg-[var(--download-accent)] ${className}`}
+      className={`inline-block shrink-0 bg-[var(--color-caramel)] ${className}`}
       style={{
         mask: `url("${visualStudioIconUrl}") center / contain no-repeat`,
         WebkitMask: `url("${visualStudioIconUrl}") center / contain no-repeat`,
@@ -147,7 +147,7 @@ function DownloadGroupHeader({
 }) {
   return (
     <div className="mb-3 flex items-center gap-3">
-      <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center text-[var(--download-accent)]">
+      <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center text-[var(--color-caramel)]">
         {icon}
       </span>
       <h3 className="font-display text-xl text-[var(--color-text)]">{children}</h3>
