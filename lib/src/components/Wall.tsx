@@ -26,6 +26,7 @@ import { TerminalPanel } from './wall/TerminalPanel';
 import { TerminalPaneHeader } from './wall/TerminalPaneHeader';
 import { WorkspaceSelectionOverlay } from './wall/WorkspaceSelectionOverlay';
 import { useDockviewReady } from './wall/use-dockview-ready';
+import { pickSplitDirection } from './wall/dockview-helpers';
 import { useWallKeyboard } from './wall/use-wall-keyboard';
 import { useSessionPersistence } from './wall/use-session-persistence';
 import { useWindowFocused } from './wall/use-window-focused';
@@ -388,16 +389,12 @@ export function Wall({
         // Layout changed — split an existing panel based on its aspect ratio
         const sid = selectedIdRef.current;
         const refPanel = (sid && api.getPanel(sid)) ?? api.panels[0] ?? null;
-        let direction: 'right' | 'below' = 'right';
-        if (refPanel) {
-          direction = (refPanel.api.width - refPanel.api.height > 0) ? 'right' : 'below';
-        }
         api.addPanel({
           id: item.id,
           component: 'terminal',
           tabComponent: 'terminal',
           title: item.title,
-          position: refPanel ? { referencePanel: refPanel.id, direction } : undefined,
+          position: refPanel ? { referencePanel: refPanel.id, direction: pickSplitDirection(refPanel) } : undefined,
         });
       }
     }
@@ -438,16 +435,12 @@ export function Wall({
       }
 
       const active = api.activePanel;
-      let direction: 'right' | 'below' = 'right';
-      if (active) {
-        direction = (active.api.width - active.api.height > 0) ? 'right' : 'below';
-      }
       api.addPanel({
         id: newId,
         component: 'terminal',
         tabComponent: 'terminal',
         title: '<unnamed>',
-        position: active ? { referencePanel: active.id, direction } : undefined,
+        position: active ? { referencePanel: active.id, direction: pickSplitDirection(active) } : undefined,
       });
       selectPane(newId);
     };

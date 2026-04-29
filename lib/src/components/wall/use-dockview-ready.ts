@@ -2,6 +2,7 @@ import { useCallback, type Dispatch, type RefObject, type SetStateAction } from 
 import type { DockviewApi, DockviewReadyEvent, SerializedDockview } from 'dockview-react';
 import { getDefaultShellOpts, setPendingShellOpts, swapTerminals } from '../../lib/terminal-registry';
 import type { DooredItem, WallMode, WallSelectionKind, SpawnDirection } from './wall-types';
+import { pickSplitDirection, swapPanelTitles } from './dockview-helpers';
 
 export function useDockviewReady({
   apiRef,
@@ -59,7 +60,7 @@ export function useDockviewReady({
         setPendingShellOpts(id, { shell: defaults.shell, args: defaults.args });
       }
       const referencePanel = e.api.panels[e.api.panels.length - 1] ?? null;
-      const direction = referencePanel && referencePanel.api.width - referencePanel.api.height > 0 ? 'right' : 'below';
+      const direction = pickSplitDirection(referencePanel);
       e.api.addPanel({
         id,
         component: 'terminal',
@@ -107,13 +108,7 @@ export function useDockviewReady({
           const targetPanel = group.activePanel;
           if (draggedId && targetPanel && draggedId !== targetPanel.id) {
             swapTerminals(draggedId, targetPanel.id);
-            const draggedPanel = e.api.getPanel(draggedId);
-            if (draggedPanel) {
-              const draggedTitle = draggedPanel.title ?? draggedId;
-              const targetTitle = targetPanel.title ?? targetPanel.id;
-              draggedPanel.api.setTitle(targetTitle);
-              targetPanel.api.setTitle(draggedTitle);
-            }
+            swapPanelTitles(e.api, draggedId, targetPanel.id);
             selectPane(targetPanel.id);
           }
           event.preventDefault();

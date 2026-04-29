@@ -7,6 +7,7 @@ import {
 } from '../../../lib/terminal-registry';
 import { randomKillChar } from '../../KillConfirm';
 import { ARROW_OPPOSITES, isArrowKey, type NavHistoryRef, type WallKeyboardCtx } from './types';
+import { swapPanelTitles } from '../dockview-helpers';
 
 function findAlertButtonForSession(id: string): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>(`[data-alert-button-for="${CSS.escape(id)}"]`);
@@ -68,15 +69,7 @@ export function handlePaneShortcuts(
     if (!targetId) return true;
 
     swapTerminals(sid, targetId);
-
-    const activePanel = api.getPanel(sid);
-    const targetPanel = api.getPanel(targetId);
-    if (activePanel && targetPanel) {
-      const activeTitle = activePanel.title ?? sid;
-      const targetTitle = targetPanel.title ?? targetId;
-      activePanel.api.setTitle(targetTitle);
-      targetPanel.api.setTitle(activeTitle);
-    }
+    swapPanelTitles(api, sid, targetId);
 
     navHistory.current = { direction: dir, fromId: sid };
     ctx.selectPane(targetId);
