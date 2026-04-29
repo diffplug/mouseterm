@@ -15,7 +15,8 @@ import {
   swapTerminals,
 } from '../../lib/terminal-registry';
 import { findPanelInDirection } from '../../lib/spatial-nav';
-import { orchestrateKill, randomKillChar, type ConfirmKill } from '../KillConfirm';
+import { orchestrateKill } from '../../lib/kill-animation';
+import { randomKillChar, type ConfirmKill } from '../KillConfirm';
 import type { DooredItem, PondMode, PondSelectionKind } from './pond-types';
 import type { PondActions } from './pond-context';
 
