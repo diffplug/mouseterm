@@ -3,12 +3,12 @@
  *
  * Two consumers read --vscode-* variables:
  *   1. @theme/body bindings in theme.css — UI colors (surfaces, tabs, etc.)
- *   2. getTerminalTheme() in terminal-registry.ts — ANSI, cursor, selection
+ *   2. getTerminalTheme() in terminal-theme.ts — ANSI, cursor, selection
  */
 
 /** VSCode theme color keys consumed by MouseTerm. Derived from theme.css,
- *  Pond.useDynamicPalette, ThemePicker inline styles, SelectionOverlay,
- *  terminal-registry, and the VSCode fallback resolver. */
+ *  useDynamicPalette, ThemePicker inline styles, SelectionOverlay,
+ *  terminal-theme, and the VSCode fallback resolver. */
 export const CONSUMED_VSCODE_KEYS: readonly string[] = [
   // Resolver dependencies
   'foreground',
@@ -25,7 +25,7 @@ export const CONSUMED_VSCODE_KEYS: readonly string[] = [
   'panel.border',
   // Focus / file-tree palette — anchors the four-surface chrome hierarchy
   // (active panel = list active selection, inactive = list inactive selection).
-  // Pond's useDynamicPalette reads focusBorder and activeSelectionBackground
+  // useDynamicPalette reads focusBorder and activeSelectionBackground
   // for the focus ring.
   'focusBorder',
   'list.activeSelectionBackground',

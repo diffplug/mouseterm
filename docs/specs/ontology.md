@@ -13,8 +13,8 @@ The **Liskov contract**: a Session is substitutable across most operations regar
 | Layer | Tracks | Owner |
 |---|---|---|
 | **Process** | PTY life on the host | `vscode-ext/src/pty-manager.ts` |
-| **Registry** | xterm.js Terminal + persistent DOM element + cached Activity state | `lib/src/lib/terminal-registry.ts` |
-| **View** | Where and how the session renders | `lib/src/components/Pond.tsx` |
+| **Registry** | xterm.js Terminal + persistent DOM element + cached Activity state | `lib/src/lib/terminal-registry.ts` facade, backed by `terminal-store.ts`, `terminal-lifecycle.ts`, and `session-activity-store.ts` |
+| **View** | Where and how the session renders | `lib/src/components/Pond.tsx` plus `lib/src/components/pond/` |
 | **Link** | Webview ↔ host relationship | `lib/src/lib/reconnect.ts` |
 | **Activity** | Alert / attention state machine | `lib/src/lib/alert-manager.ts` |
 | **Snapshot** | Persisted-to-disk projection | `lib/src/lib/session-save.ts` / `session-restore.ts` |

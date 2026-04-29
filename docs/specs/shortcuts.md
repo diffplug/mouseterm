@@ -66,6 +66,6 @@ On macOS, `Ctrl+C` / `Ctrl+V` pass through to the running program; only the ⌘-
 
 ## Implementation references
 
-- Primary keyboard handler: `lib/src/components/Pond.tsx` (workspace key dispatch, mode toggle, dialog key handlers)
+- Primary keyboard handler: `lib/src/components/pond/use-pond-keyboard.ts` (workspace key dispatch, mode toggle, dialog key handlers)
 - Selection popup copy bindings: `lib/src/components/SelectionPopup.tsx`
-- Alt-to-toggle-block selection: `lib/src/lib/terminal-registry.ts`
+- Alt-to-toggle-block selection: `lib/src/lib/terminal-mouse-router.ts`

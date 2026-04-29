@@ -12,7 +12,7 @@
  *
  * Two consumers read --vscode-* variables:
  *   1. @theme/body bindings below — for UI colors (surfaces, tabs, etc.)
- *   2. getTerminalTheme() in terminal-registry.ts — reads ANSI colors,
+ *   2. getTerminalTheme() in terminal-theme.ts — reads ANSI colors,
  *      cursor, and selection directly as --vscode-* for xterm.js
  */
 

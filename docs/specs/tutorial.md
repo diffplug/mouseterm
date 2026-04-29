@@ -133,7 +133,7 @@ The picker appears only on `/playground`, inside `SiteHeader`, labeled `Theme:`.
 
 Each theme is defined as a map of `--vscode-*` CSS variable overrides. `applyTheme()` applies the active theme, which:
 1. Cascades into `--color-*` variables (via `var(--vscode-*, fallback)` in `theme.css`)
-2. Triggers the `MutationObserver` in `terminal-registry.ts` to re-read `getTerminalTheme()` for all xterm.js terminals
+2. Triggers the `MutationObserver` in `lib/src/lib/terminal-theme.ts` to re-read `getTerminalTheme()` for all xterm.js terminals
 3. Updates Dockview/Tailwind token colors
 
 The picker restores the persisted active theme on mount. The playground header is `themeAware`, so the same active theme also affects the site header chrome while the picker remains hidden on non-playground routes.
@@ -185,7 +185,7 @@ Add three new scenarios in `lib/src/lib/platform/fake-scenarios.ts` and expand t
    Prints one of each detectable shape so every branch in `lib/src/lib/smart-token.ts`'s `PATTERNS` list has a live example:
 
    ```
-   ✗ src/components/Pond.tsx:1576:7 — unused import
+   ✗ src/components/pond/TerminalPaneHeader.tsx:157:7 — unused import
    ✗ ../sibling/util.rs:42 — panic here
      see https://en.wikipedia.org/wiki/Foo_(bar)
      docs: /usr/local/share/doc/mouseterm/README

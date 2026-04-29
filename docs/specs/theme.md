@@ -27,9 +27,11 @@ panes and doors; do not add borders to make the hierarchy work.
 | `--color-focus-ring` | runtime pick from `focusBorder` and active header background | marching-ants ring and terminal text-selection border |
 
 Door colors and the focus ring are chosen at runtime by
-`computeDynamicPalette()` in `lib/src/lib/dynamic-palette.ts`, using OKLab
-distance/chroma helpers from `lib/src/lib/color-contrast.ts`. `Pond` publishes
-the chosen variables on `document.body`.
+`computeDynamicPalette()` in `lib/src/lib/themes/dynamic-palette.ts`, using
+OKLab distance/chroma helpers from `lib/src/lib/color-contrast.ts`.
+`useDynamicPalette()` in `lib/src/lib/themes/use-dynamic-palette.ts` publishes
+the chosen variables on `document.body`. `lib/src/lib/dynamic-palette.ts`
+remains as a compatibility re-export.
 
 - Door bg/fg chooses whichever pair, inactive-header or terminal bg/fg, has
   stronger perceptual separation from
@@ -98,9 +100,9 @@ the VSCode terminal defaults before those values are read:
 - The 16 ANSI colors from `terminal.ansiBlack` through
   `terminal.ansiBrightWhite`.
 
-The `terminal-registry.ts` body `MutationObserver` re-reads these values when
-the body class or style changes, so applying a theme updates existing
-terminals.
+The `terminal-theme.ts` body/html `MutationObserver` re-reads these values
+when the body class or style changes, so applying a theme updates existing
+terminals. `terminal-registry.ts` remains the public facade for callers.
 
 ## Theme data
 
@@ -123,8 +125,9 @@ typography defaults as `applyTheme()`) before injecting them, so isolated
 component stories see the same materialized `--vscode-*` token set as the app.
 The Storybook preview decorator also computes and publishes the dynamic palette
 vars (`--color-door-bg`, `--color-door-fg`, `--color-focus-ring`) through the
-shared `computeDynamicPalette()` helper, matching `Pond` for stories that render
-doors, baseboards, or focus rings outside a full Pond instance.
+shared `computeDynamicPalette()` helper, matching the runtime
+`useDynamicPalette()` hook for stories that render doors, baseboards, or focus
+rings outside a full Pond instance.
 
 ## Theme debugger
 
@@ -163,7 +166,7 @@ When changing theme behavior:
   inline styles, or resolver fallback paths.
 - Keep xterm.js terminal colors sourced from `--vscode-terminal-*` variables,
   not from MouseTerm chrome tokens.
-- Keep debugger dynamic-pick reporting and Pond runtime picks sharing
+- Keep debugger dynamic-pick reporting and runtime dynamic-palette picks sharing
   `pickDoorPair()` and `pickFocusRing()`; do not fork those rules in UI code.
 - Do not add hardcoded color defaults or CSS variable fallback chains to
   `lib/src/theme.css`; fix the theme data or runtime host instead.
