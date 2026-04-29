@@ -6,6 +6,12 @@ const NAV_LINKS: readonly { href: string; label: string; external?: boolean; hid
   { href: "https://github.com/diffplug/mouseterm", label: "GitHub", external: true },
 ];
 
+const CHROME_INACTIVE_BG = "var(--color-header-inactive-bg)";
+const CHROME_INACTIVE_FG = "var(--color-header-inactive-fg)";
+
+const THEME_AWARE_LINK_CLASS =
+  "cursor-pointer opacity-100 hover:underline focus-visible:underline underline-offset-4 decoration-[var(--color-header-inactive-fg)]";
+
 interface SiteHeaderProps {
   /** Current path — highlights matching nav link */
   activePath?: string;
@@ -35,12 +41,14 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
     themeAware = false,
     style,
   }, ref) {
+    const navLinks = activePath === "/playground"
+      ? NAV_LINKS.filter(({ href }) => href !== "/playground")
+      : NAV_LINKS;
+
     const headerStyle: React.CSSProperties = themeAware
-      ? {
-          color: "var(--vscode-editor-foreground, #cccccc)",
-          backgroundColor:
-            "color-mix(in oklab, var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, #252526)) 92%, transparent)",
-          borderColor: "var(--vscode-panel-border, #2b2b2b)",
+        ? {
+          color: CHROME_INACTIVE_FG,
+          backgroundColor: CHROME_INACTIVE_BG,
           backdropFilter: "blur(8px)",
           WebkitBackdropFilter: "blur(8px)",
           ...style,
@@ -51,9 +59,7 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
       <>
         <header
           ref={ref}
-          className={`fixed top-0 left-0 right-0 z-20 flex h-16 items-center justify-between gap-3 px-4 py-0 font-display text-lg md:h-20 md:px-8${
-            themeAware ? " border-b" : ""
-          }`}
+          className="fixed top-0 left-0 right-0 z-20 flex h-16 items-center justify-between gap-3 px-4 py-0 font-display text-lg md:h-20 md:px-8"
           style={headerStyle}
         >
           <a
@@ -61,23 +67,19 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
             href="/"
             className={
               brandVisible
-                ? `text-xl transition-opacity ${
+                ? `cursor-pointer text-xl ${
                     themeAware
-                      ? "opacity-80 hover:opacity-100"
-                      : "opacity-50 hover:opacity-100 text-[var(--color-caramel)]"
+                      ? THEME_AWARE_LINK_CLASS
+                      : "opacity-50 transition-opacity hover:opacity-100 text-[var(--color-caramel)]"
                   }`
                 : `text-xl ${
                     themeAware ? "" : "text-[var(--color-caramel)]"
                   }`
             }
             style={
-              brandVisible
-                ? themeAware
-                  ? { color: "var(--vscode-editor-foreground, #cccccc)" }
-                  : undefined
-                : {
+              brandVisible ? undefined : {
                     color: themeAware
-                      ? "var(--vscode-editor-foreground, #cccccc)"
+                      ? CHROME_INACTIVE_FG
                       : undefined,
                     opacity: 0,
                   }
@@ -88,31 +90,21 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
           <div className="ml-auto flex min-w-0 items-center gap-3 md:gap-8">
             {controls ? <div className="min-w-0">{controls}</div> : null}
             <nav className="flex shrink-0 items-center gap-5 md:gap-10">
-              {NAV_LINKS.map(({ href, label, external, hideOnMobile }) => {
+              {navLinks.map(({ href, label, external, hideOnMobile }) => {
                 const isActive = activePath === href;
                 return (
                   <a
                     key={href}
                     href={href}
-                    className={`transition-colors ${
+                    className={`cursor-pointer transition-colors ${
                       hideOnMobile ? "hidden md:block " : ""
                     }${
                       themeAware
-                        ? isActive
-                          ? "opacity-100"
-                          : "opacity-70 hover:opacity-100"
+                        ? THEME_AWARE_LINK_CLASS
                         : isActive
                           ? "text-[var(--color-caramel)]"
                           : "hover:text-[var(--color-caramel)]"
                     }`}
-                    style={
-                      themeAware && isActive
-                        ? {
-                            color:
-                              "var(--vscode-textLink-foreground, var(--vscode-focusBorder, #3794ff))",
-                          }
-                        : undefined
-                    }
                     {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                   >
                     {label}

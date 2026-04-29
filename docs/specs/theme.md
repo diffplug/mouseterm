@@ -118,9 +118,19 @@ persistence are implementation details of `lib/src/lib/themes/` and
 need separate spec rules here.
 
 The website `SiteHeader` uses the theme-aware path on the playground only for
-color, border, and backdrop values. Header geometry, typography, nav spacing,
-and control placement stay shared with the marketing pages so switching between
-`/` and `/playground` does not move or resize the top-right controls.
+color and backdrop values. Its playground bar uses the inactive header bg/fg
+pair (`--color-header-inactive-*`) so it reads as MouseTerm chrome rather than
+generic editor surface, without drawing a bottom border. Header geometry,
+typography, nav spacing, and nav control sizing stay shared with the marketing
+pages. When `/playground` is active, the redundant Playground nav link is
+omitted so the theme picker occupies the freed horizontal space while the
+remaining nav links keep their size and right-edge alignment. Playground
+header links use only the inactive header foreground, render at full opacity,
+use a pointer cursor, and indicate hover/focus-visible with an underline. The
+playground theme picker label uses the inactive header foreground. Its trigger
+uses the inactive header bg/fg pair by default, uses a pointer cursor, then
+switches its background, text, and border to the active header bg/fg pair on
+hover and focus-visible.
 
 Storybook simulates VSCode themes through `lib/.storybook/themes.ts`. It must
 also run bundled theme vars through `completeThemeVars()` (with the same host

@@ -30,6 +30,7 @@ const styles = {
     borderColor: open ? 'var(--vscode-focusBorder, #007fd4)' : 'var(--vscode-input-border, #3c3c3c)',
     color: 'var(--vscode-editor-foreground, #cccccc)',
   }),
+  playgroundForeground: { color: 'var(--color-header-inactive-fg)' },
   panel: {
     backgroundColor: 'var(--vscode-editorWidget-background, #252526)',
     borderColor: 'var(--vscode-panel-border, #2b2b2b)',
@@ -335,8 +336,8 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
     ? 'relative flex min-w-0 items-center gap-1.5 text-sm'
     : 'relative flex items-center';
   const triggerClass = isPlayground
-    ? 'flex h-8 w-[116px] min-w-0 items-center gap-2 rounded border px-2 text-left text-sm transition-colors sm:w-40 md:w-56'
-    : 'flex h-6 max-w-[190px] items-center gap-1.5 rounded border border-transparent px-2 text-sm transition-colors hover:opacity-85';
+    ? 'flex h-8 w-[116px] min-w-0 cursor-pointer items-center gap-2 rounded-md border border-[var(--color-header-inactive-fg)] bg-[var(--color-header-inactive-bg)] px-2 text-left text-sm text-[var(--color-header-inactive-fg)] transition-colors hover:border-[var(--color-header-active-fg)] hover:bg-[var(--color-header-active-bg)] hover:text-[var(--color-header-active-fg)] focus-visible:border-[var(--color-header-active-fg)] focus-visible:bg-[var(--color-header-active-bg)] focus-visible:text-[var(--color-header-active-fg)] sm:w-40 md:w-56'
+    : 'flex h-6 max-w-[190px] cursor-pointer items-center gap-1.5 rounded border border-transparent px-2 text-sm transition-colors hover:opacity-85';
   const menuClass = isPlayground
     ? 'fixed top-16 right-4 left-4 z-50 overflow-hidden rounded border font-mono shadow-2xl md:absolute md:top-full md:right-0 md:left-auto md:mt-2 md:w-[22rem]'
     : 'absolute right-0 top-full z-50 mt-1 w-[280px] overflow-hidden rounded border font-mono shadow-2xl';
@@ -348,7 +349,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
   return (
     <div ref={rootRef} className={`${rootClass} ${className}`}>
       {isPlayground ? (
-        <span id={labelId} className="shrink-0 text-sm font-medium" style={styles.muted}>
+        <span id={labelId} className="shrink-0 text-sm font-medium" style={styles.playgroundForeground}>
           Theme:
         </span>
       ) : null}
@@ -361,7 +362,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
         aria-label={!isPlayground ? `Theme: ${activeTheme?.label ?? 'Select theme'}` : undefined}
         onClick={() => setOpen((value) => !value)}
         className={triggerClass}
-        style={styles.trigger(open)}
+        style={isPlayground ? undefined : styles.trigger(open)}
       >
         {activeTheme ? <ThemeSwatch theme={activeTheme} size={swatchSize} /> : null}
         {!isPlayground ? <span className="hidden text-sm sm:inline">Theme:</span> : null}
