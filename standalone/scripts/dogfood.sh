@@ -50,12 +50,17 @@ if [[ "${1:-}" == "--install" ]]; then
         echo "After that, 'dogfood:standalone --install' will work from then on."
         exit 1
       fi
-      # Wipe everything except uninstall.exe (managed by NSIS), then copy
-      TMP_UNINSTALL="$(mktemp)"
-      cp "$INSTALL_DIR/uninstall.exe" "$TMP_UNINSTALL"
-      rm -rf "$INSTALL_DIR"
-      mkdir -p "$INSTALL_DIR"
-      mv "$TMP_UNINSTALL" "$INSTALL_DIR/uninstall.exe"
+      # If a previous run left an orphaned sidecar/MouseTerm holding files in
+      # the install dir, kill it before we try to overwrite anything.
+      for exe in mouseterm.exe node.exe; do
+        taskkill //F //T //IM "$exe" >/dev/null 2>&1 || true
+      done
+      # Wipe install-dir contents except uninstall.exe (managed by NSIS).
+      # We delete *contents* rather than the directory itself so we don't trip
+      # over Windows' "directory in use" if a process has it as cwd or loaded
+      # an exe image from it.
+      find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -not -name 'uninstall.exe' \
+        -exec rm -rf {} +
       cp "$RELEASE_DIR/mouseterm.exe" "$INSTALL_DIR/"
       cp "$RELEASE_DIR/node.exe" "$INSTALL_DIR/"
       cp -r "$RELEASE_DIR/_up_/" "$INSTALL_DIR/_up_/"
