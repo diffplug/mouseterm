@@ -288,11 +288,14 @@ export function ThemePicker({ variant, className = '', defaultThemeId }: ThemePi
   // the first paint already has --vscode-* on body — eliminates the flash of
   // unstyled chrome on the website playground where ThemePicker mounts before
   // any other entry point has a chance to apply a theme.
-  const [themes, setThemes] = useState(() => {
-    restoreActiveTheme(defaultThemeId);
-    return getAllThemes();
-  });
-  const [activeId, setActiveId] = useState(() => restoreActiveTheme(defaultThemeId)?.id ?? getAllThemes()[0]?.id ?? '');
+  const initialState = useRef<{ themes: MouseTermTheme[]; activeId: string }>(null);
+  if (initialState.current === null) {
+    const restored = restoreActiveTheme(defaultThemeId);
+    const themes = getAllThemes();
+    initialState.current = { themes, activeId: restored?.id ?? themes[0]?.id ?? '' };
+  }
+  const [themes, setThemes] = useState(initialState.current.themes);
+  const [activeId, setActiveId] = useState(initialState.current.activeId);
   const [open, setOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
   const [debuggerOpen, setDebuggerOpen] = useState(false);
