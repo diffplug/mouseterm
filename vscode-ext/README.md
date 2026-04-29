@@ -25,7 +25,7 @@ This lightweight TODO system remembers which tasks need follow-up so you don't h
 
 When you copy-paste from a terminal, you are usually stuck with a bunch of newlines that you wouldn't get if you were copying from any other kind of program. MouseTerm can optionally remove these with `Copy Rewrapped`.
 
-TODO: GIF showing copy/paste with line-break rewrap
+<video src="https://github.com/user-attachments/assets/4d1f1b00-5ce8-4ca0-b05f-9bf5a6eddaba" autoplay muted loop playsinline width="744" height="378"></video>
 
 For TUIs which register for xterm mouse interception (such as `htop` and `neovim`), most terminals make it impossible for you to copy using the mouse. MouseTerm makes it easy to temporarily override the mouse interception.
 
