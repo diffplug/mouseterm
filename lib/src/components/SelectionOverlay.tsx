@@ -5,94 +5,12 @@ import {
   getRenderTick,
   subscribeToMouseSelection,
   subscribeToRenderTick,
-  type Selection,
 } from '../lib/mouse-selection';
-import { normalizeSelection } from '../lib/selection-text';
+import { computeRects, rectsToPath } from '../lib/selection-geometry';
 import { getTerminalOverlayDims } from '../lib/terminal-registry';
 import { IS_MAC } from '../lib/platform';
+import { useFocusRingColor } from '../lib/themes/use-focus-ring-color';
 import { PopupButtonRow } from './design';
-
-interface Rect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
-
-/**
- * Trace the perimeter of a linewise/block selection's visible rects as a
- * single closed SVG path.
- *
- * Rects are row-adjacent and in top-to-bottom order (guaranteed by
- * `computeRects`). We walk the right edges going down, the bottom edge of
- * the last rect, the left edges going up, then the top edge of the first
- * rect. Horizontal connector segments between rows of different widths
- * naturally fall out of the vertex sequence.
- */
-function rectsToPath(rects: Rect[]): string {
-  if (rects.length === 0) return '';
-  const pts: Array<[number, number]> = [];
-  // Right side going down — each rect contributes (top-right, bottom-right).
-  for (const r of rects) {
-    pts.push([r.left + r.width, r.top]);
-    pts.push([r.left + r.width, r.top + r.height]);
-  }
-  // Left side going up — walk the rects in reverse, contributing
-  // (bottom-left, top-left) each.
-  for (let i = rects.length - 1; i >= 0; i--) {
-    const r = rects[i];
-    pts.push([r.left, r.top + r.height]);
-    pts.push([r.left, r.top]);
-  }
-  return 'M ' + pts.map(([x, y]) => `${x} ${y}`).join(' L ') + ' Z';
-}
-
-function computeRects(
-  sel: Selection,
-  cols: number,
-  viewportY: number,
-  rows: number,
-  cellWidth: number,
-  cellHeight: number,
-): Rect[] {
-  const n = normalizeSelection(sel);
-
-  const viewportStart = viewportY;
-  const viewportEnd = viewportY + rows;
-
-  if (sel.shape === 'block') {
-    const top = Math.max(viewportStart, n.r0);
-    const bottom = Math.min(viewportEnd - 1, n.r1);
-    if (top > bottom) return [];
-    const left = n.c0;
-    const right = n.c1;
-    return [{
-      top: (top - viewportStart) * cellHeight,
-      left: left * cellWidth,
-      width: (right - left + 1) * cellWidth,
-      height: (bottom - top + 1) * cellHeight,
-    }];
-  }
-
-  // Linewise — one rect per visible row in [r0..r1].
-  const rects: Rect[] = [];
-  const firstRow = Math.max(viewportStart, n.r0);
-  const lastRow = Math.min(viewportEnd - 1, n.r1);
-  for (let r = firstRow; r <= lastRow; r++) {
-    let c0 = 0;
-    let c1 = cols;
-    if (r === n.r0) c0 = n.c0;
-    if (r === n.r1) c1 = n.c1 + 1;
-    if (c1 <= c0) continue;
-    rects.push({
-      top: (r - viewportStart) * cellHeight,
-      left: c0 * cellWidth,
-      width: (c1 - c0) * cellWidth,
-      height: cellHeight,
-    });
-  }
-  return rects;
-}
 
 interface Props {
   terminalId: string;
@@ -106,6 +24,9 @@ export function SelectionOverlay({ terminalId }: Props) {
   const states = useSyncExternalStore(subscribeToMouseSelection, getMouseSelectionSnapshot);
   // Subscribe to render tick so we re-render whenever xterm scrolls or resizes.
   useSyncExternalStore(subscribeToRenderTick, getRenderTick);
+  // Pulled outside render-tick reads: --color-focus-ring only changes on theme
+  // switch, but onRender fires every output frame.
+  const focusRingColor = useFocusRingColor();
 
   const state = states.get(terminalId) ?? DEFAULT_MOUSE_SELECTION_STATE;
   const selection = state.selection;
@@ -128,15 +49,7 @@ export function SelectionOverlay({ terminalId }: Props) {
     zIndex: 10,
   };
 
-  // Border-only highlight. Pick a color with reliable contrast across themes:
-  // prefer focusBorder (typically fully opaque accent), fall back to the
-  // terminal foreground, then selectionBackground, then a hard-coded cornflower.
-  const styles = getComputedStyle(document.body);
-  const borderColor =
-    styles.getPropertyValue('--vscode-focusBorder').trim()
-    || styles.getPropertyValue('--vscode-terminal-foreground').trim()
-    || styles.getPropertyValue('--vscode-terminal-selectionBackground').trim()
-    || 'rgb(100, 149, 237)';
+  const borderColor = focusRingColor || 'rgb(100, 149, 237)';
   const pathD = rectsToPath(rects);
 
   // Mid-drag hint. Placed outside the selection on the side opposite the
@@ -209,5 +122,3 @@ export function SelectionOverlay({ terminalId }: Props) {
   );
 }
 
-// Exported for unit tests.
-export const __testing = { computeRects, rectsToPath };

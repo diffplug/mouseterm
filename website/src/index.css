@@ -5,8 +5,8 @@
   --font-body: "Ubuntu Mono", ui-monospace, monospace;
   --color-bg: oklch(10% 0.01 60);
   --color-surface: oklch(18% 0.015 60);
-  --color-text: oklch(92% 0.01 60);
-  --color-caramel: #d38d5f;
+  --color-text: #dedede;
+  --color-caramel: #b47624;
 }
 
 html {
@@ -27,4 +27,16 @@ html body {
 
 #root {
   height: auto;
+}
+
+[data-theme-picker-current="true"] {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0 2px;
+}
+
+[data-theme-picker-trigger="playground"]:hover [data-theme-picker-current="true"],
+[data-theme-picker-trigger="playground"]:focus-visible [data-theme-picker-current="true"] {
+  background-size: 100% 2px;
 }

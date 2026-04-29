@@ -270,7 +270,7 @@ export function removeMouseSelectionState(id: string): void {
 
 // --- Render tick ---
 //
-// A tiny counter that terminal-registry bumps whenever xterm renders (scroll,
+// A tiny counter that terminal-lifecycle bumps whenever xterm renders (scroll,
 // resize, output arrives). The selection overlay subscribes to this so it
 // re-measures and re-positions its rectangles whenever anything that could
 // affect cell layout happens.

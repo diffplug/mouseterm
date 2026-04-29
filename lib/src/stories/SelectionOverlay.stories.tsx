@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
-import type { PondMode } from '../components/Pond';
-import { MarchingAntsRect } from '../components/Pond';
+import type { WallMode } from '../components/Wall';
+import { MarchingAntsRect } from '../components/Wall';
 
-function SelectionOverlayDemo({ initialMode = 'command' as PondMode }) {
-  const [mode, setMode] = useState<PondMode>(initialMode);
+function SelectionOverlayDemo({ initialMode = 'command' as WallMode }) {
+  const [mode, setMode] = useState<WallMode>(initialMode);
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 484, height: 284 });
 
@@ -18,7 +18,7 @@ function SelectionOverlayDemo({ initialMode = 'command' as PondMode }) {
     return () => ro.disconnect();
   }, []);
 
-  const color = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || '#007fd4';
+  const color = getComputedStyle(document.documentElement).getPropertyValue('--color-header-active-bg').trim() || '#094771';
 
   const overlayStyle: React.CSSProperties = {
     position: 'absolute',
@@ -34,9 +34,9 @@ function SelectionOverlayDemo({ initialMode = 'command' as PondMode }) {
   }
 
   return (
-    <div ref={containerRef} style={{ width: 500, height: 300 }} className="relative bg-surface">
+    <div ref={containerRef} style={{ width: 500, height: 300 }} className="relative bg-app-bg">
       {/* Simulated terminal content */}
-      <div className="p-4 font-mono text-[11px] text-terminal-fg">
+      <div className="p-4 font-mono text-sm text-terminal-fg">
         <div>user@mouseterm:~$ ls -la</div>
         <div>total 48</div>
         <div>drwxr-xr-x  12 user staff  384 Mar 16 10:30 .</div>
@@ -52,11 +52,11 @@ function SelectionOverlayDemo({ initialMode = 'command' as PondMode }) {
       {/* Mode toggle */}
       <div className="absolute bottom-2 right-2 flex gap-2">
         <button
-          className={`px-3 py-1 rounded text-xs font-mono ${mode === 'passthrough' ? 'bg-accent text-white' : 'bg-surface-raised text-muted'}`}
+          className={`px-3 py-1 rounded text-sm font-mono ${mode === 'passthrough' ? 'bg-header-active-bg text-header-active-fg' : 'bg-header-inactive-bg text-header-inactive-fg'}`}
           onClick={() => setMode('passthrough')}
         >passthrough</button>
         <button
-          className={`px-3 py-1 rounded text-xs font-mono ${mode === 'command' ? 'bg-accent text-white' : 'bg-surface-raised text-muted'}`}
+          className={`px-3 py-1 rounded text-sm font-mono ${mode === 'command' ? 'bg-header-active-bg text-header-active-fg' : 'bg-header-inactive-bg text-header-inactive-fg'}`}
           onClick={() => setMode('command')}
         >command</button>
       </div>

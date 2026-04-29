@@ -12,13 +12,17 @@ const raw = JSON.parse(
   execSync("pnpm licenses list --prod --json", { cwd: repoRoot, encoding: "utf-8" })
 );
 
+const licenseAliases = {
+  "Apache-2.0 OR MIT": "MIT OR Apache-2.0",
+};
+
 const deps = [];
 for (const [license, packages] of Object.entries(raw)) {
   for (const pkg of packages) {
     deps.push({
       name: pkg.name,
       version: pkg.versions.join(", "),
-      license,
+      license: licenseAliases[license] ?? license,
       author: pkg.author || null,
       homepage: pkg.homepage || null,
     });
@@ -27,7 +31,26 @@ for (const [license, packages] of Object.entries(raw)) {
 
 // Merge in bundled theme extensions from OpenVSX
 const themeExtensions = JSON.parse(readFileSync(themeExtensionsPath, "utf-8"));
-deps.push(...themeExtensions);
+
+// OpenVSX exposes VS Code's bundled default themes as several built-in
+// theme extension records. Show them as one dependency on the website.
+const isVscodeBuiltInTheme = (dep) =>
+  dep.author === "open-vsx" &&
+  dep.homepage === "https://github.com/eclipse-theia/vscode-builtin-extensions#readme" &&
+  (dep.name === "Default Themes (built-in)" || dep.name.endsWith(" Theme (built-in)"));
+
+const vscodeBuiltInThemes = themeExtensions.filter(isVscodeBuiltInTheme);
+if (vscodeBuiltInThemes.length > 0) {
+  const versions = [...new Set(vscodeBuiltInThemes.map((dep) => dep.version).filter(Boolean))].sort();
+  deps.push({
+    name: "VS Code built-in themes",
+    version: versions.join(", "),
+    license: "MIT",
+    author: "Microsoft Corporation",
+    homepage: "https://github.com/microsoft/vscode/tree/main/extensions",
+  });
+}
+deps.push(...themeExtensions.filter((dep) => !isVscodeBuiltInTheme(dep)));
 
 // Manual overrides for dependencies missing license or author in their metadata
 const missingLicense = {

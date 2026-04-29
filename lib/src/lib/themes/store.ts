@@ -6,16 +6,27 @@ const bundledThemes = _bundledThemes as unknown as MouseTermTheme[];
 const INSTALLED_KEY = 'mouseterm:installed-themes';
 const ACTIVE_KEY = 'mouseterm:active-theme';
 
-const hasStorage = typeof localStorage !== 'undefined';
+function getStorage(): Storage | null {
+  const storage = globalThis.localStorage;
+  if (
+    typeof storage?.getItem !== 'function' ||
+    typeof storage?.setItem !== 'function' ||
+    typeof storage?.removeItem !== 'function'
+  ) {
+    return null;
+  }
+  return storage;
+}
 
 export function getBundledThemes(): MouseTermTheme[] {
   return bundledThemes;
 }
 
 export function getInstalledThemes(): MouseTermTheme[] {
-  if (!hasStorage) return [];
+  const storage = getStorage();
+  if (!storage) return [];
   try {
-    const raw = localStorage.getItem(INSTALLED_KEY);
+    const raw = storage.getItem(INSTALLED_KEY);
     return raw ? (JSON.parse(raw) as MouseTermTheme[]) : [];
   } catch {
     return [];
@@ -31,24 +42,36 @@ export function getTheme(id: string): MouseTermTheme | undefined {
 }
 
 export function addInstalledTheme(theme: MouseTermTheme): void {
-  if (!hasStorage) return;
+  const storage = getStorage();
+  if (!storage) return;
   const installed = getInstalledThemes().filter((t) => t.id !== theme.id);
   installed.push(theme);
-  localStorage.setItem(INSTALLED_KEY, JSON.stringify(installed));
+  storage.setItem(INSTALLED_KEY, JSON.stringify(installed));
 }
 
 export function removeInstalledTheme(id: string): void {
-  if (!hasStorage) return;
+  const storage = getStorage();
+  if (!storage) return;
   const installed = getInstalledThemes().filter((t) => t.id !== id);
-  localStorage.setItem(INSTALLED_KEY, JSON.stringify(installed));
+  storage.setItem(INSTALLED_KEY, JSON.stringify(installed));
 }
 
 export function getActiveThemeId(): string {
-  if (!hasStorage) return getBundledThemes()[0]?.id ?? '';
-  return localStorage.getItem(ACTIVE_KEY) ?? getBundledThemes()[0]?.id ?? '';
+  const storage = getStorage();
+  if (!storage) return getBundledThemes()[0]?.id ?? '';
+  return storage.getItem(ACTIVE_KEY) ?? getBundledThemes()[0]?.id ?? '';
+}
+
+/** Returns the persisted active theme ID, or undefined if none is stored.
+ *  Distinct from getActiveThemeId() which falls back to a bundled default. */
+export function getStoredActiveThemeId(): string | undefined {
+  const storage = getStorage();
+  if (!storage) return undefined;
+  return storage.getItem(ACTIVE_KEY) ?? undefined;
 }
 
 export function setActiveThemeId(id: string): void {
-  if (!hasStorage) return;
-  localStorage.setItem(ACTIVE_KEY, id);
+  const storage = getStorage();
+  if (!storage) return;
+  storage.setItem(ACTIVE_KEY, id);
 }

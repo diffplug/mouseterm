@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from "react";
-import { Pond } from "./components/Pond";
+import { Wall } from "./components/Wall";
+import { ThemeDebuggerGlobal } from "./components/ThemeDebugger";
 import type { PersistedDoor } from "./lib/session-types";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -34,7 +35,8 @@ export default function App({
 }) {
   return (
     <ErrorBoundary>
-      <Pond initialPaneIds={initialPaneIds} restoredLayout={restoredLayout} initialDoors={initialDoors} baseboardNotice={baseboardNotice} />
+      <Wall initialPaneIds={initialPaneIds} restoredLayout={restoredLayout} initialDoors={initialDoors} baseboardNotice={baseboardNotice} />
+      <ThemeDebuggerGlobal />
     </ErrorBoundary>
   );
 }

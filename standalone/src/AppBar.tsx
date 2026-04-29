@@ -155,7 +155,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
                 key={shell.name}
                 role="menuitemradio"
                 aria-checked={isSelected}
-                className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-surface-alt"
+                className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-surface-raised"
                 onClick={() => {
                   setSelected(shell);
                   setOpen(false);
@@ -180,36 +180,30 @@ export function AppBar({ shells }: AppBarProps) {
   return (
     <div
       data-tauri-drag-region
-      className={`flex h-[30px] shrink-0 select-none items-center border-b border-border bg-surface-alt text-xs ${
+      className={`flex h-[30px] shrink-0 select-none items-center border-b border-border bg-app-bg text-app-fg text-xs ${
         IS_MAC ? 'pl-[78px]' : ''
       }`}
     >
       {/* On macOS, native traffic lights are shown by titleBarStyle "Overlay" —
-          we just leave padding on the left (pl-[78px]) to avoid overlapping them.
-          On Windows/Linux, shell dropdown goes on the left. */}
-      {!IS_MAC && (
-        <div className="pl-2">
-          <ShellDropdown shells={shells} />
-        </div>
-      )}
+          we just leave padding on the left (pl-[78px]) to avoid overlapping them. */}
+
+      {/* Shell dropdown sits on the left on every platform (after the traffic
+          lights on macOS, or at the start of the bar on Windows/Linux). */}
+      <div className="pl-2">
+        <ShellDropdown shells={shells} />
+      </div>
 
       {/* Draggable spacer */}
       <div data-tauri-drag-region className="flex-1 self-stretch" />
 
-      {/* Shell dropdown on the right (macOS) or window controls (Windows/Linux) */}
-      {IS_MAC ? (
-        <div className="ml-auto flex items-center gap-1 pr-2">
+      {/* Theme picker is right-aligned on every platform; Windows/Linux
+          additionally show the native-style window controls after it. */}
+      <div className="ml-auto flex items-stretch self-stretch">
+        <div className="flex items-center pr-2">
           <ThemePicker variant="standalone-appbar" />
-          <ShellDropdown shells={shells} />
         </div>
-      ) : (
-        <div className="ml-auto flex items-stretch self-stretch">
-          <div className="flex items-center pr-2">
-            <ThemePicker variant="standalone-appbar" />
-          </div>
-          <WinControls />
-        </div>
-      )}
+        {!IS_MAC && <WinControls />}
+      </div>
     </div>
   );
 }

@@ -30,7 +30,7 @@ vi.mock('@xterm/xterm', () => {
 
     open(): void {}
 
-    write(data: string): void {
+    write(data: string, _callback?: () => void): void {
       this.writes.push(data);
     }
 
@@ -103,6 +103,7 @@ import {
   initAlertStateReceiver,
   markSessionAttention,
   markSessionTodo,
+  restoreTerminal,
   swapTerminals,
   toggleSessionAlert,
   toggleSessionTodo,
@@ -137,6 +138,9 @@ class MockElement {
 
   addEventListener(): void {}
   removeEventListener(): void {}
+  querySelectorAll(): MockElement[] {
+    return [];
+  }
   getBoundingClientRect(): DOMRect {
     return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) } as DOMRect;
   }
@@ -617,6 +621,56 @@ describe('terminal-registry alert behavior', () => {
 
     expect(getActivity(id).todo).toBe(true);
   });
+
+  it('preserves keyboard CSI input during restore replay while dropping query replies', () => {
+    const id = 'restore-replay-input';
+    const received: string[] = [];
+    const entry = restoreTerminal(id, { scrollback: 'saved output' }) as TestTerminalEntry;
+    fakePlatform.setInputHandler(id, (data) => received.push(data));
+
+    entry.terminal.emitInput('\x1b[A');
+    entry.terminal.emitInput('\x1b[?1;2c');
+    entry.terminal.emitInput('\x1b[4;600;800t');
+    entry.terminal.emitInput('\x1b[?2004;1$y');
+    entry.terminal.emitInput('\x1b]10;rgb:aaaa/bbbb/cccc\x07');
+    fakePlatform.clearInputHandler(id);
+
+    expect(received).toEqual(['\x1b[A']);
+  });
+
+  it('drops DCS status-string replies during replay', () => {
+    const id = 'restore-replay-dcs-input';
+    const received: string[] = [];
+    const entry = restoreTerminal(id, { scrollback: 'saved output' }) as TestTerminalEntry;
+    fakePlatform.setInputHandler(id, (data) => received.push(data));
+
+    // xterm.js emits DECRPSS replies for replayed DECRQSS queries such as
+    // DCS $ q m ST. These are terminal reports, not user input for the shell.
+    entry.terminal.emitInput('\x1bP1$r0m\x1b\\');
+    entry.terminal.emitInput('\x1bP1$r24;80r\x1b\\');
+    entry.terminal.emitInput('\x1bP0$r\x1b\\');
+    entry.terminal.emitInput('a');
+    fakePlatform.clearInputHandler(id);
+
+    expect(received).toEqual(['a']);
+  });
+
+  it('drops DA3 (DECRPTUI) and DECREQTPARM replies during replay', () => {
+    const id = 'restore-replay-da3-input';
+    const received: string[] = [];
+    const entry = restoreTerminal(id, { scrollback: 'saved output' }) as TestTerminalEntry;
+    fakePlatform.setInputHandler(id, (data) => received.push(data));
+
+    // DA3 (CSI = c) → DECRPTUI: DCS ! | <hex id> ST.
+    entry.terminal.emitInput('\x1bP!|00000000\x1b\\');
+    // DECREQTPARM (CSI x) → CSI Sol;Par;Nbits;Xspeed;Rspeed;Clkmul;Flags x.
+    entry.terminal.emitInput('\x1b[2;1;1;112;112;1;0x');
+    entry.terminal.emitInput('a');
+    fakePlatform.clearInputHandler(id);
+
+    expect(received).toEqual(['a']);
+  });
+
 
   it('toggleSessionTodo cycles: false → true → false', () => {
     const id = 'toggle-cycle';

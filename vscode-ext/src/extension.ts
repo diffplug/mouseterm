@@ -107,6 +107,17 @@ export function activate(context: vscode.ExtensionContext) {
       );
       setupPanel(context, panel, undefined, () => provider.getSelectedShell());
     }),
+    vscode.commands.registerCommand('mouseterm.debugTheme', async () => {
+      await vscode.commands.executeCommand('mouseterm.view.focus');
+      for (const delay of [0, 50, 200]) {
+        if (delay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+        const posted = await provider.postMessage({ type: 'mouseterm:openThemeDebugger' });
+        if (posted) return;
+      }
+      void vscode.window.showWarningMessage('MouseTerm: open the MouseTerm view before debugging the theme.');
+    }),
     vscode.commands.registerCommand('mouseterm.newTerminal', async () => {
       await vscode.commands.executeCommand('mouseterm.view.focus');
       const shells = await ptyManager.getAvailableShells();

@@ -3,15 +3,15 @@ import {
   TerminalPaneHeader,
   ModeContext,
   SelectedIdContext,
-  PondActionsContext,
+  WallActionsContext,
   RenamingIdContext,
-  type PondMode,
-  type PondActions,
-} from '../components/Pond';
+  type WallMode,
+  type WallActions,
+} from '../components/Wall';
 
 const SESSION_ID = 'tab-story';
 
-const noopActions: PondActions = {
+const noopActions: WallActions = {
   onKill: () => {},
   onMinimize: () => {},
   onAlertButton: () => 'noop',
@@ -37,14 +37,14 @@ function primedState(state: Record<string, unknown>) {
 
 function TabStory({
   title = 'my-terminal',
-  mode = 'command' as PondMode,
+  mode = 'command' as WallMode,
   isSelected = true,
   isRenaming = false,
   width = 360,
   reducedMotion = false,
 }: {
   title?: string;
-  mode?: PondMode;
+  mode?: WallMode;
   isSelected?: boolean;
   isRenaming?: boolean;
   width?: number;
@@ -55,18 +55,18 @@ function TabStory({
   return (
     <ModeContext.Provider value={mode}>
       <SelectedIdContext.Provider value={isSelected ? SESSION_ID : null}>
-        <PondActionsContext.Provider value={noopActions}>
+        <WallActionsContext.Provider value={noopActions}>
           <RenamingIdContext.Provider value={isRenaming ? SESSION_ID : null}>
             <div
               className={reducedMotion ? '[&_button]:!animate-none [&_*]:!transition-none' : undefined}
               style={{ width }}
             >
-              <div className="bg-surface-alt" style={{ height: 26 }}>
+              <div className="bg-app-bg" style={{ height: 26 }}>
                 <TerminalPaneHeader api={mockApi} containerApi={{} as any} params={{}} tabLocation={'header' as any} />
               </div>
             </div>
           </RenamingIdContext.Provider>
-        </PondActionsContext.Provider>
+        </WallActionsContext.Provider>
       </SelectedIdContext.Provider>
     </ModeContext.Provider>
   );

@@ -2,6 +2,22 @@ import { clsx } from 'clsx';
 import { tv, type VariantProps } from 'tailwind-variants';
 import type { HTMLAttributes, ReactNode } from 'react';
 
+// App-wide type scale, color strategy, and chrome conventions: see
+// docs/specs/theme.md and AGENTS.md.
+
+// Pane headers/doors own the top corners; terminal bodies own the bottom.
+// All terminal-radius constants derive from this single source so the CSS
+// class, the SVG-friendly px value, and the inline-style rem string can't
+// drift apart. Tailwind's `lg` step is 0.5rem; if that ever changes, both
+// the class names and BASE_REM must move together.
+// Keep the class names as literals so Tailwind's scanner emits them.
+const TERMINAL_BORDER_RADIUS_REM = 0.5;
+export const TERMINAL_BORDER_RADIUS_PX = TERMINAL_BORDER_RADIUS_REM * 16;
+export const TERMINAL_TOP_RADIUS_CLASS = 'rounded-t-lg';
+export const TERMINAL_BOTTOM_RADIUS_CLASS = 'rounded-b-lg';
+export const TERMINAL_SELECTION_BORDER_RADIUS = `${TERMINAL_BORDER_RADIUS_REM}rem`;
+export const DOOR_SELECTION_BORDER_RADIUS = `${TERMINAL_BORDER_RADIUS_REM}rem ${TERMINAL_BORDER_RADIUS_REM}rem 0 0`;
+
 export function PopupButtonRow({
   className,
   ...props
@@ -9,7 +25,7 @@ export function PopupButtonRow({
   return (
     <div
       className={clsx(
-        'flex items-stretch overflow-hidden rounded border border-border bg-surface-raised font-mono text-xs text-foreground shadow-md',
+        'flex items-stretch overflow-hidden rounded border border-border bg-surface-raised font-mono text-sm text-foreground shadow-md',
         className,
       )}
       {...props}
@@ -25,7 +41,7 @@ export const popupButton = tv({
       muted: 'text-muted hover:text-foreground',
     },
     flashed: {
-      true: 'animate-copy-flash bg-accent/25 text-accent',
+      true: 'animate-copy-flash bg-header-active-bg/25 text-header-active-bg',
       false: 'hover:bg-foreground/10',
     },
   },
@@ -34,11 +50,8 @@ export const popupButton = tv({
 
 export type PopupButtonVariants = VariantProps<typeof popupButton>;
 
-/**
- * A keyboard shortcut rendered as `[keys]` in muted color. Use this everywhere
- * key bindings appear in UI text, so the bracket convention and tone are
- * consistent. Pass `className` to override the tone for special states.
- */
+/** Keyboard shortcut rendered as `[keys]` in muted color. Use everywhere key
+ *  bindings appear in UI text so the bracket convention is consistent. */
 export function Shortcut({
   children,
   className,
@@ -49,10 +62,7 @@ export function Shortcut({
   return <span className={clsx('text-muted', className)}>[{children}]</span>;
 }
 
-/**
- * Render a string with any `[...]` segments replaced by <Shortcut>. Use when
- * the shortcut is embedded inline in a label (e.g., "Split left/right [" or |]").
- */
+/** Render a string with any `[...]` segments replaced by <Shortcut>. */
 export function renderShortcuts(text: string): ReactNode[] {
   const parts: ReactNode[] = [];
   const regex = /\[([^\]]+)\]/g;

@@ -4,7 +4,7 @@ export type DoorDirection = 'left' | 'right' | 'above' | 'below';
 
 interface SpatialCandidate { id: string; dist: number; overlaps: boolean }
 
-export function resolvePanelElement(element: HTMLElement | null | undefined): HTMLElement | null {
+export function resolvePaneElement(element: HTMLElement | null | undefined): HTMLElement | null {
   if (!element || !element.isConnected) return null;
   return (element.closest('[class*="groupview"]') as HTMLElement | null) ?? element;
 }
@@ -18,9 +18,9 @@ export function resolvePanelElement(element: HTMLElement | null | undefined): HT
 export function findReattachNeighbor(
   currentId: string,
   api: DockviewApi,
-  panelElements: Map<string, HTMLElement>,
+  paneElements: Map<string, HTMLElement>,
 ): { neighborId: string | null; direction: DoorDirection } {
-  const currentEl = resolvePanelElement(panelElements.get(currentId));
+  const currentEl = resolvePaneElement(paneElements.get(currentId));
   if (!currentEl) return { neighborId: null, direction: 'right' };
 
   const c = currentEl.getBoundingClientRect();
@@ -33,7 +33,7 @@ export function findReattachNeighbor(
 
   for (const panel of api.panels) {
     if (panel.id === currentId) continue;
-    const el = resolvePanelElement(panelElements.get(panel.id));
+    const el = resolvePaneElement(paneElements.get(panel.id));
     if (!el) continue;
     const r = el.getBoundingClientRect();
 
@@ -76,13 +76,13 @@ export function findReattachNeighbor(
  *  Among overlapping candidates, pick the nearest on the primary axis.
  *  If no overlapping candidate, fall back to nearest center in that direction.
  */
-export function findPanelInDirection(
+export function findPaneInDirection(
   currentId: string,
   direction: 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown',
   api: DockviewApi,
-  panelElements: Map<string, HTMLElement>,
+  paneElements: Map<string, HTMLElement>,
 ): string | null {
-  const currentEl = resolvePanelElement(panelElements.get(currentId));
+  const currentEl = resolvePaneElement(paneElements.get(currentId));
   if (!currentEl) return null;
   const c = currentEl.getBoundingClientRect();
   const isHorizontal = direction === 'ArrowLeft' || direction === 'ArrowRight';
@@ -91,7 +91,7 @@ export function findPanelInDirection(
 
   for (const panel of api.panels) {
     if (panel.id === currentId) continue;
-    const el = resolvePanelElement(panelElements.get(panel.id));
+    const el = resolvePaneElement(paneElements.get(panel.id));
     if (!el) continue;
     const r = el.getBoundingClientRect();
 

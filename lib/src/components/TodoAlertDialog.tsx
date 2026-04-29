@@ -1,7 +1,8 @@
-import { useLayoutEffect, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useLayoutEffect, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { XIcon } from '@phosphor-icons/react';
 import { Shortcut } from './design';
+import { clampOverlayPosition, pointInConvexPolygon } from '../lib/ui-geometry';
 import {
   clearSessionTodo,
   DEFAULT_ACTIVITY_STATE,
@@ -14,20 +15,6 @@ import {
   toggleSessionAlert,
   toggleSessionTodo,
 } from '../lib/terminal-registry';
-
-
-function pointInConvexPolygon(x: number, y: number, vertices: Array<{ x: number; y: number }>): boolean {
-  let sign = 0;
-  for (let i = 0; i < vertices.length; i++) {
-    const a = vertices[i];
-    const b = vertices[(i + 1) % vertices.length];
-    const cross = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
-    if (cross === 0) continue;
-    if (sign === 0) sign = cross > 0 ? 1 : -1;
-    else if ((cross > 0 ? 1 : -1) !== sign) return false;
-  }
-  return true;
-}
 
 /**
  * Manages focus trapping, Escape-to-close, and click-outside-to-close for
@@ -96,7 +83,7 @@ export function TodoAlertDialog({
   const activity = activityStates.get(sessionId) ?? DEFAULT_ACTIVITY_STATE;
   const alertEnabled = activity.status !== 'ALERT_DISABLED';
   const dialogRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<{ left: number; top: number }>({
+  const [position, setPosition] = useState<CSSProperties>({
     left: triggerRect.left,
     top: triggerRect.bottom + 8,
   });
@@ -106,16 +93,13 @@ export function TodoAlertDialog({
   useLayoutEffect(() => {
     const el = dialogRef.current;
     if (!el) return;
-    const margin = 12;
     const rect = el.getBoundingClientRect();
-    const desiredLeft = triggerRect.left;
-    const desiredTop = triggerRect.bottom + 8;
-    const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
-    const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
-    setPosition({
-      left: Math.min(Math.max(desiredLeft, margin), maxLeft),
-      top: Math.min(Math.max(desiredTop, margin), maxTop),
-    });
+    setPosition(clampOverlayPosition({
+      left: triggerRect.left,
+      top: triggerRect.bottom + 8,
+      width: rect.width,
+      height: rect.height,
+    }));
   }, [triggerRect]);
 
   usePopoverFocusTrap(dialogRef, onClose);
@@ -203,7 +187,7 @@ export function TodoAlertDialog({
       <div className="mb-3 grid w-fit grid-cols-[auto_auto_auto] items-center gap-x-2 gap-y-2">
         {/* TODO row */}
         <Shortcut>t</Shortcut>
-        <span className="text-xs font-medium text-foreground">TODO</span>
+        <span className="text-sm font-medium text-foreground">TODO</span>
         <OnOffSwitch
           on={activity.todo}
           onEnable={() => markSessionTodo(sessionId)}
@@ -213,7 +197,7 @@ export function TodoAlertDialog({
 
         {/* Alert row */}
         <Shortcut>a</Shortcut>
-        <span className="text-xs font-medium text-foreground">alert</span>
+        <span className="text-sm font-medium text-foreground">alert</span>
         <OnOffSwitch
           on={alertEnabled}
           onEnable={() => toggleSessionAlert(sessionId)}
@@ -222,7 +206,7 @@ export function TodoAlertDialog({
         />
       </div>
 
-      <div className="border-t border-border pt-2 text-xs leading-relaxed text-muted">
+      <div className="border-t border-border pt-2 text-sm leading-relaxed text-muted">
         When a tab with a ringing alert is selected,<br />
         the alert is cleared and the tab gets a TODO.<br />
         Pressing [Enter] into the tab will clear the TODO.
@@ -250,15 +234,15 @@ function OnOffSwitch({
       aria-checked={on}
       aria-label={`${label} ${on ? 'on' : 'off'}`}
       onClick={() => (on ? onDisable() : onEnable())}
-      className="relative inline-flex h-5 w-14 items-center rounded-full border border-border bg-surface text-xs font-medium"
+      className="relative inline-flex h-5 w-14 items-center rounded-full border border-border bg-app-bg text-sm font-medium"
     >
       <span
         aria-hidden
-        className="absolute inset-y-0.5 w-[calc(50%-2px)] rounded-full bg-accent/25 transition-transform"
+        className="absolute inset-y-0.5 w-[calc(50%-2px)] rounded-full bg-header-active-bg/25 transition-transform"
         style={{ transform: on ? 'translateX(2px)' : 'translateX(calc(100% + 2px))' }}
       />
-      <span className={['z-10 flex-1 text-center', on ? 'text-accent' : 'text-muted'].join(' ')}>on</span>
-      <span className={['z-10 flex-1 text-center', on ? 'text-muted' : 'text-accent'].join(' ')}>off</span>
+      <span className={['z-10 flex-1 text-center', on ? 'text-header-active-bg' : 'text-muted'].join(' ')}>on</span>
+      <span className={['z-10 flex-1 text-center', on ? 'text-muted' : 'text-header-active-bg'].join(' ')}>off</span>
     </button>
   );
 }

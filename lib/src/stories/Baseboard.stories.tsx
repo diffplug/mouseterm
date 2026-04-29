@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { Baseboard } from '../components/Baseboard';
-import type { DooredItem } from '../components/Pond';
+import type { DooredItem } from '../components/Wall';
 const makeItem = (id: string, title: string): DooredItem => ({
   id,
   title,
@@ -19,12 +19,11 @@ function withState(byId: Record<string, Record<string, unknown>>) {
   };
 }
 
-function BaseboardStory({ items, activeId = null }: { items: DooredItem[]; activeId?: string | null }) {
+function BaseboardStory({ items }: { items: DooredItem[] }) {
   return (
-    <div className="bg-surface" style={{ width: '100%' }}>
+    <div className="bg-app-bg" style={{ width: '100%' }}>
       <Baseboard
         items={items}
-        activeId={activeId}
         onReattach={(item) => console.log('Reattach:', item.id)}
       />
     </div>
@@ -60,7 +59,6 @@ export const MixedDoorStates: Story = {
       makeItem('p3', 'logs'),
       makeItem('p4', 'notarization'),
     ],
-    activeId: 'p3',
   },
   parameters: withState({
     p1: {
