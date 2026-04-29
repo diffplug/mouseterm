@@ -48,19 +48,13 @@ describe('pickDynamicPalette', () => {
 });
 
 describe('pickAlarmColor', () => {
-  it('rotates the hue away from a chromatic background', () => {
-    const navy: Rgb = [4, 57, 94];
-    const out = pickAlarmColor(navy);
-    expect(out).toMatch(/^#[0-9a-f]{6}$/);
-    expect(out).not.toBe('#04395e');
-    const rgb = hexToRgb(out)!;
-    // navy is blue-dominant; the complement should NOT be blue-dominant
-    expect(rgb[2]).toBeLessThan(Math.max(rgb[0], rgb[1]));
+  it('returns white against a dark background', () => {
+    expect(pickAlarmColor([4, 57, 94])).toBe('#ffffff');
+    expect(pickAlarmColor([37, 37, 38])).toBe('#ffffff');
   });
 
-  it('returns a valid hex for a near-greyscale background', () => {
-    const grey: Rgb = [37, 37, 38];
-    const out = pickAlarmColor(grey);
-    expect(out).toMatch(/^#[0-9a-f]{6}$/);
+  it('returns black against a light background', () => {
+    expect(pickAlarmColor([228, 230, 241])).toBe('#000000');
+    expect(pickAlarmColor([255, 255, 255])).toBe('#000000');
   });
 });

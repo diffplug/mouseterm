@@ -1,24 +1,13 @@
-import { chromaOklab, deltaEOklab, oklchToCssHex, rgbOf, rgbToOklab } from '../color-contrast';
+import { chromaOklab, deltaEOklab, rgbOf, rgbToOklab } from '../color-contrast';
 
 type Lab = [number, number, number];
 
-const ALARM_TARGET_CHROMA = 0.3;
-const ALARM_GREYSCALE_HUE = 90;
-const ALARM_GREY_CHROMA_THRESHOLD = 0.01;
-
-/** Compute an alarm color that visually pops against an arbitrary background.
- *  - Chromatic bg: rotate hue by 180°, push chroma high.
- *  - Greyscale bg: pick hue=90 (yellow-green), push chroma high.
- *  - Lightness is flipped (1 - bgL) so the alarm always contrasts with the bg.
- *  Per-channel sRGB clipping in oklchToCssHex handles out-of-gamut targets. */
+/** Return pure black or pure white — whichever contrasts the given bg.
+ *  Luminance contrast is the dominant signal for visibility, so a flat
+ *  black/white pick beats any chroma-rotation scheme in practice. */
 export function pickAlarmColor(bgRgb: [number, number, number]): string {
-  const [L, a, b] = rgbToOklab(bgRgb);
-  const C = Math.sqrt(a * a + b * b);
-  const Hdeg = (Math.atan2(b, a) * 180) / Math.PI;
-  const H = C >= ALARM_GREY_CHROMA_THRESHOLD
-    ? (Hdeg + 180 + 360) % 360
-    : ALARM_GREYSCALE_HUE;
-  return oklchToCssHex({ L: 1 - L, C: ALARM_TARGET_CHROMA, H });
+  const [L] = rgbToOklab(bgRgb);
+  return L < 0.5 ? '#ffffff' : '#000000';
 }
 
 export interface FocusRingCandidate {
