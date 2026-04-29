@@ -83,7 +83,10 @@ export function orchestrateKill(
       void pre.el.offsetHeight;
       pre.el.style.transition = 'clip-path 440ms cubic-bezier(0.22, 1, 0.36, 1)';
       pre.el.style.clipPath = 'inset(0)';
+      let cleaned = false;
       const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
         pre.el.style.transition = '';
         pre.el.style.clipPath = '';
       };
