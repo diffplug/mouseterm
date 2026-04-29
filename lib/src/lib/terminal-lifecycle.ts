@@ -25,7 +25,7 @@ import {
 } from './terminal-report-filter';
 import { getTerminalTheme, paintTerminalHost, startThemeObserver } from './terminal-theme';
 
-function setupTerminalEntry(id: string): TerminalEntry {
+function createXtermHost(): { terminal: Terminal; fit: FitAddon; element: HTMLDivElement } {
   const styles = getComputedStyle(document.body);
   const editorFontSize = parseInt(styles.getPropertyValue('--vscode-editor-font-size'), 10) || 12;
   const editorFontFamily = styles.getPropertyValue('--vscode-editor-font-family').trim() || "'SF Mono', Menlo, Monaco, monospace";
@@ -47,26 +47,37 @@ function setupTerminalEntry(id: string): TerminalEntry {
   terminal.open(element);
   paintTerminalHost(element, terminal, theme.background);
 
+  return { terminal, fit, element };
+}
+
+/** PTY data/exit listeners. Returns the unsubscribe pair. */
+function wirePtyEvents(id: string, terminal: Terminal): () => void {
   const handleData = (detail: { id: string; data: string }) => {
-    if (detail.id === id) {
-      terminal.write(detail.data);
-    }
+    if (detail.id === id) terminal.write(detail.data);
+  };
+  const handleExit = (detail: { id: string; exitCode: number }) => {
+    if (detail.id === id) terminal.write(`\r\n[Process exited with code ${detail.exitCode}]\r\n`);
   };
   getPlatform().onPtyData(handleData);
-
-  const handleExit = (detail: { id: string; exitCode: number }) => {
-    if (detail.id === id) {
-      terminal.write(`\r\n[Process exited with code ${detail.exitCode}]\r\n`);
-    }
-  };
   getPlatform().onPtyExit(handleExit);
+  return () => {
+    getPlatform().offPtyData(handleData);
+    getPlatform().offPtyExit(handleExit);
+  };
+}
 
+/** xterm input/resize/render handlers. Returns a dispose. The render
+ *  handler watches selectionBaseline (mutated by the mouse router) so the
+ *  baseline is read by reference rather than captured. */
+function wireXtermHandlers(
+  id: string,
+  terminal: Terminal,
+  selectionBaselineRef: { current: string | null },
+): () => void {
   const inputDisposable = terminal.onData((data) => {
     const isSyntheticTerminalReport = inputIsSyntheticTerminalReport(data);
 
-    if (inputIsReplayTerminalReport(data) && registry.get(id)?.isReplaying) {
-      return;
-    }
+    if (inputIsReplayTerminalReport(data) && registry.get(id)?.isReplaying) return;
 
     if (!isSyntheticTerminalReport) {
       const entry = registry.get(id);
@@ -80,33 +91,42 @@ function setupTerminalEntry(id: string): TerminalEntry {
     getPlatform().writePty(id, data);
   });
 
-  let selectionBaseline: string | null = null;
-
   const resizeDisposable = terminal.onResize(({ cols, rows }) => {
     getPlatform().alertResize(id);
     getPlatform().resizePty(id, cols, rows);
     bumpRenderTick();
-    if (getMouseSelectionState(id).selection) {
-      setMouseSelection(id, null);
-    }
-    selectionBaseline = null;
+    if (getMouseSelectionState(id).selection) setMouseSelection(id, null);
+    selectionBaselineRef.current = null;
   });
 
   const renderDisposable = terminal.onRender(() => {
     bumpRenderTick();
-    if (selectionBaseline === null) return;
+    if (selectionBaselineRef.current === null) return;
     const sel = getMouseSelectionState(id).selection;
     if (!sel || sel.dragging) {
-      selectionBaseline = null;
+      selectionBaselineRef.current = null;
       return;
     }
     const current = extractSelectionText(terminal, sel);
-    if (current !== selectionBaseline) {
+    if (current !== selectionBaselineRef.current) {
       setMouseSelection(id, null);
-      selectionBaseline = null;
+      selectionBaselineRef.current = null;
     }
   });
 
+  return () => {
+    inputDisposable.dispose();
+    resizeDisposable.dispose();
+    renderDisposable.dispose();
+  };
+}
+
+function setupTerminalEntry(id: string): TerminalEntry {
+  const { terminal, fit, element } = createXtermHost();
+  const selectionBaselineRef = { current: null as string | null };
+
+  const disposePty = wirePtyEvents(id, terminal);
+  const disposeXterm = wireXtermHandlers(id, terminal, selectionBaselineRef);
   const mouseModeObserver = attachMouseModeObserver(id, terminal);
   const cleanupMouseRouter = attachTerminalMouseRouter({
     id,
@@ -114,16 +134,13 @@ function setupTerminalEntry(id: string): TerminalEntry {
     element,
     getOverlayDims: getTerminalOverlayDims,
     setSelectionBaseline: (baseline) => {
-      selectionBaseline = baseline;
+      selectionBaselineRef.current = baseline;
     },
   });
 
   const cleanup = () => {
-    getPlatform().offPtyData(handleData);
-    getPlatform().offPtyExit(handleExit);
-    inputDisposable.dispose();
-    resizeDisposable.dispose();
-    renderDisposable.dispose();
+    disposePty();
+    disposeXterm();
     mouseModeObserver.dispose();
     cleanupMouseRouter();
   };
