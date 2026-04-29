@@ -123,6 +123,9 @@ Storybook simulates VSCode themes through `lib/.storybook/themes.ts`. It must
 also run bundled theme vars through `completeThemeVars()` (with the same host
 typography defaults as `applyTheme()`) before injecting them, so isolated
 component stories see the same materialized `--vscode-*` token set as the app.
+Storybook's default simulated host theme is `Light (Visual Studio)`, with a
+first-bundled-theme fallback so a renamed or removed bundle cannot leave stories
+without theme vars.
 The Storybook preview decorator also computes and publishes the dynamic palette
 vars (`--color-door-bg`, `--color-door-fg`, `--color-focus-ring`) through the
 shared `computeDynamicPalette()` helper, matching the runtime
