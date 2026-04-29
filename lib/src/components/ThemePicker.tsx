@@ -84,7 +84,7 @@ export function ThemePicker({ variant, className = '', defaultThemeId }: ThemePi
     : 'relative flex items-center';
   const triggerClass = isPlayground
     ? 'flex w-[116px] min-w-0 cursor-pointer items-baseline justify-end gap-1.5 rounded-md bg-[var(--color-header-inactive-bg)] text-right text-sm text-[var(--color-header-inactive-fg)] sm:w-40 md:w-56'
-    : 'flex h-6 max-w-[190px] cursor-pointer items-center gap-1.5 rounded border border-transparent px-2 text-sm transition-colors hover:opacity-85';
+    : 'flex h-6 cursor-pointer items-center gap-1 rounded px-2 text-xs text-muted transition-colors hover:bg-surface-raised hover:text-foreground';
   const menuClass = isPlayground
     ? 'fixed top-16 right-4 left-4 z-50 overflow-hidden rounded border font-mono shadow-2xl md:absolute md:top-full md:right-0 md:left-auto md:mt-2 md:w-[22rem]'
     : 'absolute right-0 top-full z-50 mt-1 w-[280px] overflow-hidden rounded border font-mono shadow-2xl';
@@ -103,28 +103,24 @@ export function ThemePicker({ variant, className = '', defaultThemeId }: ThemePi
         data-theme-picker-trigger={isPlayground ? 'playground' : undefined}
         onClick={() => setOpen((value) => !value)}
         className={triggerClass}
-        style={isPlayground ? undefined : styles.trigger(open)}
       >
         {isPlayground ? (
-          <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
-        ) : activeTheme ? (
-          <ThemeSwatch theme={activeTheme} size={swatchSize} />
-        ) : null}
-        {!isPlayground ? <span className="hidden text-sm sm:inline">Theme:</span> : null}
-        <span
-          id={currentId}
-          data-theme-picker-current={isPlayground ? 'true' : undefined}
-          className={`min-w-0 truncate ${
-            isPlayground
-              ? 'underline-offset-4 decoration-[var(--color-header-inactive-fg)]'
-              : 'font-mono text-sm'
-          }`}
-        >
-          {activeTheme?.label ?? 'Select theme'}
-        </span>
-        {!isPlayground ? (
-          <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
-        ) : null}
+          <>
+            <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
+            <span
+              id={currentId}
+              data-theme-picker-current="true"
+              className="min-w-0 truncate underline-offset-4 decoration-[var(--color-header-inactive-fg)]"
+            >
+              {activeTheme?.label ?? 'Select theme'}
+            </span>
+          </>
+        ) : (
+          <>
+            <span id={currentId}>Theme</span>
+            <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
+          </>
+        )}
       </button>
 
       {open ? (
