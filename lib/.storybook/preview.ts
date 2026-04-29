@@ -34,7 +34,11 @@ const DYNAMIC_PALETTE_VARS = [
   '--color-door-fg',
   '--color-focus-ring',
 ] as const;
-const DEFAULT_STORYBOOK_THEME = 'GitHub Dark Default';
+const PREFERRED_STORYBOOK_THEME = 'Light (Visual Studio)';
+const FIRST_STORYBOOK_THEME = Object.keys(VSCODE_THEMES)[0] ?? '';
+const DEFAULT_STORYBOOK_THEME = VSCODE_THEMES[PREFERRED_STORYBOOK_THEME]
+  ? PREFERRED_STORYBOOK_THEME
+  : FIRST_STORYBOOK_THEME;
 
 function setStylePropertyIfChanged(
   style: CSSStyleDeclaration,
@@ -91,6 +95,13 @@ function applyStorybookTheme(themeName: string) {
   if (ctx) publishDynamicPalette(body, ctx);
 }
 
+function resolveStorybookTheme(requestedThemeName: string | undefined) {
+  if (requestedThemeName && VSCODE_THEMES[requestedThemeName]) {
+    return requestedThemeName;
+  }
+  return DEFAULT_STORYBOOK_THEME;
+}
+
 const preview: Preview = {
   parameters: {
     layout: 'fullscreen',
@@ -113,9 +124,7 @@ const preview: Preview = {
     // Theme switcher: inject --vscode-* CSS variables
     (Story, context) => {
       const requestedThemeName = context.globals.theme as string | undefined;
-      const themeName = requestedThemeName && VSCODE_THEMES[requestedThemeName]
-        ? requestedThemeName
-        : DEFAULT_STORYBOOK_THEME;
+      const themeName = resolveStorybookTheme(requestedThemeName);
 
       applyStorybookTheme(themeName);
       useLayoutEffect(() => {
