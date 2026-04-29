@@ -52,6 +52,7 @@ export function orchestrateKill(
   const finalize = () => {
     if (finalized) return;
     finalized = true;
+    killedGroupEl.removeEventListener('animationend', onAnimationEnd);
 
     interface Pre { el: HTMLElement; rect: DOMRect; }
     const preRects = new Map<string, Pre>();
@@ -97,10 +98,11 @@ export function orchestrateKill(
     if (overlayEl) overlayEl.classList.remove('ring-shrinking-to-br');
   };
 
-  killedGroupEl.addEventListener('animationend', (ev) => {
-    if ((ev as AnimationEvent).animationName !== fadeAnimationName) return;
+  const onAnimationEnd = (ev: AnimationEvent) => {
+    if (ev.animationName !== fadeAnimationName) return;
     finalize();
-  });
+  };
+  killedGroupEl.addEventListener('animationend', onAnimationEnd);
   // Safety: if animationend never fires, still finalize.
   setTimeout(finalize, 1000);
 }
