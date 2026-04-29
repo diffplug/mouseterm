@@ -47,7 +47,7 @@ const downloadAccentStyle = {
 } as CSSProperties;
 
 const DOWNLOAD_BUTTON_BASE =
-  "relative z-10 inline-flex min-w-0 origin-bottom-right items-center justify-start rounded-md border font-display leading-none transition duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:translate-y-1.5 group-focus-visible:translate-y-1.5 motion-reduce:transition-none motion-reduce:group-hover:transform-none motion-reduce:group-focus-visible:transform-none";
+  "relative z-10 inline-flex min-w-0 items-center justify-start rounded-md border font-display leading-none transition duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] will-change-transform motion-reduce:transition-none motion-reduce:group-hover:rotate-0 motion-reduce:group-focus-visible:rotate-0";
 
 const DOWNLOAD_BUTTON_VARIANTS = {
   primary:
@@ -56,6 +56,40 @@ const DOWNLOAD_BUTTON_VARIANTS = {
     "min-h-12 w-full gap-3 px-5 py-3 text-base sm:w-auto sm:text-lg border-[var(--download-border)] bg-[var(--download-panel)] text-[var(--download-accent)] hover:border-[var(--download-accent)] hover:bg-[var(--download-panel-hover)]",
   compact:
     "min-h-12 w-full gap-3 px-5 py-3 text-base sm:w-auto sm:text-lg border-[var(--download-border)] bg-[var(--download-panel)] text-[var(--download-accent)] hover:border-[var(--download-accent)] hover:bg-[var(--download-panel-hover)]",
+} as const;
+
+const DOWNLOAD_MOUSE_BASE =
+  "pointer-events-none absolute z-0 size-6 transition-transform duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 motion-reduce:group-focus-visible:translate-y-0";
+
+const PEEK_MOTIONS = {
+  playground: {
+    faceClass: "origin-top-right group-hover:rotate-[-4.5deg] group-focus-visible:rotate-[-4.5deg]",
+    mouseClass: "left-3 top-1.5 -rotate-6 group-hover:-translate-y-4 group-hover:-rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:-rotate-12 motion-reduce:group-hover:-rotate-6 motion-reduce:group-focus-visible:-rotate-6",
+  },
+  marketplace: {
+    faceClass: "origin-top-left group-hover:rotate-[4.5deg] group-focus-visible:rotate-[4.5deg]",
+    mouseClass: "right-3 top-1.5 rotate-6 group-hover:-translate-y-4 group-hover:rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:rotate-12 motion-reduce:group-hover:rotate-6 motion-reduce:group-focus-visible:rotate-6",
+  },
+  openVsx: {
+    faceClass: "origin-bottom-right group-hover:rotate-[4.5deg] group-focus-visible:rotate-[4.5deg]",
+    mouseClass: "bottom-1.5 left-3 rotate-180 group-hover:translate-y-4 group-focus-visible:translate-y-4",
+  },
+  mac: {
+    faceClass: "origin-top-left group-hover:rotate-[3.75deg] group-focus-visible:rotate-[3.75deg]",
+    mouseClass: "right-3 top-1.5 rotate-6 group-hover:-translate-y-4 group-hover:rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:rotate-12 motion-reduce:group-hover:rotate-6 motion-reduce:group-focus-visible:rotate-6",
+  },
+  windows: {
+    faceClass: "origin-top-right group-hover:rotate-[-3.75deg] group-focus-visible:rotate-[-3.75deg]",
+    mouseClass: "left-3 top-1.5 -rotate-6 group-hover:-translate-y-4 group-hover:-rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:-rotate-12 motion-reduce:group-hover:-rotate-6 motion-reduce:group-focus-visible:-rotate-6",
+  },
+  linux: {
+    faceClass: "origin-bottom-left group-hover:rotate-[-3.75deg] group-focus-visible:rotate-[-3.75deg]",
+    mouseClass: "bottom-1.5 right-3 rotate-180 group-hover:translate-y-4 group-focus-visible:translate-y-4",
+  },
+  other: {
+    faceClass: "origin-bottom-right group-hover:rotate-[3.75deg] group-focus-visible:rotate-[3.75deg]",
+    mouseClass: "bottom-1.5 left-3 rotate-180 group-hover:translate-y-4 group-focus-visible:translate-y-4",
+  },
 } as const;
 
 const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string[] }> = {
@@ -91,6 +125,7 @@ function DownloadButton({
   icon,
   className = "",
   onClick,
+  peek,
   variant = "primary",
 }: {
   href: string;
@@ -98,8 +133,11 @@ function DownloadButton({
   icon: ReactNode;
   className?: string;
   onClick?: MouseEventHandler<HTMLAnchorElement>;
+  peek: keyof typeof PEEK_MOTIONS;
   variant?: "primary" | "wide" | "compact";
 }) {
+  const motion = PEEK_MOTIONS[peek];
+
   return (
     <a
       href={href}
@@ -110,9 +148,9 @@ function DownloadButton({
         src={tinyIconUrl}
         alt=""
         aria-hidden="true"
-        className="pointer-events-none absolute left-3 top-1.5 z-0 size-6 -rotate-6 transition-transform duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:-translate-y-4 group-hover:-rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:-rotate-12 motion-reduce:transition-none motion-reduce:group-hover:transform-none motion-reduce:group-focus-visible:transform-none"
+        className={`${DOWNLOAD_MOUSE_BASE} ${motion.mouseClass}`}
       />
-      <span className={`${DOWNLOAD_BUTTON_BASE} ${DOWNLOAD_BUTTON_VARIANTS[variant]} ${className}`}>
+      <span className={`${DOWNLOAD_BUTTON_BASE} ${motion.faceClass} ${DOWNLOAD_BUTTON_VARIANTS[variant]} ${className}`}>
         <span
           aria-hidden="true"
           className="flex size-6 shrink-0 items-center justify-center"
@@ -428,6 +466,7 @@ function Home() {
           <DownloadButton
             href="/playground"
             icon={<TerminalIcon size={26} weight="bold" />}
+            peek="playground"
           >
             Try it in the Playground
           </DownloadButton>
@@ -440,6 +479,7 @@ function Home() {
                 <DownloadButton
                   href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm"
                   icon={<StorefrontIcon size={22} weight="bold" />}
+                  peek="marketplace"
                   variant="wide"
                 >
                   Visual Studio Marketplace
@@ -447,6 +487,7 @@ function Home() {
                 <DownloadButton
                   href="https://open-vsx.org/extension/diffplug/mouseterm"
                   icon={<CubeIcon size={22} weight="bold" />}
+                  peek="openVsx"
                   variant="wide"
                 >
                   Open VSX Registry
@@ -461,6 +502,7 @@ function Home() {
                   href={standaloneLatest.platforms["darwin-aarch64"].url}
                   onClick={() => setInstallGuide("darwin-aarch64")}
                   icon={<AppleLogoIcon size={22} weight="fill" />}
+                  peek="mac"
                   variant="compact"
                 >
                   {INSTALL_STEPS["darwin-aarch64"].pill}
@@ -469,6 +511,7 @@ function Home() {
                   href={standaloneLatest.platforms["windows-x86_64"].url}
                   onClick={() => setInstallGuide("windows-x86_64")}
                   icon={<WindowsLogoIcon size={22} weight="fill" />}
+                  peek="windows"
                   variant="compact"
                 >
                   {INSTALL_STEPS["windows-x86_64"].pill}
@@ -477,6 +520,7 @@ function Home() {
                   href={standaloneLatest.platforms["linux-x86_64"].url}
                   onClick={() => setInstallGuide("linux-x86_64")}
                   icon={<LinuxLogoIcon size={22} weight="fill" />}
+                  peek="linux"
                   variant="compact"
                 >
                   {INSTALL_STEPS["linux-x86_64"].pill}
@@ -484,6 +528,7 @@ function Home() {
                 <DownloadButton
                   href="https://github.com/diffplug/mouseterm/issues/8"
                   icon={<DotsThreeOutlineIcon size={22} weight="fill" />}
+                  peek="other"
                   variant="compact"
                 >
                   Other
