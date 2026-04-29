@@ -46,15 +46,15 @@ const downloadAccentStyle = {
 } as CSSProperties;
 
 const DOWNLOAD_BUTTON_BASE =
-  "group inline-flex min-w-0 items-center justify-start rounded-lg border-2 font-display leading-none transition duration-150 ease-out focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[var(--download-accent)] motion-reduce:transition-none";
+  "group inline-flex min-w-0 items-center justify-start rounded-md border font-display leading-none transition duration-150 ease-out focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[var(--download-accent)] motion-reduce:transition-none";
 
 const DOWNLOAD_BUTTON_VARIANTS = {
   primary:
-    "min-h-[5.875rem] w-full gap-8 px-10 py-5 text-2xl sm:w-auto sm:text-[1.75rem] border-[var(--download-accent)] bg-[var(--download-primary)] text-[var(--color-text)] shadow-[0_0_24px_color-mix(in_oklch,var(--color-caramel)_22%,transparent)] hover:border-[var(--download-accent-strong)] hover:bg-[var(--download-primary-hover)]",
+    "min-h-14 w-full gap-4 px-6 py-3 text-lg sm:w-auto border-[var(--download-accent)] bg-[var(--download-primary)] text-[var(--color-text)] shadow-[0_0_18px_color-mix(in_oklch,var(--color-caramel)_18%,transparent)] hover:border-[var(--download-accent-strong)] hover:bg-[var(--download-primary-hover)]",
   wide:
-    "min-h-[4.5rem] w-full gap-6 px-10 py-4 text-xl sm:w-auto sm:text-2xl border-[var(--download-border)] bg-[var(--download-panel)] text-[var(--download-accent)] hover:border-[var(--download-accent)] hover:bg-[var(--download-panel-hover)]",
+    "min-h-12 w-full gap-3 px-5 py-3 text-base sm:w-auto sm:text-lg border-[var(--download-border)] bg-[var(--download-panel)] text-[var(--download-accent)] hover:border-[var(--download-accent)] hover:bg-[var(--download-panel-hover)]",
   compact:
-    "min-h-[4.5rem] w-full gap-5 px-8 py-4 text-xl sm:w-auto border-[var(--download-border)] bg-[var(--download-panel)] text-[var(--download-accent)] hover:border-[var(--download-accent)] hover:bg-[var(--download-panel-hover)]",
+    "min-h-12 w-full gap-3 px-5 py-3 text-base sm:w-auto sm:text-lg border-[var(--download-border)] bg-[var(--download-panel)] text-[var(--download-accent)] hover:border-[var(--download-accent)] hover:bg-[var(--download-panel-hover)]",
 } as const;
 
 const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string[] }> = {
@@ -107,7 +107,7 @@ function DownloadButton({
     >
       <span
         aria-hidden="true"
-        className="flex size-8 shrink-0 items-center justify-center"
+        className="flex size-6 shrink-0 items-center justify-center"
       >
         {icon}
       </span>
@@ -137,11 +137,11 @@ function DownloadGroupHeader({
   children: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex items-center gap-3">
-      <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center text-[var(--download-accent)]">
+    <div className="mb-3 flex items-center gap-3">
+      <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center text-[var(--download-accent)]">
         {icon}
       </span>
-      <h3 className="font-display text-2xl text-[var(--color-text)]">{children}</h3>
+      <h3 className="font-display text-xl text-[var(--color-text)]">{children}</h3>
     </div>
   );
 }
@@ -413,31 +413,31 @@ function Home() {
           </div>
         </section>
 
-        <section id="download" className="mx-auto max-w-[80rem] px-4 py-20 sm:px-6 lg:px-0" style={downloadAccentStyle}>
-          <h2 className="mb-8 font-display text-[clamp(2rem,3vw+0.75rem,3.75rem)] text-[var(--color-text)]">Get MouseTerm</h2>
+        <section id="download" className="mx-auto max-w-5xl px-4 py-20 md:px-6" style={downloadAccentStyle}>
+          <h2 className="mb-8 font-display text-[clamp(1.5rem,2.5vw+0.5rem,2.25rem)] text-[var(--color-text)]">Get MouseTerm</h2>
 
           <DownloadButton
             href="/playground"
-            icon={<TerminalIcon size={34} weight="bold" />}
+            icon={<TerminalIcon size={26} weight="bold" />}
           >
             Try it in the Playground
           </DownloadButton>
 
-          <div className="mt-12 space-y-12">
+          <div className="mt-10 space-y-8">
             <div>
-              <DownloadGroupHeader icon={<VsCodeIcon className="size-7" />}>VS Code Extension</DownloadGroupHeader>
-              <p className="mb-6 text-xl leading-relaxed opacity-70">Enhance your workflow in Visual Studio Code.</p>
-              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-4">
+              <DownloadGroupHeader icon={<VsCodeIcon className="size-6" />}>VS Code Extension</DownloadGroupHeader>
+              <p className="mb-4 text-lg leading-relaxed opacity-70">Enhance your workflow in Visual Studio Code.</p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-3">
                 <DownloadButton
                   href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm"
-                  icon={<StorefrontIcon size={28} weight="bold" />}
+                  icon={<StorefrontIcon size={22} weight="bold" />}
                   variant="wide"
                 >
                   Visual Studio Marketplace
                 </DownloadButton>
                 <DownloadButton
                   href="https://open-vsx.org/extension/diffplug/mouseterm"
-                  icon={<CubeIcon size={28} weight="bold" />}
+                  icon={<CubeIcon size={22} weight="bold" />}
                   variant="wide"
                 >
                   Open VSX Registry
@@ -445,13 +445,13 @@ function Home() {
               </div>
             </div>
             <div>
-              <DownloadGroupHeader icon={<DesktopIcon size={30} weight="bold" />}>Standalone App</DownloadGroupHeader>
-              <p className="mb-6 text-xl leading-relaxed opacity-70">Download MouseTerm for your platform.</p>
-              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-4">
+              <DownloadGroupHeader icon={<DesktopIcon size={24} weight="bold" />}>Standalone App</DownloadGroupHeader>
+              <p className="mb-4 text-lg leading-relaxed opacity-70">Download MouseTerm for your platform.</p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-3">
                 <DownloadButton
                   href={standaloneLatest.platforms["darwin-aarch64"].url}
                   onClick={() => setInstallGuide("darwin-aarch64")}
-                  icon={<AppleLogoIcon size={28} weight="fill" />}
+                  icon={<AppleLogoIcon size={22} weight="fill" />}
                   variant="compact"
                 >
                   {INSTALL_STEPS["darwin-aarch64"].pill}
@@ -459,7 +459,7 @@ function Home() {
                 <DownloadButton
                   href={standaloneLatest.platforms["windows-x86_64"].url}
                   onClick={() => setInstallGuide("windows-x86_64")}
-                  icon={<WindowsLogoIcon size={28} weight="fill" />}
+                  icon={<WindowsLogoIcon size={22} weight="fill" />}
                   variant="compact"
                 >
                   {INSTALL_STEPS["windows-x86_64"].pill}
@@ -467,14 +467,14 @@ function Home() {
                 <DownloadButton
                   href={standaloneLatest.platforms["linux-x86_64"].url}
                   onClick={() => setInstallGuide("linux-x86_64")}
-                  icon={<LinuxLogoIcon size={28} weight="fill" />}
+                  icon={<LinuxLogoIcon size={22} weight="fill" />}
                   variant="compact"
                 >
                   {INSTALL_STEPS["linux-x86_64"].pill}
                 </DownloadButton>
                 <DownloadButton
                   href="https://github.com/diffplug/mouseterm/issues/8"
-                  icon={<DotsThreeOutlineIcon size={28} weight="fill" />}
+                  icon={<DotsThreeOutlineIcon size={22} weight="fill" />}
                   variant="compact"
                 >
                   Other
