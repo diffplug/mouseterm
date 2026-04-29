@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ClipboardTextIcon, XIcon } from '@phosphor-icons/react';
-import { captureThemeDiagnostics, type SemanticTokenSnapshot, type ThemeDiagnosticSnapshot } from '../lib/themes';
+import {
+  captureThemeDiagnostics,
+  type SemanticTokenSnapshot,
+  type ThemeDiagnosticSnapshot,
+  type VisibleVarOrigin,
+  type VscodeThemeVarTraceOrigin,
+} from '../lib/themes';
 
 export const OPEN_THEME_DEBUGGER_EVENT = 'mouseterm:openThemeDebugger';
 
@@ -31,7 +37,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function originClass(origin: string): string {
+function originClass(origin: VscodeThemeVarTraceOrigin | VisibleVarOrigin): string {
   switch (origin) {
     case 'provided':
     case 'host-provided':
@@ -41,8 +47,9 @@ function originClass(origin: string): string {
       return 'text-warning';
     case 'fallback':
       return 'text-muted';
-    default:
-      return 'text-muted';
+    case 'unresolved':
+    case 'missing':
+      return 'text-error';
   }
 }
 
