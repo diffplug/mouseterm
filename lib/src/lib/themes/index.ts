@@ -21,9 +21,7 @@ export type {
 } from './diagnostics';
 export {
   completeThemeVars,
-  getMaterializedVscodeThemeVars,
   inferVscodeThemeKind,
-  installVscodeThemeVarResolver,
   traceThemeVars,
 } from './vscode-color-resolver';
 export type {
@@ -32,6 +30,10 @@ export type {
   VscodeThemeVarTrace,
   VscodeThemeVarTraceOrigin,
 } from './vscode-color-resolver';
+export {
+  getMaterializedVscodeThemeVars,
+  installVscodeThemeVarResolver,
+} from './vscode-color-observer';
 export {
   getBundledThemes,
   getInstalledThemes,

@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { initPlatform } from "./lib/platform";
 import { resumeOrRestore } from "./lib/reconnect";
 import { initAlertStateReceiver } from "./lib/terminal-registry";
-import { installVscodeThemeVarResolver } from "./lib/themes/vscode-color-resolver";
+import { installVscodeThemeVarResolver } from "./lib/themes/vscode-color-observer";
 import App from "./App";
 import "./index.css";
 
