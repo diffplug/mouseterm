@@ -423,8 +423,8 @@ function Home() {
         </section>
 
         <section id="download" className="mx-auto max-w-5xl px-4 py-20 md:px-6" style={downloadAccentStyle}>
-          <h2 className="mb-8 font-display text-[clamp(1.5rem,2.5vw+0.5rem,2.25rem)] text-[var(--color-text)]">Get MouseTerm</h2>
-
+          <h2 className="font-display text-[clamp(1.5rem,2.5vw+0.5rem,2.25rem)] text-[var(--color-text)]">Get MouseTerm</h2>
+          <p className="mb-4 text-lg leading-relaxed opacity-70">The multitasking terminal for mice.</p>
           <DownloadButton
             href="/playground"
             icon={<TerminalIcon size={26} weight="bold" />}
@@ -435,7 +435,7 @@ function Home() {
           <div className="mt-10 space-y-8">
             <div>
               <DownloadGroupHeader icon={<VsCodeIcon className="size-6" />}>VS Code Extension</DownloadGroupHeader>
-              <p className="mb-4 text-lg leading-relaxed opacity-70">Enhance your workflow in Visual Studio Code.</p>
+              <p className="mb-4 text-lg leading-relaxed opacity-70">Also works in Cursor, Windsurf, Antigravity, or any other VS Code fork.</p>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-3">
                 <DownloadButton
                   href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm"
@@ -455,7 +455,7 @@ function Home() {
             </div>
             <div>
               <DownloadGroupHeader icon={<DesktopIcon size={24} weight="bold" />}>Standalone App</DownloadGroupHeader>
-              <p className="mb-4 text-lg leading-relaxed opacity-70">Download MouseTerm for your platform.</p>
+              <p className="mb-4 text-lg leading-relaxed opacity-70">Don't settle for your operating system's built-in terminal, get a nice one!</p>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-3">
                 <DownloadButton
                   href={standaloneLatest.platforms["darwin-aarch64"].url}
