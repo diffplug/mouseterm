@@ -1,8 +1,19 @@
-import { useEffect, useRef, useState, type MouseEventHandler, type ReactNode } from "react";
+import {
+  AppleLogoIcon,
+  CheckCircleIcon,
+  CubeIcon,
+  DesktopIcon,
+  DotsThreeOutlineIcon,
+  LinuxLogoIcon,
+  StorefrontIcon,
+  TerminalIcon,
+  WindowsLogoIcon,
+} from "@phosphor-icons/react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEventHandler, type ReactNode } from "react";
 import SiteHeader from "../components/SiteHeader";
 import posterUrl from "../assets/video-climb-blink-and-stare.webp";
 import videoUrl from "../assets/video-climb-blink-and-stare.mp4";
-import tinyIconUrl from "../../assets/icon-tiny-dark.png";
+import visualStudioIconUrl from "../assets/visual-studio-icon.svg";
 import standaloneLatest from "@standalone-latest";
 
 export { Home as Component };
@@ -24,11 +35,27 @@ const UNPIN_THRESHOLD = 0.8;
 /** Clamp a value to 0–1. */
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
-const PILL =
-  "inline-block px-4 py-1.5 rounded-md bg-[var(--color-caramel)] text-[var(--color-text)] text-sm font-display";
+const downloadAccentStyle = {
+  "--download-accent": "color-mix(in oklch, var(--color-caramel) 70%, var(--color-text))",
+  "--download-accent-strong": "color-mix(in oklch, var(--color-caramel) 82%, var(--color-text))",
+  "--download-border": "color-mix(in oklch, var(--color-caramel) 68%, transparent)",
+  "--download-primary": "color-mix(in oklch, var(--color-caramel) 86%, var(--color-bg))",
+  "--download-primary-hover": "color-mix(in oklch, var(--color-caramel) 94%, var(--color-text))",
+  "--download-panel": "color-mix(in oklch, var(--color-surface) 58%, transparent)",
+  "--download-panel-hover": "color-mix(in oklch, var(--color-caramel) 12%, var(--color-surface))",
+} as CSSProperties;
 
-const PRIMARY_BUTTON =
-  "inline-block px-6 py-3 rounded-md bg-[var(--color-caramel)] text-[var(--color-text)] font-display text-lg";
+const DOWNLOAD_BUTTON_BASE =
+  "group inline-flex min-w-0 items-center justify-start rounded-lg border-2 font-display leading-none transition duration-150 ease-out focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[var(--download-accent)] motion-reduce:transition-none";
+
+const DOWNLOAD_BUTTON_VARIANTS = {
+  primary:
+    "min-h-[5.875rem] w-full gap-8 px-10 py-5 text-2xl sm:w-auto sm:text-[1.75rem] border-[var(--download-accent)] bg-[var(--download-primary)] text-[var(--color-text)] shadow-[0_0_24px_color-mix(in_oklch,var(--color-caramel)_22%,transparent)] hover:border-[var(--download-accent-strong)] hover:bg-[var(--download-primary-hover)]",
+  wide:
+    "min-h-[4.5rem] w-full gap-6 px-10 py-4 text-xl sm:w-auto sm:text-2xl border-[var(--download-border)] bg-[var(--download-panel)] text-[var(--download-accent)] hover:border-[var(--download-accent)] hover:bg-[var(--download-panel-hover)]",
+  compact:
+    "min-h-[4.5rem] w-full gap-5 px-8 py-4 text-xl sm:w-auto border-[var(--download-border)] bg-[var(--download-panel)] text-[var(--download-accent)] hover:border-[var(--download-accent)] hover:bg-[var(--download-panel-hover)]",
+} as const;
 
 const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string[] }> = {
   "darwin-aarch64": {
@@ -57,50 +84,65 @@ const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string
   },
 };
 
-function PeekButton({
+function DownloadButton({
   href,
   children,
-  className,
+  icon,
+  className = "",
   onClick,
   variant = "primary",
 }: {
   href: string;
   children: ReactNode;
-  className: string;
+  icon: ReactNode;
+  className?: string;
   onClick?: MouseEventHandler<HTMLAnchorElement>;
   variant?: "primary" | "wide" | "compact";
 }) {
-  const iconHover =
-    variant === "compact"
-      ? "group-hover:-translate-y-4 group-hover:-rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:-rotate-12"
-      : variant === "wide"
-        ? "group-hover:-translate-y-3.5 group-hover:-rotate-12 group-focus-visible:-translate-y-3.5 group-focus-visible:-rotate-12"
-      : "group-hover:-translate-y-3 group-hover:-rotate-12 group-focus-visible:-translate-y-3 group-focus-visible:-rotate-12";
-  const coverHover =
-    variant === "compact"
-      ? "group-hover:-rotate-6 group-focus-visible:-rotate-6"
-      : variant === "wide"
-        ? "group-hover:-rotate-[4deg] group-focus-visible:-rotate-[4deg]"
-      : "group-hover:-rotate-3 group-focus-visible:-rotate-3";
-
   return (
     <a
       href={href}
       onClick={onClick}
-      className="group relative isolate inline-block overflow-visible focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-caramel)]"
+      className={`${DOWNLOAD_BUTTON_BASE} ${DOWNLOAD_BUTTON_VARIANTS[variant]} ${className}`}
     >
-      <img
-        src={tinyIconUrl}
-        alt=""
-        aria-hidden="true"
-        className={`pointer-events-none absolute left-2 top-1.5 z-0 h-6 w-6 -rotate-6 transition-transform duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] ${iconHover} motion-reduce:transition-none`}
-      />
       <span
-        className={`${className} relative z-10 origin-bottom-right transition-transform duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] ${coverHover} motion-reduce:transition-none`}
+        aria-hidden="true"
+        className="flex size-8 shrink-0 items-center justify-center"
       >
-        {children}
+        {icon}
       </span>
+      <span className="min-w-0 truncate">{children}</span>
     </a>
+  );
+}
+
+function VsCodeIcon({ className = "" }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-block shrink-0 bg-[var(--download-accent)] ${className}`}
+      style={{
+        mask: `url("${visualStudioIconUrl}") center / contain no-repeat`,
+        WebkitMask: `url("${visualStudioIconUrl}") center / contain no-repeat`,
+      }}
+    />
+  );
+}
+
+function DownloadGroupHeader({
+  icon,
+  children,
+}: {
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mb-4 flex items-center gap-3">
+      <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center text-[var(--download-accent)]">
+        {icon}
+      </span>
+      <h3 className="font-display text-2xl text-[var(--color-text)]">{children}</h3>
+    </div>
   );
 }
 
@@ -371,48 +413,84 @@ function Home() {
           </div>
         </section>
 
-        <section id="download" className="mx-auto max-w-2xl px-4 md:px-6 py-20">
-          <h2 className="font-display text-[clamp(1.5rem,2.5vw+0.5rem,2.25rem)] mb-8">Get MouseTerm</h2>
+        <section id="download" className="mx-auto max-w-[80rem] px-4 py-20 sm:px-6 lg:px-0" style={downloadAccentStyle}>
+          <h2 className="mb-8 font-display text-[clamp(2rem,3vw+0.75rem,3.75rem)] text-[var(--color-text)]">Get MouseTerm</h2>
 
-          <PeekButton href="/playground" className={PRIMARY_BUTTON}>
+          <DownloadButton
+            href="/playground"
+            icon={<TerminalIcon size={34} weight="bold" />}
+          >
             Try it in the Playground
-          </PeekButton>
+          </DownloadButton>
 
-          <div className="mt-10 space-y-6">
+          <div className="mt-12 space-y-12">
             <div>
-              <p className="text-lg mb-2">VS Code Extension</p>
-              <div className="flex flex-wrap gap-2">
-                <PeekButton href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm" className={PILL} variant="wide">Visual Studio Marketplace</PeekButton>
-                <PeekButton href="https://open-vsx.org/extension/diffplug/mouseterm" className={PILL} variant="wide">Open VSX Registry</PeekButton>
+              <DownloadGroupHeader icon={<VsCodeIcon className="size-7" />}>VS Code Extension</DownloadGroupHeader>
+              <p className="mb-6 text-xl leading-relaxed opacity-70">Enhance your workflow in Visual Studio Code.</p>
+              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-4">
+                <DownloadButton
+                  href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm"
+                  icon={<StorefrontIcon size={28} weight="bold" />}
+                  variant="wide"
+                >
+                  Visual Studio Marketplace
+                </DownloadButton>
+                <DownloadButton
+                  href="https://open-vsx.org/extension/diffplug/mouseterm"
+                  icon={<CubeIcon size={28} weight="bold" />}
+                  variant="wide"
+                >
+                  Open VSX Registry
+                </DownloadButton>
               </div>
             </div>
             <div>
-              <p className="text-lg mb-2">Standalone App</p>
-              <div className="flex flex-wrap gap-2">
-                {(["darwin-aarch64", "windows-x86_64", "linux-x86_64"] as const).map((key) => (
-                  <PeekButton
-                    key={key}
-                    href={standaloneLatest.platforms[key].url}
-                    onClick={() => setInstallGuide(key)}
-                    className={PILL}
-                    variant="compact"
-                  >
-                    {INSTALL_STEPS[key].pill}
-                  </PeekButton>
-                ))}
-                <PeekButton href="https://github.com/diffplug/mouseterm/issues/8" className={PILL} variant="compact">Other</PeekButton>
+              <DownloadGroupHeader icon={<DesktopIcon size={30} weight="bold" />}>Standalone App</DownloadGroupHeader>
+              <p className="mb-6 text-xl leading-relaxed opacity-70">Download MouseTerm for your platform.</p>
+              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-4">
+                <DownloadButton
+                  href={standaloneLatest.platforms["darwin-aarch64"].url}
+                  onClick={() => setInstallGuide("darwin-aarch64")}
+                  icon={<AppleLogoIcon size={28} weight="fill" />}
+                  variant="compact"
+                >
+                  {INSTALL_STEPS["darwin-aarch64"].pill}
+                </DownloadButton>
+                <DownloadButton
+                  href={standaloneLatest.platforms["windows-x86_64"].url}
+                  onClick={() => setInstallGuide("windows-x86_64")}
+                  icon={<WindowsLogoIcon size={28} weight="fill" />}
+                  variant="compact"
+                >
+                  {INSTALL_STEPS["windows-x86_64"].pill}
+                </DownloadButton>
+                <DownloadButton
+                  href={standaloneLatest.platforms["linux-x86_64"].url}
+                  onClick={() => setInstallGuide("linux-x86_64")}
+                  icon={<LinuxLogoIcon size={28} weight="fill" />}
+                  variant="compact"
+                >
+                  {INSTALL_STEPS["linux-x86_64"].pill}
+                </DownloadButton>
+                <DownloadButton
+                  href="https://github.com/diffplug/mouseterm/issues/8"
+                  icon={<DotsThreeOutlineIcon size={28} weight="fill" />}
+                  variant="compact"
+                >
+                  Other
+                </DownloadButton>
               </div>
               {installGuide && INSTALL_STEPS[installGuide] && (
-                <div className="mt-3 rounded-md border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 px-4 py-3">
-                  <p className="text-base mb-2 flex items-center gap-2">
-                    <span className="text-[var(--color-caramel)]" aria-hidden="true">✓</span>
+                <div className="mt-8 rounded-lg border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 px-5 py-5 sm:px-6">
+                  <p className="mb-4 flex items-center gap-3 text-lg font-display text-[var(--color-text)]">
+                    <CheckCircleIcon size={26} weight="bold" className="shrink-0 text-green-500" aria-hidden="true" />
                     <span>Download started!</span>
                   </p>
-                  <p className="text-base uppercase text-[var(--color-caramel)] mb-2">{INSTALL_STEPS[installGuide].title}</p>
-                  <ol className="space-y-1 text-sm">
+                  <p className="mb-3 border-b border-[var(--color-text)]/10 pb-3 font-display text-base uppercase text-[var(--download-accent)]">{INSTALL_STEPS[installGuide].title}</p>
+                  <ol className="space-y-2 text-base">
                     {INSTALL_STEPS[installGuide].steps.map((step, i) => (
                       <li key={i} className="flex gap-2">
-                        <span className="text-[var(--color-caramel)] shrink-0">{i + 1}.</span>
+                        <span className="shrink-0 text-[var(--download-accent)]">{i + 1}.</span>
                         <span className="opacity-70">{step}</span>
                       </li>
                     ))}
