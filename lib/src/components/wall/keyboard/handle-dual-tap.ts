@@ -1,4 +1,4 @@
-import type { DualTapState, PondKeyboardCtx } from './types';
+import type { DualTapState, WallKeyboardCtx } from './types';
 
 /**
  * Detects left-then-right Meta or Shift within 500 ms and exits passthrough.
@@ -7,7 +7,7 @@ import type { DualTapState, PondKeyboardCtx } from './types';
  */
 export function handleDualTap(
   e: KeyboardEvent,
-  ctx: PondKeyboardCtx,
+  ctx: WallKeyboardCtx,
   state: DualTapState,
 ): boolean {
   if (e.key === 'Meta') {
@@ -25,7 +25,7 @@ function detect(
   e: KeyboardEvent,
   lastSide: { current: 'left' | 'right' | null },
   lastTime: { current: number },
-  ctx: PondKeyboardCtx,
+  ctx: WallKeyboardCtx,
 ): void {
   const now = Date.now();
   const side = e.location === 1 ? 'left' : 'right';

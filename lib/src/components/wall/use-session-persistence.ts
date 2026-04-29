@@ -3,7 +3,7 @@ import type { DockviewApi } from 'dockview-react';
 import { pasteFilePaths } from '../../lib/clipboard';
 import { getPlatform } from '../../lib/platform';
 import { saveSession } from '../../lib/session-save';
-import type { DooredItem, PondSelectionKind } from './pond-types';
+import type { DooredItem, WallSelectionKind } from './wall-types';
 
 export function useSessionPersistence({
   dockviewApi,
@@ -16,7 +16,7 @@ export function useSessionPersistence({
   apiRef: RefObject<DockviewApi | null>;
   doorsRef: RefObject<DooredItem[]>;
   selectedIdRef: RefObject<string | null>;
-  selectedTypeRef: RefObject<PondSelectionKind>;
+  selectedTypeRef: RefObject<WallSelectionKind>;
 }): void {
   const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSavePromiseRef = useRef<Promise<void> | null>(null);

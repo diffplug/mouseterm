@@ -1,5 +1,5 @@
 import { findPanelInDirection } from '../../../lib/spatial-nav';
-import { ARROW_OPPOSITES, type NavHistoryRef, type PondKeyboardCtx } from './types';
+import { ARROW_OPPOSITES, type NavHistoryRef, type WallKeyboardCtx } from './types';
 
 /**
  * Plain arrow navigation: across panes (in dockview), or across doors (in
@@ -7,7 +7,7 @@ import { ARROW_OPPOSITES, type NavHistoryRef, type PondKeyboardCtx } from './typ
  */
 export function handlePaneNavigation(
   e: KeyboardEvent,
-  ctx: PondKeyboardCtx,
+  ctx: WallKeyboardCtx,
   navHistory: NavHistoryRef,
 ): boolean {
   if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) || e.metaKey) {

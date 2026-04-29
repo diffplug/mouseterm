@@ -34,12 +34,12 @@ import {
 import {
   DialogKeyboardContext,
   ModeContext,
-  PondActionsContext,
+  WallActionsContext,
   RenamingIdContext,
   SelectedIdContext,
   WindowFocusedContext,
   ZoomedContext,
-} from './pond-context';
+} from './wall-context';
 import { MouseOverrideBanner } from './MouseOverrideBanner';
 
 const tabVariant = tv({
@@ -63,7 +63,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const setDialogKeyboardActive = useContext(DialogKeyboardContext);
   const activityStates = useSyncExternalStore(subscribeToActivity, getActivitySnapshot);
   const mouseStates = useSyncExternalStore(subscribeToMouseSelection, getMouseSelectionSnapshot);
-  const actions = useContext(PondActionsContext);
+  const actions = useContext(WallActionsContext);
   const activity = activityStates.get(api.id) ?? DEFAULT_ACTIVITY_STATE;
   const mouseState = mouseStates.get(api.id) ?? DEFAULT_MOUSE_SELECTION_STATE;
   const showMouseIcon = mouseState.mouseReporting !== 'none';

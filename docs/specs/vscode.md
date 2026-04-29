@@ -28,8 +28,8 @@ Frontend Library (lib/src/)
 ├── theme.css                     — --vscode-* -> semantic --color-* tokens
 ├── index.css                     — dockview overrides, marching-ants keyframe
 ├── components/
-│   ├── Pond.tsx                  — pane manager shell, mode state, session actions
-│   ├── pond/                     — Pond header/panel/overlay/context helpers
+│   ├── Wall.tsx                  — pane manager shell, mode state, session actions
+│   ├── wall/                     — Wall header/panel/overlay/context helpers
 │   ├── TerminalPane.tsx          — xterm.js mount point with ResizeObserver
 │   ├── Baseboard.tsx             — minimized-pane door carousel
 │   └── Door.tsx                  — individual minimized-pane door

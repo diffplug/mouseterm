@@ -48,7 +48,7 @@ The notice matches the Baseboard's existing text style (9px mono, `text-muted`).
 
 ### Threading
 
-The Baseboard is in `lib/` but the updater is standalone-only. The notice is threaded as a `ReactNode` prop: `App` → `Pond` → `Baseboard` (via `baseboardNotice`). This keeps all updater knowledge out of `lib/` — the Baseboard just renders an opaque slot.
+The Baseboard is in `lib/` but the updater is standalone-only. The notice is threaded as a `ReactNode` prop: `App` → `Wall` → `Baseboard` (via `baseboardNotice`). This keeps all updater knowledge out of `lib/` — the Baseboard just renders an opaque slot.
 
 ## Platform behavior at quit
 

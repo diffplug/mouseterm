@@ -5,25 +5,25 @@ At the `/playground` route on the website. **Status: Implemented** (Epics 14, 15
 ## Layout
 
 - `SiteHeader` at top (with Playground as active nav item). On `/playground`, the header renders the **Theme:** dropdown as an optional header control; other routes do not render it.
-- Below the header: MouseTerm `Pond` embedded fullscreen using `FakePtyAdapter`. The page-level `<main>` is a flex container so Pond's `flex-1 min-h-0` root receives a real height.
-- The playground header uses the active `--vscode-*` theme variables for its background, border, text, and banner colors so theme changes affect the header as well as Pond.
+- Below the header: MouseTerm `Wall` embedded fullscreen using `FakePtyAdapter`. The page-level `<main>` is a flex container so Wall's `flex-1 min-h-0` root receives a real height.
+- The playground header uses the active `--vscode-*` theme variables for its background, border, text, and banner colors so theme changes affect the header as well as Wall.
 
 ### Implementation
 
-- `website/src/pages/Playground.tsx` — Page component. Dynamically imports Pond (SSR-safe). Initializes `FakePtyAdapter`, `TutorialShell`, and `TutorialDetector`. Passes `onApiReady` to set up the 3-pane layout and `onEvent` for step detection.
+- `website/src/pages/Playground.tsx` — Page component. Dynamically imports Wall (SSR-safe). Initializes `FakePtyAdapter`, `TutorialShell`, and `TutorialDetector`. Passes `onApiReady` to set up the 3-pane layout and `onEvent` for step detection.
 - `website/src/components/SiteHeader.tsx` — Shared header. Accepts an optional playground-only `controls` slot and a `themeAware` mode that reads the active VSCode theme variables.
 - `mouseterm-lib/components/ThemePicker` — Shared header dropdown for bundled and installed themes. The playground passes `variant="playground-header"` and the footer action opens the OpenVSX installer.
 - `website/vite.config.ts` — Vite alias `mouseterm-lib` → `../lib/src` for workspace imports.
 
 ## Initial State
 
-The sandbox starts pre-populated — not empty. Scenarios assigned via `FakePtyAdapter.setScenario()` before Pond mounts:
+The sandbox starts pre-populated — not empty. Scenarios assigned via `FakePtyAdapter.setScenario()` before Wall mounts:
 
 - **Pane 1** (`tut-main`, left, ~60%): `SCENARIO_TUTORIAL_MOTD` — MOTD welcome message + shell prompt. `TutorialShell` handles all input via `FakePtyAdapter.setInputHandler()`.
 - **Pane 2** (`tut-npm`, right-top, ~40%): `SCENARIO_LONG_RUNNING` — `npm install` with progress dots.
 - **Pane 3** (`tut-ls`, right-bottom): `SCENARIO_LS_OUTPUT` — `ls -la` output with a prompt.
 
-The two right-side panes are added in `onApiReady` with `position: { referencePanel, direction }` after Pond creates the initial main pane.
+The two right-side panes are added in `onApiReady` with `position: { referencePanel, direction }` after Wall creates the initial main pane.
 
 ## The `tut` Command
 
@@ -58,7 +58,7 @@ Progress is stored in localStorage so the user can leave and return. Show progre
 Implemented in `website/src/lib/tutorial-detection.ts` (`TutorialDetector` class). Two event sources:
 
 1. **DockviewApi events** — `onDidAddPanel`, `onDidLayoutChange`, `onDidActivePanelChange`. Subscribed in `TutorialDetector.attach(api)`.
-2. **PondEvent callbacks** — `modeChange`, `zoomChange`, `minimizeChange`, `split`. Routed via `Pond`'s `onEvent` prop (added in `lib/src/components/Pond.tsx`).
+2. **WallEvent callbacks** — `modeChange`, `zoomChange`, `minimizeChange`, `split`. Routed via `Wall`'s `onEvent` prop (added in `lib/src/components/Wall.tsx`).
 
 ### Phase 1: See Everything at Once
 
@@ -83,14 +83,14 @@ Detection: Captures a `ResizeSnapshot` (serialized grid structure with branch ra
 >
 > *Double-click a tab header to zoom. Double-click again to unzoom.*
 
-Detection: Watches `PondEvent.zoomChange` — requires both a `zoomed: true` then `zoomed: false` event (unzoom after zoom).
+Detection: Watches `WallEvent.zoomChange` — requires both a `zoomed: true` then `zoomed: false` event (unzoom after zoom).
 
 **Step 4 — Minimize a pane, then bring it back**
 > That task is running in the background — you don't need to watch it. Send it to the baseboard, then click its door when you want it back.
 >
 > *Click the minimize button in the tab header. Click the door in the baseboard to reattach.*
 
-Detection: Watches `PondEvent.minimizeChange` — requires `count > 0` (minimize) then `count === 0` (reattach back to zero).
+Detection: Watches `WallEvent.minimizeChange` — requires `count > 0` (minimize) then `count === 0` (reattach back to zero).
 
 ### Phase 3: Keyboard Power
 
@@ -99,14 +99,14 @@ Detection: Watches `PondEvent.minimizeChange` — requires `count > 0` (minimize
 >
 > *Press Escape to enter command mode. Use arrow keys to move between panes.*
 
-Detection: Watches `PondEvent.modeChange` for transition to `'command'`, then tracks `onDidActivePanelChange` — requires focus on >= 2 different panels while in command mode.
+Detection: Watches `WallEvent.modeChange` for transition to `'command'`, then tracks `onDidActivePanelChange` — requires focus on >= 2 different panels while in command mode.
 
 **Step 6 — Split using keyboard shortcuts**
 > Split a pane without leaving the keyboard.
 >
 > *In command mode, press " to split top/bottom or % to split left/right.*
 
-Detection: Watches `PondEvent.split` with `source: 'keyboard'` while in command mode.
+Detection: Watches `WallEvent.split` with `source: 'keyboard'` while in command mode.
 
 ## Completion
 
@@ -142,7 +142,7 @@ The picker restores the persisted active theme on mount. The playground header i
 
 - All progress keyed as `mouseterm-tutorial-step-N` in localStorage (values: `'true'`).
 - `FakePtyAdapter` extensions: `setInputHandler(id, fn)` routes `writePty` calls to a custom handler; `sendOutput(id, data)` writes to a terminal's output stream.
-- `Pond` extensions: `initialPaneIds` prop seeds the first pane(s); `onApiReady` callback prop exposes `DockviewApi`; `onEvent` callback prop fires `PondEvent` for mode/zoom/minimize/selection/split changes (types: `modeChange`, `zoomChange`, `minimizeChange`, `split`, `selectionChange`).
+- `Wall` extensions: `initialPaneIds` prop seeds the first pane(s); `onApiReady` callback prop exposes `DockviewApi`; `onEvent` callback prop fires `WallEvent` for mode/zoom/minimize/selection/split changes (types: `modeChange`, `zoomChange`, `minimizeChange`, `split`, `selectionChange`).
 - `SCENARIO_TUTORIAL_MOTD` scenario added to `lib/src/lib/platform/fake-scenarios.ts`.
 
 ## Mouse and Clipboard Feature Coverage
@@ -185,7 +185,7 @@ Add three new scenarios in `lib/src/lib/platform/fake-scenarios.ts` and expand t
    Prints one of each detectable shape so every branch in `lib/src/lib/smart-token.ts`'s `PATTERNS` list has a live example:
 
    ```
-   ✗ src/components/pond/TerminalPaneHeader.tsx:157:7 — unused import
+   ✗ src/components/wall/TerminalPaneHeader.tsx:157:7 — unused import
    ✗ ../sibling/util.rs:42 — panic here
      see https://en.wikipedia.org/wiki/Foo_(bar)
      docs: /usr/local/share/doc/mouseterm/README

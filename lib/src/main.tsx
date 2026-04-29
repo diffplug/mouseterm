@@ -16,7 +16,7 @@ if (typeof acquireVsCodeApi === "function") {
 // Wire up alert state before reconnect so state messages are handled
 initAlertStateReceiver();
 
-// Request PTY list before rendering so Pond can restore existing sessions.
+// Request PTY list before rendering so Wall can restore existing sessions.
 // On non-VSCode platforms (or first launch), this resolves immediately with no IDs.
 resumeOrRestore(platform).then((result) => {
   createRoot(document.getElementById("root")!).render(

@@ -6,7 +6,7 @@ import {
   toggleSessionTodo,
 } from '../../../lib/terminal-registry';
 import { randomKillChar } from '../../KillConfirm';
-import { ARROW_OPPOSITES, type NavHistoryRef, type PondKeyboardCtx } from './types';
+import { ARROW_OPPOSITES, type NavHistoryRef, type WallKeyboardCtx } from './types';
 
 function findAlertButtonForSession(id: string): HTMLButtonElement | null {
   return Array.from(document.querySelectorAll<HTMLButtonElement>('[data-alert-button-for]'))
@@ -20,7 +20,7 @@ function findAlertButtonForSession(id: string): HTMLButtonElement | null {
  */
 export function handlePaneShortcuts(
   e: KeyboardEvent,
-  ctx: PondKeyboardCtx,
+  ctx: WallKeyboardCtx,
   navHistory: NavHistoryRef,
 ): boolean {
   const api = ctx.apiRef.current;
@@ -42,14 +42,14 @@ export function handlePaneShortcuts(
   if (e.key === '|' || e.key === '%') {
     e.preventDefault();
     e.stopPropagation();
-    ctx.pondActionsRef.current.onSplitH(sid, 'keyboard');
+    ctx.wallActionsRef.current.onSplitH(sid, 'keyboard');
     return true;
   }
 
   if (e.key === '-' || e.key === '"') {
     e.preventDefault();
     e.stopPropagation();
-    ctx.pondActionsRef.current.onSplitV(sid, 'keyboard');
+    ctx.wallActionsRef.current.onSplitV(sid, 'keyboard');
     return true;
   }
 
@@ -137,7 +137,7 @@ export function handlePaneShortcuts(
   if (e.key === 'z' && sid) {
     e.preventDefault();
     e.stopPropagation();
-    ctx.pondActionsRef.current.onZoom(sid);
+    ctx.wallActionsRef.current.onZoom(sid);
     return true;
   }
 

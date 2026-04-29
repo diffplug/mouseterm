@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import { Pond } from '../components/Pond';
+import { Wall } from '../components/Wall';
 import {
   flattenScenario,
   SCENARIO_SHELL_PROMPT,
@@ -9,13 +9,13 @@ import {
 } from '../lib/platform';
 import { getActivitySnapshot, primeActivity, type ActivityState } from '../lib/terminal-registry';
 
-const meta: Meta<typeof Pond> = {
-  title: 'App/Pond',
-  component: Pond,
+const meta: Meta<typeof Wall> = {
+  title: 'App/Wall',
+  component: Wall,
 };
 
 export default meta;
-type Story = StoryObj<typeof Pond>;
+type Story = StoryObj<typeof Wall>;
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

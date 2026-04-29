@@ -6,14 +6,14 @@ import {
   FreshlySpawnedContext,
   ModeContext,
   PanelElementsContext,
-  PondActionsContext,
+  WallActionsContext,
   SelectedIdContext,
-} from './pond-context';
+} from './wall-context';
 
 export function TerminalPanel({ api }: IDockviewPanelProps) {
   const mode = useContext(ModeContext);
   const selectedId = useContext(SelectedIdContext);
-  const actions = useContext(PondActionsContext);
+  const actions = useContext(WallActionsContext);
   const { elements: panelElements, bumpVersion } = useContext(PanelElementsContext);
   const freshlySpawned = useContext(FreshlySpawnedContext);
   const isFocused = mode === 'passthrough' && selectedId === api.id;

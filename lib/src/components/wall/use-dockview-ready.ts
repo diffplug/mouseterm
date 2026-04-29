@@ -1,7 +1,7 @@
 import { useCallback, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import type { DockviewApi, DockviewReadyEvent, SerializedDockview } from 'dockview-react';
 import { getDefaultShellOpts, setPendingShellOpts, swapTerminals } from '../../lib/terminal-registry';
-import type { DooredItem, PondMode, PondSelectionKind, SpawnDirection } from './pond-types';
+import type { DooredItem, WallMode, WallSelectionKind, SpawnDirection } from './wall-types';
 
 export function useDockviewReady({
   apiRef,
@@ -30,8 +30,8 @@ export function useDockviewReady({
   freshlySpawnedRef: RefObject<Map<string, SpawnDirection>>;
   killInProgressRef: RefObject<boolean>;
   selectedIdRef: RefObject<string | null>;
-  selectedTypeRef: RefObject<PondSelectionKind>;
-  modeRef: RefObject<PondMode>;
+  selectedTypeRef: RefObject<WallSelectionKind>;
+  modeRef: RefObject<WallMode>;
   enterTerminalModeRef: RefObject<(id: string) => void>;
   generatePaneId: () => string;
   selectPanel: (id: string) => void;

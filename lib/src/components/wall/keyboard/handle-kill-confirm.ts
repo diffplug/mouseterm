@@ -1,11 +1,11 @@
 import { orchestrateKill } from '../../../lib/kill-animation';
-import type { PondKeyboardCtx } from './types';
+import type { WallKeyboardCtx } from './types';
 
 /**
  * Kill-confirmation second-key handler. Once a kill is staged in confirmKillRef,
  * we hijack every key: matching letter accepts, anything else rejects.
  */
-export function handleKillConfirm(e: KeyboardEvent, ctx: PondKeyboardCtx): boolean {
+export function handleKillConfirm(e: KeyboardEvent, ctx: WallKeyboardCtx): boolean {
   const ck = ctx.confirmKillRef.current;
   if (!ck) return false;
 

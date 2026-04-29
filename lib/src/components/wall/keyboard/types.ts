@@ -1,16 +1,16 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import type { ConfirmKill } from '../../KillConfirm';
-import type { DooredItem, PondMode, PondSelectionKind } from '../pond-types';
-import type { PondActions } from '../pond-context';
+import type { DooredItem, WallMode, WallSelectionKind } from '../wall-types';
+import type { WallActions } from '../wall-context';
 
 /** Refs + callbacks shared by every keyboard branch. Bundled to avoid 25-arg
  *  signatures on each handler. */
-export interface PondKeyboardCtx {
+export interface WallKeyboardCtx {
   apiRef: RefObject<DockviewApi | null>;
-  modeRef: RefObject<PondMode>;
+  modeRef: RefObject<WallMode>;
   selectedIdRef: RefObject<string | null>;
-  selectedTypeRef: RefObject<PondSelectionKind>;
+  selectedTypeRef: RefObject<WallSelectionKind>;
   doorsRef: RefObject<DooredItem[]>;
   confirmKillRef: RefObject<ConfirmKill | null>;
   renamingRef: RefObject<string | null>;
@@ -18,7 +18,7 @@ export interface PondKeyboardCtx {
   panelElements: Map<string, HTMLElement>;
   killInProgressRef: RefObject<boolean>;
   overlayElRef: RefObject<HTMLDivElement | null>;
-  pondActionsRef: RefObject<PondActions>;
+  wallActionsRef: RefObject<WallActions>;
   handleReattachRef: RefObject<(item: DooredItem, options?: { enterPassthrough?: boolean; confirmKill?: boolean }) => void>;
   selectPanel: (id: string) => void;
   selectDoor: (id: string) => void;

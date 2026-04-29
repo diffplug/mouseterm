@@ -23,8 +23,8 @@ There are two areas:
 The user can navigate between all elements using the mouse, or by entering `command` mode and using the keyboard.
 
 ```
-Pond
-├── Context providers (Mode, SelectedId, PondActions, PanelElements, DoorElements, RenamingId, Zoomed, WindowFocused)
+Wall
+├── Context providers (Mode, SelectedId, WallActions, PanelElements, DoorElements, RenamingId, Zoomed, WindowFocused)
 │   └── div (h-screen, flex col)
 │       ├── Dockview wrapper (flex-1, 6px top/sides inset, 2px bottom inset)
 │       │   ├── DockviewReact (tiling layout engine, singleTabMode="fullwidth")
@@ -187,8 +187,8 @@ A fixed-positioned element rendered on top of dockview. Covers the active elemen
 - `z-index: 50`, `pointer-events: none`, `transition: 150ms`
 
 ### Position tracking
-- `components/pond/TerminalPanel.tsx` registers its DOM element in a `panelElements` Map on mount, removes on unmount
-- Door elements are registered by the `Baseboard` via `DoorElementsContext` from `components/pond/pond-context.tsx` (queries `[data-door-id]` attributes)
+- `components/wall/TerminalPanel.tsx` registers its DOM element in a `panelElements` Map on mount, removes on unmount
+- Door elements are registered by the `Baseboard` via `DoorElementsContext` from `components/wall/wall-context.tsx` (queries `[data-door-id]` attributes)
 - Updates on: selection change, resize (`ResizeObserver`), layout change (`api.onDidLayoutChange`)
 
 ## Spatial navigation
@@ -307,7 +307,7 @@ The direction is carried via `FreshlySpawnedContext` — a `Map<paneId, SpawnDir
 
 ### Kill (in-place fade + FLIP reclaim)
 
-`orchestrateKill(api, killedId)` in `lib/src/components/KillConfirm.tsx` runs on kill confirmation. `Pond.tsx` owns the command dispatch and calls it after the user confirms. It fades the real pane element in place (its content dissolves against the same-colored background), then removes the panel and FLIP-reveals the survivors:
+`orchestrateKill(api, killedId)` in `lib/src/components/KillConfirm.tsx` runs on kill confirmation. `Wall.tsx` owns the command dispatch and calls it after the user confirms. It fades the real pane element in place (its content dissolves against the same-colored background), then removes the panel and FLIP-reveals the survivors:
 
 1. Add `.pane-fading-out` (or `.pane-fading-and-shrinking-to-br` for a last-pane kill) to the killed pane's group element. Block pointer events during the fade.
 2. On `animationend`, snapshot `getBoundingClientRect` for every surviving panel's group element.
@@ -341,17 +341,17 @@ The deferred spawn also only calls `selectPanel` if selection is null. The kill 
 
 | File | Role |
 |------|------|
-| `lib/src/components/Pond.tsx` | Main layout orchestrator: selected mode/state, session actions, minimize/reattach, provider composition |
-| `lib/src/components/pond/pond-types.ts` / `pond-context.tsx` | Shared Pond types and React contexts used by Pond, pane headers, panels, overlays, and the baseboard |
-| `lib/src/components/pond/TerminalPanel.tsx` | Dockview panel body wrapper; registers pane DOM elements and plays spawn animation |
-| `lib/src/components/pond/TerminalPaneHeader.tsx` | Custom dockview tab/header with rename, alert/TODO, mouse override, split/zoom/minimize/kill controls |
-| `lib/src/components/pond/WorkspaceSelectionOverlay.tsx` | Pane/door focus ring and marching-ants overlay |
-| `lib/src/components/pond/MarchingAntsRect.tsx` | SVG marching-ants border path and dash sizing |
-| `lib/src/components/pond/MouseOverrideBanner.tsx` | Temporary mouse override banner shown from the header icon |
-| `lib/src/components/pond/use-dockview-ready.ts` | Dockview ready/setup handler: restore/create panels, DnD swap wiring, active panel sync, auto-spawn |
-| `lib/src/components/pond/use-pond-keyboard.ts` | Capture-phase keyboard dispatch for mode switching, pane/door commands, copy/paste, selection drag keys |
-| `lib/src/components/pond/use-session-persistence.ts` | Debounced layout/session save, flush requests, pagehide, PTY exit, file-drop paste routing |
-| `lib/src/components/pond/use-window-focused.ts` | Window focus tracking hook for header and selection overlay dimming |
+| `lib/src/components/Wall.tsx` | Main layout orchestrator: selected mode/state, session actions, minimize/reattach, provider composition |
+| `lib/src/components/wall/wall-types.ts` / `wall-context.tsx` | Shared Wall types and React contexts used by Wall, pane headers, panels, overlays, and the baseboard |
+| `lib/src/components/wall/TerminalPanel.tsx` | Dockview panel body wrapper; registers pane DOM elements and plays spawn animation |
+| `lib/src/components/wall/TerminalPaneHeader.tsx` | Custom dockview tab/header with rename, alert/TODO, mouse override, split/zoom/minimize/kill controls |
+| `lib/src/components/wall/WorkspaceSelectionOverlay.tsx` | Pane/door focus ring and marching-ants overlay |
+| `lib/src/components/wall/MarchingAntsRect.tsx` | SVG marching-ants border path and dash sizing |
+| `lib/src/components/wall/MouseOverrideBanner.tsx` | Temporary mouse override banner shown from the header icon |
+| `lib/src/components/wall/use-dockview-ready.ts` | Dockview ready/setup handler: restore/create panels, DnD swap wiring, active panel sync, auto-spawn |
+| `lib/src/components/wall/use-wall-keyboard.ts` | Capture-phase keyboard dispatch for mode switching, pane/door commands, copy/paste, selection drag keys |
+| `lib/src/components/wall/use-session-persistence.ts` | Debounced layout/session save, flush requests, pagehide, PTY exit, file-drop paste routing |
+| `lib/src/components/wall/use-window-focused.ts` | Window focus tracking hook for header and selection overlay dimming |
 | `lib/src/components/Baseboard.tsx` | Always-visible bottom strip with door components, overflow arrows, and shortcut hints |
 | `lib/src/components/Door.tsx` | Individual door element — mouse-hole styled button with alert/TODO indicators |
 | `lib/src/components/TerminalPane.tsx` | Thin xterm.js mount point — mounts/unmounts persistent session elements |

@@ -6,15 +6,15 @@ import {
 } from '../design';
 import { useFocusRingColor } from '../../lib/themes/use-focus-ring-color';
 import { resolvePanelElement } from '../../lib/spatial-nav';
-import type { PondMode, PondSelectionKind } from './pond-types';
-import { DoorElementsContext, PanelElementsContext, WindowFocusedContext } from './pond-context';
+import type { WallMode, WallSelectionKind } from './wall-types';
+import { DoorElementsContext, PanelElementsContext, WindowFocusedContext } from './wall-context';
 import { MarchingAntsRect } from './MarchingAntsRect';
 
 export function WorkspaceSelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef }: {
   apiRef: RefObject<DockviewApi | null>;
   selectedId: string | null;
-  selectedType: PondSelectionKind;
-  mode: PondMode;
+  selectedType: WallSelectionKind;
+  mode: WallMode;
   overlayElRef?: RefObject<HTMLDivElement | null>;
 }) {
   const { elements: panelElements, version: panelVersion } = useContext(PanelElementsContext);

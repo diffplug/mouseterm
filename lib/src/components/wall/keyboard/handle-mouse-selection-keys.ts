@@ -6,13 +6,13 @@ import {
   getMouseSelectionState,
   setSelection as setMouseSelection,
 } from '../../../lib/mouse-selection';
-import type { PondKeyboardCtx } from './types';
+import type { WallKeyboardCtx } from './types';
 
 /**
  * Mouse-selection-aware shortcuts: token extension + Escape during drag,
  * Cmd-C / Cmd-Shift-C / Cmd-V outside drag. Returns true if handled.
  */
-export function handleMouseSelectionKeys(e: KeyboardEvent, ctx: PondKeyboardCtx): boolean {
+export function handleMouseSelectionKeys(e: KeyboardEvent, ctx: WallKeyboardCtx): boolean {
   const sid = ctx.selectedIdRef.current;
   if (!sid) return false;
 

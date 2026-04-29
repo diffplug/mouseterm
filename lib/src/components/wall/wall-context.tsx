@@ -1,6 +1,6 @@
 import { createContext } from 'react';
 import type { AlertButtonActionResult, SessionStatus } from '../../lib/terminal-registry';
-import type { PondMode, SpawnDirection } from './pond-types';
+import type { WallMode, SpawnDirection } from './wall-types';
 
 export interface PanelElementsState {
   elements: Map<string, HTMLElement>;
@@ -8,7 +8,7 @@ export interface PanelElementsState {
   bumpVersion: () => void;
 }
 
-export const ModeContext = createContext<PondMode>('command');
+export const ModeContext = createContext<WallMode>('command');
 export const SelectedIdContext = createContext<string | null>(null);
 
 export const PanelElementsContext = createContext<PanelElementsState>({
@@ -23,7 +23,7 @@ export const DoorElementsContext = createContext<PanelElementsState>({
   bumpVersion: () => {},
 });
 
-export interface PondActions {
+export interface WallActions {
   onKill: (id: string) => void;
   onMinimize: (id: string) => void;
   onAlertButton: (id: string, displayedStatus: SessionStatus) => AlertButtonActionResult;
@@ -37,7 +37,7 @@ export interface PondActions {
   onCancelRename: () => void;
 }
 
-export const PondActionsContext = createContext<PondActions>({
+export const WallActionsContext = createContext<WallActions>({
   onKill: () => {},
   onMinimize: () => {},
   onAlertButton: () => 'noop',

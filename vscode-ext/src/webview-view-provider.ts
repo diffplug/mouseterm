@@ -53,7 +53,7 @@ export class MouseTermViewProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [vscode.Uri.file(mediaPath)],
     };
 
-    // Resolve the selected shell before serving the HTML so Pond's
+    // Resolve the selected shell before serving the HTML so Wall's
     // first-terminal spawn on mount uses the right shell. getAvailableShells
     // is cached; this blocks only on a true cold start.
     if (!this.selectedShell) {

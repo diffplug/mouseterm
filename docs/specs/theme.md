@@ -127,7 +127,7 @@ The Storybook preview decorator also computes and publishes the dynamic palette
 vars (`--color-door-bg`, `--color-door-fg`, `--color-focus-ring`) through the
 shared `computeDynamicPalette()` helper, matching the runtime
 `useDynamicPalette()` hook for stories that render doors, baseboards, or focus
-rings outside a full Pond instance.
+rings outside a full Wall instance.
 
 ## Theme debugger
 
@@ -147,7 +147,7 @@ terminal colors. It captures the current DOM-visible theme state and shows:
   and focus-ring tokens, including `--color-app-bg` and `--color-app-fg`.
 - terminal palette variables read by xterm.js.
 - dynamic door/focus-ring picks from the same `pickDoorPair()` and
-  `pickFocusRing()` helpers used by Pond's `computeDynamicPalette()`.
+  `pickFocusRing()` helpers used by Wall's `computeDynamicPalette()`.
 
 Standalone and playground expose the debugger as `Debug current theme` in the
 `ThemePicker` menu. VSCode opens it through the `mouseterm.debugTheme` command

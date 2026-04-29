@@ -5,15 +5,15 @@ export type DooredItem = Omit<PersistedDoor, 'layoutAtMinimize'> & {
   layoutAtMinimize: SerializedDockview | null;
 };
 
-export type PondMode = 'command' | 'passthrough';
+export type WallMode = 'command' | 'passthrough';
 
-export type PondSelectionKind = 'pane' | 'door';
+export type WallSelectionKind = 'pane' | 'door';
 
-export type PondEvent =
-  | { type: 'modeChange'; mode: PondMode }
+export type WallEvent =
+  | { type: 'modeChange'; mode: WallMode }
   | { type: 'zoomChange'; zoomed: boolean }
   | { type: 'minimizeChange'; count: number }
   | { type: 'split'; direction: 'horizontal' | 'vertical'; source: 'keyboard' | 'mouse' }
-  | { type: 'selectionChange'; id: string | null; kind: PondSelectionKind };
+  | { type: 'selectionChange'; id: string | null; kind: WallSelectionKind };
 
 export type SpawnDirection = 'left' | 'top' | 'top-left';

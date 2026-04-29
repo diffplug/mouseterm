@@ -22,43 +22,43 @@ import { findReattachNeighbor } from '../lib/spatial-nav';
 import { cloneLayout, getLayoutStructureSignature } from '../lib/layout-snapshot';
 import type { PersistedDoor } from '../lib/session-types';
 import { useDynamicPalette } from '../lib/themes/use-dynamic-palette';
-import { TerminalPanel } from './pond/TerminalPanel';
-import { TerminalPaneHeader } from './pond/TerminalPaneHeader';
-import { WorkspaceSelectionOverlay } from './pond/WorkspaceSelectionOverlay';
-import { useDockviewReady } from './pond/use-dockview-ready';
-import { usePondKeyboard } from './pond/use-pond-keyboard';
-import { useSessionPersistence } from './pond/use-session-persistence';
-import { useWindowFocused } from './pond/use-window-focused';
+import { TerminalPanel } from './wall/TerminalPanel';
+import { TerminalPaneHeader } from './wall/TerminalPaneHeader';
+import { WorkspaceSelectionOverlay } from './wall/WorkspaceSelectionOverlay';
+import { useDockviewReady } from './wall/use-dockview-ready';
+import { useWallKeyboard } from './wall/use-wall-keyboard';
+import { useSessionPersistence } from './wall/use-session-persistence';
+import { useWindowFocused } from './wall/use-window-focused';
 import {
   DialogKeyboardContext,
   DoorElementsContext,
   FreshlySpawnedContext,
   ModeContext,
   PanelElementsContext,
-  PondActionsContext,
+  WallActionsContext,
   RenamingIdContext,
   SelectedIdContext,
   WindowFocusedContext,
   ZoomedContext,
-  type PondActions,
-} from './pond/pond-context';
-import type { DooredItem, PondEvent, PondMode, PondSelectionKind, SpawnDirection } from './pond/pond-types';
+  type WallActions,
+} from './wall/wall-context';
+import type { DooredItem, WallEvent, WallMode, WallSelectionKind, SpawnDirection } from './wall/wall-types';
 
-export type { DooredItem, PondEvent, PondMode, PondSelectionKind, SpawnDirection } from './pond/pond-types';
+export type { DooredItem, WallEvent, WallMode, WallSelectionKind, SpawnDirection } from './wall/wall-types';
 export {
   DialogKeyboardContext,
   DoorElementsContext,
   FreshlySpawnedContext,
   ModeContext,
-  PondActionsContext,
+  WallActionsContext,
   RenamingIdContext,
   SelectedIdContext,
   WindowFocusedContext,
   ZoomedContext,
-} from './pond/pond-context';
-export type { PondActions } from './pond/pond-context';
-export { MarchingAntsRect, roundedRectPath } from './pond/MarchingAntsRect';
-export { TerminalPaneHeader } from './pond/TerminalPaneHeader';
+} from './wall/wall-context';
+export type { WallActions } from './wall/wall-context';
+export { MarchingAntsRect, roundedRectPath } from './wall/MarchingAntsRect';
+export { TerminalPaneHeader } from './wall/TerminalPaneHeader';
 
 // --- Theme ---
 
@@ -84,7 +84,7 @@ const tabComponents = { terminal: TerminalPaneHeader };
 
 // --- Main component ---
 
-export function Pond({
+export function Wall({
   initialPaneIds,
   restoredLayout,
   initialDoors,
@@ -96,7 +96,7 @@ export function Pond({
   restoredLayout?: unknown;
   initialDoors?: PersistedDoor[];
   onApiReady?: (api: DockviewApi) => void;
-  onEvent?: (event: PondEvent) => void;
+  onEvent?: (event: WallEvent) => void;
   baseboardNotice?: ReactNode;
 } = {}) {
   const apiRef = useRef<DockviewApi | null>(null);
@@ -149,9 +149,9 @@ export function Pond({
   }, []);
 
   // We own these — dockview is just for spatial layout and DnD
-  const [mode, setMode] = useState<PondMode>('command');
+  const [mode, setMode] = useState<WallMode>('command');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<PondSelectionKind>('pane');
+  const [selectedType, setSelectedType] = useState<WallSelectionKind>('pane');
 
   const windowFocused = useWindowFocused();
   useDynamicPalette();
@@ -484,9 +484,9 @@ export function Pond({
     onEventRef.current?.({ type: 'split', direction: splitDirection, source });
   }, [selectPanel, generatePaneId]);
 
-  // --- Pond actions (for tab buttons) ---
+  // --- Wall actions (for tab buttons) ---
 
-  const pondActions: PondActions = useMemo(() => ({
+  const wallActions: WallActions = useMemo(() => ({
     onKill: (id: string) => {
       exitTerminalMode();
       const char = randomKillChar();
@@ -536,10 +536,10 @@ export function Pond({
       setRenamingPaneId(null);
     },
   }), [addSplitPanel, minimizePane, enterTerminalMode, exitTerminalMode]);
-  const pondActionsRef = useRef(pondActions);
-  pondActionsRef.current = pondActions;
+  const wallActionsRef = useRef(wallActions);
+  wallActionsRef.current = wallActions;
 
-  usePondKeyboard({
+  useWallKeyboard({
     apiRef,
     modeRef,
     selectedIdRef,
@@ -551,7 +551,7 @@ export function Pond({
     panelElements,
     killInProgressRef,
     overlayElRef,
-    pondActionsRef,
+    wallActionsRef,
     handleReattachRef,
     selectPanel,
     selectDoor,
@@ -570,7 +570,7 @@ export function Pond({
   return (
     <ModeContext.Provider value={mode}>
       <SelectedIdContext.Provider value={selectedId}>
-        <PondActionsContext.Provider value={pondActions}>
+        <WallActionsContext.Provider value={wallActions}>
           <PanelElementsContext.Provider value={{ elements: panelElements, version: panelElementsVersion, bumpVersion: bumpPanelElementsVersion }}>
           <DoorElementsContext.Provider value={{ elements: doorElements, version: doorElementsVersion, bumpVersion: bumpDoorElementsVersion }}>
           <RenamingIdContext.Provider value={renamingPaneId}>
@@ -613,7 +613,7 @@ export function Pond({
           </RenamingIdContext.Provider>
           </DoorElementsContext.Provider>
           </PanelElementsContext.Provider>
-        </PondActionsContext.Provider>
+        </WallActionsContext.Provider>
       </SelectedIdContext.Provider>
     </ModeContext.Provider>
   );

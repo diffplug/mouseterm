@@ -12,21 +12,21 @@ const PANE_NPM = "tut-npm";
 const PANE_LS = "tut-ls";
 
 type FakePtyAdapter = import("mouseterm-lib/lib/platform/fake-adapter").FakePtyAdapter;
-type PondEvent = import("mouseterm-lib/components/Pond").PondEvent;
+type WallEvent = import("mouseterm-lib/components/Wall").WallEvent;
 
 function Playground() {
-  const [PondModule, setPondModule] = useState<{
-    Pond: React.ComponentType<any>;
+  const [WallModule, setWallModule] = useState<{
+    Wall: React.ComponentType<any>;
   } | null>(null);
   const adapterRef = useRef<FakePtyAdapter | null>(null);
   const shellRef = useRef<TutorialShell | null>(null);
   const detectorRef = useRef<TutorialDetector | null>(null);
 
   useEffect(() => {
-    async function loadPond() {
+    async function loadWall() {
       const platform = await import("mouseterm-lib/lib/platform");
       const registry = await import("mouseterm-lib/lib/terminal-registry");
-      const pond = await import("mouseterm-lib/components/Pond");
+      const wall = await import("mouseterm-lib/components/Wall");
       const scenarios = await import("mouseterm-lib/lib/platform/fake-scenarios");
 
       await import("mouseterm-lib/index.css");
@@ -35,7 +35,7 @@ function Playground() {
       registry.initAlertStateReceiver();
       adapterRef.current = adapter;
 
-      // Assign scenarios to panes before Pond mounts them
+      // Assign scenarios to panes before Wall mounts them
       adapter.setScenario(PANE_NPM, scenarios.SCENARIO_LONG_RUNNING);
       adapter.setScenario(PANE_LS, scenarios.SCENARIO_LS_OUTPUT);
       adapter.setScenario(PANE_MAIN, scenarios.SCENARIO_TUTORIAL_MOTD);
@@ -49,9 +49,9 @@ function Playground() {
       const detector = new TutorialDetector(shell);
       detectorRef.current = detector;
 
-      setPondModule({ Pond: pond.Pond });
+      setWallModule({ Wall: wall.Wall });
     }
-    loadPond();
+    loadWall();
 
     return () => {
       detectorRef.current?.dispose();
@@ -81,8 +81,8 @@ function Playground() {
     detectorRef.current?.attach(api);
   }, []);
 
-  const handlePondEvent = useCallback((event: PondEvent) => {
-    detectorRef.current?.handlePondEvent(event);
+  const handleWallEvent = useCallback((event: WallEvent) => {
+    detectorRef.current?.handleWallEvent(event);
   }, []);
 
   return (
@@ -99,11 +99,11 @@ function Playground() {
       />
 
       <main className="fixed top-16 right-0 bottom-0 left-0 flex min-h-0 md:top-20">
-        {PondModule ? (
-          <PondModule.Pond
+        {WallModule ? (
+          <WallModule.Wall
             initialPaneIds={[PANE_MAIN]}
             onApiReady={handleApiReady}
-            onEvent={handlePondEvent}
+            onEvent={handleWallEvent}
           />
         ) : null}
       </main>

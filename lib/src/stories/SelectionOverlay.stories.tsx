@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
-import type { PondMode } from '../components/Pond';
-import { MarchingAntsRect } from '../components/Pond';
+import type { WallMode } from '../components/Wall';
+import { MarchingAntsRect } from '../components/Wall';
 
-function SelectionOverlayDemo({ initialMode = 'command' as PondMode }) {
-  const [mode, setMode] = useState<PondMode>(initialMode);
+function SelectionOverlayDemo({ initialMode = 'command' as WallMode }) {
+  const [mode, setMode] = useState<WallMode>(initialMode);
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 484, height: 284 });
 

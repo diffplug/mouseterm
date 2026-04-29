@@ -1,20 +1,20 @@
 import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import type { ConfirmKill } from '../KillConfirm';
-import type { DooredItem, PondMode, PondSelectionKind } from './pond-types';
-import type { PondActions } from './pond-context';
+import type { DooredItem, WallMode, WallSelectionKind } from './wall-types';
+import type { WallActions } from './wall-context';
 import { handleDualTap } from './keyboard/handle-dual-tap';
 import { handleMouseSelectionKeys } from './keyboard/handle-mouse-selection-keys';
 import { handleKillConfirm } from './keyboard/handle-kill-confirm';
 import { handlePaneShortcuts } from './keyboard/handle-pane-shortcuts';
 import { handlePaneNavigation } from './keyboard/handle-pane-navigation';
-import type { NavHistoryRef, PondKeyboardCtx } from './keyboard/types';
+import type { NavHistoryRef, WallKeyboardCtx } from './keyboard/types';
 
-export function usePondKeyboard(ctx: {
+export function useWallKeyboard(ctx: {
   apiRef: RefObject<DockviewApi | null>;
-  modeRef: RefObject<PondMode>;
+  modeRef: RefObject<WallMode>;
   selectedIdRef: RefObject<string | null>;
-  selectedTypeRef: RefObject<PondSelectionKind>;
+  selectedTypeRef: RefObject<WallSelectionKind>;
   doorsRef: RefObject<DooredItem[]>;
   confirmKillRef: RefObject<ConfirmKill | null>;
   renamingRef: RefObject<string | null>;
@@ -22,7 +22,7 @@ export function usePondKeyboard(ctx: {
   panelElements: Map<string, HTMLElement>;
   killInProgressRef: RefObject<boolean>;
   overlayElRef: RefObject<HTMLDivElement | null>;
-  pondActionsRef: RefObject<PondActions>;
+  wallActionsRef: RefObject<WallActions>;
   handleReattachRef: RefObject<(item: DooredItem, options?: { enterPassthrough?: boolean; confirmKill?: boolean }) => void>;
   selectPanel: (id: string) => void;
   selectDoor: (id: string) => void;
@@ -43,7 +43,7 @@ export function usePondKeyboard(ctx: {
 
   // Refs are stable across renders, so the handler can close over `ctx` once
   // and never re-subscribe. Stuffing every prop into deps would re-bind the
-  // listener on every Pond render and break dual-tap timing.
+  // listener on every Wall render and break dual-tap timing.
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
 
@@ -51,7 +51,7 @@ export function usePondKeyboard(ctx: {
     const dualTapState = { lastCmdSide, lastCmdTime, lastShiftSide, lastShiftTime };
 
     const handler = (e: KeyboardEvent) => {
-      const c = ctxRef.current as PondKeyboardCtx;
+      const c = ctxRef.current as WallKeyboardCtx;
 
       if (handleDualTap(e, c, dualTapState)) return;
       if (handleMouseSelectionKeys(e, c)) return;

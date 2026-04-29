@@ -1,13 +1,13 @@
 /**
- * Tutorial step detection — watches Dockview and Pond events
+ * Tutorial step detection — watches Dockview and Wall events
  * to detect when users complete each tutorial step.
  */
 
 import type { TutorialShell } from './tutorial-shell';
 
 type DockviewApi = any;
-type PondEvent = import('mouseterm-lib/components/Pond').PondEvent;
-type PondMode = import('mouseterm-lib/components/Pond').PondMode;
+type WallEvent = import('mouseterm-lib/components/Wall').WallEvent;
+type WallMode = import('mouseterm-lib/components/Wall').WallMode;
 
 const RESIZE_RATIO_DELTA = 0.08;
 
@@ -37,7 +37,7 @@ export class TutorialDetector {
 
   // Tracking state
   private initialPanelCount = 0;
-  private currentMode: PondMode = 'command';
+  private currentMode: WallMode = 'command';
   private hasZoomed = false;
   private hasMinimized = false;
   private focusedPanelIds = new Set<string>();
@@ -91,8 +91,8 @@ export class TutorialDetector {
     this.disposables.push(() => activePanelDisposable.dispose());
   }
 
-  /** Handle Pond state change events. */
-  handlePondEvent(event: PondEvent): void {
+  /** Handle Wall state change events. */
+  handleWallEvent(event: WallEvent): void {
     switch (event.type) {
       case 'modeChange':
         if (event.mode === 'command' && this.currentMode !== 'command') {
