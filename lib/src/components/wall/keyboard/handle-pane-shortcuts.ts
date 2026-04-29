@@ -1,4 +1,4 @@
-import { findPanelInDirection } from '../../../lib/spatial-nav';
+import { findPaneInDirection } from '../../../lib/spatial-nav';
 import {
   dismissOrToggleAlert,
   getActivity,
@@ -64,7 +64,7 @@ export function handlePaneShortcuts(
     if (hist && ARROW_OPPOSITES[dir] === hist.direction && api.getPanel(hist.fromId)) {
       targetId = hist.fromId;
     } else {
-      targetId = findPanelInDirection(sid, dir as 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown', api, ctx.panelElements);
+      targetId = findPaneInDirection(sid, dir as 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown', api, ctx.paneElements);
     }
     if (!targetId) return true;
 
@@ -80,7 +80,7 @@ export function handlePaneShortcuts(
     }
 
     navHistory.current = { direction: dir, fromId: sid };
-    ctx.selectPanel(targetId);
+    ctx.selectPane(targetId);
     return true;
   }
 

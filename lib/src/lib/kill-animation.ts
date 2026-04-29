@@ -13,7 +13,7 @@ import { disposeSession } from './terminal-registry';
 export function orchestrateKill(
   api: DockviewApi,
   killedId: string,
-  selectPanel: (id: string) => void,
+  selectPane: (id: string) => void,
   setSelectedId: (id: string | null) => void,
   killInProgressRef: { current: boolean },
   overlayElRef: { current: HTMLElement | null },
@@ -26,7 +26,7 @@ export function orchestrateKill(
     disposeSession(killedId);
     api.removePanel(panel);
     killInProgressRef.current = false;
-    if (api.panels.length > 0) selectPanel(api.panels[0].id);
+    if (api.panels.length > 0) selectPane(api.panels[0].id);
     else setSelectedId(null);
   };
 

@@ -1,4 +1,4 @@
-import { findPanelInDirection } from '../../../lib/spatial-nav';
+import { findPaneInDirection } from '../../../lib/spatial-nav';
 import { ARROW_OPPOSITES, type NavHistoryRef, type WallKeyboardCtx } from './types';
 
 /**
@@ -26,7 +26,7 @@ export function handlePaneNavigation(
 
   if (currentType === 'door') {
     if (dir === 'ArrowUp') {
-      if (api.panels.length > 0) ctx.selectPanel(api.panels[api.panels.length - 1].id);
+      if (api.panels.length > 0) ctx.selectPane(api.panels[api.panels.length - 1].id);
       return true;
     }
     const doorIdx = currentDoors.findIndex((d) => d.id === sid);
@@ -38,14 +38,14 @@ export function handlePaneNavigation(
   const hist = navHistory.current;
   if (hist && ARROW_OPPOSITES[dir] === hist.direction && api.getPanel(hist.fromId)) {
     navHistory.current = { direction: dir, fromId: sid };
-    ctx.selectPanel(hist.fromId);
+    ctx.selectPane(hist.fromId);
     return true;
   }
 
-  const targetId = findPanelInDirection(sid, dir as 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown', api, ctx.panelElements);
+  const targetId = findPaneInDirection(sid, dir as 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown', api, ctx.paneElements);
   if (targetId) {
     navHistory.current = { direction: dir, fromId: sid };
-    ctx.selectPanel(targetId);
+    ctx.selectPane(targetId);
   } else if (dir === 'ArrowDown' && currentDoors.length > 0) {
     ctx.selectDoor(currentDoors[0].id);
   }

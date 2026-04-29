@@ -1,5 +1,5 @@
 import { useLayoutEffect, useState } from 'react';
-import { resolvePanelElement } from '../lib/spatial-nav';
+import { resolvePaneElement } from '../lib/spatial-nav';
 import { Shortcut } from './design';
 
 export type KillExit = 'shake' | 'confirm';
@@ -43,9 +43,9 @@ export function KillConfirmCard({ char, onCancel, exit }: { char: string; onCanc
   );
 }
 
-export function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
+export function KillConfirmOverlay({ confirmKill, paneElements, onCancel }: {
   confirmKill: ConfirmKill;
-  panelElements: Map<string, HTMLElement>;
+  paneElements: Map<string, HTMLElement>;
   onCancel: () => void;
 }) {
   const exitClass = confirmKill.exit === 'confirm' ? ' kill-overlay-confirm' : '';
@@ -55,7 +55,7 @@ export function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
   // before the browser paints. Otherwise the centered-in-viewport fallback below
   // flashes for one frame before the overlay snaps to the panel.
   useLayoutEffect(() => {
-    const panelEl = resolvePanelElement(panelElements.get(confirmKill.id));
+    const panelEl = resolvePaneElement(paneElements.get(confirmKill.id));
     if (!panelEl) { setRect(null); return; }
 
     const update = () => {
@@ -68,7 +68,7 @@ export function KillConfirmOverlay({ confirmKill, panelElements, onCancel }: {
     ro.observe(panelEl);
     window.addEventListener('resize', update);
     return () => { ro.disconnect(); window.removeEventListener('resize', update); };
-  }, [confirmKill.id, panelElements]);
+  }, [confirmKill.id, paneElements]);
 
   if (rect) {
     return (

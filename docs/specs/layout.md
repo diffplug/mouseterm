@@ -187,7 +187,7 @@ A fixed-positioned element rendered on top of dockview. Covers the active elemen
 - `z-index: 50`, `pointer-events: none`, `transition: 150ms`
 
 ### Position tracking
-- `components/wall/TerminalPanel.tsx` registers its DOM element in a `panelElements` Map on mount, removes on unmount
+- `components/wall/TerminalPanel.tsx` registers its DOM element in a `paneElements` Map on mount, removes on unmount
 - Door elements are registered by the `Baseboard` via `DoorElementsContext` from `components/wall/wall-context.tsx` (queries `[data-door-id]` attributes)
 - Updates on: selection change, resize (`ResizeObserver`), layout change (`api.onDidLayoutChange`)
 
@@ -195,7 +195,7 @@ A fixed-positioned element rendered on top of dockview. Covers the active elemen
 
 ### Direction detection
 
-Uses DOM positions of pane elements (registered in `panelElements` Map). For each candidate:
+Uses DOM positions of pane elements (registered in `paneElements` Map). For each candidate:
 
 1. **Edge-based direction check**: candidate must be entirely in the correct direction on the primary axis
 2. **Overlap requirement**: candidate must overlap on the secondary axis
@@ -321,7 +321,7 @@ Case handling is purely rect-based (measure before and after removal), so 2-pane
 
 When `onDidRemovePanel` triggers the "always keep one pane visible" auto-spawn (see corner case #10), the `api.addPanel` call is deferred by 440ms. This lets the outgoing animation (kill ghost crush, or minimize's selection-overlay slide to the door) complete before the replacement's reveal starts — they play sequentially in the same screen region instead of fighting each other. The deferred spawn re-checks `totalPanels` at fire time and becomes a no-op if anything repopulated the pane area during the delay (e.g. a door reattach).
 
-The deferred spawn also only calls `selectPanel` if selection is null. The kill handler clears selection to null, so the new pane takes focus. The minimize flow sets selection to the just-created door; preserving that door focus across the delay is the point.
+The deferred spawn also only calls `selectPane` if selection is null. The kill handler clears selection to null, so the new pane takes focus. The minimize flow sets selection to the just-created door; preserving that door focus across the delay is the point.
 
 ## Corner cases
 
@@ -362,7 +362,7 @@ The deferred spawn also only calls `selectPanel` if selection is null. The kill 
 | `lib/src/lib/terminal-theme.ts` | xterm theme extraction, terminal host painting, theme MutationObserver |
 | `lib/src/lib/terminal-report-filter.ts` | Synthetic/replay terminal report detection and replay writer |
 | `lib/src/lib/terminal-mouse-router.ts` | Mouse selection routing, smart-token hinting, Alt shape toggle |
-| `lib/src/lib/spatial-nav.ts` | Spatial navigation (`findPanelInDirection`) and reattach-neighbor detection (`findReattachNeighbor`) |
+| `lib/src/lib/spatial-nav.ts` | Spatial navigation (`findPaneInDirection`) and reattach-neighbor detection (`findReattachNeighbor`) |
 | `lib/src/lib/layout-snapshot.ts` | Layout cloning (`cloneLayout`) and structural signature (`getLayoutStructureSignature`) for restore comparison |
 | `lib/src/lib/activity-monitor.ts` | Per-session activity state machine: output timing → alert escalation |
 | `lib/src/lib/alert-manager.ts` | Manages ActivityMonitors + attention tracking + TODO state per session |

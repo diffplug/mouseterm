@@ -19,12 +19,12 @@ export function useWallKeyboard(ctx: {
   confirmKillRef: RefObject<ConfirmKill | null>;
   renamingRef: RefObject<string | null>;
   dialogKeyboardActiveRef: RefObject<boolean>;
-  panelElements: Map<string, HTMLElement>;
+  paneElements: Map<string, HTMLElement>;
   killInProgressRef: RefObject<boolean>;
   overlayElRef: RefObject<HTMLDivElement | null>;
   wallActionsRef: RefObject<WallActions>;
   handleReattachRef: RefObject<(item: DooredItem, options?: { enterPassthrough?: boolean; confirmKill?: boolean }) => void>;
-  selectPanel: (id: string) => void;
+  selectPane: (id: string) => void;
   selectDoor: (id: string) => void;
   enterTerminalMode: (id: string) => void;
   exitTerminalMode: () => void;

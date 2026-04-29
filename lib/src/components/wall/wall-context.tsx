@@ -11,7 +11,7 @@ export interface PanelElementsState {
 export const ModeContext = createContext<WallMode>('command');
 export const SelectedIdContext = createContext<string | null>(null);
 
-export const PanelElementsContext = createContext<PanelElementsState>({
+export const PaneElementsContext = createContext<PanelElementsState>({
   elements: new Map(),
   version: 0,
   bumpVersion: () => {},

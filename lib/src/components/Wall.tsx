@@ -34,7 +34,7 @@ import {
   DoorElementsContext,
   FreshlySpawnedContext,
   ModeContext,
-  PanelElementsContext,
+  PaneElementsContext,
   WallActionsContext,
   RenamingIdContext,
   SelectedIdContext,
@@ -135,13 +135,13 @@ export function Wall({
 
   // Mutable maps shared via context — consumers must call bumpVersion() after
   // any mutation so that dependent effects/components re-run.
-  const panelElementsRef = useRef(new Map<string, HTMLElement>());
-  const panelElements = panelElementsRef.current;
-  const [panelElementsVersion, setPanelElementsVersion] = useState(0);
+  const paneElementsRef = useRef(new Map<string, HTMLElement>());
+  const paneElements = paneElementsRef.current;
+  const [paneElementsVersion, setPanelElementsVersion] = useState(0);
   const doorElementsRef = useRef(new Map<string, HTMLElement>());
   const doorElements = doorElementsRef.current;
   const [doorElementsVersion, setDoorElementsVersion] = useState(0);
-  const bumpPanelElementsVersion = useCallback(() => {
+  const bumpPaneElementsVersion = useCallback(() => {
     setPanelElementsVersion((v) => v + 1);
   }, []);
   const bumpDoorElementsVersion = useCallback(() => {
@@ -213,7 +213,7 @@ export function Wall({
   // --- Helpers ---
 
   /** Select a panel: update our state + tell dockview so tabs highlight correctly */
-  const selectPanel = useCallback((id: string) => {
+  const selectPane = useCallback((id: string) => {
     selectedIdRef.current = id;
     selectedTypeRef.current = 'pane';
     setSelectedId(id);
@@ -259,7 +259,7 @@ export function Wall({
 
     // Capture the nearest adjacent pane and our actual relative position
     // so immediate restore can reconstruct the original split precisely.
-    const { neighborId, direction } = findReattachNeighbor(id, api, panelElements);
+    const { neighborId, direction } = findReattachNeighbor(id, api, paneElements);
 
     const remainingPaneIds = api.panels
       .filter(p => p.id !== id)
@@ -314,7 +314,7 @@ export function Wall({
     modeRef,
     enterTerminalModeRef,
     generatePaneId,
-    selectPanel,
+    selectPane,
     setDockviewApi,
     setDoors,
     setSelectedId,
@@ -405,7 +405,7 @@ export function Wall({
     const nextDoors = doorsRef.current.filter(p => p.id !== item.id);
     doorsRef.current = nextDoors;
     setDoors(nextDoors);
-    selectPanel(item.id);
+    selectPane(item.id);
     if (enterPassthrough) {
       enterTerminalMode(item.id);
     } else {
@@ -420,7 +420,7 @@ export function Wall({
         }
       });
     }
-  }, [selectPanel, enterTerminalMode]);
+  }, [selectPane, enterTerminalMode]);
   const handleReattachRef = useRef(handleReattach);
   handleReattachRef.current = handleReattach;
 
@@ -449,11 +449,11 @@ export function Wall({
         title: '<unnamed>',
         position: active ? { referencePanel: active.id, direction } : undefined,
       });
-      selectPanel(newId);
+      selectPane(newId);
     };
     window.addEventListener('mouseterm:new-terminal', handler);
     return () => window.removeEventListener('mouseterm:new-terminal', handler);
-  }, [generatePaneId, selectPanel]);
+  }, [generatePaneId, selectPane]);
 
   const addSplitPanel = useCallback((
     id: string | null,
@@ -480,9 +480,9 @@ export function Wall({
       title: '<unnamed>',
       position: ref ? { referencePanel: ref, direction } : undefined,
     });
-    selectPanel(newId);
+    selectPane(newId);
     onEventRef.current?.({ type: 'split', direction: splitDirection, source });
-  }, [selectPanel, generatePaneId]);
+  }, [selectPane, generatePaneId]);
 
   // --- Wall actions (for tab buttons) ---
 
@@ -548,12 +548,12 @@ export function Wall({
     confirmKillRef,
     renamingRef,
     dialogKeyboardActiveRef,
-    panelElements,
+    paneElements,
     killInProgressRef,
     overlayElRef,
     wallActionsRef,
     handleReattachRef,
-    selectPanel,
+    selectPane,
     selectDoor,
     enterTerminalMode,
     exitTerminalMode,
@@ -571,7 +571,7 @@ export function Wall({
     <ModeContext.Provider value={mode}>
       <SelectedIdContext.Provider value={selectedId}>
         <WallActionsContext.Provider value={wallActions}>
-          <PanelElementsContext.Provider value={{ elements: panelElements, version: panelElementsVersion, bumpVersion: bumpPanelElementsVersion }}>
+          <PaneElementsContext.Provider value={{ elements: paneElements, version: paneElementsVersion, bumpVersion: bumpPaneElementsVersion }}>
           <DoorElementsContext.Provider value={{ elements: doorElements, version: doorElementsVersion, bumpVersion: bumpDoorElementsVersion }}>
           <RenamingIdContext.Provider value={renamingPaneId}>
           <ZoomedContext.Provider value={zoomed}>
@@ -600,7 +600,7 @@ export function Wall({
             {confirmKill && (
               <KillConfirmOverlay
                 confirmKill={confirmKill}
-                panelElements={panelElements}
+                paneElements={paneElements}
                 onCancel={() => rejectKill()}
               />
             )}
@@ -612,7 +612,7 @@ export function Wall({
           </ZoomedContext.Provider>
           </RenamingIdContext.Provider>
           </DoorElementsContext.Provider>
-          </PanelElementsContext.Provider>
+          </PaneElementsContext.Provider>
         </WallActionsContext.Provider>
       </SelectedIdContext.Provider>
     </ModeContext.Provider>

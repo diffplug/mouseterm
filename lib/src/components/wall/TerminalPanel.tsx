@@ -5,7 +5,7 @@ import { TERMINAL_BOTTOM_RADIUS_CLASS } from '../design';
 import {
   FreshlySpawnedContext,
   ModeContext,
-  PanelElementsContext,
+  PaneElementsContext,
   WallActionsContext,
   SelectedIdContext,
 } from './wall-context';
@@ -14,20 +14,20 @@ export function TerminalPanel({ api }: IDockviewPanelProps) {
   const mode = useContext(ModeContext);
   const selectedId = useContext(SelectedIdContext);
   const actions = useContext(WallActionsContext);
-  const { elements: panelElements, bumpVersion } = useContext(PanelElementsContext);
+  const { elements: paneElements, bumpVersion } = useContext(PaneElementsContext);
   const freshlySpawned = useContext(FreshlySpawnedContext);
   const isFocused = mode === 'passthrough' && selectedId === api.id;
   const elRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!elRef.current) return;
-    panelElements.set(api.id, elRef.current);
+    paneElements.set(api.id, elRef.current);
     bumpVersion();
     return () => {
-      panelElements.delete(api.id);
+      paneElements.delete(api.id);
       bumpVersion();
     };
-  }, [api.id, panelElements, bumpVersion]);
+  }, [api.id, paneElements, bumpVersion]);
 
   useLayoutEffect(() => {
     const direction = freshlySpawned.get(api.id);

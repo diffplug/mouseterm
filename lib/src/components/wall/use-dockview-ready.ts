@@ -16,7 +16,7 @@ export function useDockviewReady({
   modeRef,
   enterTerminalModeRef,
   generatePaneId,
-  selectPanel,
+  selectPane,
   setDockviewApi,
   setDoors,
   setSelectedId,
@@ -34,7 +34,7 @@ export function useDockviewReady({
   modeRef: RefObject<WallMode>;
   enterTerminalModeRef: RefObject<(id: string) => void>;
   generatePaneId: () => string;
-  selectPanel: (id: string) => void;
+  selectPane: (id: string) => void;
   setDockviewApi: Dispatch<SetStateAction<DockviewApi | null>>;
   setDoors: Dispatch<SetStateAction<DooredItem[]>>;
   setSelectedId: Dispatch<SetStateAction<string | null>>;
@@ -114,7 +114,7 @@ export function useDockviewReady({
               draggedPanel.api.setTitle(targetTitle);
               targetPanel.api.setTitle(draggedTitle);
             }
-            selectPanel(targetPanel.id);
+            selectPane(targetPanel.id);
           }
           event.preventDefault();
         }
@@ -149,7 +149,7 @@ export function useDockviewReady({
         freshlySpawnedRef.current.set(id, 'top-left');
         e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
         if (selectedIdRef.current === null) {
-          selectPanel(id);
+          selectPane(id);
         }
       };
       setTimeout(spawn, delay);
@@ -168,7 +168,7 @@ export function useDockviewReady({
     modeRef,
     onApiReady,
     restoredLayoutRef,
-    selectPanel,
+    selectPane,
     selectedIdRef,
     selectedTypeRef,
     setDockviewApi,

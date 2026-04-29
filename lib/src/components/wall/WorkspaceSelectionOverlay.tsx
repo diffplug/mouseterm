@@ -5,9 +5,9 @@ import {
   TERMINAL_SELECTION_BORDER_RADIUS,
 } from '../design';
 import { useFocusRingColor } from '../../lib/themes/use-focus-ring-color';
-import { resolvePanelElement } from '../../lib/spatial-nav';
+import { resolvePaneElement } from '../../lib/spatial-nav';
 import type { WallMode, WallSelectionKind } from './wall-types';
-import { DoorElementsContext, PanelElementsContext, WindowFocusedContext } from './wall-context';
+import { DoorElementsContext, PaneElementsContext, WindowFocusedContext } from './wall-context';
 import { MarchingAntsRect } from './MarchingAntsRect';
 
 export function WorkspaceSelectionOverlay({ apiRef, selectedId, selectedType, mode, overlayElRef }: {
@@ -17,7 +17,7 @@ export function WorkspaceSelectionOverlay({ apiRef, selectedId, selectedType, mo
   mode: WallMode;
   overlayElRef?: RefObject<HTMLDivElement | null>;
 }) {
-  const { elements: panelElements, version: panelVersion } = useContext(PanelElementsContext);
+  const { elements: paneElements, version: paneVersion } = useContext(PaneElementsContext);
   const { elements: doorElements, version: doorVersion } = useContext(DoorElementsContext);
   const selectionColor = useFocusRingColor();
   const windowFocused = useContext(WindowFocusedContext);
@@ -36,7 +36,7 @@ export function WorkspaceSelectionOverlay({ apiRef, selectedId, selectedType, mo
     const update = () => {
       const targetEl = selectedType === 'door'
         ? doorElements.get(selectedId)
-        : resolvePanelElement(panelElements.get(selectedId));
+        : resolvePaneElement(paneElements.get(selectedId));
       if (!targetEl) return;
 
       const targetRect = targetEl.getBoundingClientRect();
@@ -52,7 +52,7 @@ export function WorkspaceSelectionOverlay({ apiRef, selectedId, selectedType, mo
     update();
 
     const ro = new ResizeObserver(update);
-    const panelEl = resolvePanelElement(panelElements.get(selectedId));
+    const panelEl = resolvePaneElement(paneElements.get(selectedId));
     if (panelEl) ro.observe(panelEl);
     const doorEl = doorElements.get(selectedId);
     if (doorEl) ro.observe(doorEl);
@@ -60,7 +60,7 @@ export function WorkspaceSelectionOverlay({ apiRef, selectedId, selectedType, mo
     const d = api.onDidLayoutChange(update);
 
     return () => { ro.disconnect(); d.dispose(); };
-  }, [apiRef, selectedId, selectedType, panelVersion, doorVersion, panelElements, doorElements]);
+  }, [apiRef, selectedId, selectedType, paneVersion, doorVersion, paneElements, doorElements]);
 
   if (!rect || !selectedId) return null;
 
