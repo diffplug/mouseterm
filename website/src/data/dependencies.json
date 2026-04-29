@@ -16,7 +16,7 @@
   {
     "name": "@tauri-apps/api",
     "version": "2.10.1",
-    "license": "Apache-2.0 OR MIT",
+    "license": "MIT OR Apache-2.0",
     "author": "Tauri Apps Contributors",
     "homepage": "https://github.com/tauri-apps/tauri#readme"
   },

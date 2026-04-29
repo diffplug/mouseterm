@@ -12,13 +12,17 @@ const raw = JSON.parse(
   execSync("pnpm licenses list --prod --json", { cwd: repoRoot, encoding: "utf-8" })
 );
 
+const licenseAliases = {
+  "Apache-2.0 OR MIT": "MIT OR Apache-2.0",
+};
+
 const deps = [];
 for (const [license, packages] of Object.entries(raw)) {
   for (const pkg of packages) {
     deps.push({
       name: pkg.name,
       version: pkg.versions.join(", "),
-      license,
+      license: licenseAliases[license] ?? license,
       author: pkg.author || null,
       homepage: pkg.homepage || null,
     });
