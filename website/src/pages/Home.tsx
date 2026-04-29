@@ -24,7 +24,7 @@ const UNPIN_THRESHOLD = 0.8;
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 const PILL =
-  "inline-block px-4 py-1.5 rounded-md border border-[var(--color-caramel)]/30 text-[var(--color-caramel)] text-sm font-display hover:bg-[var(--color-caramel)]/10 hover:border-[var(--color-caramel)]/60 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150";
+  "inline-block px-4 py-1.5 rounded-md border border-[var(--color-text)]/20 text-[var(--color-caramel)] text-sm font-display hover:bg-[var(--color-text)]/5 hover:border-[var(--color-text)]/40 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150";
 
 const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string[] }> = {
   "darwin-aarch64": {
@@ -275,7 +275,7 @@ function Home() {
             Works with any CLI tool that prints to a terminal — no plugins, no
             configuration.
           </p>
-          <div className="mt-8 -mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 flex items-center justify-center">
+          <div className="mt-8 -mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 flex items-center justify-center">
             <p className="text-sm opacity-40 italic">TODO: Completion detection in action</p>
           </div>
         </section>
@@ -287,22 +287,22 @@ function Home() {
             <p className="text-lg leading-relaxed opacity-70 mb-4">
               Click and drag in a "mouse conformant" terminal doesn't select text;
               it sends escape code{" "}
-              <code className="text-sm bg-[var(--color-text)]/10 px-1.5 py-0.5 rounded">{"\\e[<0;x;yM"}</code>.
-              And <code className="text-sm bg-[var(--color-text)]/10 px-1.5 py-0.5 rounded">Ctrl+C</code>{" "}
+              <code className="text-sm bg-[var(--color-text)]/20 px-1.5 py-0.5 rounded">{"\\e[<0;x;yM"}</code>.
+              And <code className="text-sm bg-[var(--color-text)]/20 px-1.5 py-0.5 rounded">Ctrl+C</code>{" "}
               doesn't copy; it asks your program to kill itself.
             </p>
             <p className="text-lg leading-relaxed opacity-70">
               MouseTerm lets you copy paste like a human, not a terminal.
             </p>
           </div>
-          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 flex items-center justify-center">
+          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 flex items-center justify-center">
             <p className="text-sm opacity-40 italic">TODO: Copy/paste with line-break rewrap</p>
           </div>
         </section>
 
         {/* Section 3: image left, text right */}
         <section className="mx-auto max-w-5xl px-4 md:px-6 py-12 grid md:grid-cols-[3fr_2fr] gap-8 md:gap-12 items-start">
-          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 flex items-center justify-center order-2 md:order-1">
+          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 flex items-center justify-center order-2 md:order-1">
             <p className="text-sm opacity-40 italic">TODO: Tiling layout and tmux keybinds</p>
           </div>
           <div className="order-1 md:order-2">
@@ -325,7 +325,7 @@ function Home() {
 
           <a
             href="/playground"
-            className="inline-block px-6 py-3 rounded-md bg-[var(--color-caramel)] text-[var(--color-bg)] font-display text-lg hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150"
+            className="inline-block px-6 py-3 rounded-md bg-[var(--color-caramel)] text-[var(--color-text)] font-display text-lg hover:underline underline-offset-4"
           >
             Try it in the Playground
           </a>
@@ -346,7 +346,7 @@ function Home() {
                     key={key}
                     href={standaloneLatest.platforms[key].url}
                     onClick={() => setInstallGuide(key)}
-                    className={`${PILL}${installGuide === key ? " bg-[var(--color-caramel)]/10 border-[var(--color-caramel)]/60" : ""}`}
+                    className={`${PILL}${installGuide === key ? " bg-[var(--color-caramel)] border-[var(--color-caramel)] text-[var(--color-bg)]" : ""}`}
                   >
                     {INSTALL_STEPS[key].pill}
                   </a>
@@ -354,7 +354,7 @@ function Home() {
                 <a href="https://github.com/diffplug/mouseterm/issues/8" className={PILL}>Other</a>
               </div>
               {installGuide && INSTALL_STEPS[installGuide] && (
-                <div className="mt-3 rounded-md border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 px-4 py-3">
+                <div className="mt-3 rounded-md border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 px-4 py-3">
                   <p className="text-base uppercase text-[var(--color-caramel)] mb-2">{INSTALL_STEPS[installGuide].title}</p>
                   <ol className="space-y-1 text-sm opacity-70">
                     {INSTALL_STEPS[installGuide].steps.map((step, i) => (
@@ -370,7 +370,7 @@ function Home() {
           </div>
         </section>
 
-        <footer className="border-t border-[var(--color-text)]/10 py-10">
+        <footer className="border-t border-[var(--color-text)]/20 py-10">
           <div className="mx-auto max-w-2xl px-4 md:px-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm opacity-50">
             <a href="/dependencies" className="underline hover:opacity-100">Dependencies</a>
             <a href="https://github.com/diffplug/mouseterm/issues" className="underline hover:opacity-100">Report an issue</a>

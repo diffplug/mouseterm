@@ -5,7 +5,7 @@
   --font-body: "Ubuntu Mono", ui-monospace, monospace;
   --color-bg: oklch(10% 0.01 60);
   --color-surface: oklch(18% 0.015 60);
-  --color-text: oklch(92% 0.01 60);
+  --color-text: #AAAAAA;
   --color-caramel: #7c5021;
 }
 

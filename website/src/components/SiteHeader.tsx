@@ -53,7 +53,7 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
           WebkitBackdropFilter: "blur(8px)",
           ...style,
         }
-      : { color: "color-mix(in oklab, var(--color-text) 80%, transparent)", ...style };
+      : { color: "var(--color-text)", ...style };
 
     return (
       <>
@@ -70,7 +70,7 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
                 ? `cursor-pointer text-xl ${
                     themeAware
                       ? THEME_AWARE_LINK_CLASS
-                      : "opacity-50 transition-opacity hover:opacity-100 text-[var(--color-caramel)]"
+                      : "text-[var(--color-caramel)]"
                   }`
                 : `text-xl ${
                     themeAware ? "" : "text-[var(--color-caramel)]"
