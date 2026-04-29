@@ -20,6 +20,9 @@ export type ThemePickerVariant = 'playground-header' | 'standalone-appbar';
 export interface ThemePickerProps {
   variant: ThemePickerVariant;
   className?: string;
+  /** Theme ID to apply when no theme is persisted yet. Falls back to the
+   *  first bundled theme if the ID does not resolve. */
+  defaultThemeId?: string;
 }
 
 const styles = {
@@ -279,17 +282,17 @@ function ThemeStoreDialog({
   );
 }
 
-export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
+export function ThemePicker({ variant, className = '', defaultThemeId }: ThemePickerProps) {
   const currentId = useId();
   // Apply the persisted theme during render initialization, before commit, so
   // the first paint already has --vscode-* on body — eliminates the flash of
   // unstyled chrome on the website playground where ThemePicker mounts before
   // any other entry point has a chance to apply a theme.
   const [themes, setThemes] = useState(() => {
-    restoreActiveTheme();
+    restoreActiveTheme(defaultThemeId);
     return getAllThemes();
   });
-  const [activeId, setActiveId] = useState(() => restoreActiveTheme()?.id ?? getAllThemes()[0]?.id ?? '');
+  const [activeId, setActiveId] = useState(() => restoreActiveTheme(defaultThemeId)?.id ?? getAllThemes()[0]?.id ?? '');
   const [open, setOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
   const [debuggerOpen, setDebuggerOpen] = useState(false);
@@ -303,9 +306,9 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
 
   const refreshThemes = useCallback(() => {
     setThemes(getAllThemes());
-    const theme = restoreActiveTheme();
+    const theme = restoreActiveTheme(defaultThemeId);
     if (theme) setActiveId(theme.id);
-  }, []);
+  }, [defaultThemeId]);
 
   const selectTheme = (id: string) => {
     const theme = getTheme(id);
@@ -325,7 +328,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
     setThemes(getAllThemes());
 
     if (theme.id === activeId) {
-      const fallback = restoreActiveTheme();
+      const fallback = restoreActiveTheme(defaultThemeId);
       if (fallback) setActiveId(fallback.id);
     }
   };

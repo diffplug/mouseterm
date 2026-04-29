@@ -62,6 +62,14 @@ export function getActiveThemeId(): string {
   return storage.getItem(ACTIVE_KEY) ?? getBundledThemes()[0]?.id ?? '';
 }
 
+/** Returns the persisted active theme ID, or undefined if none is stored.
+ *  Distinct from getActiveThemeId() which falls back to a bundled default. */
+export function getStoredActiveThemeId(): string | undefined {
+  const storage = getStorage();
+  if (!storage) return undefined;
+  return storage.getItem(ACTIVE_KEY) ?? undefined;
+}
+
 export function setActiveThemeId(id: string): void {
   const storage = getStorage();
   if (!storage) return;

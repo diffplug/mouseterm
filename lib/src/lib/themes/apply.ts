@@ -1,5 +1,5 @@
 import type { MouseTermTheme } from './types';
-import { getActiveThemeId, getAllThemes, getTheme, setActiveThemeId } from './store';
+import { getAllThemes, getStoredActiveThemeId, getTheme, setActiveThemeId } from './store';
 import { completeThemeVars } from './vscode-color-resolver';
 
 let appliedVarNames: string[] = [];
@@ -49,13 +49,18 @@ export function applyTheme(theme: MouseTermTheme): void {
   lastApplied = theme;
 }
 
-/** Apply the persisted active theme (or the first bundled theme when the
- *  stored ID no longer exists). Idempotent and safe to call before render so
- *  the first paint already has --vscode-* set on body. Returns the theme that
- *  was applied, or null when no themes are available (e.g. SSR). */
-export function restoreActiveTheme(): MouseTermTheme | null {
+/** Apply the persisted active theme. When nothing is persisted yet, fall
+ *  back to `defaultThemeId` if it resolves to a known theme, otherwise to the
+ *  first bundled theme. Idempotent and safe to call before render so the
+ *  first paint already has --vscode-* set on body. Returns the theme that was
+ *  applied, or null when no themes are available (e.g. SSR). */
+export function restoreActiveTheme(defaultThemeId?: string): MouseTermTheme | null {
   const all = getAllThemes();
-  const theme = getTheme(getActiveThemeId()) ?? all[0];
+  const stored = getStoredActiveThemeId();
+  const theme =
+    (stored ? getTheme(stored) : undefined) ??
+    (defaultThemeId ? getTheme(defaultThemeId) : undefined) ??
+    all[0];
   if (!theme) return null;
   setActiveThemeId(theme.id);
   applyTheme(theme);
