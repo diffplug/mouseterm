@@ -43,41 +43,40 @@ describe('pickFocusRing', () => {
     expect(pickFocusRing([], APP_DARK)).toBeNull();
   });
 
-  it('picks preferred when it clears the saturation floor', () => {
+  it('picks focusBorder when it clears the saturation floor', () => {
     const preferred: FocusRingCandidate = {
-      varName: '--color-header-active-bg',
-      lab: lab(0x09, 0x47, 0x71), // VSCode dark list.activeSelectionBackground
+      varName: '--vscode-focusBorder',
+      lab: lab(0, 127, 212), // VSCode dark focusBorder
       preferred: true,
     };
-    const grey: FocusRingCandidate = { varName: '--color-header-active-fg', lab: lab(255, 255, 255) };
-    const pick = pickFocusRing([preferred, grey], APP_DARK);
-    expect(pick?.varName).toBe('--color-header-active-bg');
+    const activeBg: FocusRingCandidate = { varName: '--color-header-active-bg', lab: lab(0xff, 0x40, 0x40) };
+    const pick = pickFocusRing([preferred, activeBg], APP_DARK);
+    expect(pick?.varName).toBe('--vscode-focusBorder');
   });
 
   it('falls through preferred when it is below the saturation floor', () => {
     const flatPreferred: FocusRingCandidate = {
-      varName: '--color-header-active-bg',
+      varName: '--vscode-focusBorder',
       lab: lab(60, 60, 60), // grey
       preferred: true,
     };
-    const accent: FocusRingCandidate = { varName: '--vscode-focusBorder', lab: lab(0, 127, 212) }; // saturated blue
+    const accent: FocusRingCandidate = { varName: '--color-header-active-bg', lab: lab(0x09, 0x47, 0x71) };
     const pick = pickFocusRing([flatPreferred, accent], APP_DARK);
-    expect(pick?.varName).toBe('--vscode-focusBorder');
+    expect(pick?.varName).toBe('--color-header-active-bg');
   });
 
   it('Solarized: preferred (chromatic) wins even though app-bg itself is warm', () => {
-    // Solarized Light's list.activeSelectionBackground is a saturated blue;
-    // app-bg is warm cream. Without the absolute-chroma rule, max-ΔE math
-    // would pull the focus ring toward whatever else is on the candidate list.
+    // Solarized Light's app-bg is warm cream. Without the absolute-chroma rule,
+    // max-ΔE math would pull the focus ring toward whatever else is on the
+    // candidate list.
     const preferred: FocusRingCandidate = {
-      varName: '--color-header-active-bg',
-      lab: lab(0x26, 0x8b, 0xd2), // solarized blue
+      varName: '--vscode-focusBorder',
+      lab: lab(0, 0x90, 0xf1),
       preferred: true,
     };
-    const muted: FocusRingCandidate = { varName: '--color-header-active-fg', lab: lab(0x58, 0x6e, 0x75) };
-    const focusBorder: FocusRingCandidate = { varName: '--vscode-focusBorder', lab: lab(0, 0x90, 0xf1) };
-    const pick = pickFocusRing([preferred, muted, focusBorder], APP_SOLARIZED);
-    expect(pick?.varName).toBe('--color-header-active-bg');
+    const activeBg: FocusRingCandidate = { varName: '--color-header-active-bg', lab: lab(0x26, 0x8b, 0xd2) };
+    const pick = pickFocusRing([preferred, activeBg], APP_SOLARIZED);
+    expect(pick?.varName).toBe('--vscode-focusBorder');
   });
 
   it('greyscale theme: falls through chroma rules to max-ΔE candidate', () => {
@@ -85,24 +84,22 @@ describe('pickFocusRing', () => {
     // alternative clears the floor. The third rule must pick whichever
     // candidate is farthest from app-bg in OKLab.
     const candidates: FocusRingCandidate[] = [
-      { varName: '--color-header-active-bg', lab: lab(220, 220, 220), preferred: true },
-      { varName: '--color-header-active-fg', lab: lab(40, 40, 40) },
-      { varName: '--vscode-focusBorder', lab: lab(120, 120, 120) },
+      { varName: '--vscode-focusBorder', lab: lab(120, 120, 120), preferred: true },
+      { varName: '--color-header-active-bg', lab: lab(40, 40, 40) },
     ];
     const pick = pickFocusRing(candidates, APP_LIGHT);
-    expect(pick?.varName).toBe('--color-header-active-fg');
+    expect(pick?.varName).toBe('--color-header-active-bg');
   });
 
   it('picks the most-saturated alternative when preferred is below floor', () => {
     const flatPreferred: FocusRingCandidate = {
-      varName: '--color-header-active-bg',
+      varName: '--vscode-focusBorder',
       lab: lab(80, 80, 80),
       preferred: true,
     };
-    const subtle: FocusRingCandidate = { varName: '--color-header-active-fg', lab: lab(0xa0, 0x80, 0x40) }; // mildly chromatic
-    const vivid: FocusRingCandidate = { varName: '--vscode-focusBorder', lab: lab(0xff, 0x40, 0x40) }; // strongly chromatic
-    const pick = pickFocusRing([flatPreferred, subtle, vivid], APP_DARK);
-    expect(pick?.varName).toBe('--vscode-focusBorder');
+    const vivid: FocusRingCandidate = { varName: '--color-header-active-bg', lab: lab(0xff, 0x40, 0x40) };
+    const pick = pickFocusRing([flatPreferred, vivid], APP_DARK);
+    expect(pick?.varName).toBe('--color-header-active-bg');
   });
 
   it('exposes the saturation floor as a constant for visibility', () => {

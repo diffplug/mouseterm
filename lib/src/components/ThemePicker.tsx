@@ -13,12 +13,16 @@ import {
   searchThemes,
   setActiveThemeId,
 } from '../lib/themes';
+import { ThemeDebuggerDialog } from './ThemeDebugger';
 
 export type ThemePickerVariant = 'playground-header' | 'standalone-appbar';
 
 export interface ThemePickerProps {
   variant: ThemePickerVariant;
   className?: string;
+  /** Theme ID to apply when no theme is persisted yet. Falls back to the
+   *  first bundled theme if the ID does not resolve. */
+  defaultThemeId?: string;
 }
 
 const styles = {
@@ -278,20 +282,23 @@ function ThemeStoreDialog({
   );
 }
 
-export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
-  const labelId = useId();
+export function ThemePicker({ variant, className = '', defaultThemeId }: ThemePickerProps) {
   const currentId = useId();
   // Apply the persisted theme during render initialization, before commit, so
   // the first paint already has --vscode-* on body — eliminates the flash of
   // unstyled chrome on the website playground where ThemePicker mounts before
   // any other entry point has a chance to apply a theme.
-  const [themes, setThemes] = useState(() => {
-    restoreActiveTheme();
-    return getAllThemes();
-  });
-  const [activeId, setActiveId] = useState(() => restoreActiveTheme()?.id ?? getAllThemes()[0]?.id ?? '');
+  const initialState = useRef<{ themes: MouseTermTheme[]; activeId: string }>(null);
+  if (initialState.current === null) {
+    const restored = restoreActiveTheme(defaultThemeId);
+    const themes = getAllThemes();
+    initialState.current = { themes, activeId: restored?.id ?? themes[0]?.id ?? '' };
+  }
+  const [themes, setThemes] = useState(initialState.current.themes);
+  const [activeId, setActiveId] = useState(initialState.current.activeId);
   const [open, setOpen] = useState(false);
   const [storeOpen, setStoreOpen] = useState(false);
+  const [debuggerOpen, setDebuggerOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const isPlayground = variant === 'playground-header';
@@ -302,9 +309,9 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
 
   const refreshThemes = useCallback(() => {
     setThemes(getAllThemes());
-    const theme = restoreActiveTheme();
+    const theme = restoreActiveTheme(defaultThemeId);
     if (theme) setActiveId(theme.id);
-  }, []);
+  }, [defaultThemeId]);
 
   const selectTheme = (id: string) => {
     const theme = getTheme(id);
@@ -324,17 +331,17 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
     setThemes(getAllThemes());
 
     if (theme.id === activeId) {
-      const fallback = restoreActiveTheme();
+      const fallback = restoreActiveTheme(defaultThemeId);
       if (fallback) setActiveId(fallback.id);
     }
   };
 
   const rootClass = isPlayground
-    ? 'relative flex min-w-0 items-center gap-1.5 text-sm'
+    ? 'relative flex min-w-0 items-baseline'
     : 'relative flex items-center';
   const triggerClass = isPlayground
-    ? 'flex h-8 w-[116px] min-w-0 items-center gap-2 rounded border px-2 text-left text-sm transition-colors sm:w-40 md:w-56'
-    : 'flex h-6 max-w-[190px] items-center gap-1.5 rounded border border-transparent px-2 text-sm transition-colors hover:opacity-85';
+    ? 'flex w-[116px] min-w-0 cursor-pointer items-baseline justify-end gap-1.5 rounded-md bg-[var(--color-header-inactive-bg)] text-right text-sm text-[var(--color-header-inactive-fg)] sm:w-40 md:w-56'
+    : 'flex h-6 max-w-[190px] cursor-pointer items-center gap-1.5 rounded border border-transparent px-2 text-sm transition-colors hover:opacity-85';
   const menuClass = isPlayground
     ? 'fixed top-16 right-4 left-4 z-50 overflow-hidden rounded border font-mono shadow-2xl md:absolute md:top-full md:right-0 md:left-auto md:mt-2 md:w-[22rem]'
     : 'absolute right-0 top-full z-50 mt-1 w-[280px] overflow-hidden rounded border font-mono shadow-2xl';
@@ -345,32 +352,40 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
 
   return (
     <div ref={rootRef} className={`${rootClass} ${className}`}>
-      {isPlayground ? (
-        <span id={labelId} className="shrink-0 text-sm font-medium" style={styles.muted}>
-          Theme:
-        </span>
-      ) : null}
-
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-labelledby={isPlayground ? `${labelId} ${currentId}` : undefined}
-        aria-label={!isPlayground ? `Theme: ${activeTheme?.label ?? 'Select theme'}` : undefined}
+        aria-label={`Theme: ${activeTheme?.label ?? 'Select theme'}`}
+        data-theme-picker-trigger={isPlayground ? 'playground' : undefined}
         onClick={() => setOpen((value) => !value)}
         className={triggerClass}
-        style={styles.trigger(open)}
+        style={isPlayground ? undefined : styles.trigger(open)}
       >
-        {activeTheme ? <ThemeSwatch theme={activeTheme} size={swatchSize} /> : null}
+        {isPlayground ? (
+          <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
+        ) : activeTheme ? (
+          <ThemeSwatch theme={activeTheme} size={swatchSize} />
+        ) : null}
         {!isPlayground ? <span className="hidden text-sm sm:inline">Theme:</span> : null}
-        <span id={currentId} className={`min-w-0 truncate ${isPlayground ? 'flex-1' : 'font-mono text-sm'}`}>
+        <span
+          id={currentId}
+          data-theme-picker-current={isPlayground ? 'true' : undefined}
+          className={`min-w-0 truncate ${
+            isPlayground
+              ? 'underline-offset-4 decoration-[var(--color-header-inactive-fg)]'
+              : 'font-mono text-sm'
+          }`}
+        >
           {activeTheme?.label ?? 'Select theme'}
         </span>
-        <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
+        {!isPlayground ? (
+          <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
+        ) : null}
       </button>
 
       {open ? (
-        <div role="menu" aria-labelledby={isPlayground ? labelId : undefined} className={menuClass} style={styles.panel}>
+        <div role="menu" aria-label={isPlayground ? 'Select theme' : undefined} className={menuClass} style={styles.panel}>
           <div className="overflow-y-auto py-1" style={{ maxHeight: isPlayground ? 'min(24rem, calc(100vh - 9rem))' : 320 }}>
             {themes.map((theme) => {
               const isActive = theme.id === activeId;
@@ -418,6 +433,19 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
               type="button"
               onClick={() => {
                 setOpen(false);
+                setDebuggerOpen(true);
+              }}
+              className={`w-full rounded text-left text-sm font-medium transition-opacity hover:opacity-85 ${
+                isPlayground ? 'px-3 py-2' : 'px-3 py-1.5'
+              }`}
+              style={styles.foreground}
+            >
+              Debug current theme
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
                 setStoreOpen(true);
               }}
               className={`w-full rounded text-left text-sm font-medium transition-opacity hover:opacity-85 ${
@@ -432,6 +460,7 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
       ) : null}
 
       <ThemeStoreDialog open={storeOpen} onClose={() => setStoreOpen(false)} onThemesChanged={refreshThemes} />
+      <ThemeDebuggerDialog open={debuggerOpen} onClose={() => setDebuggerOpen(false)} />
     </div>
   );
 }

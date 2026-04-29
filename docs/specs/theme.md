@@ -24,17 +24,18 @@ panes and doors; do not add borders to make the hierarchy work.
 | `--color-header-inactive-bg` / `-fg` | `list.inactiveSelectionBackground` / `list.inactiveSelectionForeground` | unfocused pane headers |
 | `--color-header-active-bg` / `-fg` | `list.activeSelectionBackground` / `list.activeSelectionForeground` | focused pane header |
 | `--color-door-bg` / `-fg` | runtime pick from inactive header vs terminal bg/fg | baseboard doors |
-| `--color-focus-ring` | runtime pick from active header colors and `focusBorder` | marching-ants ring and terminal text-selection border |
+| `--color-focus-ring` | runtime pick from `focusBorder` and active header background | marching-ants ring and terminal text-selection border |
 
-Door colors and the focus ring are chosen at runtime in
-`Pond.useDynamicPalette` using OKLab distance/chroma helpers from
-`lib/src/lib/color-contrast.ts`.
+Door colors and the focus ring are chosen at runtime by
+`computeDynamicPalette()` in `lib/src/lib/dynamic-palette.ts`, using OKLab
+distance/chroma helpers from `lib/src/lib/color-contrast.ts`. `Pond` publishes
+the chosen variables on `document.body`.
 
 - Door bg/fg chooses whichever pair, inactive-header or terminal bg/fg, has
   stronger perceptual separation from
   `--color-app-bg`.
-- Focus ring prefers a chromatic active-header background, then a chromatic
-  active-header foreground or `focusBorder`, then the highest contrast fallback.
+- Focus ring prefers a chromatic `focusBorder`, then a chromatic active-header
+  background, then the highest contrast fallback.
 - Header-internal text and buttons inherit the header foreground. Do not add
   `text-muted` inside headers; use `hover:bg-current/10` for neutral hover
   feedback. Semantic exceptions are `text-warning` for ringing alerts and
@@ -120,10 +121,38 @@ Storybook simulates VSCode themes through `lib/.storybook/themes.ts`. It must
 also run bundled theme vars through `completeThemeVars()` (with the same host
 typography defaults as `applyTheme()`) before injecting them, so isolated
 component stories see the same materialized `--vscode-*` token set as the app.
+Storybook's default simulated host theme is `Light (Visual Studio)`, with a
+first-bundled-theme fallback so a renamed or removed bundle cannot leave stories
+without theme vars.
 The Storybook preview decorator also computes and publishes the dynamic palette
 vars (`--color-door-bg`, `--color-door-fg`, `--color-focus-ring`) through the
 shared `computeDynamicPalette()` helper, matching `Pond` for stories that render
 doors, baseboards, or focus rings outside a full Pond instance.
+
+## Theme debugger
+
+MouseTerm includes a diagnostic-only Theme Debugger shared by VSCode,
+standalone, and the website playground. It never mutates theme storage or
+terminal colors. It captures the current DOM-visible theme state and shows:
+
+- active MouseTerm theme metadata when `applyTheme()` is the source
+  (standalone/playground); real VSCode webviews show only the inferred VSCode
+  theme kind because VSCode exposes CSS variables, not raw built-in theme JSON.
+- visible `--vscode-*` variables, marked as host/theme-provided or
+  MouseTerm-materialized.
+- resolver traces for every resolvable consumed variable: provided value,
+  registry default for the current kind, null-default fallback path, final
+  resolved value, and origin.
+- semantic `--color-*` mappings for app, terminal, header, status, input, door,
+  and focus-ring tokens, including `--color-app-bg` and `--color-app-fg`.
+- terminal palette variables read by xterm.js.
+- dynamic door/focus-ring picks from the same `pickDoorPair()` and
+  `pickFocusRing()` helpers used by Pond's `computeDynamicPalette()`.
+
+Standalone and playground expose the debugger as `Debug current theme` in the
+`ThemePicker` menu. VSCode opens it through the `mouseterm.debugTheme` command
+and the `mouseterm:openThemeDebugger` extension-to-webview message. The
+debugger's copied report is a shareable text dump of the same snapshot.
 
 ## Maintainer checklist
 
@@ -137,6 +166,8 @@ When changing theme behavior:
   inline styles, or resolver fallback paths.
 - Keep xterm.js terminal colors sourced from `--vscode-terminal-*` variables,
   not from MouseTerm chrome tokens.
+- Keep debugger dynamic-pick reporting and Pond runtime picks sharing
+  `pickDoorPair()` and `pickFocusRing()`; do not fork those rules in UI code.
 - Do not add hardcoded color defaults or CSS variable fallback chains to
   `lib/src/theme.css`; fix the theme data or runtime host instead.
 - Avoid reintroducing a pass-through `--mt-*` layer or one-off tokens for tabs,

@@ -90,7 +90,12 @@ function Playground() {
       <SiteHeader
         activePath="/playground"
         themeAware
-        controls={<ThemePicker variant="playground-header" />}
+        controls={
+          <ThemePicker
+            variant="playground-header"
+            defaultThemeId="vscode.theme-kimbie-dark.kimbie-dark"
+          />
+        }
       />
 
       <main className="fixed top-16 right-0 bottom-0 left-0 flex min-h-0 md:top-20">

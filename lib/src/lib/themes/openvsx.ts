@@ -86,6 +86,24 @@ export async function fetchExtensionThemes(
   const themeContribs: Array<{ label: string; uiTheme?: string; path: string }> =
     pkgJson.contributes?.themes ?? [];
 
+  // Resolve %key% nls placeholders from package.nls.json if present.
+  let nls: Record<string, string | { message?: string }> = {};
+  const nlsData = entries['extension/package.nls.json'];
+  if (nlsData) {
+    try {
+      nls = JSON.parse(new TextDecoder().decode(nlsData));
+    } catch {
+      // Ignore malformed nls; placeholders pass through.
+    }
+  }
+  const resolveNls = (s: string): string =>
+    s.replace(/^%([^%]+)%$/, (_, k) => {
+      const v = nls[k];
+      if (typeof v === 'string') return v;
+      if (v && typeof v === 'object' && typeof v.message === 'string') return v.message;
+      return `%${k}%`;
+    });
+
   // 5. Parse JSONC (dynamic import to avoid loading at startup)
   const { parse: parseJsonc } = await import('jsonc-parser');
 
@@ -96,14 +114,15 @@ export async function fetchExtensionThemes(
     const themeData = entries[themePath];
     if (!themeData) continue;
 
+    const label = resolveNls(contrib.label);
     const themeJson = parseJsonc(new TextDecoder().decode(themeData));
     const colors: Record<string, string> = themeJson.colors ?? {};
     const vars = convertVscodeThemeColors(colors);
     const type = uiThemeToType(contrib.uiTheme ?? themeJson.type ?? 'vs-dark');
 
     themes.push({
-      id: `${namespace}.${name}.${slugify(contrib.label)}`,
-      label: contrib.label,
+      id: `${namespace}.${name}.${slugify(label)}`,
+      label,
       type,
       swatch: colors['editor.background'] ?? (type === 'light' ? '#ffffff' : '#1e1e1e'),
       accent: colors['focusBorder'] ?? (type === 'light' ? '#0090f1' : '#007fd4'),

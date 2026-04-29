@@ -1,9 +1,14 @@
 import type { MouseTermTheme } from './types';
-import { getActiveThemeId, getAllThemes, getTheme, setActiveThemeId } from './store';
+import { getAllThemes, getStoredActiveThemeId, setActiveThemeId } from './store';
 import { completeThemeVars } from './vscode-color-resolver';
 
-let appliedVarNames: string[] = [];
-let lastApplied: MouseTermTheme | null = null;
+let appliedThemeSnapshot: AppliedThemeSnapshot | null = null;
+
+export interface AppliedThemeSnapshot {
+  theme: MouseTermTheme;
+  providedVars: Record<string, string>;
+  resolvedVars: Record<string, string>;
+}
 
 const HOST_TYPOGRAPHY_VARS: Record<string, string> = {
   '--vscode-font-size': '13px',
@@ -15,16 +20,19 @@ const HOST_TYPOGRAPHY_VARS: Record<string, string> = {
 
 export function applyTheme(theme: MouseTermTheme): void {
   if (typeof document === 'undefined') return;
-  if (theme === lastApplied) return;
+  if (theme === appliedThemeSnapshot?.theme) return;
 
-  for (const name of appliedVarNames) {
-    document.body.style.removeProperty(name);
+  if (appliedThemeSnapshot) {
+    for (const name of Object.keys(appliedThemeSnapshot.resolvedVars)) {
+      document.body.style.removeProperty(name);
+    }
   }
 
   // Imported theme JSON usually omits VSCode registry defaults; materialize
   // them here so theme.css can read --vscode-* directly without fallbacks.
-  const vars = completeThemeVars({ ...HOST_TYPOGRAPHY_VARS, ...theme.vars }, theme.type);
-  appliedVarNames = Object.keys(vars);
+  const providedVars = { ...HOST_TYPOGRAPHY_VARS, ...theme.vars };
+  const vars = completeThemeVars(providedVars, theme.type);
+  appliedThemeSnapshot = { theme, providedVars, resolvedVars: vars };
   for (const [name, value] of Object.entries(vars)) {
     document.body.style.setProperty(name, value);
   }
@@ -36,19 +44,23 @@ export function applyTheme(theme: MouseTermTheme): void {
     document.body.classList.add('vscode-dark');
     document.body.classList.remove('vscode-light');
   }
-
-  lastApplied = theme;
 }
 
-/** Apply the persisted active theme (or the first bundled theme when the
- *  stored ID no longer exists). Idempotent and safe to call before render so
- *  the first paint already has --vscode-* set on body. Returns the theme that
- *  was applied, or null when no themes are available (e.g. SSR). */
-export function restoreActiveTheme(): MouseTermTheme | null {
+/** Apply the persisted active theme. When nothing is persisted yet, fall
+ *  back to `defaultThemeId` if it resolves to a known theme, otherwise to the
+ *  first bundled theme. Idempotent and safe to call before render so the
+ *  first paint already has --vscode-* set on body. Returns the theme that was
+ *  applied, or null when no themes are available (e.g. SSR). */
+export function restoreActiveTheme(defaultThemeId?: string): MouseTermTheme | null {
   const all = getAllThemes();
-  const theme = getTheme(getActiveThemeId()) ?? all[0];
+  const find = (id: string | null | undefined) => (id ? all.find((t) => t.id === id) : undefined);
+  const theme = find(getStoredActiveThemeId()) ?? find(defaultThemeId) ?? all[0];
   if (!theme) return null;
   setActiveThemeId(theme.id);
   applyTheme(theme);
   return theme;
+}
+
+export function getAppliedThemeSnapshot(): AppliedThemeSnapshot | null {
+  return appliedThemeSnapshot;
 }

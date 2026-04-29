@@ -1,5 +1,5 @@
 import type { Preview } from '@storybook/react';
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { createElement } from 'react';
 import '../src/theme.css';
 import '../src/index.css';
@@ -34,6 +34,73 @@ const DYNAMIC_PALETTE_VARS = [
   '--color-door-fg',
   '--color-focus-ring',
 ] as const;
+const PREFERRED_STORYBOOK_THEME = 'Light (Visual Studio)';
+const FIRST_STORYBOOK_THEME = Object.keys(VSCODE_THEMES)[0] ?? '';
+const DEFAULT_STORYBOOK_THEME = VSCODE_THEMES[PREFERRED_STORYBOOK_THEME]
+  ? PREFERRED_STORYBOOK_THEME
+  : FIRST_STORYBOOK_THEME;
+
+function setStylePropertyIfChanged(
+  style: CSSStyleDeclaration,
+  name: string,
+  value: string,
+) {
+  if (style.getPropertyValue(name) === value) return;
+  style.setProperty(name, value);
+}
+
+function removeStylePropertyIfPresent(style: CSSStyleDeclaration, name: string) {
+  if (!style.getPropertyValue(name)) return;
+  style.removeProperty(name);
+}
+
+function publishDynamicPalette(body: HTMLElement, ctx: CanvasRenderingContext2D) {
+  const dynamicPalette = computeDynamicPalette(getComputedStyle(body), ctx);
+
+  for (const key of DYNAMIC_PALETTE_VARS) {
+    const value = dynamicPalette[key];
+    if (value) setStylePropertyIfChanged(body.style, key, value);
+    else removeStylePropertyIfPresent(body.style, key);
+  }
+}
+
+function applyStorybookTheme(themeName: string) {
+  const theme = VSCODE_THEMES[themeName];
+  const themeType = VSCODE_THEME_TYPES[themeName];
+  const root = document.documentElement;
+  const body = document.body;
+
+  // Clear all theme variables first to prevent stale values from previous theme.
+  // Storybook writes both root and body: root simulates VSCode's host globals,
+  // body matches applyTheme(), which is what standalone/website use.
+  for (const key of ALL_THEME_VARS) {
+    removeStylePropertyIfPresent(root.style, key);
+    removeStylePropertyIfPresent(body.style, key);
+  }
+  for (const key of DYNAMIC_PALETTE_VARS) {
+    removeStylePropertyIfPresent(body.style, key);
+  }
+
+  if (theme) {
+    for (const [key, value] of Object.entries(theme)) {
+      root.style.setProperty(key, value);
+      body.style.setProperty(key, value);
+    }
+  }
+
+  body.classList.toggle('vscode-light', themeType === 'light');
+  body.classList.toggle('vscode-dark', themeType !== 'light');
+
+  const ctx = document.createElement('canvas').getContext('2d');
+  if (ctx) publishDynamicPalette(body, ctx);
+}
+
+function resolveStorybookTheme(requestedThemeName: string | undefined) {
+  if (requestedThemeName && VSCODE_THEMES[requestedThemeName]) {
+    return requestedThemeName;
+  }
+  return DEFAULT_STORYBOOK_THEME;
+}
 
 const preview: Preview = {
   parameters: {
@@ -51,38 +118,30 @@ const preview: Preview = {
     },
   },
   initialGlobals: {
-    theme: 'GitHub Dark Default',
+    theme: DEFAULT_STORYBOOK_THEME,
   },
   decorators: [
     // Theme switcher: inject --vscode-* CSS variables
     (Story, context) => {
-      const themeName = context.globals.theme as string;
-      const theme = VSCODE_THEMES[themeName];
-      const themeType = VSCODE_THEME_TYPES[themeName];
-      const root = document.documentElement;
-      const body = document.body;
-      // Clear all theme variables first to prevent stale values from previous theme
-      for (const key of ALL_THEME_VARS) {
-        root.style.removeProperty(key);
-      }
-      for (const key of DYNAMIC_PALETTE_VARS) {
-        body.style.removeProperty(key);
-      }
-      if (theme) {
-        for (const [key, value] of Object.entries(theme)) {
-          root.style.setProperty(key, value);
-        }
-      }
-      body.classList.toggle('vscode-light', themeType === 'light');
-      body.classList.toggle('vscode-dark', themeType !== 'light');
+      const requestedThemeName = context.globals.theme as string | undefined;
+      const themeName = resolveStorybookTheme(requestedThemeName);
 
-      const ctx = document.createElement('canvas').getContext('2d');
-      if (ctx) {
-        const dynamicPalette = computeDynamicPalette(getComputedStyle(body), ctx);
-        for (const [key, value] of Object.entries(dynamicPalette)) {
-          body.style.setProperty(key, value);
-        }
-      }
+      applyStorybookTheme(themeName);
+      useLayoutEffect(() => {
+        applyStorybookTheme(themeName);
+
+        const ctx = document.createElement('canvas').getContext('2d');
+        if (!ctx) return;
+
+        const update = () => publishDynamicPalette(document.body, ctx);
+        const observer = new MutationObserver(update);
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+        observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+        update();
+
+        return () => observer.disconnect();
+      }, [themeName]);
+
       // Force remount on theme change so terminals pick up new colors
       return createElement('div', { key: themeName, style: { display: 'flex', flexDirection: 'column' as const, height: '100vh' } }, createElement(Story));
     },

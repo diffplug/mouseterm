@@ -19,12 +19,13 @@
 /* --- Font tokens (not Tailwind colors) --- */
 :root {
   --mt-font-size: var(--vscode-font-size);
-  --mt-font-family: var(--vscode-font-family);
+  --mt-font-family: var(--vscode-editor-font-family);
 }
 
 /* --- Tailwind token declarations --- */
 @theme {
   /* Fonts */
+  --font-sans: var(--vscode-editor-font-family);
   --font-mono: var(--vscode-editor-font-family);
 
   /* Type scale — see design.tsx for usage rules. Overrides Tailwind's
@@ -52,21 +53,21 @@
 
   /* Chrome palette — anchored on VSCode file-tree list.* tokens. Panel
    * headers and doors use only these four tokens. The focus ring (marching-
-   * ants + passthrough border) shares --color-header-active-bg so a focused
-   * pane's header and its surrounding ring read as one unit. */
+   * ants + passthrough border) prefers VSCode's focusBorder and falls back to
+   * the focused header background when focusBorder is not usable. */
   --color-header-active-bg: var(--vscode-list-activeSelectionBackground);
   --color-header-active-fg: var(--vscode-list-activeSelectionForeground);
   --color-header-inactive-bg: var(--vscode-list-inactiveSelectionBackground);
   --color-header-inactive-fg: var(--vscode-list-inactiveSelectionForeground);
 
-  /* Dynamic palette — Pond's useDynamicPalette hook overrides these on body
-   * at runtime, picking whichever candidate has the largest ΔE OKLab vs app-bg.
+  /* Dynamic palette — Pond overrides these on body at runtime from the shared
+   * dynamic-palette helper, picking by OKLab distance/chroma.
    *
    *   --color-door-*    pick: (header-inactive bg/fg) or (terminal bg/fg)
-   *   --color-focus-ring  pick: (header-active-bg/fg) or (focusBorder) */
+   *   --color-focus-ring  pick: focusBorder or header-active-bg */
   --color-door-bg: var(--color-header-inactive-bg);
   --color-door-fg: var(--color-header-inactive-fg);
-  --color-focus-ring: var(--color-header-active-fg);
+  --color-focus-ring: var(--vscode-focusBorder);
 
   /* Terminal — xterm.js content, orthogonal to chrome */
   --color-terminal-bg: var(--vscode-terminal-background);
@@ -93,6 +94,9 @@
  * is declared, so body-level declarations can see --vscode-* variables that
  * applyTheme() writes to body.style. */
 body {
+  --mt-font-family: var(--vscode-editor-font-family);
+  --font-sans: var(--vscode-editor-font-family);
+  --font-mono: var(--vscode-editor-font-family);
   --color-surface-raised: var(--vscode-editorWidget-background);
   --color-app-bg: var(--vscode-sideBar-background);
   --color-app-fg: var(--vscode-sideBar-foreground);

@@ -58,6 +58,8 @@ export class VSCodeAdapter implements PlatformAdapter {
         }));
       } else if (msg.type === 'mouseterm:selectedShell') {
         setDefaultShellOpts(msg.shell ? { shell: msg.shell, args: msg.args } : null);
+      } else if (msg.type === 'mouseterm:openThemeDebugger') {
+        window.dispatchEvent(new CustomEvent('mouseterm:openThemeDebugger'));
       }
     });
   }
