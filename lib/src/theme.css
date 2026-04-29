@@ -76,7 +76,13 @@
   /* Semantic status — use the active terminal palette. */
   --color-error: var(--vscode-terminal-ansiRed);
   --color-success: var(--vscode-terminal-ansiGreen);
-  --color-warning: var(--vscode-terminal-ansiYellow);
+
+  /* Alarm — per-surface, computed at runtime by use-dynamic-palette.ts from the
+   * bg the bell sits on (OkLCH hue rotation + max chroma). The fallback below
+   * is shown only before the dynamic pass runs. */
+  --color-alarm-vs-header-active: var(--vscode-terminal-ansiYellow);
+  --color-alarm-vs-header-inactive: var(--vscode-terminal-ansiYellow);
+  --color-alarm-vs-door: var(--vscode-terminal-ansiYellow);
 
   /* Inputs — used by ThemePicker */
   --color-input-bg: var(--vscode-input-background);
@@ -111,7 +117,9 @@ body {
   --color-terminal-fg: var(--vscode-terminal-foreground);
   --color-error: var(--vscode-terminal-ansiRed);
   --color-success: var(--vscode-terminal-ansiGreen);
-  --color-warning: var(--vscode-terminal-ansiYellow);
+  --color-alarm-vs-header-active: var(--vscode-terminal-ansiYellow);
+  --color-alarm-vs-header-inactive: var(--vscode-terminal-ansiYellow);
+  --color-alarm-vs-door: var(--vscode-terminal-ansiYellow);
   --color-input-bg: var(--vscode-input-background);
   --color-input-border: var(--vscode-input-border);
 }

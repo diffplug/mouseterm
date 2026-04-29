@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickDynamicPalette, type Rgb } from './dynamic-palette';
+import { pickAlarmColor, pickDynamicPalette, type Rgb } from './dynamic-palette';
 
 function hexToRgb(color: string): Rgb | null {
   const match = /^#([0-9a-f]{6})$/i.exec(color.trim());
@@ -44,5 +44,17 @@ describe('pickDynamicPalette', () => {
     }, hexToRgb);
 
     expect(picks.focusRing?.sourceVar).toBe('--color-header-active-bg');
+  });
+});
+
+describe('pickAlarmColor', () => {
+  it('returns white against a dark background', () => {
+    expect(pickAlarmColor([4, 57, 94])).toBe('#ffffff');
+    expect(pickAlarmColor([37, 37, 38])).toBe('#ffffff');
+  });
+
+  it('returns black against a light background', () => {
+    expect(pickAlarmColor([228, 230, 241])).toBe('#000000');
+    expect(pickAlarmColor([255, 255, 255])).toBe('#000000');
   });
 });

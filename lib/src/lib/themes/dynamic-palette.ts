@@ -2,6 +2,14 @@ import { chromaOklab, deltaEOklab, rgbOf, rgbToOklab } from '../color-contrast';
 
 type Lab = [number, number, number];
 
+/** Return pure black or pure white — whichever contrasts the given bg.
+ *  Luminance contrast is the dominant signal for visibility, so a flat
+ *  black/white pick beats any chroma-rotation scheme in practice. */
+export function pickAlarmColor(bgRgb: [number, number, number]): string {
+  const [L] = rgbToOklab(bgRgb);
+  return L < 0.5 ? '#ffffff' : '#000000';
+}
+
 export interface FocusRingCandidate {
   varName: string;
   lab: Lab;
@@ -57,14 +65,19 @@ export interface DynamicPaletteVars {
   '--color-door-bg'?: string;
   '--color-door-fg'?: string;
   '--color-focus-ring'?: string;
+  '--color-alarm-vs-header-active'?: string;
+  '--color-alarm-vs-header-inactive'?: string;
+  '--color-alarm-vs-door'?: string;
 }
 
 export function computeDynamicPalette(
   styles: Pick<CSSStyleDeclaration, 'getPropertyValue'>,
   ctx: CanvasRenderingContext2D,
 ): DynamicPaletteVars {
+  const rgbOfVar = (varName: string): [number, number, number] | null =>
+    rgbOf(styles.getPropertyValue(varName).trim(), ctx);
   const labOf = (varName: string): Lab | null => {
-    const rgb = rgbOf(styles.getPropertyValue(varName).trim(), ctx);
+    const rgb = rgbOfVar(varName);
     return rgb ? rgbToOklab(rgb) : null;
   };
 
@@ -88,6 +101,22 @@ export function computeDynamicPalette(
 
   const pick = pickFocusRing(candidates, oApp);
   if (pick) result['--color-focus-ring'] = `var(${pick.varName})`;
+
+  const headerActiveRgb = rgbOfVar('--color-header-active-bg');
+  if (headerActiveRgb) {
+    result['--color-alarm-vs-header-active'] = pickAlarmColor(headerActiveRgb);
+  }
+  const headerInactiveRgb = rgbOfVar('--color-header-inactive-bg');
+  if (headerInactiveRgb) {
+    result['--color-alarm-vs-header-inactive'] = pickAlarmColor(headerInactiveRgb);
+  }
+  // Door bg is also computed by this same pass; on the first run after a theme
+  // change this reads the previous value, but the MutationObserver re-fires on
+  // our own body.style write and the next pass picks up the fresh door bg.
+  const doorRgb = rgbOfVar('--color-door-bg');
+  if (doorRgb) {
+    result['--color-alarm-vs-door'] = pickAlarmColor(doorRgb);
+  }
 
   return result;
 }
