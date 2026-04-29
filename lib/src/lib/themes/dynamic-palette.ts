@@ -7,8 +7,9 @@ const ALARM_GREYSCALE_HUE = 90;
 const ALARM_GREY_CHROMA_THRESHOLD = 0.01;
 
 /** Compute an alarm color that visually pops against an arbitrary background.
- *  - Chromatic bg: rotate hue by 180° at the same L, push chroma high.
- *  - Greyscale bg: pick hue=90 (yellow-green) at the same L, push chroma high.
+ *  - Chromatic bg: rotate hue by 180°, push chroma high.
+ *  - Greyscale bg: pick hue=90 (yellow-green), push chroma high.
+ *  - Lightness is flipped (1 - bgL) so the alarm always contrasts with the bg.
  *  Per-channel sRGB clipping in oklchToCssHex handles out-of-gamut targets. */
 export function pickAlarmColor(bgRgb: [number, number, number]): string {
   const [L, a, b] = rgbToOklab(bgRgb);
@@ -17,7 +18,7 @@ export function pickAlarmColor(bgRgb: [number, number, number]): string {
   const H = C >= ALARM_GREY_CHROMA_THRESHOLD
     ? (Hdeg + 180 + 360) % 360
     : ALARM_GREYSCALE_HUE;
-  return oklchToCssHex({ L, C: ALARM_TARGET_CHROMA, H });
+  return oklchToCssHex({ L: 1 - L, C: ALARM_TARGET_CHROMA, H });
 }
 
 export interface FocusRingCandidate {
