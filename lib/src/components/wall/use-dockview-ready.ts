@@ -1,6 +1,7 @@
 import { useCallback, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import type { DockviewApi, DockviewReadyEvent, SerializedDockview } from 'dockview-react';
 import { getDefaultShellOpts, setPendingShellOpts, swapTerminals } from '../../lib/terminal-registry';
+import { prefersReducedMotion } from '../../lib/ui-geometry';
 import type { DooredItem, WallMode, WallSelectionKind, SpawnDirection } from './wall-types';
 import { pickSplitDirection, swapPanelTitles } from './dockview-helpers';
 
@@ -135,9 +136,7 @@ export function useDockviewReady({
 
     e.api.onDidRemovePanel(() => {
       if (e.api.totalPanels !== 0) return;
-      const reduceMotion = typeof window !== 'undefined'
-        && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-      const delay = (reduceMotion || killInProgressRef.current) ? 0 : 440;
+      const delay = (prefersReducedMotion() || killInProgressRef.current) ? 0 : 440;
       const spawn = () => {
         if (e.api.totalPanels > 0) return;
         const id = generatePaneId();

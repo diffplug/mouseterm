@@ -1,5 +1,6 @@
 import type { DockviewApi } from 'dockview-react';
 import { disposeSession } from './terminal-registry';
+import { prefersReducedMotion } from './ui-geometry';
 
 /**
  * Run the kill animation: fade out the killed pane, then animate the
@@ -30,10 +31,8 @@ export function orchestrateKill(
     else setSelectedId(null);
   };
 
-  const reduceMotion = typeof window !== 'undefined'
-    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const killedGroupEl = panel.api.group?.element;
-  if (reduceMotion || !killedGroupEl) {
+  if (prefersReducedMotion() || !killedGroupEl) {
     bareRemove();
     return;
   }

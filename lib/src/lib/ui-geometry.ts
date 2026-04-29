@@ -18,6 +18,12 @@ export function pointInConvexPolygon(
   return true;
 }
 
+/** True if the user has requested reduced motion (or we're in SSR). */
+export function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined'
+    && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+
 /** Clamp a fixed-position overlay so it stays inside the viewport with a margin. */
 export function clampOverlayPosition({ left, top, width, height }: {
   left: number;
