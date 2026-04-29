@@ -9,8 +9,7 @@ import { randomKillChar } from '../../KillConfirm';
 import { ARROW_OPPOSITES, isArrowKey, type NavHistoryRef, type WallKeyboardCtx } from './types';
 
 function findAlertButtonForSession(id: string): HTMLButtonElement | null {
-  return Array.from(document.querySelectorAll<HTMLButtonElement>('[data-alert-button-for]'))
-    .find((button) => button.dataset.alertButtonFor === id) ?? null;
+  return document.querySelector<HTMLButtonElement>(`[data-alert-button-for="${CSS.escape(id)}"]`);
 }
 
 /**
