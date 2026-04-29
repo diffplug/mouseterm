@@ -61,36 +61,46 @@ const DOWNLOAD_BUTTON_VARIANTS = {
 const DOWNLOAD_MOUSE_BASE =
   "pointer-events-none absolute z-0 size-6 transition-transform duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 motion-reduce:group-focus-visible:translate-y-0";
 
+const PEEK_ROTATION_DEGREES = {
+  playground: -1.5,
+  marketplace: 2.0,
+  openVsx: 2.5,
+  mac: 3.75,
+  windows: -3.75,
+  linux: -3.75,
+  other: 3.75,
+} as const;
+
 const PEEK_MOTIONS = {
   playground: {
-    faceClass: "origin-top-right group-hover:rotate-[-4.5deg] group-focus-visible:rotate-[-4.5deg]",
+    faceClass: "origin-top-right",
     mouseClass: "left-3 top-1.5 -rotate-6 group-hover:-translate-y-4 group-hover:-rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:-rotate-12 motion-reduce:group-hover:-rotate-6 motion-reduce:group-focus-visible:-rotate-6",
   },
   marketplace: {
-    faceClass: "origin-top-left group-hover:rotate-[4.5deg] group-focus-visible:rotate-[4.5deg]",
+    faceClass: "origin-top-left",
     mouseClass: "right-3 top-1.5 rotate-6 group-hover:-translate-y-4 group-hover:rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:rotate-12 motion-reduce:group-hover:rotate-6 motion-reduce:group-focus-visible:rotate-6",
   },
   openVsx: {
-    faceClass: "origin-bottom-right group-hover:rotate-[4.5deg] group-focus-visible:rotate-[4.5deg]",
+    faceClass: "origin-bottom-right",
     mouseClass: "bottom-1.5 left-3 rotate-180 group-hover:translate-y-4 group-focus-visible:translate-y-4",
   },
   mac: {
-    faceClass: "origin-top-left group-hover:rotate-[3.75deg] group-focus-visible:rotate-[3.75deg]",
+    faceClass: "origin-top-left",
     mouseClass: "right-3 top-1.5 rotate-6 group-hover:-translate-y-4 group-hover:rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:rotate-12 motion-reduce:group-hover:rotate-6 motion-reduce:group-focus-visible:rotate-6",
   },
   windows: {
-    faceClass: "origin-top-right group-hover:rotate-[-3.75deg] group-focus-visible:rotate-[-3.75deg]",
+    faceClass: "origin-top-right",
     mouseClass: "left-3 top-1.5 -rotate-6 group-hover:-translate-y-4 group-hover:-rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:-rotate-12 motion-reduce:group-hover:-rotate-6 motion-reduce:group-focus-visible:-rotate-6",
   },
   linux: {
-    faceClass: "origin-bottom-left group-hover:rotate-[-3.75deg] group-focus-visible:rotate-[-3.75deg]",
+    faceClass: "origin-bottom-left",
     mouseClass: "bottom-1.5 right-3 rotate-180 group-hover:translate-y-4 group-focus-visible:translate-y-4",
   },
   other: {
-    faceClass: "origin-bottom-right group-hover:rotate-[3.75deg] group-focus-visible:rotate-[3.75deg]",
+    faceClass: "origin-bottom-right",
     mouseClass: "bottom-1.5 left-3 rotate-180 group-hover:translate-y-4 group-focus-visible:translate-y-4",
   },
-} as const;
+} satisfies Record<keyof typeof PEEK_ROTATION_DEGREES, { faceClass: string; mouseClass: string }>;
 
 const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string[] }> = {
   "darwin-aarch64": {
@@ -137,12 +147,14 @@ function DownloadButton({
   variant?: "primary" | "wide" | "compact";
 }) {
   const motion = PEEK_MOTIONS[peek];
+  const peekStyle = { "--peek-rotate": `${PEEK_ROTATION_DEGREES[peek]}deg` } as CSSProperties;
 
   return (
     <a
       href={href}
       onClick={onClick}
       className="group relative isolate inline-block overflow-visible focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[var(--download-accent)]"
+      style={peekStyle}
     >
       <img
         src={tinyIconUrl}
@@ -150,7 +162,7 @@ function DownloadButton({
         aria-hidden="true"
         className={`${DOWNLOAD_MOUSE_BASE} ${motion.mouseClass}`}
       />
-      <span className={`${DOWNLOAD_BUTTON_BASE} ${motion.faceClass} ${DOWNLOAD_BUTTON_VARIANTS[variant]} ${className}`}>
+      <span className={`${DOWNLOAD_BUTTON_BASE} ${motion.faceClass} group-hover:rotate-[var(--peek-rotate)] group-focus-visible:rotate-[var(--peek-rotate)] ${DOWNLOAD_BUTTON_VARIANTS[variant]} ${className}`}>
         <span
           aria-hidden="true"
           className="flex size-6 shrink-0 items-center justify-center"
