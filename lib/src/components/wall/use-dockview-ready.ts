@@ -1,5 +1,11 @@
 import { useCallback, type Dispatch, type RefObject, type SetStateAction } from 'react';
-import type { DockviewApi, DockviewReadyEvent, SerializedDockview } from 'dockview-react';
+import type {
+  DockviewApi,
+  DockviewGroupPanel,
+  DockviewReadyEvent,
+  DockviewWillDropEvent,
+  SerializedDockview,
+} from 'dockview-react';
 import { getDefaultShellOpts, setPendingShellOpts, swapTerminals } from '../../lib/terminal-registry';
 import { prefersReducedMotion } from '../../lib/ui-geometry';
 import type { DooredItem, WallMode, WallSelectionKind, SpawnDirection } from './wall-types';
@@ -97,11 +103,11 @@ export function useDockviewReady({
       }
     });
 
-    const subscribeGroupDrop = (group: { model: any; activePanel: any }) => {
-      return group.model.onWillDrop((event: any) => {
+    const subscribeGroupDrop = (group: DockviewGroupPanel) => {
+      return group.model.onWillDrop((event: DockviewWillDropEvent) => {
         if (event.position === 'center') {
           const data = event.getData();
-          let draggedId = data?.panelId;
+          let draggedId: string | null = data?.panelId ?? null;
           if (!draggedId && data?.groupId) {
             const draggedGroup = e.api.getGroup(data.groupId);
             draggedId = draggedGroup?.activePanel?.id ?? null;
