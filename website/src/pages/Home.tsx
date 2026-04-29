@@ -404,12 +404,16 @@ function Home() {
               </div>
               {installGuide && INSTALL_STEPS[installGuide] && (
                 <div className="mt-3 rounded-md border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 px-4 py-3">
+                  <p className="text-base mb-2 flex items-center gap-2">
+                    <span className="text-[var(--color-caramel)]" aria-hidden="true">✓</span>
+                    <span>Download started!</span>
+                  </p>
                   <p className="text-base uppercase text-[var(--color-caramel)] mb-2">{INSTALL_STEPS[installGuide].title}</p>
-                  <ol className="space-y-1 text-sm opacity-70">
+                  <ol className="space-y-1 text-sm">
                     {INSTALL_STEPS[installGuide].steps.map((step, i) => (
                       <li key={i} className="flex gap-2">
                         <span className="text-[var(--color-caramel)] shrink-0">{i + 1}.</span>
-                        <span>{step}</span>
+                        <span className="opacity-70">{step}</span>
                       </li>
                     ))}
                   </ol>
