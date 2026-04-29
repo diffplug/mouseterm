@@ -127,10 +127,13 @@ omitted so the theme picker occupies the freed horizontal space while the
 remaining nav links keep their size and right-edge alignment. Playground
 header links use only the inactive header foreground, render at full opacity,
 use a pointer cursor, and indicate hover/focus-visible with an underline. The
-playground theme picker label uses the inactive header foreground. Its trigger
-uses the inactive header bg/fg pair by default, uses a pointer cursor, then
-switches its background, text, and border to the active header bg/fg pair on
-hover and focus-visible.
+playground theme picker omits the visible `Theme:` label. Its trigger uses the
+inactive header bg/fg pair in all states, uses a pointer cursor, has no border,
+shows the dropdown caret at the front, and underlines the selected theme text
+on hover and focus-visible. The selected theme text is smaller than the nav
+links, remains baseline-aligned with them, and is right-aligned in the
+theme-picker slot next to Download. Swatches remain visible in the opened
+dropdown rows.
 
 Storybook simulates VSCode themes through `lib/.storybook/themes.ts`. It must
 also run bundled theme vars through `completeThemeVars()` (with the same host

@@ -30,7 +30,6 @@ const styles = {
     borderColor: open ? 'var(--vscode-focusBorder, #007fd4)' : 'var(--vscode-input-border, #3c3c3c)',
     color: 'var(--vscode-editor-foreground, #cccccc)',
   }),
-  playgroundForeground: { color: 'var(--color-header-inactive-fg)' },
   panel: {
     backgroundColor: 'var(--vscode-editorWidget-background, #252526)',
     borderColor: 'var(--vscode-panel-border, #2b2b2b)',
@@ -281,7 +280,6 @@ function ThemeStoreDialog({
 }
 
 export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
-  const labelId = useId();
   const currentId = useId();
   // Apply the persisted theme during render initialization, before commit, so
   // the first paint already has --vscode-* on body — eliminates the flash of
@@ -333,10 +331,10 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
   };
 
   const rootClass = isPlayground
-    ? 'relative flex min-w-0 items-center gap-1.5 text-sm'
+    ? 'relative flex min-w-0 items-baseline'
     : 'relative flex items-center';
   const triggerClass = isPlayground
-    ? 'flex h-8 w-[116px] min-w-0 cursor-pointer items-center gap-2 rounded-md border border-[var(--color-header-inactive-fg)] bg-[var(--color-header-inactive-bg)] px-2 text-left text-sm text-[var(--color-header-inactive-fg)] transition-colors hover:border-[var(--color-header-active-fg)] hover:bg-[var(--color-header-active-bg)] hover:text-[var(--color-header-active-fg)] focus-visible:border-[var(--color-header-active-fg)] focus-visible:bg-[var(--color-header-active-bg)] focus-visible:text-[var(--color-header-active-fg)] sm:w-40 md:w-56'
+    ? 'flex w-[116px] min-w-0 cursor-pointer items-baseline justify-end gap-1.5 rounded-md bg-[var(--color-header-inactive-bg)] text-right text-sm text-[var(--color-header-inactive-fg)] sm:w-40 md:w-56'
     : 'flex h-6 max-w-[190px] cursor-pointer items-center gap-1.5 rounded border border-transparent px-2 text-sm transition-colors hover:opacity-85';
   const menuClass = isPlayground
     ? 'fixed top-16 right-4 left-4 z-50 overflow-hidden rounded border font-mono shadow-2xl md:absolute md:top-full md:right-0 md:left-auto md:mt-2 md:w-[22rem]'
@@ -348,32 +346,40 @@ export function ThemePicker({ variant, className = '' }: ThemePickerProps) {
 
   return (
     <div ref={rootRef} className={`${rootClass} ${className}`}>
-      {isPlayground ? (
-        <span id={labelId} className="shrink-0 text-sm font-medium" style={styles.playgroundForeground}>
-          Theme:
-        </span>
-      ) : null}
-
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-labelledby={isPlayground ? `${labelId} ${currentId}` : undefined}
-        aria-label={!isPlayground ? `Theme: ${activeTheme?.label ?? 'Select theme'}` : undefined}
+        aria-label={`Theme: ${activeTheme?.label ?? 'Select theme'}`}
+        data-theme-picker-trigger={isPlayground ? 'playground' : undefined}
         onClick={() => setOpen((value) => !value)}
         className={triggerClass}
         style={isPlayground ? undefined : styles.trigger(open)}
       >
-        {activeTheme ? <ThemeSwatch theme={activeTheme} size={swatchSize} /> : null}
+        {isPlayground ? (
+          <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
+        ) : activeTheme ? (
+          <ThemeSwatch theme={activeTheme} size={swatchSize} />
+        ) : null}
         {!isPlayground ? <span className="hidden text-sm sm:inline">Theme:</span> : null}
-        <span id={currentId} className={`min-w-0 truncate ${isPlayground ? 'flex-1' : 'font-mono text-sm'}`}>
+        <span
+          id={currentId}
+          data-theme-picker-current={isPlayground ? 'true' : undefined}
+          className={`min-w-0 truncate ${
+            isPlayground
+              ? 'underline-offset-4 decoration-[var(--color-header-inactive-fg)]'
+              : 'font-mono text-sm'
+          }`}
+        >
           {activeTheme?.label ?? 'Select theme'}
         </span>
-        <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
+        {!isPlayground ? (
+          <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
+        ) : null}
       </button>
 
       {open ? (
-        <div role="menu" aria-labelledby={isPlayground ? labelId : undefined} className={menuClass} style={styles.panel}>
+        <div role="menu" aria-label={isPlayground ? 'Select theme' : undefined} className={menuClass} style={styles.panel}>
           <div className="overflow-y-auto py-1" style={{ maxHeight: isPlayground ? 'min(24rem, calc(100vh - 9rem))' : 320 }}>
             {themes.map((theme) => {
               const isActive = theme.id === activeId;
