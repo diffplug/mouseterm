@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEventHandler, type ReactNode } from "react";
 import SiteHeader from "../components/SiteHeader";
 import posterUrl from "../assets/video-climb-blink-and-stare.webp";
 import videoUrl from "../assets/video-climb-blink-and-stare.mp4";
+import tinyIconUrl from "../../assets/icon-tiny-dark.png";
 import standaloneLatest from "@standalone-latest";
 
 export { Home as Component };
@@ -24,7 +25,10 @@ const UNPIN_THRESHOLD = 0.8;
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 const PILL =
-  "inline-block px-4 py-1.5 rounded-md border border-[var(--color-text)]/20 text-[var(--color-caramel)] text-sm font-display hover:bg-[var(--color-text)]/5 hover:border-[var(--color-text)]/40 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150";
+  "inline-block px-4 py-1.5 rounded-md bg-[var(--color-caramel)] text-[var(--color-text)] text-sm font-display";
+
+const PRIMARY_BUTTON =
+  "inline-block px-6 py-3 rounded-md bg-[var(--color-caramel)] text-[var(--color-text)] font-display text-lg";
 
 const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string[] }> = {
   "darwin-aarch64": {
@@ -52,6 +56,53 @@ const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string
     ],
   },
 };
+
+function PeekButton({
+  href,
+  children,
+  className,
+  onClick,
+  variant = "primary",
+}: {
+  href: string;
+  children: ReactNode;
+  className: string;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
+  variant?: "primary" | "wide" | "compact";
+}) {
+  const iconHover =
+    variant === "compact"
+      ? "group-hover:-translate-y-4 group-hover:-rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:-rotate-12"
+      : variant === "wide"
+        ? "group-hover:-translate-y-3.5 group-hover:-rotate-12 group-focus-visible:-translate-y-3.5 group-focus-visible:-rotate-12"
+      : "group-hover:-translate-y-3 group-hover:-rotate-12 group-focus-visible:-translate-y-3 group-focus-visible:-rotate-12";
+  const coverHover =
+    variant === "compact"
+      ? "group-hover:-rotate-6 group-focus-visible:-rotate-6"
+      : variant === "wide"
+        ? "group-hover:-rotate-[4deg] group-focus-visible:-rotate-[4deg]"
+      : "group-hover:-rotate-3 group-focus-visible:-rotate-3";
+
+  return (
+    <a
+      href={href}
+      onClick={onClick}
+      className="group relative isolate inline-block overflow-visible focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-caramel)]"
+    >
+      <img
+        src={tinyIconUrl}
+        alt=""
+        aria-hidden="true"
+        className={`pointer-events-none absolute left-2 top-1.5 z-0 h-6 w-6 -rotate-6 transition-transform duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] ${iconHover} motion-reduce:transition-none`}
+      />
+      <span
+        className={`${className} relative z-10 origin-bottom-right transition-transform duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] ${coverHover} motion-reduce:transition-none`}
+      >
+        {children}
+      </span>
+    </a>
+  );
+}
 
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -323,35 +374,33 @@ function Home() {
         <section id="download" className="mx-auto max-w-2xl px-4 md:px-6 py-20">
           <h2 className="font-display text-[clamp(1.5rem,2.5vw+0.5rem,2.25rem)] mb-8">Get MouseTerm</h2>
 
-          <a
-            href="/playground"
-            className="inline-block px-6 py-3 rounded-md bg-[var(--color-caramel)] text-[var(--color-text)] font-display text-lg hover:underline underline-offset-4"
-          >
+          <PeekButton href="/playground" className={PRIMARY_BUTTON}>
             Try it in the Playground
-          </a>
+          </PeekButton>
 
           <div className="mt-10 space-y-6">
             <div>
-              <p className="text-lg opacity-70 mb-2">VS Code Extension</p>
+              <p className="text-lg mb-2">VS Code Extension</p>
               <div className="flex flex-wrap gap-2">
-                <a href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm" className={PILL}>Visual Studio Marketplace</a>
-                <a href="https://open-vsx.org/extension/diffplug/mouseterm" className={PILL}>Open VSX Registry</a>
+                <PeekButton href="https://marketplace.visualstudio.com/items?itemName=diffplug.mouseterm" className={PILL} variant="wide">Visual Studio Marketplace</PeekButton>
+                <PeekButton href="https://open-vsx.org/extension/diffplug/mouseterm" className={PILL} variant="wide">Open VSX Registry</PeekButton>
               </div>
             </div>
             <div>
-              <p className="text-lg opacity-70 mb-2">Standalone App</p>
+              <p className="text-lg mb-2">Standalone App</p>
               <div className="flex flex-wrap gap-2">
                 {(["darwin-aarch64", "windows-x86_64", "linux-x86_64"] as const).map((key) => (
-                  <a
+                  <PeekButton
                     key={key}
                     href={standaloneLatest.platforms[key].url}
                     onClick={() => setInstallGuide(key)}
-                    className={`${PILL}${installGuide === key ? " bg-[var(--color-caramel)] border-[var(--color-caramel)] text-[var(--color-bg)]" : ""}`}
+                    className={PILL}
+                    variant="compact"
                   >
                     {INSTALL_STEPS[key].pill}
-                  </a>
+                  </PeekButton>
                 ))}
-                <a href="https://github.com/diffplug/mouseterm/issues/8" className={PILL}>Other</a>
+                <PeekButton href="https://github.com/diffplug/mouseterm/issues/8" className={PILL} variant="compact">Other</PeekButton>
               </div>
               {installGuide && INSTALL_STEPS[installGuide] && (
                 <div className="mt-3 rounded-md border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 px-4 py-3">
