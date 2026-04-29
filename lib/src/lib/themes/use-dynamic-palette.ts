@@ -29,6 +29,9 @@ export function useDynamicPalette(): void {
       document.body.style.removeProperty('--color-door-bg');
       document.body.style.removeProperty('--color-door-fg');
       document.body.style.removeProperty('--color-focus-ring');
+      document.body.style.removeProperty('--color-alarm-vs-header-active');
+      document.body.style.removeProperty('--color-alarm-vs-header-inactive');
+      document.body.style.removeProperty('--color-alarm-vs-door');
     };
   }, []);
 }

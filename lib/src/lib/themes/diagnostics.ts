@@ -68,7 +68,6 @@ const SEMANTIC_TOKEN_SOURCES: Array<Omit<SemanticTokenSnapshot, 'value' | 'sourc
   { token: '--color-header-inactive-fg', sourceVar: '--vscode-list-inactiveSelectionForeground', group: 'chrome' },
   { token: '--color-error', sourceVar: '--vscode-terminal-ansiRed', group: 'status' },
   { token: '--color-success', sourceVar: '--vscode-terminal-ansiGreen', group: 'status' },
-  { token: '--color-warning', sourceVar: '--vscode-terminal-ansiYellow', group: 'status' },
   { token: '--color-input-bg', sourceVar: '--vscode-input-background', group: 'input' },
   { token: '--color-input-border', sourceVar: '--vscode-input-border', group: 'input' },
 ];

@@ -44,7 +44,7 @@ function originClass(origin: VscodeThemeVarTraceOrigin | VisibleVarOrigin): stri
       return 'text-success';
     case 'registry-default':
     case 'mouseterm-materialized':
-      return 'text-warning';
+      return '[color:var(--vscode-terminal-ansiYellow)]';
     case 'fallback':
       return 'text-muted';
     case 'unresolved':

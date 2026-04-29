@@ -49,7 +49,7 @@ export function Door({
             </span>
           )}
           {alertEnabled && (
-            <span className={alertRinging ? 'text-warning' : ''}>
+            <span className={alertRinging ? 'text-alarm-vs-door' : ''}>
               <BellIcon size={11} weight="fill" className={bellIconClass(status)} />
             </span>
           )}

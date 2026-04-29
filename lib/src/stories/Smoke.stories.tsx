@@ -150,7 +150,7 @@ function ThemeCheck() {
               <div className="grid min-h-44 gap-3 bg-terminal-bg p-4 font-mono text-sm text-terminal-fg ring-2 ring-focus-ring ring-inset">
                 <div>$ pnpm test</div>
                 <div className="text-success">resolver defaults materialized</div>
-                <div className="text-warning">dynamic palette published on body</div>
+                <div className="text-muted">dynamic palette published on body</div>
                 <div className="text-error">missing tokens render as failures below</div>
               </div>
             </div>

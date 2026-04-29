@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickDynamicPalette, type Rgb } from './dynamic-palette';
+import { pickAlarmColor, pickDynamicPalette, type Rgb } from './dynamic-palette';
 
 function hexToRgb(color: string): Rgb | null {
   const match = /^#([0-9a-f]{6})$/i.exec(color.trim());
@@ -44,5 +44,23 @@ describe('pickDynamicPalette', () => {
     }, hexToRgb);
 
     expect(picks.focusRing?.sourceVar).toBe('--color-header-active-bg');
+  });
+});
+
+describe('pickAlarmColor', () => {
+  it('rotates the hue away from a chromatic background', () => {
+    const navy: Rgb = [4, 57, 94];
+    const out = pickAlarmColor(navy);
+    expect(out).toMatch(/^#[0-9a-f]{6}$/);
+    expect(out).not.toBe('#04395e');
+    const rgb = hexToRgb(out)!;
+    // navy is blue-dominant; the complement should NOT be blue-dominant
+    expect(rgb[2]).toBeLessThan(Math.max(rgb[0], rgb[1]));
+  });
+
+  it('returns a valid hex for a near-greyscale background', () => {
+    const grey: Rgb = [37, 37, 38];
+    const out = pickAlarmColor(grey);
+    expect(out).toMatch(/^#[0-9a-f]{6}$/);
   });
 });

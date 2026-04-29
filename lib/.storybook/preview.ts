@@ -33,6 +33,9 @@ const DYNAMIC_PALETTE_VARS = [
   '--color-door-bg',
   '--color-door-fg',
   '--color-focus-ring',
+  '--color-alarm-vs-header-active',
+  '--color-alarm-vs-header-inactive',
+  '--color-alarm-vs-door',
 ] as const;
 const PREFERRED_STORYBOOK_THEME = 'Light (Visual Studio)';
 const FIRST_STORYBOOK_THEME = Object.keys(VSCODE_THEMES)[0] ?? '';

@@ -152,7 +152,9 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
         <HeaderActionButton
           className={[
             'flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 hover:bg-current/10',
-            activity.status === 'ALERT_RINGING' ? 'text-warning' : '',
+            activity.status === 'ALERT_RINGING'
+              ? (isActiveHeader ? 'text-alarm-vs-header-active' : 'text-alarm-vs-header-inactive')
+              : '',
           ].join(' ')}
           onMouseDownCapture={(e) => {
             if (e.button !== 0) return;
