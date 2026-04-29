@@ -307,7 +307,7 @@ The direction is carried via `FreshlySpawnedContext` — a `Map<paneId, SpawnDir
 
 ### Kill (in-place fade + FLIP reclaim)
 
-`orchestrateKill(api, killedId)` in `lib/src/components/KillConfirm.tsx` runs on kill confirmation. `Wall.tsx` owns the command dispatch and calls it after the user confirms. It fades the real pane element in place (its content dissolves against the same-colored background), then removes the panel and FLIP-reveals the survivors:
+`orchestrateKill(api, killedId)` in `lib/src/lib/kill-animation.ts` runs on kill confirmation. `Wall.tsx` owns the command dispatch and calls it after the user confirms. It fades the real pane element in place (its content dissolves against the same-colored background), then removes the panel and FLIP-reveals the survivors:
 
 1. Add `.pane-fading-out` (or `.pane-fading-and-shrinking-to-br` for a last-pane kill) to the killed pane's group element. Block pointer events during the fade.
 2. On `animationend`, snapshot `getBoundingClientRect` for every surviving panel's group element.
