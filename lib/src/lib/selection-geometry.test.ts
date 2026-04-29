@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { __testing } from './SelectionOverlay';
-import { normalizeSelection } from '../lib/selection-text';
-import type { Selection } from '../lib/mouse-selection';
-
-const { computeRects, rectsToPath } = __testing;
+import { computeRects, rectsToPath } from './selection-geometry';
+import { normalizeSelection } from './selection-text';
+import type { Selection } from './mouse-selection';
 
 function sel(overrides: Partial<Selection>): Selection {
   return {

@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PopupButtonRow, popupButton } from '../design';
+import { clampOverlayPosition } from '../../lib/ui-geometry';
 
 export function MouseOverrideBanner({
   anchor,
@@ -62,19 +63,3 @@ export function MouseOverrideBanner({
   );
 }
 
-function clampOverlayPosition({ left, top, width, height }: {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}): CSSProperties {
-  const margin = 12;
-  const maxLeft = Math.max(margin, window.innerWidth - width - margin);
-  const maxTop = Math.max(margin, window.innerHeight - height - margin);
-
-  return {
-    position: 'fixed',
-    left: Math.min(Math.max(left, margin), maxLeft),
-    top: Math.min(Math.max(top, margin), maxTop),
-  };
-}

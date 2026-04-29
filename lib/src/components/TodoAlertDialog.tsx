@@ -2,6 +2,7 @@ import { useLayoutEffect, useEffect, useRef, useState, useSyncExternalStore } fr
 import { createPortal } from 'react-dom';
 import { XIcon } from '@phosphor-icons/react';
 import { Shortcut } from './design';
+import { pointInConvexPolygon } from '../lib/ui-geometry';
 import {
   clearSessionTodo,
   DEFAULT_ACTIVITY_STATE,
@@ -14,20 +15,6 @@ import {
   toggleSessionAlert,
   toggleSessionTodo,
 } from '../lib/terminal-registry';
-
-
-function pointInConvexPolygon(x: number, y: number, vertices: Array<{ x: number; y: number }>): boolean {
-  let sign = 0;
-  for (let i = 0; i < vertices.length; i++) {
-    const a = vertices[i];
-    const b = vertices[(i + 1) % vertices.length];
-    const cross = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
-    if (cross === 0) continue;
-    if (sign === 0) sign = cross > 0 ? 1 : -1;
-    else if ((cross > 0 ? 1 : -1) !== sign) return false;
-  }
-  return true;
-}
 
 /**
  * Manages focus trapping, Escape-to-close, and click-outside-to-close for
