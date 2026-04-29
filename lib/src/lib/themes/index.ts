@@ -8,6 +8,7 @@ export { captureThemeDiagnostics } from './diagnostics';
 export type {
   ThemeDiagnosticSnapshot,
   ThemeMetadataSnapshot,
+  VisibleVarOrigin,
   VisibleVscodeVarSnapshot,
   SemanticTokenSnapshot,
   TerminalColorSnapshot,

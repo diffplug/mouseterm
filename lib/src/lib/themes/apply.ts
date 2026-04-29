@@ -1,9 +1,7 @@
 import type { MouseTermTheme } from './types';
-import { getAllThemes, getStoredActiveThemeId, getTheme, setActiveThemeId } from './store';
+import { getAllThemes, getStoredActiveThemeId, setActiveThemeId } from './store';
 import { completeThemeVars } from './vscode-color-resolver';
 
-let appliedVarNames: string[] = [];
-let lastApplied: MouseTermTheme | null = null;
 let appliedThemeSnapshot: AppliedThemeSnapshot | null = null;
 
 export interface AppliedThemeSnapshot {
@@ -22,10 +20,12 @@ const HOST_TYPOGRAPHY_VARS: Record<string, string> = {
 
 export function applyTheme(theme: MouseTermTheme): void {
   if (typeof document === 'undefined') return;
-  if (theme === lastApplied) return;
+  if (theme === appliedThemeSnapshot?.theme) return;
 
-  for (const name of appliedVarNames) {
-    document.body.style.removeProperty(name);
+  if (appliedThemeSnapshot) {
+    for (const name of Object.keys(appliedThemeSnapshot.resolvedVars)) {
+      document.body.style.removeProperty(name);
+    }
   }
 
   // Imported theme JSON usually omits VSCode registry defaults; materialize
@@ -33,7 +33,6 @@ export function applyTheme(theme: MouseTermTheme): void {
   const providedVars = { ...HOST_TYPOGRAPHY_VARS, ...theme.vars };
   const vars = completeThemeVars(providedVars, theme.type);
   appliedThemeSnapshot = { theme, providedVars, resolvedVars: vars };
-  appliedVarNames = Object.keys(vars);
   for (const [name, value] of Object.entries(vars)) {
     document.body.style.setProperty(name, value);
   }
@@ -45,8 +44,6 @@ export function applyTheme(theme: MouseTermTheme): void {
     document.body.classList.add('vscode-dark');
     document.body.classList.remove('vscode-light');
   }
-
-  lastApplied = theme;
 }
 
 /** Apply the persisted active theme. When nothing is persisted yet, fall
@@ -56,11 +53,8 @@ export function applyTheme(theme: MouseTermTheme): void {
  *  applied, or null when no themes are available (e.g. SSR). */
 export function restoreActiveTheme(defaultThemeId?: string): MouseTermTheme | null {
   const all = getAllThemes();
-  const stored = getStoredActiveThemeId();
-  const theme =
-    (stored ? getTheme(stored) : undefined) ??
-    (defaultThemeId ? getTheme(defaultThemeId) : undefined) ??
-    all[0];
+  const find = (id: string | null | undefined) => (id ? all.find((t) => t.id === id) : undefined);
+  const theme = find(getStoredActiveThemeId()) ?? find(defaultThemeId) ?? all[0];
   if (!theme) return null;
   setActiveThemeId(theme.id);
   applyTheme(theme);

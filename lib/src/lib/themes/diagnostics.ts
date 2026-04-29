@@ -1,6 +1,7 @@
 import { rgbOf } from '../color-contrast';
-import { getAppliedThemeSnapshot } from './apply';
+import { getAppliedThemeSnapshot, type AppliedThemeSnapshot } from './apply';
 import { pickDynamicPalette, type DynamicPaletteSnapshot } from './dynamic-palette';
+import type { BundledOrigin, InstalledOrigin } from './types';
 import {
   getMaterializedVscodeThemeVars,
   inferVscodeThemeKind,
@@ -99,12 +100,8 @@ function normalized(value: string | null | undefined): string {
   return value?.trim() ?? '';
 }
 
-function originLabel(origin: ThemeMetadataSnapshot['origin']): string {
-  return origin;
-}
-
-function serializeThemeOrigin(themeOrigin: { kind: string; extensionId?: string }): string {
-  return themeOrigin.kind === 'installed' && themeOrigin.extensionId
+function serializeThemeOrigin(themeOrigin: BundledOrigin | InstalledOrigin): string {
+  return themeOrigin.kind === 'installed'
     ? `installed:${themeOrigin.extensionId}`
     : themeOrigin.kind;
 }
@@ -113,20 +110,25 @@ function readVar(styles: CSSStyleDeclaration, name: string): string | null {
   return normalized(styles.getPropertyValue(name)) || null;
 }
 
-function readStyleDeclaration(style: CSSStyleDeclaration, name: string): string | null {
-  return normalized(style.getPropertyValue(name)) || null;
-}
-
 function declaredOn(name: string): VisibleVscodeVarSnapshot['declaredOn'] {
   if (typeof document === 'undefined') return 'missing';
-  if (readStyleDeclaration(document.body.style, name)) return 'body';
-  if (readStyleDeclaration(document.documentElement.style, name)) return 'html';
+  if (readVar(document.body.style, name)) return 'body';
+  if (readVar(document.documentElement.style, name)) return 'html';
   return 'computed';
 }
 
+let cachedColorContext: CanvasRenderingContext2D | null | undefined;
+function getColorContext(): CanvasRenderingContext2D | null {
+  if (cachedColorContext === undefined) {
+    cachedColorContext = typeof document === 'undefined'
+      ? null
+      : document.createElement('canvas').getContext('2d');
+  }
+  return cachedColorContext;
+}
+
 function captureDynamicPalette(styles: CSSStyleDeclaration): DynamicPaletteSnapshot {
-  if (typeof document === 'undefined') return { door: null, focusRing: null };
-  const ctx = document.createElement('canvas').getContext('2d');
+  const ctx = getColorContext();
   if (!ctx) return { door: null, focusRing: null };
 
   return pickDynamicPalette({
@@ -140,8 +142,10 @@ function captureDynamicPalette(styles: CSSStyleDeclaration): DynamicPaletteSnaps
   }, (color) => rgbOf(color, ctx));
 }
 
-function captureVisibleVars(styles: CSSStyleDeclaration): VisibleVscodeVarSnapshot[] {
-  const applied = getAppliedThemeSnapshot();
+function captureVisibleVars(
+  styles: CSSStyleDeclaration,
+  applied: AppliedThemeSnapshot | null,
+): VisibleVscodeVarSnapshot[] {
   const materialized = getMaterializedVscodeThemeVars();
 
   return RESOLVABLE_VSCODE_VAR_NAMES.map((name) => {
@@ -163,8 +167,10 @@ function captureVisibleVars(styles: CSSStyleDeclaration): VisibleVscodeVarSnapsh
   });
 }
 
-function traceInputFromVisibleVars(visibleVars: VisibleVscodeVarSnapshot[]): Record<string, string> {
-  const applied = getAppliedThemeSnapshot();
+function traceInputFromVisibleVars(
+  visibleVars: VisibleVscodeVarSnapshot[],
+  applied: AppliedThemeSnapshot | null,
+): Record<string, string> {
   if (applied) return applied.theme.vars;
 
   const vars: Record<string, string> = {};
@@ -220,8 +226,7 @@ function captureTerminalColors(styles: CSSStyleDeclaration): TerminalColorSnapsh
   }));
 }
 
-function activeThemeMetadata(): ThemeMetadataSnapshot | null {
-  const applied = getAppliedThemeSnapshot();
+function activeThemeMetadata(applied: AppliedThemeSnapshot | null): ThemeMetadataSnapshot | null {
   if (!applied) return null;
   return {
     id: applied.theme.id,
@@ -246,7 +251,7 @@ function buildReport(snapshot: Omit<ThemeDiagnosticSnapshot, 'report'>): string 
   lines.push('MouseTerm theme diagnostic');
   lines.push(`capturedAt: ${snapshot.capturedAt}`);
   lines.push(`themeKind: ${snapshot.themeKind}`);
-  lines.push(`activeTheme: ${snapshot.activeTheme ? `${snapshot.activeTheme.label} (${originLabel(snapshot.activeTheme.origin)})` : 'VSCode host theme'}`);
+  lines.push(`activeTheme: ${snapshot.activeTheme ? `${snapshot.activeTheme.label} (${snapshot.activeTheme.origin})` : 'VSCode host theme'}`);
   lines.push('');
   lines.push('Semantic tokens');
   for (const token of snapshot.semanticTokens) {
@@ -289,8 +294,9 @@ export function captureThemeDiagnostics(): ThemeDiagnosticSnapshot {
   const capturedAt = new Date().toISOString();
   const themeKind = inferVscodeThemeKind();
   const styles = getComputedStyle(document.body);
-  const visibleVars = captureVisibleVars(styles);
-  const resolver = traceThemeVars(traceInputFromVisibleVars(visibleVars), themeKind);
+  const applied = getAppliedThemeSnapshot();
+  const visibleVars = captureVisibleVars(styles, applied);
+  const resolver = traceThemeVars(traceInputFromVisibleVars(visibleVars, applied), themeKind);
   const dynamicPalette = captureDynamicPalette(styles);
   const terminalColors = captureTerminalColors(styles);
   const semanticTokens = captureSemanticTokens(styles, dynamicPalette);
@@ -298,7 +304,7 @@ export function captureThemeDiagnostics(): ThemeDiagnosticSnapshot {
   const snapshotWithoutReport = {
     capturedAt,
     themeKind,
-    activeTheme: activeThemeMetadata(),
+    activeTheme: activeThemeMetadata(applied),
     visibleVars,
     resolverTraces: resolver.traces,
     semanticTokens,
