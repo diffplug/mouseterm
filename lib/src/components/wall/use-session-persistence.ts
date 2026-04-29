@@ -41,12 +41,7 @@ export function useSessionPersistence({
       const savePromise = doSave()
         .finally(() => {
           if (sessionSavePromiseRef.current === savePromise) {
-            if (pendingSaveNeededRef.current) {
-              sessionSavePromiseRef.current = null;
-              sessionSavePromiseRef.current = runSave();
-            } else {
-              sessionSavePromiseRef.current = null;
-            }
+            sessionSavePromiseRef.current = pendingSaveNeededRef.current ? runSave() : null;
           }
         });
       sessionSavePromiseRef.current = savePromise;
