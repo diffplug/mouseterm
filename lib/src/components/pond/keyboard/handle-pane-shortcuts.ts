@@ -1,0 +1,145 @@
+import { findPanelInDirection } from '../../../lib/spatial-nav';
+import {
+  dismissOrToggleAlert,
+  getActivity,
+  swapTerminals,
+  toggleSessionTodo,
+} from '../../../lib/terminal-registry';
+import { randomKillChar } from '../../KillConfirm';
+import { ARROW_OPPOSITES, type NavHistoryRef, type PondKeyboardCtx } from './types';
+
+function findAlertButtonForSession(id: string): HTMLButtonElement | null {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('[data-alert-button-for]'))
+    .find((button) => button.dataset.alertButtonFor === id) ?? null;
+}
+
+/**
+ * Single-pane shortcuts: Enter (focus/reattach), `|`/`%`/`-`/`"` (split),
+ * Cmd-Arrow (swap with neighbor), k/x (kill confirm), `,` (rename),
+ * m/d (minimize), t/a (todo/alert toggle), z (zoom).
+ */
+export function handlePaneShortcuts(
+  e: KeyboardEvent,
+  ctx: PondKeyboardCtx,
+  navHistory: NavHistoryRef,
+): boolean {
+  const api = ctx.apiRef.current;
+  if (!api) return false;
+  const sid = ctx.selectedIdRef.current;
+
+  if (e.key === 'Enter' && sid) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (ctx.selectedTypeRef.current === 'door') {
+      const item = ctx.doorsRef.current.find((d) => d.id === sid);
+      if (item) ctx.handleReattachRef.current(item);
+    } else {
+      ctx.enterTerminalMode(sid);
+    }
+    return true;
+  }
+
+  if (e.key === '|' || e.key === '%') {
+    e.preventDefault();
+    e.stopPropagation();
+    ctx.pondActionsRef.current.onSplitH(sid, 'keyboard');
+    return true;
+  }
+
+  if (e.key === '-' || e.key === '"') {
+    e.preventDefault();
+    e.stopPropagation();
+    ctx.pondActionsRef.current.onSplitV(sid, 'keyboard');
+    return true;
+  }
+
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && e.metaKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!sid) return true;
+
+    const dir = e.key;
+    const hist = navHistory.current;
+    let targetId: string | null = null;
+    if (hist && ARROW_OPPOSITES[dir] === hist.direction && api.getPanel(hist.fromId)) {
+      targetId = hist.fromId;
+    } else {
+      targetId = findPanelInDirection(sid, dir as 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown', api, ctx.panelElements);
+    }
+    if (!targetId) return true;
+
+    swapTerminals(sid, targetId);
+
+    const activePanel = api.getPanel(sid);
+    const targetPanel = api.getPanel(targetId);
+    if (activePanel && targetPanel) {
+      const activeTitle = activePanel.title ?? sid;
+      const targetTitle = targetPanel.title ?? targetId;
+      activePanel.api.setTitle(targetTitle);
+      targetPanel.api.setTitle(activeTitle);
+    }
+
+    navHistory.current = { direction: dir, fromId: sid };
+    ctx.selectPanel(targetId);
+    return true;
+  }
+
+  if ((e.key === 'k' || e.key === 'x') && sid) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (ctx.selectedTypeRef.current === 'door') {
+      const item = ctx.doorsRef.current.find((d) => d.id === sid);
+      if (item) ctx.handleReattachRef.current(item, { enterPassthrough: false, confirmKill: true });
+      return true;
+    }
+    const char = randomKillChar();
+    ctx.setConfirmKill({ id: sid, char });
+    return true;
+  }
+
+  if (e.key === ',' && sid) {
+    e.preventDefault();
+    e.stopPropagation();
+    ctx.setRenamingPaneId(sid);
+    return true;
+  }
+
+  if ((e.key === 'm' || e.key === 'd') && sid) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (ctx.selectedTypeRef.current === 'door') {
+      const item = ctx.doorsRef.current.find((d) => d.id === sid);
+      if (item) ctx.handleReattachRef.current(item, { enterPassthrough: false });
+    } else {
+      ctx.minimizePane(sid);
+    }
+    return true;
+  }
+
+  if (e.key === 't' && sid && ctx.selectedTypeRef.current === 'pane') {
+    if (ctx.dialogKeyboardActiveRef.current) return true;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleSessionTodo(sid);
+    return true;
+  }
+
+  if (e.key === 'a' && sid && ctx.selectedTypeRef.current === 'pane') {
+    if (ctx.dialogKeyboardActiveRef.current) return true;
+    e.preventDefault();
+    e.stopPropagation();
+    const alertButton = findAlertButtonForSession(sid);
+    if (alertButton) alertButton.click();
+    else dismissOrToggleAlert(sid, getActivity(sid).status);
+    return true;
+  }
+
+  if (e.key === 'z' && sid) {
+    e.preventDefault();
+    e.stopPropagation();
+    ctx.pondActionsRef.current.onZoom(sid);
+    return true;
+  }
+
+  return false;
+}
