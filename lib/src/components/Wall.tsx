@@ -135,12 +135,12 @@ export function Wall({
   // any mutation so that dependent effects/components re-run.
   const paneElementsRef = useRef(new Map<string, HTMLElement>());
   const paneElements = paneElementsRef.current;
-  const [paneElementsVersion, setPanelElementsVersion] = useState(0);
+  const [paneElementsVersion, setPaneElementsVersion] = useState(0);
   const doorElementsRef = useRef(new Map<string, HTMLElement>());
   const doorElements = doorElementsRef.current;
   const [doorElementsVersion, setDoorElementsVersion] = useState(0);
   const bumpPaneElementsVersion = useCallback(() => {
-    setPanelElementsVersion((v) => v + 1);
+    setPaneElementsVersion((v) => v + 1);
   }, []);
   const bumpDoorElementsVersion = useCallback(() => {
     setDoorElementsVersion((v) => v + 1);

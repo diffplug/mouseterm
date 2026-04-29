@@ -2,7 +2,7 @@ import { createContext } from 'react';
 import type { AlertButtonActionResult, SessionStatus } from '../../lib/terminal-registry';
 import type { WallMode, SpawnDirection } from './wall-types';
 
-export interface PanelElementsState {
+export interface PaneElementsState {
   elements: Map<string, HTMLElement>;
   version: number;
   bumpVersion: () => void;
@@ -11,13 +11,13 @@ export interface PanelElementsState {
 export const ModeContext = createContext<WallMode>('command');
 export const SelectedIdContext = createContext<string | null>(null);
 
-export const PaneElementsContext = createContext<PanelElementsState>({
+export const PaneElementsContext = createContext<PaneElementsState>({
   elements: new Map(),
   version: 0,
   bumpVersion: () => {},
 });
 
-export const DoorElementsContext = createContext<PanelElementsState>({
+export const DoorElementsContext = createContext<PaneElementsState>({
   elements: new Map(),
   version: 0,
   bumpVersion: () => {},
