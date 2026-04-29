@@ -1,8 +1,4 @@
-import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from 'react';
-import type { DockviewApi } from 'dockview-react';
-import type { ConfirmKill } from '../KillConfirm';
-import type { DooredItem, WallMode, WallSelectionKind } from './wall-types';
-import type { WallActions } from './wall-context';
+import { useEffect, useRef } from 'react';
 import { handleDualTap } from './keyboard/handle-dual-tap';
 import { handleMouseSelectionKeys } from './keyboard/handle-mouse-selection-keys';
 import { handleKillConfirm } from './keyboard/handle-kill-confirm';
@@ -10,31 +6,7 @@ import { handlePaneShortcuts } from './keyboard/handle-pane-shortcuts';
 import { handlePaneNavigation } from './keyboard/handle-pane-navigation';
 import type { NavHistoryRef, WallKeyboardCtx } from './keyboard/types';
 
-export function useWallKeyboard(ctx: {
-  apiRef: RefObject<DockviewApi | null>;
-  modeRef: RefObject<WallMode>;
-  selectedIdRef: RefObject<string | null>;
-  selectedTypeRef: RefObject<WallSelectionKind>;
-  doorsRef: RefObject<DooredItem[]>;
-  confirmKillRef: RefObject<ConfirmKill | null>;
-  renamingRef: RefObject<string | null>;
-  dialogKeyboardActiveRef: RefObject<boolean>;
-  paneElements: Map<string, HTMLElement>;
-  killInProgressRef: RefObject<boolean>;
-  overlayElRef: RefObject<HTMLDivElement | null>;
-  wallActionsRef: RefObject<WallActions>;
-  handleReattachRef: RefObject<(item: DooredItem, options?: { enterPassthrough?: boolean; confirmKill?: boolean }) => void>;
-  selectPane: (id: string) => void;
-  selectDoor: (id: string) => void;
-  enterTerminalMode: (id: string) => void;
-  exitTerminalMode: () => void;
-  minimizePane: (id: string) => void;
-  acceptKill: (onExit: () => void) => void;
-  rejectKill: () => void;
-  setConfirmKill: Dispatch<SetStateAction<ConfirmKill | null>>;
-  setRenamingPaneId: Dispatch<SetStateAction<string | null>>;
-  setSelectedId: Dispatch<SetStateAction<string | null>>;
-}): void {
+export function useWallKeyboard(ctx: WallKeyboardCtx): void {
   const lastCmdSide = useRef<'left' | 'right' | null>(null);
   const lastCmdTime = useRef(0);
   const lastShiftSide = useRef<'left' | 'right' | null>(null);
@@ -51,7 +23,7 @@ export function useWallKeyboard(ctx: {
     const dualTapState = { lastCmdSide, lastCmdTime, lastShiftSide, lastShiftTime };
 
     const handler = (e: KeyboardEvent) => {
-      const c = ctxRef.current as WallKeyboardCtx;
+      const c = ctxRef.current;
 
       if (handleDualTap(e, c, dualTapState)) return;
       if (handleMouseSelectionKeys(e, c)) return;
