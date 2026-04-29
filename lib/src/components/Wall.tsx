@@ -176,7 +176,9 @@ export function Wall({
   const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { if (!confirmKill) { clearTimeout(shakeTimerRef.current!); } }, [confirmKill]);
+  useEffect(() => {
+    if (!confirmKill && shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+  }, [confirmKill]);
 
   useEffect(() => () => {
     if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
