@@ -14,6 +14,7 @@ import SiteHeader from "../components/SiteHeader";
 import posterUrl from "../assets/video-climb-blink-and-stare.webp";
 import videoUrl from "../assets/video-climb-blink-and-stare.mp4";
 import visualStudioIconUrl from "../assets/visual-studio-icon.svg";
+import tinyIconUrl from "../../assets/icon-tiny-dark.png";
 import standaloneLatest from "@standalone-latest";
 
 export { Home as Component };
@@ -41,12 +42,12 @@ const downloadAccentStyle = {
   "--download-border": "color-mix(in oklch, var(--color-caramel) 68%, transparent)",
   "--download-primary": "color-mix(in oklch, var(--color-caramel) 86%, var(--color-bg))",
   "--download-primary-hover": "color-mix(in oklch, var(--color-caramel) 94%, var(--color-text))",
-  "--download-panel": "color-mix(in oklch, var(--color-surface) 58%, transparent)",
-  "--download-panel-hover": "color-mix(in oklch, var(--color-caramel) 12%, var(--color-surface))",
+  "--download-panel": "color-mix(in oklch, var(--color-surface) 82%, var(--color-bg))",
+  "--download-panel-hover": "color-mix(in oklch, var(--color-caramel) 10%, var(--color-surface))",
 } as CSSProperties;
 
 const DOWNLOAD_BUTTON_BASE =
-  "group inline-flex min-w-0 items-center justify-start rounded-md border font-display leading-none transition duration-150 ease-out focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[var(--download-accent)] motion-reduce:transition-none";
+  "relative z-10 inline-flex min-w-0 origin-bottom-right items-center justify-start rounded-md border font-display leading-none transition duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:translate-y-1.5 group-focus-visible:translate-y-1.5 motion-reduce:transition-none motion-reduce:group-hover:transform-none motion-reduce:group-focus-visible:transform-none";
 
 const DOWNLOAD_BUTTON_VARIANTS = {
   primary:
@@ -103,15 +104,23 @@ function DownloadButton({
     <a
       href={href}
       onClick={onClick}
-      className={`${DOWNLOAD_BUTTON_BASE} ${DOWNLOAD_BUTTON_VARIANTS[variant]} ${className}`}
+      className="group relative isolate inline-block overflow-visible focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[var(--download-accent)]"
     >
-      <span
+      <img
+        src={tinyIconUrl}
+        alt=""
         aria-hidden="true"
-        className="flex size-6 shrink-0 items-center justify-center"
-      >
-        {icon}
+        className="pointer-events-none absolute left-3 top-1.5 z-0 size-6 -rotate-6 transition-transform duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:-translate-y-4 group-hover:-rotate-12 group-focus-visible:-translate-y-4 group-focus-visible:-rotate-12 motion-reduce:transition-none motion-reduce:group-hover:transform-none motion-reduce:group-focus-visible:transform-none"
+      />
+      <span className={`${DOWNLOAD_BUTTON_BASE} ${DOWNLOAD_BUTTON_VARIANTS[variant]} ${className}`}>
+        <span
+          aria-hidden="true"
+          className="flex size-6 shrink-0 items-center justify-center"
+        >
+          {icon}
+        </span>
+        <span className="min-w-0 truncate">{children}</span>
       </span>
-      <span className="min-w-0 truncate">{children}</span>
     </a>
   );
 }
