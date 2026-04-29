@@ -2,8 +2,8 @@ import { rgbOf } from '../color-contrast';
 import { getAppliedThemeSnapshot, type AppliedThemeSnapshot } from './apply';
 import { pickDynamicPalette, type DynamicPaletteSnapshot } from './dynamic-palette';
 import type { BundledOrigin, InstalledOrigin } from './types';
+import { getMaterializedVscodeThemeVars } from './vscode-color-observer';
 import {
-  getMaterializedVscodeThemeVars,
   inferVscodeThemeKind,
   RESOLVABLE_VSCODE_VAR_NAMES,
   traceThemeVars,

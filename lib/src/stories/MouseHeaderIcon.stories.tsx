@@ -4,11 +4,11 @@ import {
   TerminalPaneHeader,
   ModeContext,
   SelectedIdContext,
-  PondActionsContext,
+  WallActionsContext,
   RenamingIdContext,
-  type PondMode,
-  type PondActions,
-} from '../components/Pond';
+  type WallMode,
+  type WallActions,
+} from '../components/Wall';
 import {
   setMouseReporting,
   setOverride,
@@ -18,7 +18,7 @@ import {
 
 const SESSION_ID = 'mouse-story';
 
-const noopActions: PondActions = {
+const noopActions: WallActions = {
   onKill: () => {},
   onMinimize: () => {},
   onAlertButton: () => 'noop',
@@ -36,13 +36,13 @@ function MouseIconStoryFrame({
   mouseReporting = 'none' as MouseTrackingMode,
   override = 'off' as OverrideState,
   title = 'build-server',
-  mode = 'command' as PondMode,
+  mode = 'command' as WallMode,
   width = 360,
 }: {
   mouseReporting?: MouseTrackingMode;
   override?: OverrideState;
   title?: string;
-  mode?: PondMode;
+  mode?: WallMode;
   width?: number;
 }) {
   useEffect(() => {
@@ -58,7 +58,7 @@ function MouseIconStoryFrame({
   return (
     <ModeContext.Provider value={mode}>
       <SelectedIdContext.Provider value={SESSION_ID}>
-        <PondActionsContext.Provider value={noopActions}>
+        <WallActionsContext.Provider value={noopActions}>
           <RenamingIdContext.Provider value={null}>
             <div style={{ width }}>
               <div className="bg-app-bg" style={{ height: 26 }}>
@@ -71,7 +71,7 @@ function MouseIconStoryFrame({
               </div>
             </div>
           </RenamingIdContext.Provider>
-        </PondActionsContext.Provider>
+        </WallActionsContext.Provider>
       </SelectedIdContext.Provider>
     </ModeContext.Provider>
   );

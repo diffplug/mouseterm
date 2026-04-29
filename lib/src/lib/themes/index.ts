@@ -2,8 +2,15 @@ export type { MouseTermTheme, BundledOrigin, InstalledOrigin } from './types';
 export { CONSUMED_VSCODE_KEYS, convertVscodeThemeColors, uiThemeToType } from './convert';
 export { applyTheme, getAppliedThemeSnapshot, restoreActiveTheme } from './apply';
 export type { AppliedThemeSnapshot } from './apply';
-export { pickDynamicPalette } from './dynamic-palette';
-export type { DynamicPaletteSnapshot, DynamicDoorPick, DynamicFocusRingPick } from './dynamic-palette';
+export { computeDynamicPalette, pickDoorPair, pickDynamicPalette, pickFocusRing } from './dynamic-palette';
+export type {
+  DoorChoice,
+  DynamicDoorPick,
+  DynamicFocusRingPick,
+  DynamicPaletteSnapshot,
+  DynamicPaletteVars,
+  FocusRingCandidate,
+} from './dynamic-palette';
 export { captureThemeDiagnostics } from './diagnostics';
 export type {
   ThemeDiagnosticSnapshot,
@@ -15,9 +22,7 @@ export type {
 } from './diagnostics';
 export {
   completeThemeVars,
-  getMaterializedVscodeThemeVars,
   inferVscodeThemeKind,
-  installVscodeThemeVarResolver,
   traceThemeVars,
 } from './vscode-color-resolver';
 export type {
@@ -26,6 +31,10 @@ export type {
   VscodeThemeVarTrace,
   VscodeThemeVarTraceOrigin,
 } from './vscode-color-resolver';
+export {
+  getMaterializedVscodeThemeVars,
+  installVscodeThemeVarResolver,
+} from './vscode-color-observer';
 export {
   getBundledThemes,
   getInstalledThemes,

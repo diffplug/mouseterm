@@ -11,7 +11,7 @@ import {
   primeActivity,
   type ActivityState,
 } from '../src/lib/terminal-registry';
-import { computeDynamicPalette } from '../src/lib/dynamic-palette';
+import { computeDynamicPalette } from '../src/lib/themes/dynamic-palette';
 import { VSCODE_THEMES, VSCODE_THEME_TYPES } from './themes';
 import { cfg } from '../src/cfg';
 

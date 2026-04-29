@@ -23,15 +23,15 @@ There are two areas:
 The user can navigate between all elements using the mouse, or by entering `command` mode and using the keyboard.
 
 ```
-Pond
-├── Context providers (Mode, SelectedId, PondActions, PanelElements, DoorElements, RenamingId, Zoomed, WindowFocused)
+Wall
+├── Context providers (Mode, SelectedId, WallActions, PanelElements, DoorElements, RenamingId, Zoomed, WindowFocused)
 │   └── div (h-screen, flex col)
 │       ├── Dockview wrapper (flex-1, 6px top/sides inset, 2px bottom inset)
 │       │   ├── DockviewReact (tiling layout engine, singleTabMode="fullwidth")
 │       │   │   └── Groups (one session per group, no tab stacking)
 │       │   │       ├── TerminalPanel → TerminalPane → xterm.js
 │       │   │       └── TerminalPaneHeader (tab component, drag handle)
-│       │   └── SelectionOverlay (fixed positioned, pointer-events: none)
+│       │   └── WorkspaceSelectionOverlay (fixed positioned, pointer-events: none)
 │       ├── Baseboard (always-visible bottom strip, shortcut hints when empty)
 │       │   └── Door components (one per minimized session)
 │       └── KillConfirmOverlay (conditional)
@@ -187,15 +187,15 @@ A fixed-positioned element rendered on top of dockview. Covers the active elemen
 - `z-index: 50`, `pointer-events: none`, `transition: 150ms`
 
 ### Position tracking
-- Each `TerminalPanel` registers its DOM element in a `panelElements` Map on mount, removes on unmount
-- Door elements are registered by the `Baseboard` via `DoorElementsContext` (queries `[data-door-id]` attributes)
+- `components/wall/TerminalPanel.tsx` registers its DOM element in a `paneElements` Map on mount, removes on unmount
+- Door elements are registered by the `Baseboard` via `DoorElementsContext` from `components/wall/wall-context.tsx` (queries `[data-door-id]` attributes)
 - Updates on: selection change, resize (`ResizeObserver`), layout change (`api.onDidLayoutChange`)
 
 ## Spatial navigation
 
 ### Direction detection
 
-Uses DOM positions of pane elements (registered in `panelElements` Map). For each candidate:
+Uses DOM positions of pane elements (registered in `paneElements` Map). For each candidate:
 
 1. **Edge-based direction check**: candidate must be entirely in the correct direction on the primary axis
 2. **Overlap requirement**: candidate must overlap on the secondary axis
@@ -307,7 +307,7 @@ The direction is carried via `FreshlySpawnedContext` — a `Map<paneId, SpawnDir
 
 ### Kill (in-place fade + FLIP reclaim)
 
-`orchestrateKill(api, killedId)` in `Pond.tsx` runs on kill confirmation. It fades the real pane element in place (its content dissolves against the same-colored background), then removes the panel and FLIP-reveals the survivors:
+`orchestrateKill(api, killedId)` in `lib/src/lib/kill-animation.ts` runs on kill confirmation. `Wall.tsx` owns the command dispatch and calls it after the user confirms. It fades the real pane element in place (its content dissolves against the same-colored background), then removes the panel and FLIP-reveals the survivors:
 
 1. Add `.pane-fading-out` (or `.pane-fading-and-shrinking-to-br` for a last-pane kill) to the killed pane's group element. Block pointer events during the fade.
 2. On `animationend`, snapshot `getBoundingClientRect` for every surviving panel's group element.
@@ -321,7 +321,7 @@ Case handling is purely rect-based (measure before and after removal), so 2-pane
 
 When `onDidRemovePanel` triggers the "always keep one pane visible" auto-spawn (see corner case #10), the `api.addPanel` call is deferred by 440ms. This lets the outgoing animation (kill ghost crush, or minimize's selection-overlay slide to the door) complete before the replacement's reveal starts — they play sequentially in the same screen region instead of fighting each other. The deferred spawn re-checks `totalPanels` at fire time and becomes a no-op if anything repopulated the pane area during the delay (e.g. a door reattach).
 
-The deferred spawn also only calls `selectPanel` if selection is null. The kill handler clears selection to null, so the new pane takes focus. The minimize flow sets selection to the just-created door; preserving that door focus across the delay is the point.
+The deferred spawn also only calls `selectPane` if selection is null. The kill handler clears selection to null, so the new pane takes focus. The minimize flow sets selection to the just-created door; preserving that door focus across the delay is the point.
 
 ## Corner cases
 
@@ -335,18 +335,34 @@ The deferred spawn also only calls `selectPanel` if selection is null. The kill 
 8. **Center drop merges panels**: intercepted at group-level `model.onWillDrop` and converted to a swap.
 9. **Group drag has null panelId**: falls back to `api.getGroup(groupId).activePanel.id`.
 10. **Auto-spawn on empty**: `onDidRemovePanel` creates a new session whenever the last visible pane is removed, whether or not doors exist — there is always a pane visible. The `addPanel` call is delayed 440ms (see "Auto-spawn delay" under Animations) so the outgoing kill/minimize animation finishes first.
-11. **Door focus survives auto-spawn**: `api.addPanel` auto-activates the new panel, firing `onDidActivePanelChange`. When the current selection is a door (e.g., just-minimized last pane), that listener must not flip `selectedId` to the new pane — otherwise `selectedType === 'door'` + `selectedId === newPaneId` desyncs and the door loses its highlight while the SelectionOverlay is stuck on the stale door rect. The listener early-returns when `selectedType === 'door'`.
+11. **Door focus survives auto-spawn**: `api.addPanel` auto-activates the new panel, firing `onDidActivePanelChange`. When the current selection is a door (e.g., just-minimized last pane), that listener must not flip `selectedId` to the new pane — otherwise `selectedType === 'door'` + `selectedId === newPaneId` desyncs and the door loses its highlight while the `WorkspaceSelectionOverlay` is stuck on the stale door rect. The listener early-returns when `selectedType === 'door'`.
 
 ## Files
 
 | File | Role |
 |------|------|
-| `lib/src/components/Pond.tsx` | Main layout orchestrator: modes, keyboard, selection overlay, minimize/reattach. Also defines `TerminalPanel`, `TerminalPaneHeader`, `KillConfirmOverlay` |
+| `lib/src/components/Wall.tsx` | Main layout orchestrator: selected mode/state, session actions, minimize/reattach, provider composition |
+| `lib/src/components/wall/wall-types.ts` / `wall-context.tsx` | Shared Wall types and React contexts used by Wall, pane headers, panels, overlays, and the baseboard |
+| `lib/src/components/wall/TerminalPanel.tsx` | Dockview panel body wrapper; registers pane DOM elements and plays spawn animation |
+| `lib/src/components/wall/TerminalPaneHeader.tsx` | Custom dockview tab/header with rename, alert/TODO, mouse override, split/zoom/minimize/kill controls |
+| `lib/src/components/wall/WorkspaceSelectionOverlay.tsx` | Pane/door focus ring and marching-ants overlay |
+| `lib/src/components/wall/MarchingAntsRect.tsx` | SVG marching-ants border path and dash sizing |
+| `lib/src/components/wall/MouseOverrideBanner.tsx` | Temporary mouse override banner shown from the header icon |
+| `lib/src/components/wall/use-dockview-ready.ts` | Dockview ready/setup handler: restore/create panels, DnD swap wiring, active panel sync, auto-spawn |
+| `lib/src/components/wall/use-wall-keyboard.ts` | Capture-phase keyboard dispatch for mode switching, pane/door commands, copy/paste, selection drag keys |
+| `lib/src/components/wall/use-session-persistence.ts` | Debounced layout/session save, flush requests, pagehide, PTY exit, file-drop paste routing |
+| `lib/src/components/wall/use-window-focused.ts` | Window focus tracking hook for header and selection overlay dimming |
 | `lib/src/components/Baseboard.tsx` | Always-visible bottom strip with door components, overflow arrows, and shortcut hints |
 | `lib/src/components/Door.tsx` | Individual door element — mouse-hole styled button with alert/TODO indicators |
 | `lib/src/components/TerminalPane.tsx` | Thin xterm.js mount point — mounts/unmounts persistent session elements |
-| `lib/src/lib/terminal-registry.ts` | Session lifecycle: create, resume, restore, mount, unmount, dispose, swap, focus, refit. Activity state store |
-| `lib/src/lib/spatial-nav.ts` | Spatial navigation (`findPanelInDirection`) and reattach-neighbor detection (`findReattachNeighbor`) |
+| `lib/src/lib/terminal-registry.ts` | Public facade preserving registry imports |
+| `lib/src/lib/terminal-store.ts` | Registry maps, terminal entry shape, pending shell opts, overlay dimension types |
+| `lib/src/lib/terminal-lifecycle.ts` | Session lifecycle: create, resume, restore, mount, unmount, dispose, swap, focus, refit |
+| `lib/src/lib/session-activity-store.ts` | React activity snapshot store, primed alert state, alert/TODO platform delegates |
+| `lib/src/lib/terminal-theme.ts` | xterm theme extraction, terminal host painting, theme MutationObserver |
+| `lib/src/lib/terminal-report-filter.ts` | Synthetic/replay terminal report detection and replay writer |
+| `lib/src/lib/terminal-mouse-router.ts` | Mouse selection routing, smart-token hinting, Alt shape toggle |
+| `lib/src/lib/spatial-nav.ts` | Spatial navigation (`findPaneInDirection`) and reattach-neighbor detection (`findReattachNeighbor`) |
 | `lib/src/lib/layout-snapshot.ts` | Layout cloning (`cloneLayout`) and structural signature (`getLayoutStructureSignature`) for restore comparison |
 | `lib/src/lib/activity-monitor.ts` | Per-session activity state machine: output timing → alert escalation |
 | `lib/src/lib/alert-manager.ts` | Manages ActivityMonitors + attention tracking + TODO state per session |

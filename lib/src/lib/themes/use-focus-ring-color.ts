@@ -5,7 +5,7 @@ function readFocusRingColor(): string {
 }
 
 /** Resolved value of --color-focus-ring. Re-reads when body class/style changes
- *  (Pond.useDynamicPalette publishes the var by writing to body.style). */
+ *  (useDynamicPalette publishes the var by writing to body.style). */
 export function useFocusRingColor(): string {
   const [color, setColor] = useState(readFocusRingColor);
 

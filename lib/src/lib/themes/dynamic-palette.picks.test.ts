@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rgbToOklab } from './color-contrast';
+import { rgbToOklab } from '../color-contrast';
 import {
   FOCUS_RING_SATURATION_FLOOR,
   pickDoorPair,

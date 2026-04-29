@@ -28,12 +28,19 @@ Frontend Library (lib/src/)
 ├── theme.css                     — --vscode-* -> semantic --color-* tokens
 ├── index.css                     — dockview overrides, marching-ants keyframe
 ├── components/
-│   ├── Pond.tsx                  — pane manager (dockview), mode system, keyboard shortcuts
+│   ├── Wall.tsx                  — pane manager shell, mode state, session actions
+│   ├── wall/                     — Wall header/panel/overlay/context helpers
 │   ├── TerminalPane.tsx          — xterm.js mount point with ResizeObserver
 │   ├── Baseboard.tsx             — minimized-pane door carousel
 │   └── Door.tsx                  — individual minimized-pane door
 └── lib/
-    ├── terminal-registry.ts      — global xterm.js registry, theme observer, alert wiring
+    ├── terminal-registry.ts      — public registry facade
+    ├── terminal-store.ts         — registry maps and terminal entry shape
+    ├── terminal-lifecycle.ts     — xterm lifecycle, PTY wiring, mount/dispose/swap/focus
+    ├── terminal-theme.ts         — xterm theme observer and host painting
+    ├── terminal-report-filter.ts — replay/synthetic report filtering
+    ├── terminal-mouse-router.ts  — mouse selection routing
+    ├── session-activity-store.ts — alert/TODO projection and delegates
     ├── reconnect.ts              — resume (live-PTY) + restore (cold-start) entry point
     ├── alert-manager.ts          — alert state machine (portable, no DOM deps)
     ├── activity-monitor.ts       — silence/output pattern detection for alert
@@ -251,7 +258,7 @@ Example of the pattern:
 
 `theme.css` intentionally has no hardcoded color defaults or CSS variable fallback chains. The resolver duplicates VSCode registry defaults for the MouseTerm-consumed color IDs, including `null` default behavior where MouseTerm needs a concrete CSS variable. In particular, `list.inactiveSelectionForeground` resolves to normal foreground inheritance, not `list.activeSelectionForeground`; this matches VSCode's list/tree selected-row behavior for built-in Light.
 
-A `MutationObserver` in `terminal-registry.ts` watches for VS Code theme changes on `body`/`html` (class and style attribute mutations) and live-updates all xterm.js instances. The theme resolver has its own observer on the same attributes so derived `--vscode-*` variables stay in sync before xterm rereads the terminal palette.
+A `MutationObserver` in `lib/src/lib/terminal-theme.ts` watches for VS Code theme changes on `body`/`html` (class and style attribute mutations) and live-updates all xterm.js instances. The `terminal-registry.ts` facade still exposes the public lifecycle APIs. The theme resolver has its own observer on the same attributes so derived `--vscode-*` variables stay in sync before xterm rereads the terminal palette.
 
 `mouseterm.debugTheme` focuses the MouseTerm WebviewView and posts
 `mouseterm:openThemeDebugger` to the webview. `VSCodeAdapter` converts that

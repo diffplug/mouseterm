@@ -1,7 +1,8 @@
 import { useRef, useState, useMemo, useLayoutEffect, useContext, useSyncExternalStore, type ReactNode } from 'react';
 import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { Door } from './Door';
-import { DoorElementsContext, type DooredItem } from './Pond';
+import { DoorElementsContext } from './wall/wall-context';
+import type { DooredItem } from './wall/wall-types';
 import { DEFAULT_ACTIVITY_STATE, getActivitySnapshot, subscribeToActivity } from '../lib/terminal-registry';
 
 export interface BaseboardProps {

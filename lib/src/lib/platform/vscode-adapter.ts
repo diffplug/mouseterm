@@ -15,7 +15,7 @@ export class VSCodeAdapter implements PlatformAdapter {
     this.vscode = acquireVsCodeApi();
 
     // Seed the default shell from the extension-injected global so that
-    // the first terminal on startup (which spawns synchronously on Pond
+    // the first terminal on startup (which spawns synchronously on Wall
     // mount) picks up the selected shell, not the platform default.
     const injectedShell = (globalThis as typeof globalThis & {
       __MOUSETERM_SELECTED_SHELL__?: { shell?: string; args?: string[] } | null;
