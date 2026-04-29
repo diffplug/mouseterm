@@ -115,9 +115,6 @@ export function Wall({
   // matching directional entrance animation.
   const freshlySpawnedRef = useRef(new Map<string, SpawnDirection>());
 
-  // True only across the api.removePanel() call inside orchestrateKill. Lets
-  // onDidRemovePanel know the kill path already paid the animation delay (via
-  // the in-place fade) so the auto-spawn shouldn't re-delay another 440ms.
   const killInProgressRef = useRef(false);
 
   // Ref to the WorkspaceSelectionOverlay's root element. orchestrateKill uses it to
