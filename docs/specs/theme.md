@@ -30,8 +30,8 @@ Door colors and the focus ring are chosen at runtime by
 `computeDynamicPalette()` in `lib/src/lib/themes/dynamic-palette.ts`, using
 OKLab distance/chroma helpers from `lib/src/lib/color-contrast.ts`.
 `useDynamicPalette()` in `lib/src/lib/themes/use-dynamic-palette.ts` publishes
-the chosen variables on `document.body`. `lib/src/lib/dynamic-palette.ts`
-remains as a compatibility re-export.
+the chosen variables on `document.body`. Public theme helpers are exported
+from `lib/src/lib/themes/index.ts`.
 
 - Door bg/fg chooses whichever pair, inactive-header or terminal bg/fg, has
   stronger perceptual separation from

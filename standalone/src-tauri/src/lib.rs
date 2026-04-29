@@ -448,7 +448,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Replace Tauri's default menu, which binds Cmd+V to a native Paste
         // action that fights with the webview's DOM keydown handler. The
-        // terminal owns Cmd+C / Cmd+V / Cmd+X in JS (see `Pond.tsx`).
+        // terminal owns Cmd+C / Cmd+V / Cmd+X in JS (see `Wall.tsx`).
         .menu(|handle| {
             let pkg = handle.package_info();
             let about = AboutMetadata {
