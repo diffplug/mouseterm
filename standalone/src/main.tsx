@@ -24,21 +24,21 @@ setPlatform(platform);
 
 function ConnectedUpdateBanner() {
   const state = useUpdateState();
-  const [debugOpen, setDebugOpen] = useState(false);
+  const [snapshot, setSnapshot] = useState<{ version: string; error?: string } | null>(null);
   const [body, setBody] = useState<string | null>(null);
 
-  const failure = state.status === 'post-update-failure' ? state : null;
+  const liveFailure = state.status === 'post-update-failure' ? state : null;
 
   useEffect(() => {
-    if (!debugOpen || body || !failure) return;
+    if (!snapshot || body) return;
     let cancelled = false;
-    buildDebugReport(failure.error ?? '', failure.version).then((b) => {
+    buildDebugReport(snapshot.error ?? '', snapshot.version).then((b) => {
       if (!cancelled) setBody(b);
     });
     return () => {
       cancelled = true;
     };
-  }, [debugOpen, body, failure]);
+  }, [snapshot, body]);
 
   return (
     <>
@@ -46,13 +46,20 @@ function ConnectedUpdateBanner() {
         state={state}
         onDismiss={dismissBanner}
         onOpenChangelog={openChangelog}
-        onOpenDebug={() => setDebugOpen(true)}
+        onOpenDebug={() => {
+          if (liveFailure) {
+            setSnapshot({ version: liveFailure.version, error: liveFailure.error });
+          }
+        }}
       />
-      {failure && (
+      {snapshot && (
         <UpdateDebugDialog
-          open={debugOpen}
-          onClose={() => setDebugOpen(false)}
-          failure={failure}
+          open={true}
+          onClose={() => {
+            setSnapshot(null);
+            setBody(null);
+          }}
+          failure={snapshot}
           body={body}
         />
       )}

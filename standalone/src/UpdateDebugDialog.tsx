@@ -46,9 +46,9 @@ export function UpdateDebugDialog({ open, onClose, failure, body }: UpdateDebugD
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      className="fixed inset-0 z-50 m-auto flex max-h-[80vh] w-[min(560px,calc(100vw-2rem))] flex-col rounded-lg border border-border bg-surface-raised p-0 text-foreground shadow-2xl backdrop:bg-black/50"
+      className="fixed inset-0 z-50 m-auto max-h-[80vh] w-[min(560px,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-border bg-surface-raised p-0 text-foreground shadow-2xl backdrop:bg-black/50"
     >
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+      <div className="sticky top-0 flex items-center justify-between border-b border-border bg-surface-raised px-4 py-3">
         <span className="text-sm font-medium">Update failed</span>
         <button
           type="button"
@@ -60,7 +60,7 @@ export function UpdateDebugDialog({ open, onClose, failure, body }: UpdateDebugD
         </button>
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3">
+      <div className="space-y-4 px-4 py-3">
         <div className="space-y-1">
           <p className="text-sm">
             We couldn't install v{failure.version}. The error was:

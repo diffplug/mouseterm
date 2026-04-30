@@ -86,7 +86,7 @@ describe('updater', () => {
       expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     });
 
-    it('still runs update check after reading a post-install marker', async () => {
+    it('still runs update check after reading a success marker', async () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ from: '0.3.0', to: '0.4.0' }));
 
       startUpdateCheck();
@@ -94,6 +94,19 @@ describe('updater', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(mocks.check).toHaveBeenCalledOnce();
+    });
+
+    it('skips the update check when the marker is a failure', async () => {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ failed: true, version: '0.5.0', error: 'EACCES' }),
+      );
+
+      startUpdateCheck();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mocks.check).not.toHaveBeenCalled();
     });
   });
 

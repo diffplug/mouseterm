@@ -102,6 +102,8 @@ async function runUpdateCheck(): Promise<void> {
     currentVersion = '';
   }
 
+  let hadFailureMarker = false;
+
   // Check for post-install markers from a previous session
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -114,6 +116,7 @@ async function runUpdateCheck(): Promise<void> {
           version: marker.version,
           error: marker.error,
         });
+        hadFailureMarker = true;
       } else if (marker.from && marker.to) {
         setState({ status: 'post-update-success', from: marker.from, to: marker.to });
         setTimeout(() => {
@@ -125,6 +128,14 @@ async function runUpdateCheck(): Promise<void> {
     }
   } catch {
     // Corrupt marker — ignore
+  }
+
+  // Skip the auto-update probe on a failure-marker launch: re-downloading the
+  // same version that just failed will fail again on quit, and the state
+  // transition to `downloaded` would unmount any open debug dialog.
+  if (hadFailureMarker) {
+    registerCloseHandler();
+    return;
   }
 
   // Wait 5 seconds, then check for updates
