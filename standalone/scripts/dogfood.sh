@@ -50,11 +50,15 @@ if [[ "${1:-}" == "--install" ]]; then
         echo "After that, 'dogfood:standalone --install' will work from then on."
         exit 1
       fi
-      # If a previous run left an orphaned sidecar/MouseTerm holding files in
-      # the install dir, kill it before we try to overwrite anything.
-      for exe in mouseterm.exe node.exe; do
-        taskkill //F //T //IM "$exe" >/dev/null 2>&1 || true
-      done
+      # Kill any running MouseTerm processes (the app + its sidecar node.exe,
+      # plus orphan sidecars from a prior run) before we overwrite their files.
+      # We can't use `taskkill //IM node.exe` here: that matches every node.exe
+      # on the system, including the pnpm process that invoked this script,
+      # and `//T` would then cascade and kill us. Filter by image path so we
+      # only target processes loaded from the install dir.
+      powershell.exe -NoProfile -Command \
+        "Get-Process -Name mouseterm,node -EA SilentlyContinue | Where-Object Path -Like '$LOCALAPPDATA\\MouseTerm\\*' | Stop-Process -Force -EA SilentlyContinue" \
+        >/dev/null 2>&1 || true
       # Wipe install-dir contents except uninstall.exe (managed by NSIS).
       # We delete *contents* rather than the directory itself so we don't trip
       # over Windows' "directory in use" if a process has it as cwd or loaded
