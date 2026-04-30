@@ -36,6 +36,10 @@ export function UpdateBanner({ state, onDismiss, onOpenChangelog, onOpenDebug }:
       message = 'Update failed.';
       link = { label: 'Click here to debug', onClick: onOpenDebug };
       break;
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
   }
 
   return (

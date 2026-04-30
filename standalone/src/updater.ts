@@ -66,7 +66,7 @@ export async function buildDebugReport(error: string, toVersion: string): Promis
   return [
     `**App version**: ${fromVersion} → ${toVersion}`,
     `**Platform**: ${PLATFORM_STRING}`,
-    `**Error**: ${error}`,
+    `**Error**: ${error || '(none captured)'}`,
     '',
     '**Recent log:**',
     '```',
