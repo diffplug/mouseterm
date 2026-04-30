@@ -186,7 +186,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
                 key={shell.name}
                 role="menuitemradio"
                 aria-checked={isSelected}
-                className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-surface-raised"
+                className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-raised"
                 onClick={() => {
                   setSelected(shell);
                   setOpen(false);
