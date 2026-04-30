@@ -8,6 +8,7 @@ function UpdateBannerStory({ state }: { state: UpdateBannerState }) {
         state={state}
         onDismiss={() => console.log('Dismiss')}
         onOpenChangelog={() => console.log('Open changelog')}
+        onOpenDebug={() => console.log('Open debug')}
       />
     </div>
   );

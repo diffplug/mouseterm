@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { setPlatform } from "mouseterm-lib/lib/platform";
@@ -9,8 +9,15 @@ import App from "mouseterm-lib/App";
 import "mouseterm-lib/index.css";
 import { TauriAdapter } from "./tauri-adapter";
 import { UpdateBanner } from "./UpdateBanner";
+import { UpdateDebugDialog } from "./UpdateDebugDialog";
 import { AppBar, type ShellEntry } from "./AppBar";
-import { startUpdateCheck, useUpdateState, dismissBanner, openChangelog } from "./updater";
+import {
+  startUpdateCheck,
+  useUpdateState,
+  dismissBanner,
+  openChangelog,
+  buildDebugReport,
+} from "./updater";
 
 // Initialize Tauri platform adapter before rendering
 const platform = new TauriAdapter();
@@ -18,7 +25,47 @@ setPlatform(platform);
 
 function ConnectedUpdateBanner() {
   const state = useUpdateState();
-  return <UpdateBanner state={state} onDismiss={dismissBanner} onOpenChangelog={openChangelog} />;
+  const [snapshot, setSnapshot] = useState<{ version: string; error?: string } | null>(null);
+  const [body, setBody] = useState<string | null>(null);
+
+  const liveFailure = state.status === 'post-update-failure' ? state : null;
+
+  useEffect(() => {
+    if (!snapshot || body) return;
+    let cancelled = false;
+    buildDebugReport(snapshot.error ?? '', snapshot.version).then((b) => {
+      if (!cancelled) setBody(b);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot, body]);
+
+  return (
+    <>
+      <UpdateBanner
+        state={state}
+        onDismiss={dismissBanner}
+        onOpenChangelog={openChangelog}
+        onOpenDebug={() => {
+          if (liveFailure) {
+            setSnapshot({ version: liveFailure.version, error: liveFailure.error });
+          }
+        }}
+      />
+      {snapshot && (
+        <UpdateDebugDialog
+          open={true}
+          onClose={() => {
+            setSnapshot(null);
+            setBody(null);
+          }}
+          failure={snapshot}
+          body={body}
+        />
+      )}
+    </>
+  );
 }
 
 // Await init() first to register event listeners before reconnecting

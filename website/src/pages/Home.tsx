@@ -115,7 +115,7 @@ const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string
     pill: "Windows x64",
     title: "Installing on Windows",
     steps: [
-      "Double-click the downloaded ...-setup.exe",
+      "Double-click the downloaded MouseTerm-windows-x64-setup.exe",
       "If SmartScreen appears: More info \u2192 Run anyway",
     ],
   },
@@ -123,7 +123,7 @@ const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string
     pill: "Linux x64",
     title: "Installing on Linux",
     steps: [
-      "Make executable: chmod +x MouseTerm*.AppImage",
+      "Make executable: chmod +x MouseTerm-linux-x86_64.AppImage",
       "Run from terminal or double-click to launch",
     ],
   },

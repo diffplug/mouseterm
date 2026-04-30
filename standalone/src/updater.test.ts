@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   onCloseRequested: vi.fn(),
   windowClose: vi.fn(),
   shellOpen: vi.fn(),
+  invoke: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/plugin-updater', () => ({
@@ -29,6 +30,10 @@ vi.mock('@tauri-apps/plugin-shell', () => ({
   open: mocks.shellOpen,
 }));
 
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: mocks.invoke,
+}));
+
 // --- Helpers ---
 
 const STORAGE_KEY = 'mouseterm:update-result';
@@ -42,7 +47,7 @@ function makeUpdate(version = '0.5.0') {
 }
 
 // Import after mocks
-import { startUpdateCheck, openChangelog, _resetForTesting } from './updater';
+import { startUpdateCheck, openChangelog, buildDebugReport, _resetForTesting } from './updater';
 
 describe('updater', () => {
   beforeEach(() => {
@@ -55,6 +60,7 @@ describe('updater', () => {
     mocks.onCloseRequested.mockResolvedValue(vi.fn());
     mocks.windowClose.mockResolvedValue(undefined);
     mocks.shellOpen.mockResolvedValue(undefined);
+    mocks.invoke.mockResolvedValue('');
   });
 
   afterEach(() => {
@@ -80,7 +86,7 @@ describe('updater', () => {
       expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     });
 
-    it('still runs update check after reading a post-install marker', async () => {
+    it('still runs update check after reading a success marker', async () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ from: '0.3.0', to: '0.4.0' }));
 
       startUpdateCheck();
@@ -88,6 +94,19 @@ describe('updater', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(mocks.check).toHaveBeenCalledOnce();
+    });
+
+    it('skips the update check when the marker is a failure', async () => {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ failed: true, version: '0.5.0', error: 'EACCES' }),
+      );
+
+      startUpdateCheck();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mocks.check).not.toHaveBeenCalled();
     });
   });
 
@@ -215,6 +234,33 @@ describe('updater', () => {
     it('openChangelog calls shell open', () => {
       openChangelog();
       expect(mocks.shellOpen).toHaveBeenCalledWith('https://mouseterm.com/changelog');
+    });
+  });
+
+  describe('buildDebugReport', () => {
+    it('assembles a markdown body with version, platform, error, and log', async () => {
+      mocks.getVersion.mockResolvedValue('0.7.0');
+      mocks.invoke.mockResolvedValue('[42] [app] setup started\n[42] [sidecar] spawned');
+
+      vi.useRealTimers();
+      const body = await buildDebugReport('EACCES: permission denied', '0.8.0');
+
+      expect(mocks.invoke).toHaveBeenCalledWith('read_update_log');
+      expect(body).toContain('**App version**: 0.7.0 → 0.8.0');
+      expect(body).toContain('**Error**: EACCES: permission denied');
+      expect(body).toContain('**Recent log:**');
+      expect(body).toContain('[sidecar] spawned');
+    });
+
+    it('embeds a placeholder when read_update_log fails', async () => {
+      mocks.getVersion.mockResolvedValue('0.7.0');
+      mocks.invoke.mockRejectedValue(new Error('no such file'));
+
+      vi.useRealTimers();
+      const body = await buildDebugReport('boom', '0.8.0');
+
+      expect(body).toContain('failed to read log');
+      expect(body).toContain('**Error**: boom');
     });
   });
 });

@@ -88,6 +88,21 @@ fn append_log(message: impl AsRef<str>) {
     }
 }
 
+fn read_log_tail(max_bytes: usize) -> Result<String, String> {
+    let path = default_log_path();
+    let contents = std::fs::read_to_string(&path)
+        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    if contents.len() <= max_bytes {
+        return Ok(contents);
+    }
+    // Slice on a char boundary so we never split a multi-byte sequence.
+    let start = contents.len() - max_bytes;
+    let start = (start..contents.len())
+        .find(|&i| contents.is_char_boundary(i))
+        .unwrap_or(contents.len());
+    Ok(contents[start..].to_string())
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 struct PtySpawnOptions {
     cols: Option<u16>,
@@ -237,6 +252,11 @@ fn read_clipboard_image_as_file_path(
     Ok(response
         .get("path")
         .and_then(|path| path.as_str().map(String::from)))
+}
+
+#[tauri::command]
+fn read_update_log() -> Result<String, String> {
+    read_log_tail(10_000)
 }
 
 #[tauri::command]
@@ -532,6 +552,7 @@ pub fn run() {
             get_available_shells,
             read_clipboard_file_paths,
             read_clipboard_image_as_file_path,
+            read_update_log,
         ])
         .build(tauri::generate_context!())
         .expect("error while building MouseTerm")

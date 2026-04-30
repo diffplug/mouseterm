@@ -3,7 +3,15 @@ import { check, type Update } from '@tauri-apps/plugin-updater';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import { open } from '@tauri-apps/plugin-shell';
+import { invoke } from '@tauri-apps/api/core';
+import { PLATFORM_STRING } from 'mouseterm-lib/lib/platform';
 import type { UpdateBannerState } from './UpdateBanner';
+
+const GITHUB_REPO_URL = 'https://github.com/diffplug/mouseterm';
+
+function openUrl(url: string, context: string): void {
+  open(url).catch((e) => console.error(`[updater] Failed to open ${context}:`, e));
+}
 
 // --- State ---
 
@@ -46,8 +54,34 @@ export function dismissBanner(): void {
 }
 
 export function openChangelog(): void {
-  open('https://mouseterm.com/changelog').catch((e) =>
-    console.error('[updater] Failed to open changelog:', e),
+  openUrl('https://mouseterm.com/changelog', 'changelog');
+}
+
+export async function buildDebugReport(error: string, toVersion: string): Promise<string> {
+  const [fromVersion, logTail] = await Promise.all([
+    getVersion().catch(() => ''),
+    invoke<string>('read_update_log').catch((e) => `(failed to read log: ${String(e)})`),
+  ]);
+
+  return [
+    `**App version**: ${fromVersion} → ${toVersion}`,
+    `**Platform**: ${PLATFORM_STRING}`,
+    `**Error**: ${error || '(none captured)'}`,
+    '',
+    '**Recent log:**',
+    '```',
+    logTail.trimEnd(),
+    '```',
+    '',
+  ].join('\n');
+}
+
+export function openIssueSearch(error: string): void {
+  // First ~80 chars of the error, no quoting — lets GitHub fuzzy-match.
+  const keywords = error.slice(0, 80);
+  openUrl(
+    `${GITHUB_REPO_URL}/issues?q=is%3Aissue+${encodeURIComponent(keywords)}`,
+    'issue search',
   );
 }
 
@@ -64,6 +98,8 @@ async function runUpdateCheck(): Promise<void> {
     currentVersion = '';
   }
 
+  let hadFailureMarker = false;
+
   // Check for post-install markers from a previous session
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -71,7 +107,12 @@ async function runUpdateCheck(): Promise<void> {
       localStorage.removeItem(STORAGE_KEY);
       const marker = JSON.parse(raw);
       if (marker.failed) {
-        setState({ status: 'post-update-failure', version: marker.version });
+        setState({
+          status: 'post-update-failure',
+          version: marker.version,
+          error: marker.error,
+        });
+        hadFailureMarker = true;
       } else if (marker.from && marker.to) {
         setState({ status: 'post-update-success', from: marker.from, to: marker.to });
         setTimeout(() => {
@@ -83,6 +124,14 @@ async function runUpdateCheck(): Promise<void> {
     }
   } catch {
     // Corrupt marker — ignore
+  }
+
+  // Skip the auto-update probe on a failure-marker launch: re-downloading the
+  // same version that just failed will fail again on quit, and the state
+  // transition to `downloaded` would unmount any open debug dialog.
+  if (hadFailureMarker) {
+    registerCloseHandler();
+    return;
   }
 
   // Wait 5 seconds, then check for updates

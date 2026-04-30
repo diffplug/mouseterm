@@ -5,46 +5,49 @@ export type UpdateBannerState =
   | { status: 'downloaded'; version: string }
   | { status: 'dismissed' }
   | { status: 'post-update-success'; from: string; to: string }
-  | { status: 'post-update-failure'; version: string };
+  | { status: 'post-update-failure'; version: string; error?: string };
 
 interface UpdateBannerProps {
   state: UpdateBannerState;
   onDismiss: () => void;
   onOpenChangelog: () => void;
+  onOpenDebug: () => void;
 }
 
-export function UpdateBanner({ state, onDismiss, onOpenChangelog }: UpdateBannerProps) {
+const linkClass = 'shrink-0 hover:underline';
+const linkStyle = { color: 'var(--vscode-textLink-foreground)' };
+
+export function UpdateBanner({ state, onDismiss, onOpenChangelog, onOpenDebug }: UpdateBannerProps) {
   if (state.status === 'idle' || state.status === 'dismissed') return null;
 
   let message: string;
-  let showChangelog = false;
+  let link: { label: string; onClick: () => void };
 
   switch (state.status) {
     case 'downloaded':
-      message = `Update downloaded (v${state.version}) \u2014 will install when you quit.`;
-      showChangelog = true;
+      message = `Update downloaded (v${state.version}) — will install when you quit.`;
+      link = { label: 'Changelog', onClick: onOpenChangelog };
       break;
     case 'post-update-success':
-      message = `Updated to v${state.to} \u2014 from v${state.from}.`;
-      showChangelog = true;
+      message = `Updated to v${state.to} — from v${state.from}.`;
+      link = { label: 'Changelog', onClick: onOpenChangelog };
       break;
     case 'post-update-failure':
-      message = `Update to v${state.version} failed \u2014 will retry next launch.`;
+      message = 'Update failed.';
+      link = { label: 'Click here to debug', onClick: onOpenDebug };
       break;
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
   }
 
   return (
     <span className="flex items-center gap-1.5 pb-1 text-sm font-mono text-muted">
       <span className="truncate">{message}</span>
-      {showChangelog && (
-        <button
-          onClick={onOpenChangelog}
-          className="shrink-0 hover:underline"
-          style={{ color: 'var(--vscode-textLink-foreground)' }}
-        >
-          Changelog
-        </button>
-      )}
+      <button onClick={link.onClick} className={linkClass} style={linkStyle}>
+        {link.label}
+      </button>
       <button
         onClick={onDismiss}
         className="shrink-0 rounded p-0.5 hover:bg-foreground/10 hover:text-foreground"
