@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { setPlatform } from "mouseterm-lib/lib/platform";
 import { resumeOrRestore } from "mouseterm-lib/lib/reconnect";
+import { setDefaultShellOpts } from "mouseterm-lib/lib/shell-defaults";
 import { restoreActiveTheme } from "mouseterm-lib/lib/themes";
 import App from "mouseterm-lib/App";
 import "mouseterm-lib/index.css";
@@ -26,13 +27,16 @@ async function bootstrap() {
   const { initAlertStateReceiver } = await import("mouseterm-lib/lib/terminal-registry");
   initAlertStateReceiver();
   restoreActiveTheme();
-  const result = await resumeOrRestore(platform);
-
-  startUpdateCheck();
 
   // Fetch app bar data from Rust backend
   const detectedShells = await invoke<ShellEntry[]>("get_available_shells");
   const shells: ShellEntry[] = detectedShells.length > 0 ? detectedShells : [{ name: 'shell', path: '' }];
+  const initialShell = shells[0];
+  setDefaultShellOpts(initialShell ? { shell: initialShell.path, args: initialShell.args } : null);
+
+  const result = await resumeOrRestore(platform);
+
+  startUpdateCheck();
 
   createRoot(document.getElementById("root")!).render(
     <StrictMode>

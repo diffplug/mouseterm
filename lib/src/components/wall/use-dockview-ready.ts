@@ -61,11 +61,15 @@ export function useDockviewReady({
     doorsRef.current = restoredDoors;
     setDoors(restoredDoors);
 
-    const addTerminalPanel = (id: string) => {
+    const primeDefaultShell = (id: string) => {
       const defaults = getDefaultShellOpts();
       if (defaults?.shell) {
         setPendingShellOpts(id, { shell: defaults.shell, args: defaults.args });
       }
+    };
+
+    const addTerminalPanel = (id: string) => {
+      primeDefaultShell(id);
       const referencePanel = e.api.panels[e.api.panels.length - 1] ?? null;
       const direction = pickSplitDirection(referencePanel);
       e.api.addPanel({
@@ -146,6 +150,7 @@ export function useDockviewReady({
       const spawn = () => {
         if (e.api.totalPanels > 0) return;
         const id = generatePaneId();
+        primeDefaultShell(id);
         freshlySpawnedRef.current.set(id, 'top-left');
         e.api.addPanel({ id, component: 'terminal', tabComponent: 'terminal', title: '<unnamed>' });
         if (selectedIdRef.current === null) {
