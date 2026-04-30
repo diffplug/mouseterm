@@ -22,6 +22,35 @@ const appWindow = getCurrentWindow();
 const APP_BAR_BUTTON_CLASS = 'flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-current/10';
 const WINDOW_CONTROL_BUTTON_CLASS = 'flex w-11 items-center justify-center text-inherit transition-colors hover:bg-current/10';
 
+function useAppWindowFocused(): boolean {
+  const [focused, setFocused] = useState(() => document.hasFocus());
+
+  useEffect(() => {
+    let mounted = true;
+    appWindow.isFocused().then((value) => {
+      if (mounted) setFocused(value);
+    });
+
+    const unlistenFocusChanged = appWindow.onFocusChanged(({ payload }) => {
+      setFocused(payload);
+    });
+    const onFocus = () => setFocused(true);
+    const onBlur = () => setFocused(false);
+
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+
+    return () => {
+      mounted = false;
+      unlistenFocusChanged.then((unlisten) => unlisten());
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+
+  return focused;
+}
+
 // ── Tooltip wrapper ────────────────────────────────────────────────────────
 
 function Tip({ label, children }: { label: string; children: React.ReactNode }) {
@@ -179,10 +208,16 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
 // ── AppBar ─────────────────────────────────────────────────────────────────
 
 export function AppBar({ shells }: AppBarProps) {
+  const windowFocused = useAppWindowFocused();
+
   return (
     <div
       data-tauri-drag-region
-      className={`flex h-[30px] shrink-0 select-none items-center bg-header-inactive-bg text-header-inactive-fg text-xs ${
+      className={`flex h-[30px] shrink-0 select-none items-center text-xs ${
+        windowFocused
+          ? 'bg-header-active-bg text-header-active-fg'
+          : 'bg-header-inactive-bg text-header-inactive-fg'
+      } ${
         IS_MAC ? 'pl-[78px]' : ''
       }`}
     >
