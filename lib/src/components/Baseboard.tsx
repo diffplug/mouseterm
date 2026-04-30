@@ -3,6 +3,7 @@ import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { Door } from './Door';
 import { DoorElementsContext } from './wall/wall-context';
 import type { DooredItem } from './wall/wall-types';
+import { IS_MAC } from '../lib/platform';
 import { DEFAULT_ACTIVITY_STATE, getActivitySnapshot, subscribeToActivity } from '../lib/terminal-registry';
 
 export interface BaseboardProps {
@@ -60,7 +61,9 @@ export function Baseboard({ items, onReattach, notice }: BaseboardProps) {
   }, [itemKey]);
 
   // Keyboard shortcut hint — only show when there's enough space and no doors
-  const shortcutHint = 'LCmd → RCmd to enter command mode';
+  const shortcutHint = IS_MAC
+    ? 'LCmd → RCmd to enter command mode'
+    : 'LShift → RShift to enter command mode';
   const showHint = items.length === 0 && containerWidth > 350;
 
   // Calculate which doors fit
