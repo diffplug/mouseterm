@@ -18,21 +18,11 @@ Human-driven steps, in order:
 1. **Update dependencies page** — run `node website/scripts/generate-deps.js` and review the diff in `website/src/data/dependencies.json`. Commit if changed.
 2. **Draft release notes and pick version** — run `/release-notes` in Claude Code at the repo root. The slash command (defined in [.claude/commands/release-notes.md](../../.claude/commands/release-notes.md)) walks the merge commits and squash-merged PRs since the last tag, drafts a Keep a Changelog block, and recommends a `breaking.added.bugfix` version bump. Review and edit the output, paste it into `CHANGELOG.md` replacing the `[Unreleased]` section, and use the recommended `X.Y.Z` in the next step.
 
-3. **Bump versions** — run `./scripts/bump-version.sh X.Y.Z`. This edits all four files in lockstep and runs `cargo check` so `Cargo.lock`'s `mouseterm` entry stays in sync:
-   - [standalone/src-tauri/Cargo.toml](../../standalone/src-tauri/Cargo.toml)
-   - [standalone/src-tauri/Cargo.lock](../../standalone/src-tauri/Cargo.lock) (auto-synced by cargo)
-   - [standalone/src-tauri/tauri.conf.json](../../standalone/src-tauri/tauri.conf.json)
-   - [vscode-ext/package.json](../../vscode-ext/package.json)
-   - [lib/package.json](../../lib/package.json)
+3. **Bump versions** — `./scripts/bump-version.sh X.Y.Z`. Edits the four version files in lockstep and runs `cargo check` so `Cargo.lock` follows along.
 4. **Commit and tag** — `git commit -m "Release vX.Y.Z"` then `git tag vX.Y.Z`.
 5. **Push** — `git push && git push origin vX.Y.Z`. This triggers CI (Stage 1).
-6. **Set environment variables** — go to your password manager and copy the relevant env variables into the terminal
-7. **Run local signing** — `./scripts/sign-and-deploy.sh all X.Y.Z`. Plug in the PIV USB key first. The script will:
-   - Download unsigned CI artifacts (after auto-waiting for CI to finish)
-   - Sign macOS (will prompt for `APPLE_SIGN_PASS` if not set)
-   - Sign Windows (will prompt for `EV_SIGN_PIN` if not set)
-   - Generate Tauri update manifest and copy to `website/public/standalone-latest.json`
-   - Create the GitHub Release with all signed assets
+6. **Set environment variables** — copy the relevant secrets into the terminal from your password manager (see [Environment / secrets](#environment--secrets) for the list).
+7. **Run local signing** — plug in the PIV USB key, then `./scripts/sign-and-deploy.sh all X.Y.Z`. The script waits for CI, downloads unsigned artifacts, signs macOS + Windows, generates the Tauri update manifest into `website/public/standalone-latest.json`, and creates the GitHub Release. Run `./scripts/sign-and-deploy.sh --help` for resume-after-failure subcommands.
 8. **Deploy website** — commit the updated `website/public/standalone-latest.json` and deploy mouseterm.com so the updater endpoint is live.
 9. **Verify the release**
    - Check GitHub Release assets are correct
@@ -43,11 +33,7 @@ Human-driven steps, in order:
 
 ## Versioning
 
-A single version number (`X.Y.Z`) applies to all artifacts. The version lives in three places that must stay in sync:
-
-- `standalone/src-tauri/tauri.conf.json` → `version`
-- `vscode-ext/package.json` → `version`
-- `lib/package.json` → `version` (if applicable)
+A single version number (`X.Y.Z`) applies to all artifacts. `bump-version.sh` is the source of truth for which files carry it.
 
 A release is triggered by pushing a tag: `v0.1.0`. This is intentionally a single tag (not separate `vscode-ext/v*` and `standalone/v*` tags) because we want one changelog entry for both.
 
@@ -121,42 +107,20 @@ This runs in CI because VSCode Marketplace publishing uses PAT tokens (no hardwa
 
 ## Stage 2: Local script
 
-`scripts/sign-and-deploy.sh` — modeled on the Type The Rhythm script.
+`scripts/sign-and-deploy.sh` is the source of truth for the local pipeline (download, sign, notarize, package, release). Run with no args or `--help` to see subcommands.
 
-### Local directory layout
-
-The script uses a three-directory layout under `release-signed/`:
-
-| Directory | Purpose | Mutated? |
-|-----------|---------|----------|
-| `downloads/` | Raw CI artifacts, cached per-artifact | **Never** — read-only after download |
-| `work/` | Fresh copy of downloads for each signing run | Yes — codesign, jsign, and NSIS path patching all modify files here |
-| `release-assets/` | Final signed artifacts for GitHub Release upload | Yes — built from signed work copies |
-
-**Key invariant:** Downloaded artifacts in `downloads/` are never modified. All signing and patching operates on copies in `work/`. This means:
-- Re-running a signing step after a failure doesn't require re-downloading
-- Modifying the signing scripts (e.g. `patch-nsis-paths.pl`) doesn't require re-downloading
-- Per-artifact caching: each artifact has its own download marker, so a partial download failure only retries the failed artifacts
-
-### Prerequisites
+### One-time setup
 
 ```bash
 brew install gh jsign
 gh auth login
 xcode-select --install
-tauri signer generate  # one-time: creates update signing keypair
+tauri signer generate  # creates the Tauri update signing keypair
 ```
-
-### Signing identity
-
-| Platform | Tool | Identity |
-|----------|------|----------|
-| macOS | codesign + notarytool | Developer ID Application: DiffPlug LLC (LXW8WAGWYX) |
-| Windows | jsign | PIV hardware key, alias AUTHENTICATION, TSA http://ts.ssl.com |
 
 ### Two signing layers
 
-There are two independent signing layers. OS signing proves the executable is from DiffPlug; Tauri signing proves the update bundle hasn't been tampered with in transit. Both are required — they protect different things at different points in time.
+OS signing proves the executable is from DiffPlug; Tauri signing proves the update bundle hasn't been tampered with in transit. Both are required — they protect different things at different points in time.
 
 | Layer | What it signs | Who verifies | What happens without it |
 |-------|--------------|--------------|------------------------|
@@ -172,52 +136,9 @@ codesign/jsign the executable
       → upload bundle + .sig to GitHub Release
 ```
 
-### Flow
-
-```
-./scripts/sign-and-deploy.sh all 0.1.0
-```
-
-1. **Wait for CI** — find the workflow run for tag `v0.1.0`, poll until complete
-2. **Download artifacts** — `gh run download` into `release-signed/`
-3. **Sign macOS** (OS layer)
-   - Fix any framework symlink issues (artifact downloads flatten symlinks)
-   - Sign nested code explicitly first: `Contents/MacOS/*`, `*.node`, `*.dylib`, and `spawn-helper`
-   - Sign the Node sidecar with `standalone/src-tauri/entitlements-macos-node.plist`
-   - Sign the outer `.app` without `--deep`; `--deep` would re-sign Node and drop its entitlements
-   - Verify the signed Node sidecar launches and can load `node-pty`
-   - Notarize via `xcrun notarytool submit --wait`
-   - `xcrun stapler staple`
-   - Re-package signed `.app` into `.dmg` (for direct download) and `.tar.gz` (for updater)
-4. **Sign Windows** (OS layer)
-   - Sign the inner exe: `jsign --storetype PIV --storepass "$PIN" --alias AUTHENTICATION --tsaurl http://ts.ssl.com --tsmode RFC3161 MouseTerm.exe`
-   - Rebuild the NSIS installer around the signed exe
-   - Sign the installer exe: `jsign ... MouseTerm-windows-x64-setup.exe`
-5. **Sign update bundles** (Tauri layer)
-   - Tauri-sign each update bundle using `TAURI_SIGNING_PRIVATE_KEY`
-   - Current Tauri v2 output mode (`createUpdaterArtifacts: true`) uses the NSIS installer `.exe` directly on Windows and the `.AppImage` directly on Linux
-   - This produces a `.sig` file per bundle
-   - Build the update manifest JSON (see below) with the `.sig` contents inline
-6. **Create GitHub Release**
-   - `gh release create v0.1.0 --title "v0.1.0" --notes-file CHANGELOG.md`
-   - Upload: update bundles (`.tar.gz`, `.exe`, `.AppImage`)
-   - If a draft release already exists for the tag, publish it after uploading assets
-   - Verify the tag exists on the remote before creating or publishing the release
-7. **Verify** — spot-check signatures, confirm release assets are correct
-
 ### Packaged app logging
 
 Windows release builds use the GUI subsystem, so launching `mouseterm.exe` from a terminal returns immediately and does not stream stdout/stderr. The Tauri backend writes sidecar diagnostics to `%LOCALAPPDATA%\MouseTerm\mouseterm.log` on Windows, or to `$TMPDIR/mouseterm.log` on other platforms. Set `MOUSETERM_LOG_FILE` to override the path.
-
-### Resuming after failure
-
-```bash
-./scripts/sign-and-deploy.sh resume 0.1.0  # re-download + sign + release
-./scripts/sign-and-deploy.sh sign-mac       # re-sign macOS only
-./scripts/sign-and-deploy.sh sign-win       # re-sign Windows only
-./scripts/sign-and-deploy.sh sign-updates 0.1.0  # regenerate updater signatures from existing signed work
-./scripts/sign-and-deploy.sh release 0.1.0  # re-create GitHub Release only
-```
 
 ## Artifact filenames
 
@@ -245,33 +166,11 @@ These can later be migrated to `mouseterm.com/download/...` URLs backed by Cloud
 
 ### Configuration
 
-In `standalone/src-tauri/tauri.conf.json`:
+Updater config lives in [tauri.conf.json](../../standalone/src-tauri/tauri.conf.json) (`bundle.createUpdaterArtifacts`, `plugins.updater.{pubkey,endpoints}`) and the plugin is registered in [lib.rs](../../standalone/src-tauri/src/lib.rs) via `tauri_plugin_updater`.
 
-```json
-{
-  "bundle": {
-    "createUpdaterArtifacts": true
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "<TAURI_SIGNING_PUBLIC_KEY>",
-      "endpoints": [
-        "https://mouseterm.com/standalone-latest.json"
-      ]
-    }
-  }
-}
-```
-
-`createUpdaterArtifacts: true` is the Tauri v2 artifact mode. In this mode Windows updates use the NSIS installer `.exe` directly, Linux updates use the `.AppImage` directly, and macOS updates use the `.app.tar.gz` archive. Do not configure `"v1Compatible"` unless intentionally producing legacy `.nsis.zip` and `.AppImage.tar.gz` updater bundles for old Tauri v1 clients.
-
-And in the Rust app bootstrap (`standalone/src-tauri/src/lib.rs`), the updater plugin is registered with:
-
-```rust
-.plugin(tauri_plugin_updater::Builder::new().build())
-```
-
-`standalone/src-tauri/Cargo.toml` must include `tauri-plugin-updater = "2"` so the configured updater endpoint is actually active at runtime.
+Design notes that aren't obvious from the files:
+- `createUpdaterArtifacts: true` is the Tauri v2 artifact mode: Windows updates use the NSIS installer `.exe` directly, Linux updates use the `.AppImage` directly, and macOS uses `.app.tar.gz`.
+- Do **not** set `"v1Compatible"` unless you're intentionally producing legacy `.nsis.zip` / `.AppImage.tar.gz` bundles for old Tauri v1 clients.
 
 ### Update manifest (`standalone-latest.json`)
 
