@@ -348,10 +348,8 @@ function Home() {
         const iconCurrentOffset = Math.max(0, initialOffset - runwayScroll);
         const videoTranslateY = iconCurrentOffset > 0
           ? iconCurrentOffset
-          : slideAmount > 0 ? -Math.round(slideAmount) : 0;
-        video.style.transform = videoTranslateY !== 0
-          ? `translateY(${Math.round(videoTranslateY)}px)`
-          : '';
+          : slideAmount > 0 ? -slideAmount : 0;
+        video.style.transform = `translate3d(0, ${videoTranslateY.toFixed(3)}px, 0)`;
 
         // Hook text: visible until the icon nearly finishes rising, then fades out.
         if (hookRef.current) {
@@ -368,7 +366,7 @@ function Home() {
         const heroOffset = Math.min(slideAmount, maxHeroOffset);
         if (heroRef.current) {
           heroRef.current.style.transform = heroOffset > 0
-            ? `translateY(-${Math.round(heroOffset)}px)`
+            ? `translate3d(0, -${heroOffset.toFixed(3)}px, 0)`
             : '';
         }
       });
@@ -434,13 +432,16 @@ function Home() {
         muted
         playsInline
         preload="auto"
-        className="fixed bottom-0 left-0 w-full object-contain object-bottom z-0"
-        style={{ height: "min(500px, calc(100vh - 420px))" }}
+        className="fixed bottom-0 left-0 w-full object-contain object-bottom z-0 will-change-transform"
+        style={{
+          height: "min(500px, calc(100vh - 420px))",
+          transform: "translate3d(0, 0, 0)",
+        }}
       />
 
       {/* ── Pinned scroll runway: hero text overlay ── */}
       <div ref={runwayRef} style={{ height: `${RUNWAY_VH}vh` }}>
-        <div ref={heroRef} className="sticky top-0 flex flex-col items-center z-[1]" style={{ height: "100vh" }}>
+        <div ref={heroRef} className="sticky top-0 flex flex-col items-center z-[1] will-change-transform" style={{ height: "100vh" }}>
           {/* Hook copy — visible on load, fades out on first scroll */}
           <div
             ref={hookRef}
