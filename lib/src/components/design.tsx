@@ -18,6 +18,10 @@ export const TERMINAL_BOTTOM_RADIUS_CLASS = 'rounded-b-lg';
 export const TERMINAL_SELECTION_BORDER_RADIUS = `${TERMINAL_BORDER_RADIUS_REM}rem`;
 export const DOOR_SELECTION_BORDER_RADIUS = `${TERMINAL_BORDER_RADIUS_REM}rem ${TERMINAL_BORDER_RADIUS_REM}rem 0 0`;
 
+// Letter-spacing for the small semibold TODO pill — wider tracking keeps the
+// tiny label legible. Shared so both pill sites stay in sync.
+export const TODO_PILL_TRACKING_CLASS = 'tracking-[0.08em]';
+
 export function PopupButtonRow({
   className,
   ...props

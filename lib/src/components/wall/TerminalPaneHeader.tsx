@@ -15,7 +15,7 @@ import {
 } from '@phosphor-icons/react';
 import { HeaderActionButton } from '../HeaderActionButton';
 import { TodoAlertDialog } from '../TodoAlertDialog';
-import { TERMINAL_TOP_RADIUS_CLASS } from '../design';
+import { TERMINAL_TOP_RADIUS_CLASS, TODO_PILL_TRACKING_CLASS } from '../design';
 import { bellIconClass } from '../bell-icon-class';
 import { useTodoPillContent } from '../TodoPillBody';
 import {
@@ -43,7 +43,7 @@ import {
 import { MouseOverrideBanner } from './MouseOverrideBanner';
 
 const tabVariant = tv({
-  base: `flex h-full w-full cursor-grab items-center gap-1.5 ${TERMINAL_TOP_RADIUS_CLASS} pl-2 pr-[5px] text-sm leading-none font-mono tracking-normal select-none active:cursor-grabbing`,
+  base: `flex h-full w-full cursor-grab items-center gap-1.5 ${TERMINAL_TOP_RADIUS_CLASS} pl-2 pr-[5px] text-sm leading-none font-mono select-none active:cursor-grabbing`,
   variants: {
     state: {
       active: 'bg-header-active-bg text-header-active-fg',
@@ -127,7 +127,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
       <div className="flex flex-1 min-w-0 items-center gap-2">
         {isRenaming ? (
           <input
-            className="bg-transparent outline-none border-none text-inherit font-medium font-mono tracking-normal w-full min-w-0 p-0 m-0"
+            className="bg-transparent outline-none border-none text-inherit font-medium font-mono w-full min-w-0 p-0 m-0"
             defaultValue={api.title}
             autoFocus
             ref={(el) => el?.select()}
@@ -194,7 +194,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
             type="button"
             data-session-todo-for={api.id}
             data-flourishing={todoPill.flourishing ? 'true' : 'false'}
-            className="todo-pill-shell shrink-0 rounded border border-current px-1.5 py-px text-xs font-semibold tracking-[0.08em] transition-colors hover:bg-current/10"
+            className={`todo-pill-shell shrink-0 rounded border border-current px-1.5 py-px text-xs font-semibold ${TODO_PILL_TRACKING_CLASS} transition-colors hover:bg-current/10`}
             aria-label="Dismiss TODO"
             aria-hidden={todoPill.flourishing ? true : undefined}
             onMouseDown={(e) => e.stopPropagation()}
