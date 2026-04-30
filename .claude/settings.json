@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(agent-browser:*)",
+      "Bash(npx tsc:*)",
+      "Bash(magick identify:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm --filter mouseterm-lib test:*)",
+      "Bash(pnpm --filter mouseterm-standalone test:*)",
+      "mcp__Claude_Preview__preview_screenshot"
+    ]
+  }
+}

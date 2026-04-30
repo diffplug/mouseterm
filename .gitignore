@@ -51,4 +51,10 @@ chromatic-diagnostics.json
 # symlinked skill files
 .agents/skills/
 .codex
-.claude
+
+# Claude Code: per-user state and skill symlinks are local-only.
+# .claude/settings.json and explicitly-whitelisted commands are shared.
+.claude/settings.local.json
+.claude/worktrees/
+.claude/commands/*
+!.claude/commands/release-notes.md

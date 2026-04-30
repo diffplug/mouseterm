@@ -16,7 +16,8 @@ Every release produces three artifact groups under one version and changelog:
 Human-driven steps, in order:
 
 1. **Update dependencies page** — run `node website/scripts/generate-deps.js` and review the diff in `website/src/data/dependencies.json`. Commit if changed.
-2. **Finalize changelog** — promote the `[Unreleased]` section in `CHANGELOG.md` to `[X.Y.Z]` with today's date. Write release notes covering both standalone and VSCode changes.
+2. **Draft release notes and pick version** — run `/release-notes` in Claude Code at the repo root. The slash command (defined in [.claude/commands/release-notes.md](../../.claude/commands/release-notes.md)) walks the merge commits and squash-merged PRs since the last tag, drafts a Keep a Changelog block, and recommends a `breaking.added.bugfix` version bump. Review and edit the output, paste it into `CHANGELOG.md` replacing the `[Unreleased]` section, and use the recommended `X.Y.Z` in the next step.
+
 3. **Bump versions** — run `./scripts/bump-version.sh X.Y.Z`. This edits all four files in lockstep and runs `cargo check` so `Cargo.lock`'s `mouseterm` entry stays in sync:
    - [standalone/src-tauri/Cargo.toml](../../standalone/src-tauri/Cargo.toml)
    - [standalone/src-tauri/Cargo.lock](../../standalone/src-tauri/Cargo.lock) (auto-synced by cargo)
