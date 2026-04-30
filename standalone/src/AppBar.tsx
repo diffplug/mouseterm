@@ -149,10 +149,10 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
           className="absolute left-0 top-full z-50 mt-1 w-max flex-col py-1"
         >
           {shells.map((shell) => {
-            const isSelected = shell.path === selected?.path;
+            const isSelected = shell.name === selected?.name;
             return (
               <button
-                key={shell.path}
+                key={shell.name}
                 role="menuitemradio"
                 aria-checked={isSelected}
                 className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-surface-raised"

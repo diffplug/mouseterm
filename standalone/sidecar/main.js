@@ -62,3 +62,18 @@ rl.on('line', (line) => {
 
 rl.on('close', () => { mgr.killAll(); process.exit(0); });
 process.on('SIGTERM', () => { mgr.killAll(); process.exit(0); });
+
+// Watchdog: if the Tauri host crashes or is force-killed, stdin EOF isn't
+// always delivered (esp. on Windows), leaving us as an orphan that locks
+// the install directory. Poll the parent PID and self-exit when it's gone.
+const parentPid = process.ppid;
+if (parentPid && parentPid > 0) {
+  setInterval(() => {
+    try {
+      process.kill(parentPid, 0);
+    } catch {
+      mgr.killAll();
+      process.exit(0);
+    }
+  }, 2000).unref();
+}
