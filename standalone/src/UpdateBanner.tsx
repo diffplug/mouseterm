@@ -34,7 +34,7 @@ export function UpdateBanner({ state, onDismiss, onOpenChangelog }: UpdateBanner
   }
 
   return (
-    <span className="flex items-center gap-1.5 pb-1 text-sm font-mono tracking-[0.06em] text-muted">
+    <span className="flex items-center gap-1.5 pb-1 text-sm font-mono text-muted">
       <span className="truncate">{message}</span>
       {showChangelog && (
         <button
