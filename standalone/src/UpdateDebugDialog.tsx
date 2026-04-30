@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { XIcon } from '@phosphor-icons/react';
-import { openIssueSearch, openNewIssue } from './updater';
+import { openIssueSearch } from './updater';
 
 interface UpdateDebugDialogProps {
   open: boolean;
@@ -46,7 +46,8 @@ export function UpdateDebugDialog({ open, onClose, failure, body }: UpdateDebugD
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      className="fixed inset-0 z-50 m-auto max-h-[80vh] w-[min(560px,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-border bg-surface-raised p-0 text-foreground shadow-2xl backdrop:bg-black/50"
+      style={{ width: '560px', maxWidth: 'calc(100vw - 2rem)' }}
+      className="fixed inset-0 z-50 m-auto max-h-[80vh] overflow-y-auto rounded-lg border border-border bg-surface-raised p-0 text-foreground shadow-2xl backdrop:bg-black/50"
     >
       <div className="sticky top-0 flex items-center justify-between border-b border-border bg-surface-raised px-4 py-3">
         <span className="text-sm font-medium">Update failed</span>
@@ -88,7 +89,18 @@ export function UpdateDebugDialog({ open, onClose, failure, body }: UpdateDebugD
         <div className="space-y-1">
           <p className="text-sm font-medium">2. File a new bug</p>
           <p className="text-xs text-muted">
-            Copy this report, then paste it into the new issue page.
+            If you can't find an existing bug,{' '}
+            <button
+              type="button"
+              onClick={handleCopy}
+              disabled={!body}
+              className="hover:underline disabled:opacity-50"
+              style={{ color: 'var(--vscode-textLink-foreground)' }}
+            >
+              copy this report
+            </button>
+            {copied && <span className="ml-1 text-foreground">— copied!</span>}
+            {' '}and paste it into a new issue.
           </p>
           <textarea
             readOnly
@@ -96,24 +108,6 @@ export function UpdateDebugDialog({ open, onClose, failure, body }: UpdateDebugD
             className="block h-48 w-full resize-y rounded border border-border bg-app-bg p-2 text-xs font-mono"
             onFocus={(e) => e.currentTarget.select()}
           />
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={handleCopy}
-              disabled={!body}
-              className="rounded border border-border px-2 py-1 text-xs hover:bg-foreground/10 disabled:opacity-50"
-            >
-              {copied ? 'Copied!' : 'Copy report'}
-            </button>
-            <button
-              type="button"
-              onClick={openNewIssue}
-              className="rounded border border-border px-2 py-1 text-xs hover:bg-foreground/10"
-              style={{ color: 'var(--vscode-textLink-foreground)' }}
-            >
-              Open new issue →
-            </button>
-          </div>
         </div>
       </div>
     </dialog>

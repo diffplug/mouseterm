@@ -85,10 +85,6 @@ export function openIssueSearch(error: string): void {
   );
 }
 
-export function openNewIssue(): void {
-  openUrl(`${GITHUB_REPO_URL}/issues/new`, 'new issue');
-}
-
 // --- Lifecycle ---
 
 export function startUpdateCheck(): void {
