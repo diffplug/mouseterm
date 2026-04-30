@@ -34,9 +34,9 @@ mouseterm uses **breaking.added.bugfix** semantics (semver-shaped, but named for
 
 Pick the highest-severity bump that any single change requires.
 
-## 3. Output
+## 3. Edit `CHANGELOG.md`
 
-Write the result as a Keep a Changelog block ready to paste into `CHANGELOG.md`, in this exact shape:
+Edit `CHANGELOG.md` directly — insert a new section above the most recent existing release, in this exact shape:
 
 ```markdown
 ## [X.Y.Z] - YYYY-MM-DD
@@ -44,9 +44,9 @@ Write the result as a Keep a Changelog block ready to paste into `CHANGELOG.md`,
 _Recommended bump: **<breaking|added|bugfix>** — <one-sentence justification naming the change that drives it>._
 
 ### Added
-- [standalone] Short user-facing summary ([#123](https://github.com/diffplug/mouseterm/pull/123))
-- [vscode] ...
-- [both] ...
+- Summary that affects both artifacts (no leading emoji) ...
+- 🔌 VS Code-only summary ...
+- 🖥️ Standalone-only user-facing summary ([#123](https://github.com/diffplug/mouseterm/pull/123)).
 
 ### Changed
 - ...
@@ -57,11 +57,16 @@ _Recommended bump: **<breaking|added|bugfix>** — <one-sentence justification n
 
 Rules for the entries:
 - One line per PR, written in user-facing terms (not "refactored X" — say what the user sees)
-- Tag each entry with `[standalone]`, `[vscode]`, or `[both]` based on which artifact ships the change
+- Lead each entry with the artifact emoji from the header at the top of `CHANGELOG.md`: 🖥️ for standalone-only, 🔌 for VS Code plugin-only, no emoji for changes that ship in both. Decide based on whether the user-visible behavior actually surfaces in each artifact — a PR that touches `lib/` is *both* only if both artifacts consume that code path; otherwise it's whichever one ships it.
+- Within each of Added / Changed / Fixed, sort entries by artifact: items that affect both (no emoji) first, then VS Code-only (🔌), then standalone-only (🖥️).
 - Link the PR using `https://github.com/diffplug/mouseterm/pull/<N>`. For direct-push commits with no PR, link the commit instead: `https://github.com/diffplug/mouseterm/commit/<sha>`
 - Omit any of Added / Changed / Fixed if it would be empty
 - Use today's date (`YYYY-MM-DD`) and the recommended `X.Y.Z`
 
-After printing the block, remind the user:
+Do not ask the user to paste it themselves — make the edit. The earlier flat-bullet entries (0.8.0 and below) are legacy; do not reformat them.
 
-> Review and edit, then paste into `CHANGELOG.md` (replacing the `[Unreleased]` section) and run `./scripts/bump-version.sh X.Y.Z` with the recommended version.
+## 4. Run the version bump
+
+After saving the changelog edit, run `./scripts/bump-version.sh X.Y.Z` with the recommended version. Show the script's output so the user can review the diff stat. Then remind the user of the next step:
+
+> Review the diff, then `git commit -am 'Release vX.Y.Z'` and `git tag vX.Y.Z`.
