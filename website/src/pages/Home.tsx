@@ -218,6 +218,7 @@ function Home() {
   const headerBrandRef = useRef<HTMLAnchorElement>(null);
   const hookRef = useRef<HTMLDivElement>(null);
   const [installGuide, setInstallGuide] = useState<string | null>(null);
+  const [heroVideoSrc, setHeroVideoSrc] = useState<string | undefined>();
 
   useEffect(() => {
     const videoElement = videoRef.current;
@@ -347,6 +348,7 @@ function Home() {
     let unlockPending = false;
     function unlock() {
       if (unlocked || unlockPending) return;
+      if (!video.currentSrc) return;
       unlockPending = true;
       video.play().then(() => {
         video.pause();
@@ -366,7 +368,25 @@ function Home() {
     };
     video.addEventListener("canplaythrough", handleCanPlayThrough, { once: true });
     video.addEventListener("loadedmetadata", scheduleScrollSync);
+    video.addEventListener("loadeddata", scheduleScrollSync);
+    video.addEventListener("canplay", scheduleScrollSync);
     video.addEventListener("durationchange", scheduleScrollSync);
+
+    let objectUrl: string | null = null;
+    const abortController = new AbortController();
+    fetch(videoUrl, { cache: "force-cache", signal: abortController.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Failed to load hero video: ${response.status}`);
+        return response.blob();
+      })
+      .then((blob) => {
+        if (abortController.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setHeroVideoSrc(objectUrl);
+      })
+      .catch(() => {
+        if (!abortController.signal.aborted) setHeroVideoSrc(videoUrl);
+      });
 
     function onScroll() {
       if (!unlocked) unlock();
@@ -381,7 +401,11 @@ function Home() {
       window.removeEventListener("touchstart", unlock);
       video.removeEventListener("canplaythrough", handleCanPlayThrough);
       video.removeEventListener("loadedmetadata", scheduleScrollSync);
+      video.removeEventListener("loadeddata", scheduleScrollSync);
+      video.removeEventListener("canplay", scheduleScrollSync);
       video.removeEventListener("durationchange", scheduleScrollSync);
+      abortController.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, []);
 
@@ -392,7 +416,7 @@ function Home() {
       {/* ── Fixed video layer — bottom-anchored, scrubs for the full runway ── */}
       <video
         ref={videoRef}
-        src={videoUrl}
+        src={heroVideoSrc}
         poster={posterUrl}
         muted
         playsInline
