@@ -84,7 +84,7 @@ export function ThemePicker({ variant, className = '', defaultThemeId }: ThemePi
     : 'relative flex items-center';
   const triggerClass = isPlayground
     ? 'flex w-[116px] min-w-0 cursor-pointer items-baseline justify-end gap-1.5 rounded-md bg-[var(--color-header-inactive-bg)] text-right text-sm text-[var(--color-header-inactive-fg)] sm:w-40 md:w-56'
-    : 'flex h-6 cursor-pointer items-center gap-1 rounded px-2 text-xs text-muted transition-colors hover:bg-surface-raised hover:text-foreground';
+    : 'flex h-5 cursor-pointer items-center gap-1 rounded px-1.5 text-xs text-inherit transition-colors hover:bg-current/10';
   const menuClass = isPlayground
     ? 'fixed top-16 right-4 left-4 z-50 overflow-hidden rounded border font-mono shadow-2xl md:absolute md:top-full md:right-0 md:left-auto md:mt-2 md:w-[22rem]'
     : 'absolute right-0 top-full z-50 mt-1 w-[280px] overflow-hidden rounded border font-mono shadow-2xl';
