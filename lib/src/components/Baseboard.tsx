@@ -3,6 +3,7 @@ import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { Door } from './Door';
 import { DoorElementsContext } from './wall/wall-context';
 import type { DooredItem } from './wall/wall-types';
+import { IS_MAC } from '../lib/platform';
 import { DEFAULT_ACTIVITY_STATE, getActivitySnapshot, subscribeToActivity } from '../lib/terminal-registry';
 
 export interface BaseboardProps {
@@ -60,7 +61,9 @@ export function Baseboard({ items, onReattach, notice }: BaseboardProps) {
   }, [itemKey]);
 
   // Keyboard shortcut hint — only show when there's enough space and no doors
-  const shortcutHint = 'LCmd → RCmd to enter command mode';
+  const shortcutHint = IS_MAC
+    ? 'LCmd → RCmd to enter command mode'
+    : 'LShift → RShift to enter command mode';
   const showHint = items.length === 0 && containerWidth > 350;
 
   // Calculate which doors fit
@@ -148,19 +151,19 @@ export function Baseboard({ items, onReattach, notice }: BaseboardProps) {
           );
         })}
       </div>
-      <button ref={arrowMeasureEl} className="absolute -left-[9999px] flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-sm font-medium font-mono tracking-[0.06em] text-muted" aria-hidden tabIndex={-1}>
+      <button ref={arrowMeasureEl} className="absolute -left-[9999px] flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-sm font-medium font-mono text-muted" aria-hidden tabIndex={-1}>
         9 more <CaretRightIcon size={10} weight="bold" />
       </button>
 
       {items.length === 0 && showHint && (
-        <span className="truncate pb-1 text-sm font-mono tracking-[0.06em] text-muted">
+        <span className="truncate pb-1 text-sm font-mono text-muted">
           {shortcutHint}
         </span>
       )}
 
       {hiddenLeft > 0 && (
         <button
-          className="flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-sm font-medium font-mono tracking-[0.06em] text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          className="flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-sm font-medium font-mono text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
           onClick={scrollLeft}
         >
           <CaretLeftIcon size={10} weight="bold" />
@@ -184,7 +187,7 @@ export function Baseboard({ items, onReattach, notice }: BaseboardProps) {
 
       {hiddenRight > 0 && (
         <button
-          className="ml-auto flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-sm font-medium font-mono tracking-[0.06em] text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          className="ml-auto flex h-5 shrink-0 items-center gap-1 rounded px-1.5 pb-px text-sm font-medium font-mono text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
           onClick={scrollRight}
         >
           {hiddenRight} more

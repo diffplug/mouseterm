@@ -18,6 +18,10 @@ export const TERMINAL_BOTTOM_RADIUS_CLASS = 'rounded-b-lg';
 export const TERMINAL_SELECTION_BORDER_RADIUS = `${TERMINAL_BORDER_RADIUS_REM}rem`;
 export const DOOR_SELECTION_BORDER_RADIUS = `${TERMINAL_BORDER_RADIUS_REM}rem ${TERMINAL_BORDER_RADIUS_REM}rem 0 0`;
 
+// Letter-spacing for the small semibold TODO pill — wider tracking keeps the
+// tiny label legible. Shared so both pill sites stay in sync.
+export const TODO_PILL_TRACKING_CLASS = 'tracking-[0.08em]';
+
 export function PopupButtonRow({
   className,
   ...props
@@ -49,6 +53,26 @@ export const popupButton = tv({
 });
 
 export type PopupButtonVariants = VariantProps<typeof popupButton>;
+
+// Chrome buttons: icon-only and labeled triggers used in the standalone app
+// bar, plus the Windows/Linux native-style window controls. All inherit text
+// color from the surrounding chrome so they tint with the active/inactive
+// header palette — except `windowClose`, whose hover red matches the native
+// OS close button across themes.
+export const chromeButton = tv({
+  base: 'flex items-center transition-colors',
+  variants: {
+    kind: {
+      icon: 'h-5 min-w-5 justify-center rounded hover:bg-current/10',
+      labeled: 'h-5 min-w-5 gap-1 rounded px-1.5 text-xs text-inherit hover:bg-current/10',
+      window: 'w-11 justify-center text-inherit hover:bg-current/10',
+      windowClose: 'w-11 justify-center text-inherit hover:bg-[#b92a1b] hover:text-white',
+    },
+  },
+  defaultVariants: { kind: 'icon' },
+});
+
+export type ChromeButtonVariants = VariantProps<typeof chromeButton>;
 
 /** Keyboard shortcut rendered as `[keys]` in muted color. Use everywhere key
  *  bindings appear in UI text so the bracket convention is consistent. */

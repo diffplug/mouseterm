@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { CaretDownIcon, MinusIcon, CornersOutIcon, CornersInIcon, XIcon, PlusIcon, CheckIcon } from '@phosphor-icons/react';
 import { ThemePicker } from '../../lib/src/components/ThemePicker';
-import { PopupButtonRow } from '../../lib/src/components/design';
+import { PopupButtonRow, chromeButton } from '../../lib/src/components/design';
 import { setDefaultShellOpts } from '../../lib/src/lib/shell-defaults';
+import { IS_MAC } from '../../lib/src/lib/platform';
 
 export interface ShellEntry {
   name: string;
@@ -15,10 +16,19 @@ interface AppBarProps {
   shells: ShellEntry[];
 }
 
-const IS_MAC = typeof (navigator as any).userAgentData?.platform === 'string'
-  ? (navigator as any).userAgentData.platform === 'macOS'
-  : /Mac/.test(navigator.platform);
 const appWindow = getCurrentWindow();
+
+function useAppWindowFocused(): boolean {
+  const [focused, setFocused] = useState(() => document.hasFocus());
+
+  useEffect(() => {
+    appWindow.isFocused().then(setFocused);
+    const unlisten = appWindow.onFocusChanged(({ payload }) => setFocused(payload));
+    return () => { unlisten.then(fn => fn()); };
+  }, []);
+
+  return focused;
+}
 
 // ── Tooltip wrapper ────────────────────────────────────────────────────────
 
@@ -52,7 +62,7 @@ function WinControls() {
     <div className="flex items-stretch self-stretch">
       <Tip label="Minimize">
         <button
-          className="flex w-11 items-center justify-center text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          className={chromeButton({ kind: 'window' })}
           onClick={() => appWindow.minimize()}
           aria-label="Minimize"
         >
@@ -61,7 +71,7 @@ function WinControls() {
       </Tip>
       <Tip label={maximized ? 'Restore' : 'Maximize'}>
         <button
-          className="flex w-11 items-center justify-center text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          className={chromeButton({ kind: 'window' })}
           onClick={() => { appWindow.toggleMaximize(); }}
           aria-label={maximized ? 'Restore' : 'Maximize'}
         >
@@ -72,7 +82,7 @@ function WinControls() {
       </Tip>
       <Tip label="Close">
         <button
-          className="flex w-11 items-center justify-center text-muted transition-colors hover:bg-error/90 hover:text-white"
+          className={chromeButton({ kind: 'windowClose' })}
           onClick={() => appWindow.close()}
           aria-label="Close"
         >
@@ -124,7 +134,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
       {/* Primary action: [+] spawns a new terminal with the selected shell */}
       <Tip label={`New ${selected?.name ?? 'terminal'}`}>
         <button
-          className="flex h-6 items-center rounded-l px-1.5 text-xs text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          className={chromeButton({ kind: 'icon' })}
           onClick={() => selected && spawn(selected)}
           aria-label={`New ${selected?.name ?? 'terminal'}`}
         >
@@ -134,7 +144,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
       {/* Selector: shows current shell name + caret; click to choose a different shell */}
       <Tip label="Choose shell">
         <button
-          className="flex h-6 items-center gap-1 rounded-r px-2 text-xs text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          className={chromeButton({ kind: 'labeled' })}
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           aria-haspopup="menu"
@@ -155,7 +165,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
                 key={shell.name}
                 role="menuitemradio"
                 aria-checked={isSelected}
-                className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-surface-raised"
+                className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-raised"
                 onClick={() => {
                   setSelected(shell);
                   setOpen(false);
@@ -177,10 +187,16 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
 // ── AppBar ─────────────────────────────────────────────────────────────────
 
 export function AppBar({ shells }: AppBarProps) {
+  const windowFocused = useAppWindowFocused();
+
   return (
     <div
       data-tauri-drag-region
-      className={`flex h-[30px] shrink-0 select-none items-center border-b border-border bg-app-bg text-app-fg text-xs ${
+      className={`flex h-[30px] shrink-0 select-none items-center text-xs ${
+        windowFocused
+          ? 'bg-header-active-bg text-header-active-fg'
+          : 'bg-header-inactive-bg text-header-inactive-fg'
+      } ${
         IS_MAC ? 'pl-[78px]' : ''
       }`}
     >
