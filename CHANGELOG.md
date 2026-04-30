@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/). Release checklist in [deploy.md](docs/specs/deploy.md).
 
+## [0.8.0] - 2026-04-29
+- Add intuitive shortcuts alongside the tmux shortcuts.
+- Simplify the TODO behavior to clear when ENTER pressed within a session, got rid of the "soft TODO" system.
+- Improve VS Code theme translation.
+  - Added a "Theme debugger" to assist with this.
+- Fix terminal selection on Windows.
+
 ## [0.7.0] - 2026-04-22
 - Overhaul the theming system.
 - Overhaul mouse and clipboard handling.
