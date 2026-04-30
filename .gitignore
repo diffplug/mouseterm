@@ -56,3 +56,5 @@ chromatic-diagnostics.json
 # .claude/settings.json and explicitly-whitelisted commands are shared.
 .claude/settings.local.json
 .claude/worktrees/
+.claude/commands/*
+!.claude/commands/release-notes.md
