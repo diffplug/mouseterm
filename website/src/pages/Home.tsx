@@ -221,6 +221,30 @@ function Home() {
   const [heroVideoSrc, setHeroVideoSrc] = useState<string | undefined>();
 
   useEffect(() => {
+    let objectUrl: string | null = null;
+    const abortController = new AbortController();
+
+    fetch(videoUrl, { cache: "force-cache", signal: abortController.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Failed to load hero video: ${response.status}`);
+        return response.blob();
+      })
+      .then((blob) => {
+        if (abortController.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setHeroVideoSrc(objectUrl);
+      })
+      .catch(() => {
+        if (!abortController.signal.aborted) setHeroVideoSrc(videoUrl);
+      });
+
+    return () => {
+      abortController.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, []);
+
+  useEffect(() => {
     const videoElement = videoRef.current;
     const runwayElement = runwayRef.current;
     if (!videoElement || !runwayElement) return;
@@ -236,7 +260,6 @@ function Home() {
 
       requestAnimationFrame(() => {
         ticking = false;
-        if (!video || !runway) return;
 
         // How far through the scroll runway (0–1, clamped for animations)
         const rect = runway.getBoundingClientRect();
@@ -361,32 +384,14 @@ function Home() {
         unlockPending = false;
       });
     }
-    window.addEventListener("touchstart", unlock, { once: true, passive: true });
+    window.addEventListener("touchstart", unlock, { passive: true });
     const handleCanPlayThrough = () => {
       unlocked = true;
       scheduleScrollSync();
     };
     video.addEventListener("canplaythrough", handleCanPlayThrough, { once: true });
     video.addEventListener("loadedmetadata", scheduleScrollSync);
-    video.addEventListener("loadeddata", scheduleScrollSync);
-    video.addEventListener("canplay", scheduleScrollSync);
     video.addEventListener("durationchange", scheduleScrollSync);
-
-    let objectUrl: string | null = null;
-    const abortController = new AbortController();
-    fetch(videoUrl, { cache: "force-cache", signal: abortController.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error(`Failed to load hero video: ${response.status}`);
-        return response.blob();
-      })
-      .then((blob) => {
-        if (abortController.signal.aborted) return;
-        objectUrl = URL.createObjectURL(blob);
-        setHeroVideoSrc(objectUrl);
-      })
-      .catch(() => {
-        if (!abortController.signal.aborted) setHeroVideoSrc(videoUrl);
-      });
 
     function onScroll() {
       if (!unlocked) unlock();
@@ -401,11 +406,7 @@ function Home() {
       window.removeEventListener("touchstart", unlock);
       video.removeEventListener("canplaythrough", handleCanPlayThrough);
       video.removeEventListener("loadedmetadata", scheduleScrollSync);
-      video.removeEventListener("loadeddata", scheduleScrollSync);
-      video.removeEventListener("canplay", scheduleScrollSync);
       video.removeEventListener("durationchange", scheduleScrollSync);
-      abortController.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, []);
 
