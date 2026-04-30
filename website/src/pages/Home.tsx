@@ -32,6 +32,7 @@ const HEADER_REVEAL_LEAD = 0.04;
 /** Fraction of runway where the hero text unpins and scrolls away (0–1).
  *  The video keeps scrubbing underneath. */
 const UNPIN_THRESHOLD = 0.8;
+const HERO_VIDEO_FPS = 24;
 
 /** Clamp a value to 0–1. */
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
@@ -253,6 +254,7 @@ function Home() {
 
     const wordRefs = [word0Ref, word1Ref, word2Ref];
     let ticking = false;
+    let lastSeekFrame = -1;
 
     function scheduleScrollSync() {
       if (ticking) return;
@@ -280,8 +282,8 @@ function Home() {
         const initialOffset = iconHeight * ICON_INITIAL_HIDE_FRAC;
 
         // Scrub video: hold frame 0 during icon rise, then scrub remaining range.
-        // Skip redundant seeks whose delta is less than one frame's duration —
-        // each seek forces a decode, and sub-frame seeks produce the same output.
+        // Quantize to source frames and skip duplicate frame requests. This avoids
+        // issuing repeated seeks while a previous frame seek is still resolving.
         if (video.duration && isFinite(video.duration)) {
           let target = 0;
           if (runwayScroll >= initialOffset) {
@@ -290,8 +292,14 @@ function Home() {
               : 0;
             target = videoProgress * video.duration;
           }
-          if (Math.abs(video.currentTime - target) > 1 / 24) {
-            video.currentTime = target;
+          const maxFrame = Math.max(0, Math.round(video.duration * HERO_VIDEO_FPS) - 1);
+          const targetFrame = Math.min(maxFrame, Math.max(0, Math.round(target * HERO_VIDEO_FPS)));
+          const targetTime = targetFrame / HERO_VIDEO_FPS;
+          const frameDuration = 1 / HERO_VIDEO_FPS;
+          const frameIsCurrent = Math.abs(video.currentTime - targetTime) <= frameDuration / 2;
+          if (targetFrame !== lastSeekFrame || (!video.seeking && !frameIsCurrent)) {
+            lastSeekFrame = targetFrame;
+            video.currentTime = targetTime;
           }
         }
 
@@ -389,8 +397,12 @@ function Home() {
       unlocked = true;
       scheduleScrollSync();
     };
+    const handleLoadedMetadata = () => {
+      lastSeekFrame = -1;
+      scheduleScrollSync();
+    };
     video.addEventListener("canplaythrough", handleCanPlayThrough, { once: true });
-    video.addEventListener("loadedmetadata", scheduleScrollSync);
+    video.addEventListener("loadedmetadata", handleLoadedMetadata);
     video.addEventListener("durationchange", scheduleScrollSync);
 
     function onScroll() {
@@ -405,7 +417,7 @@ function Home() {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("touchstart", unlock);
       video.removeEventListener("canplaythrough", handleCanPlayThrough);
-      video.removeEventListener("loadedmetadata", scheduleScrollSync);
+      video.removeEventListener("loadedmetadata", handleLoadedMetadata);
       video.removeEventListener("durationchange", scheduleScrollSync);
     };
   }, []);
