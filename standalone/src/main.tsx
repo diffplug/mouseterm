@@ -16,7 +16,6 @@ import {
   dismissBanner,
   openChangelog,
   buildDebugReport,
-  type DebugReport,
 } from "./updater";
 
 // Initialize Tauri platform adapter before rendering
@@ -26,22 +25,20 @@ setPlatform(platform);
 function ConnectedUpdateBanner() {
   const state = useUpdateState();
   const [debugOpen, setDebugOpen] = useState(false);
-  const [report, setReport] = useState<DebugReport | null>(null);
+  const [body, setBody] = useState<string | null>(null);
 
-  const failureVersion = state.status === 'post-update-failure' ? state.version : '';
-  const failureError = state.status === 'post-update-failure' ? (state.error ?? '') : '';
+  const failure = state.status === 'post-update-failure' ? state : null;
 
-  // Lazily fetch the debug report the first time the user opens the dialog.
   useEffect(() => {
-    if (!debugOpen || report) return;
+    if (!debugOpen || body || !failure) return;
     let cancelled = false;
-    buildDebugReport(failureError, failureVersion).then((r) => {
-      if (!cancelled) setReport(r);
+    buildDebugReport(failure.error ?? '', failure.version).then((b) => {
+      if (!cancelled) setBody(b);
     });
     return () => {
       cancelled = true;
     };
-  }, [debugOpen, report, failureError, failureVersion]);
+  }, [debugOpen, body, failure]);
 
   return (
     <>
@@ -51,13 +48,14 @@ function ConnectedUpdateBanner() {
         onOpenChangelog={openChangelog}
         onOpenDebug={() => setDebugOpen(true)}
       />
-      <UpdateDebugDialog
-        open={debugOpen}
-        onClose={() => setDebugOpen(false)}
-        report={report}
-        targetVersion={failureVersion}
-        errorPreview={failureError}
-      />
+      {failure && (
+        <UpdateDebugDialog
+          open={debugOpen}
+          onClose={() => setDebugOpen(false)}
+          failure={failure}
+          body={body}
+        />
+      )}
     </>
   );
 }

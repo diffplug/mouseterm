@@ -4,18 +4,13 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import { open } from '@tauri-apps/plugin-shell';
 import { invoke } from '@tauri-apps/api/core';
+import { PLATFORM_STRING } from 'mouseterm-lib/lib/platform';
 import type { UpdateBannerState } from './UpdateBanner';
 
-export const GITHUB_REPO_URL = 'https://github.com/diffplug/mouseterm';
+const GITHUB_REPO_URL = 'https://github.com/diffplug/mouseterm';
 
-export interface DebugReport {
-  fromVersion: string;
-  toVersion: string;
-  platform: string;
-  error: string;
-  logTail: string;
-  /** Markdown body, ready to paste into a GitHub issue. */
-  body: string;
+function openUrl(url: string, context: string): void {
+  open(url).catch((e) => console.error(`[updater] Failed to open ${context}:`, e));
 }
 
 // --- State ---
@@ -59,39 +54,18 @@ export function dismissBanner(): void {
 }
 
 export function openChangelog(): void {
-  open('https://mouseterm.com/changelog').catch((e) =>
-    console.error('[updater] Failed to open changelog:', e),
-  );
+  openUrl('https://mouseterm.com/changelog', 'changelog');
 }
 
-function detectPlatform(): string {
-  const data = (navigator as { userAgentData?: { platform?: string } }).userAgentData;
-  if (data?.platform) return data.platform;
-  return navigator.platform || navigator.userAgent || 'unknown';
-}
+export async function buildDebugReport(error: string, toVersion: string): Promise<string> {
+  const [fromVersion, logTail] = await Promise.all([
+    getVersion().catch(() => ''),
+    invoke<string>('read_update_log').catch((e) => `(failed to read log: ${String(e)})`),
+  ]);
 
-export async function buildDebugReport(
-  error: string,
-  toVersion: string,
-): Promise<DebugReport> {
-  let fromVersion = '';
-  try {
-    fromVersion = await getVersion();
-  } catch {
-    // Best-effort; leave blank.
-  }
-
-  let logTail = '';
-  try {
-    logTail = await invoke<string>('read_update_log');
-  } catch (e) {
-    logTail = `(failed to read log: ${String(e)})`;
-  }
-
-  const platform = detectPlatform();
-  const body = [
+  return [
     `**App version**: ${fromVersion} → ${toVersion}`,
-    `**Platform**: ${platform}`,
+    `**Platform**: ${PLATFORM_STRING}`,
     `**Error**: ${error}`,
     '',
     '**Recent log:**',
@@ -100,21 +74,19 @@ export async function buildDebugReport(
     '```',
     '',
   ].join('\n');
-
-  return { fromVersion, toVersion, platform, error, logTail, body };
 }
 
 export function openIssueSearch(error: string): void {
   // First ~80 chars of the error, no quoting — lets GitHub fuzzy-match.
   const keywords = error.slice(0, 80);
-  const url = `${GITHUB_REPO_URL}/issues?q=is%3Aissue+${encodeURIComponent(keywords)}`;
-  open(url).catch((e) => console.error('[updater] Failed to open issue search:', e));
+  openUrl(
+    `${GITHUB_REPO_URL}/issues?q=is%3Aissue+${encodeURIComponent(keywords)}`,
+    'issue search',
+  );
 }
 
 export function openNewIssue(): void {
-  open(`${GITHUB_REPO_URL}/issues/new`).catch((e) =>
-    console.error('[updater] Failed to open new issue:', e),
-  );
+  openUrl(`${GITHUB_REPO_URL}/issues/new`, 'new issue');
 }
 
 // --- Lifecycle ---

@@ -17,15 +17,22 @@ export {
 } from './fake-scenarios';
 
 /**
- * True when running on macOS. Used to pick native keyboard conventions
- * (Cmd vs Ctrl for copy/paste, etc.). Computed once at module load.
+ * Best available platform identifier from the browser. Prefers the
+ * UA-Client-Hints `userAgentData.platform` (e.g. "macOS", "Windows"),
+ * falling back to the legacy `navigator.platform`, then `userAgent`.
+ * Empty string in non-browser environments. Computed once at module load.
  */
-export const IS_MAC: boolean = (() => {
-  if (typeof navigator === 'undefined') return false;
+export const PLATFORM_STRING: string = (() => {
+  if (typeof navigator === 'undefined') return '';
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-  const platform = nav.userAgentData?.platform ?? nav.platform ?? nav.userAgent ?? '';
-  return /Mac|iPhone|iPad/i.test(platform);
+  return nav.userAgentData?.platform ?? nav.platform ?? nav.userAgent ?? '';
 })();
+
+/**
+ * True when running on macOS. Used to pick native keyboard conventions
+ * (Cmd vs Ctrl for copy/paste, etc.).
+ */
+export const IS_MAC: boolean = /Mac|iPhone|iPad/i.test(PLATFORM_STRING);
 
 let adapter: PlatformAdapter | null = null;
 

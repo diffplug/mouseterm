@@ -230,28 +230,24 @@ describe('updater', () => {
       mocks.invoke.mockResolvedValue('[42] [app] setup started\n[42] [sidecar] spawned');
 
       vi.useRealTimers();
-      const report = await buildDebugReport('EACCES: permission denied', '0.8.0');
+      const body = await buildDebugReport('EACCES: permission denied', '0.8.0');
 
       expect(mocks.invoke).toHaveBeenCalledWith('read_update_log');
-      expect(report.fromVersion).toBe('0.7.0');
-      expect(report.toVersion).toBe('0.8.0');
-      expect(report.error).toBe('EACCES: permission denied');
-      expect(report.logTail).toContain('[sidecar] spawned');
-      expect(report.body).toContain('**App version**: 0.7.0 → 0.8.0');
-      expect(report.body).toContain('**Error**: EACCES: permission denied');
-      expect(report.body).toContain('**Recent log:**');
-      expect(report.body).toContain('[sidecar] spawned');
+      expect(body).toContain('**App version**: 0.7.0 → 0.8.0');
+      expect(body).toContain('**Error**: EACCES: permission denied');
+      expect(body).toContain('**Recent log:**');
+      expect(body).toContain('[sidecar] spawned');
     });
 
-    it('returns a placeholder logTail when read_update_log fails', async () => {
+    it('embeds a placeholder when read_update_log fails', async () => {
       mocks.getVersion.mockResolvedValue('0.7.0');
       mocks.invoke.mockRejectedValue(new Error('no such file'));
 
       vi.useRealTimers();
-      const report = await buildDebugReport('boom', '0.8.0');
+      const body = await buildDebugReport('boom', '0.8.0');
 
-      expect(report.logTail).toContain('failed to read log');
-      expect(report.body).toContain('**Error**: boom');
+      expect(body).toContain('failed to read log');
+      expect(body).toContain('**Error**: boom');
     });
   });
 });

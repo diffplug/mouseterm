@@ -14,48 +14,36 @@ interface UpdateBannerProps {
   onOpenDebug: () => void;
 }
 
+const linkClass = 'shrink-0 hover:underline';
+const linkStyle = { color: 'var(--vscode-textLink-foreground)' };
+
 export function UpdateBanner({ state, onDismiss, onOpenChangelog, onOpenDebug }: UpdateBannerProps) {
   if (state.status === 'idle' || state.status === 'dismissed') return null;
 
   let message: string;
-  let action: 'changelog' | 'debug' | null = null;
+  let link: { label: string; onClick: () => void };
 
   switch (state.status) {
     case 'downloaded':
       message = `Update downloaded (v${state.version}) — will install when you quit.`;
-      action = 'changelog';
+      link = { label: 'Changelog', onClick: onOpenChangelog };
       break;
     case 'post-update-success':
       message = `Updated to v${state.to} — from v${state.from}.`;
-      action = 'changelog';
+      link = { label: 'Changelog', onClick: onOpenChangelog };
       break;
     case 'post-update-failure':
       message = 'Update failed.';
-      action = 'debug';
+      link = { label: 'Click here to debug', onClick: onOpenDebug };
       break;
   }
 
   return (
     <span className="flex items-center gap-1.5 pb-1 text-[9px] font-mono tracking-[0.06em] text-muted">
       <span className="truncate">{message}</span>
-      {action === 'changelog' && (
-        <button
-          onClick={onOpenChangelog}
-          className="shrink-0 hover:underline"
-          style={{ color: 'var(--vscode-textLink-foreground)' }}
-        >
-          Changelog
-        </button>
-      )}
-      {action === 'debug' && (
-        <button
-          onClick={onOpenDebug}
-          className="shrink-0 hover:underline"
-          style={{ color: 'var(--vscode-textLink-foreground)' }}
-        >
-          Click here to debug
-        </button>
-      )}
+      <button onClick={link.onClick} className={linkClass} style={linkStyle}>
+        {link.label}
+      </button>
       <button
         onClick={onDismiss}
         className="shrink-0 rounded p-0.5 hover:bg-foreground/10 hover:text-foreground"
