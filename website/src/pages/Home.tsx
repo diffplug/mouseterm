@@ -220,29 +220,16 @@ function Home() {
   const [installGuide, setInstallGuide] = useState<string | null>(null);
 
   useEffect(() => {
-    const video = videoRef.current;
-    const runway = runwayRef.current;
-    if (!video || !runway) return;
-
-    // Mobile unlock
-    let unlocked = false;
-    function unlock() {
-      if (unlocked) return;
-      unlocked = true;
-      video.play().then(() => {
-        video.pause();
-        video.currentTime = 0;
-      }).catch(() => { unlocked = false; });
-      window.removeEventListener("touchstart", unlock);
-    }
-    window.addEventListener("touchstart", unlock, { once: true, passive: true });
-    video.addEventListener("canplaythrough", () => { unlocked = true; }, { once: true });
+    const videoElement = videoRef.current;
+    const runwayElement = runwayRef.current;
+    if (!videoElement || !runwayElement) return;
+    const video: HTMLVideoElement = videoElement;
+    const runway: HTMLDivElement = runwayElement;
 
     const wordRefs = [word0Ref, word1Ref, word2Ref];
     let ticking = false;
 
-    function onScroll() {
-      if (!unlocked) unlock();
+    function scheduleScrollSync() {
       if (ticking) return;
       ticking = true;
 
@@ -311,9 +298,10 @@ function Home() {
           headerBrandRef.current.style.opacity = String(headerProgress);
         }
         if (headerRef.current) {
+          const headerBlur = headerProgress > 0 ? `blur(${headerProgress * 4}px)` : '';
           headerRef.current.style.backgroundColor = `rgba(0, 0, 0, ${headerProgress * 0.6})`;
-          headerRef.current.style.backdropFilter = headerProgress > 0 ? `blur(${headerProgress * 4}px)` : '';
-          headerRef.current.style.webkitBackdropFilter = headerProgress > 0 ? `blur(${headerProgress * 4}px)` : '';
+          headerRef.current.style.backdropFilter = headerBlur;
+          headerRef.current.style.setProperty("-webkit-backdrop-filter", headerBlur);
         }
 
         // Slide video + hero up once the content section enters the viewport.
@@ -354,12 +342,46 @@ function Home() {
       });
     }
 
+    // Mobile unlock
+    let unlocked = false;
+    let unlockPending = false;
+    function unlock() {
+      if (unlocked || unlockPending) return;
+      unlockPending = true;
+      video.play().then(() => {
+        video.pause();
+        unlocked = true;
+        window.removeEventListener("touchstart", unlock);
+        scheduleScrollSync();
+      }).catch(() => {
+        unlocked = false;
+      }).finally(() => {
+        unlockPending = false;
+      });
+    }
+    window.addEventListener("touchstart", unlock, { once: true, passive: true });
+    const handleCanPlayThrough = () => {
+      unlocked = true;
+      scheduleScrollSync();
+    };
+    video.addEventListener("canplaythrough", handleCanPlayThrough, { once: true });
+    video.addEventListener("loadedmetadata", scheduleScrollSync);
+    video.addEventListener("durationchange", scheduleScrollSync);
+
+    function onScroll() {
+      if (!unlocked) unlock();
+      scheduleScrollSync();
+    }
+
     window.addEventListener("scroll", onScroll, { passive: true });
     onScroll(); // initial position
 
     return () => {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("touchstart", unlock);
+      video.removeEventListener("canplaythrough", handleCanPlayThrough);
+      video.removeEventListener("loadedmetadata", scheduleScrollSync);
+      video.removeEventListener("durationchange", scheduleScrollSync);
     };
   }, []);
 
