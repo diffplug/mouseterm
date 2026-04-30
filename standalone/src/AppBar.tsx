@@ -4,6 +4,7 @@ import { CaretDownIcon, MinusIcon, CornersOutIcon, CornersInIcon, XIcon, PlusIco
 import { ThemePicker } from '../../lib/src/components/ThemePicker';
 import { PopupButtonRow } from '../../lib/src/components/design';
 import { setDefaultShellOpts } from '../../lib/src/lib/shell-defaults';
+import { IS_MAC } from '../../lib/src/lib/platform';
 
 export interface ShellEntry {
   name: string;
@@ -15,9 +16,6 @@ interface AppBarProps {
   shells: ShellEntry[];
 }
 
-const IS_MAC = typeof (navigator as any).userAgentData?.platform === 'string'
-  ? (navigator as any).userAgentData.platform === 'macOS'
-  : /Mac/.test(navigator.platform);
 const appWindow = getCurrentWindow();
 const APP_BAR_BUTTON_CLASS = 'flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-current/10';
 const WINDOW_CONTROL_BUTTON_CLASS = 'flex w-11 items-center justify-center text-inherit transition-colors hover:bg-current/10';
@@ -26,26 +24,9 @@ function useAppWindowFocused(): boolean {
   const [focused, setFocused] = useState(() => document.hasFocus());
 
   useEffect(() => {
-    let mounted = true;
-    appWindow.isFocused().then((value) => {
-      if (mounted) setFocused(value);
-    });
-
-    const unlistenFocusChanged = appWindow.onFocusChanged(({ payload }) => {
-      setFocused(payload);
-    });
-    const onFocus = () => setFocused(true);
-    const onBlur = () => setFocused(false);
-
-    window.addEventListener('focus', onFocus);
-    window.addEventListener('blur', onBlur);
-
-    return () => {
-      mounted = false;
-      unlistenFocusChanged.then((unlisten) => unlisten());
-      window.removeEventListener('focus', onFocus);
-      window.removeEventListener('blur', onBlur);
-    };
+    appWindow.isFocused().then(setFocused);
+    const unlisten = appWindow.onFocusChanged(({ payload }) => setFocused(payload));
+    return () => { unlisten.then(fn => fn()); };
   }, []);
 
   return focused;
