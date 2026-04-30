@@ -82,7 +82,7 @@ function WinControls() {
       </Tip>
       <Tip label="Close">
         <button
-          className={chromeButton({ kind: 'window', tone: 'danger' })}
+          className={chromeButton({ kind: 'windowClose' })}
           onClick={() => appWindow.close()}
           aria-label="Close"
         >

@@ -53,21 +53,19 @@ export type PopupButtonVariants = VariantProps<typeof popupButton>;
 // Chrome buttons: icon-only and labeled triggers used in the standalone app
 // bar, plus the Windows/Linux native-style window controls. All inherit text
 // color from the surrounding chrome so they tint with the active/inactive
-// header palette.
+// header palette — except `windowClose`, whose hover red matches the native
+// OS close button across themes.
 export const chromeButton = tv({
   base: 'flex items-center transition-colors',
   variants: {
     kind: {
-      icon: 'h-5 min-w-5 justify-center rounded',
-      labeled: 'h-5 min-w-5 gap-1 rounded px-1.5 text-xs text-inherit',
-      window: 'w-11 justify-center text-inherit',
-    },
-    tone: {
-      neutral: 'hover:bg-current/10',
-      danger: 'hover:bg-error/10 hover:text-error',
+      icon: 'h-5 min-w-5 justify-center rounded hover:bg-current/10',
+      labeled: 'h-5 min-w-5 gap-1 rounded px-1.5 text-xs text-inherit hover:bg-current/10',
+      window: 'w-11 justify-center text-inherit hover:bg-current/10',
+      windowClose: 'w-11 justify-center text-inherit hover:bg-[#b92a1b] hover:text-white',
     },
   },
-  defaultVariants: { kind: 'icon', tone: 'neutral' },
+  defaultVariants: { kind: 'icon' },
 });
 
 export type ChromeButtonVariants = VariantProps<typeof chromeButton>;
