@@ -50,6 +50,28 @@ export const popupButton = tv({
 
 export type PopupButtonVariants = VariantProps<typeof popupButton>;
 
+// Chrome buttons: icon-only and labeled triggers used in the standalone app
+// bar, plus the Windows/Linux native-style window controls. All inherit text
+// color from the surrounding chrome so they tint with the active/inactive
+// header palette.
+export const chromeButton = tv({
+  base: 'flex items-center transition-colors',
+  variants: {
+    kind: {
+      icon: 'h-5 min-w-5 justify-center rounded',
+      labeled: 'h-5 min-w-5 gap-1 rounded px-1.5 text-xs text-inherit',
+      window: 'w-11 justify-center text-inherit',
+    },
+    tone: {
+      neutral: 'hover:bg-current/10',
+      danger: 'hover:bg-error/10 hover:text-error',
+    },
+  },
+  defaultVariants: { kind: 'icon', tone: 'neutral' },
+});
+
+export type ChromeButtonVariants = VariantProps<typeof chromeButton>;
+
 /** Keyboard shortcut rendered as `[keys]` in muted color. Use everywhere key
  *  bindings appear in UI text so the bracket convention is consistent. */
 export function Shortcut({

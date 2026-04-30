@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { CaretDownIcon, MinusIcon, CornersOutIcon, CornersInIcon, XIcon, PlusIcon, CheckIcon } from '@phosphor-icons/react';
 import { ThemePicker } from '../../lib/src/components/ThemePicker';
-import { PopupButtonRow } from '../../lib/src/components/design';
+import { PopupButtonRow, chromeButton } from '../../lib/src/components/design';
 import { setDefaultShellOpts } from '../../lib/src/lib/shell-defaults';
 import { IS_MAC } from '../../lib/src/lib/platform';
 
@@ -17,8 +17,6 @@ interface AppBarProps {
 }
 
 const appWindow = getCurrentWindow();
-const APP_BAR_BUTTON_CLASS = 'flex h-5 min-w-5 items-center justify-center rounded transition-colors hover:bg-current/10';
-const WINDOW_CONTROL_BUTTON_CLASS = 'flex w-11 items-center justify-center text-inherit transition-colors hover:bg-current/10';
 
 function useAppWindowFocused(): boolean {
   const [focused, setFocused] = useState(() => document.hasFocus());
@@ -64,7 +62,7 @@ function WinControls() {
     <div className="flex items-stretch self-stretch">
       <Tip label="Minimize">
         <button
-          className={WINDOW_CONTROL_BUTTON_CLASS}
+          className={chromeButton({ kind: 'window' })}
           onClick={() => appWindow.minimize()}
           aria-label="Minimize"
         >
@@ -73,7 +71,7 @@ function WinControls() {
       </Tip>
       <Tip label={maximized ? 'Restore' : 'Maximize'}>
         <button
-          className={WINDOW_CONTROL_BUTTON_CLASS}
+          className={chromeButton({ kind: 'window' })}
           onClick={() => { appWindow.toggleMaximize(); }}
           aria-label={maximized ? 'Restore' : 'Maximize'}
         >
@@ -84,7 +82,7 @@ function WinControls() {
       </Tip>
       <Tip label="Close">
         <button
-          className="flex w-11 items-center justify-center text-inherit transition-colors hover:bg-error/10 hover:text-error"
+          className={chromeButton({ kind: 'window', tone: 'danger' })}
           onClick={() => appWindow.close()}
           aria-label="Close"
         >
@@ -136,7 +134,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
       {/* Primary action: [+] spawns a new terminal with the selected shell */}
       <Tip label={`New ${selected?.name ?? 'terminal'}`}>
         <button
-          className={APP_BAR_BUTTON_CLASS}
+          className={chromeButton({ kind: 'icon' })}
           onClick={() => selected && spawn(selected)}
           aria-label={`New ${selected?.name ?? 'terminal'}`}
         >
@@ -146,7 +144,7 @@ function ShellDropdown({ shells }: { shells: ShellEntry[] }) {
       {/* Selector: shows current shell name + caret; click to choose a different shell */}
       <Tip label="Choose shell">
         <button
-          className="flex h-5 min-w-5 items-center gap-1 rounded px-1.5 text-xs transition-colors hover:bg-current/10"
+          className={chromeButton({ kind: 'labeled' })}
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           aria-haspopup="menu"
