@@ -493,7 +493,17 @@ notarize_macos() {
         app_name=$(basename "$app")
 
         log "Creating $FNAME_MAC..."
-        tar -czf "$SIGN_DIR/$FNAME_MAC" -C "$(dirname "$app")" "$app_name"
+        # COPYFILE_DISABLE=1 stops macOS's tar from writing ._* AppleDouble
+        # sidecar files (resource-fork metadata) into the archive. Without
+        # this the Tauri updater's extraction fails with
+        # `failed to unpack ._MouseTerm.app`.
+        COPYFILE_DISABLE=1 tar -czf "$SIGN_DIR/$FNAME_MAC" -C "$(dirname "$app")" "$app_name"
+
+        # Defense in depth: if any ._* slipped in anyway, fail loudly here
+        # rather than shipping a tarball the updater can't unpack.
+        if tar -tzf "$SIGN_DIR/$FNAME_MAC" | grep -E '(^|/)\._' >/dev/null; then
+            error "$FNAME_MAC contains AppleDouble (._*) entries — macOS metadata leaked into the archive"
+        fi
     fi
 
     log "All macOS notarization and packaging complete"
