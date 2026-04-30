@@ -3,7 +3,20 @@ import { check, type Update } from '@tauri-apps/plugin-updater';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import { open } from '@tauri-apps/plugin-shell';
+import { invoke } from '@tauri-apps/api/core';
 import type { UpdateBannerState } from './UpdateBanner';
+
+export const GITHUB_REPO_URL = 'https://github.com/diffplug/mouseterm';
+
+export interface DebugReport {
+  fromVersion: string;
+  toVersion: string;
+  platform: string;
+  error: string;
+  logTail: string;
+  /** Markdown body, ready to paste into a GitHub issue. */
+  body: string;
+}
 
 // --- State ---
 
@@ -51,6 +64,59 @@ export function openChangelog(): void {
   );
 }
 
+function detectPlatform(): string {
+  const data = (navigator as { userAgentData?: { platform?: string } }).userAgentData;
+  if (data?.platform) return data.platform;
+  return navigator.platform || navigator.userAgent || 'unknown';
+}
+
+export async function buildDebugReport(
+  error: string,
+  toVersion: string,
+): Promise<DebugReport> {
+  let fromVersion = '';
+  try {
+    fromVersion = await getVersion();
+  } catch {
+    // Best-effort; leave blank.
+  }
+
+  let logTail = '';
+  try {
+    logTail = await invoke<string>('read_update_log');
+  } catch (e) {
+    logTail = `(failed to read log: ${String(e)})`;
+  }
+
+  const platform = detectPlatform();
+  const body = [
+    `**App version**: ${fromVersion} → ${toVersion}`,
+    `**Platform**: ${platform}`,
+    `**Error**: ${error}`,
+    '',
+    '**Recent log:**',
+    '```',
+    logTail.trimEnd(),
+    '```',
+    '',
+  ].join('\n');
+
+  return { fromVersion, toVersion, platform, error, logTail, body };
+}
+
+export function openIssueSearch(error: string): void {
+  // First ~80 chars of the error, no quoting — lets GitHub fuzzy-match.
+  const keywords = error.slice(0, 80);
+  const url = `${GITHUB_REPO_URL}/issues?q=is%3Aissue+${encodeURIComponent(keywords)}`;
+  open(url).catch((e) => console.error('[updater] Failed to open issue search:', e));
+}
+
+export function openNewIssue(): void {
+  open(`${GITHUB_REPO_URL}/issues/new`).catch((e) =>
+    console.error('[updater] Failed to open new issue:', e),
+  );
+}
+
 // --- Lifecycle ---
 
 export function startUpdateCheck(): void {
@@ -71,7 +137,11 @@ async function runUpdateCheck(): Promise<void> {
       localStorage.removeItem(STORAGE_KEY);
       const marker = JSON.parse(raw);
       if (marker.failed) {
-        setState({ status: 'post-update-failure', version: marker.version });
+        setState({
+          status: 'post-update-failure',
+          version: marker.version,
+          error: marker.error,
+        });
       } else if (marker.from && marker.to) {
         setState({ status: 'post-update-success', from: marker.from, to: marker.to });
         setTimeout(() => {

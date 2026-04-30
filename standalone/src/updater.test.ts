@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   onCloseRequested: vi.fn(),
   windowClose: vi.fn(),
   shellOpen: vi.fn(),
+  invoke: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/plugin-updater', () => ({
@@ -29,6 +30,10 @@ vi.mock('@tauri-apps/plugin-shell', () => ({
   open: mocks.shellOpen,
 }));
 
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: mocks.invoke,
+}));
+
 // --- Helpers ---
 
 const STORAGE_KEY = 'mouseterm:update-result';
@@ -42,7 +47,7 @@ function makeUpdate(version = '0.5.0') {
 }
 
 // Import after mocks
-import { startUpdateCheck, openChangelog, _resetForTesting } from './updater';
+import { startUpdateCheck, openChangelog, buildDebugReport, _resetForTesting } from './updater';
 
 describe('updater', () => {
   beforeEach(() => {
@@ -55,6 +60,7 @@ describe('updater', () => {
     mocks.onCloseRequested.mockResolvedValue(vi.fn());
     mocks.windowClose.mockResolvedValue(undefined);
     mocks.shellOpen.mockResolvedValue(undefined);
+    mocks.invoke.mockResolvedValue('');
   });
 
   afterEach(() => {
@@ -215,6 +221,37 @@ describe('updater', () => {
     it('openChangelog calls shell open', () => {
       openChangelog();
       expect(mocks.shellOpen).toHaveBeenCalledWith('https://mouseterm.com/changelog');
+    });
+  });
+
+  describe('buildDebugReport', () => {
+    it('assembles a markdown body with version, platform, error, and log', async () => {
+      mocks.getVersion.mockResolvedValue('0.7.0');
+      mocks.invoke.mockResolvedValue('[42] [app] setup started\n[42] [sidecar] spawned');
+
+      vi.useRealTimers();
+      const report = await buildDebugReport('EACCES: permission denied', '0.8.0');
+
+      expect(mocks.invoke).toHaveBeenCalledWith('read_update_log');
+      expect(report.fromVersion).toBe('0.7.0');
+      expect(report.toVersion).toBe('0.8.0');
+      expect(report.error).toBe('EACCES: permission denied');
+      expect(report.logTail).toContain('[sidecar] spawned');
+      expect(report.body).toContain('**App version**: 0.7.0 → 0.8.0');
+      expect(report.body).toContain('**Error**: EACCES: permission denied');
+      expect(report.body).toContain('**Recent log:**');
+      expect(report.body).toContain('[sidecar] spawned');
+    });
+
+    it('returns a placeholder logTail when read_update_log fails', async () => {
+      mocks.getVersion.mockResolvedValue('0.7.0');
+      mocks.invoke.mockRejectedValue(new Error('no such file'));
+
+      vi.useRealTimers();
+      const report = await buildDebugReport('boom', '0.8.0');
+
+      expect(report.logTail).toContain('failed to read log');
+      expect(report.body).toContain('**Error**: boom');
     });
   });
 });

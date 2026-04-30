@@ -5,44 +5,55 @@ export type UpdateBannerState =
   | { status: 'downloaded'; version: string }
   | { status: 'dismissed' }
   | { status: 'post-update-success'; from: string; to: string }
-  | { status: 'post-update-failure'; version: string };
+  | { status: 'post-update-failure'; version: string; error?: string };
 
 interface UpdateBannerProps {
   state: UpdateBannerState;
   onDismiss: () => void;
   onOpenChangelog: () => void;
+  onOpenDebug: () => void;
 }
 
-export function UpdateBanner({ state, onDismiss, onOpenChangelog }: UpdateBannerProps) {
+export function UpdateBanner({ state, onDismiss, onOpenChangelog, onOpenDebug }: UpdateBannerProps) {
   if (state.status === 'idle' || state.status === 'dismissed') return null;
 
   let message: string;
-  let showChangelog = false;
+  let action: 'changelog' | 'debug' | null = null;
 
   switch (state.status) {
     case 'downloaded':
-      message = `Update downloaded (v${state.version}) \u2014 will install when you quit.`;
-      showChangelog = true;
+      message = `Update downloaded (v${state.version}) — will install when you quit.`;
+      action = 'changelog';
       break;
     case 'post-update-success':
-      message = `Updated to v${state.to} \u2014 from v${state.from}.`;
-      showChangelog = true;
+      message = `Updated to v${state.to} — from v${state.from}.`;
+      action = 'changelog';
       break;
     case 'post-update-failure':
-      message = `Update to v${state.version} failed \u2014 will retry next launch.`;
+      message = 'Update failed.';
+      action = 'debug';
       break;
   }
 
   return (
     <span className="flex items-center gap-1.5 pb-1 text-[9px] font-mono tracking-[0.06em] text-muted">
       <span className="truncate">{message}</span>
-      {showChangelog && (
+      {action === 'changelog' && (
         <button
           onClick={onOpenChangelog}
           className="shrink-0 hover:underline"
           style={{ color: 'var(--vscode-textLink-foreground)' }}
         >
           Changelog
+        </button>
+      )}
+      {action === 'debug' && (
+        <button
+          onClick={onOpenDebug}
+          className="shrink-0 hover:underline"
+          style={{ color: 'var(--vscode-textLink-foreground)' }}
+        >
+          Click here to debug
         </button>
       )}
       <button
