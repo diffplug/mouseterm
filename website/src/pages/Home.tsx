@@ -134,6 +134,39 @@ const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string
   },
 };
 
+const FEATURE_VIDEO_BASE =
+  "-mx-4 md:mx-0 block w-[calc(100%+2rem)] max-w-none md:w-full md:max-w-full";
+
+const FEATURE_VIDEO_VARIANTS = {
+  cover: "aspect-video object-cover",
+  intrinsic: "h-auto",
+} as const;
+
+function FeatureVideo({
+  src,
+  className = "",
+  variant = "cover",
+}: {
+  src: string;
+  className?: string;
+  variant?: keyof typeof FEATURE_VIDEO_VARIANTS;
+}) {
+  return (
+    <video
+      src={src}
+      autoPlay
+      loop
+      muted
+      playsInline
+      className={[
+        FEATURE_VIDEO_BASE,
+        FEATURE_VIDEO_VARIANTS[variant],
+        className,
+      ].filter(Boolean).join(" ")}
+    />
+  );
+}
+
 function DownloadButton({
   href,
   children,
@@ -654,14 +687,7 @@ function Home() {
             Works with any CLI tool that prints to a terminal — no plugins, no
             configuration.
           </p>
-          <video
-            src={alertVideoUrl}
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="mt-8 -mx-4 md:mx-0 block h-auto w-[calc(100%+2rem)] max-w-none md:w-full md:max-w-full"
-          />
+          <FeatureVideo src={alertVideoUrl} variant="intrinsic" className="mt-8" />
         </section>
 
         {/* Section 2: text left, image right */}
@@ -679,26 +705,12 @@ function Home() {
               MouseTerm lets you copy paste like a human, not a terminal.
             </p>
           </div>
-          <video
-            src={copyPasteVideoUrl}
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="-mx-4 md:mx-0 block aspect-video w-[calc(100%+2rem)] max-w-none md:w-full md:max-w-full object-cover"
-          />
+          <FeatureVideo src={copyPasteVideoUrl} />
         </section>
 
         {/* Section 3: image left, text right */}
         <section className="mx-auto max-w-5xl px-4 md:px-6 py-12 grid md:grid-cols-[3fr_2fr] gap-8 md:gap-12 items-start">
-          <video
-            src={tmuxVideoUrl}
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="-mx-4 md:mx-0 block aspect-video w-[calc(100%+2rem)] max-w-none md:w-full md:max-w-full object-cover order-2 md:order-1"
-          />
+          <FeatureVideo src={tmuxVideoUrl} className="order-2 md:order-1" />
           <div className="order-1 md:order-2">
             <h2 className="font-display text-xl mb-6">Soft as a mouse, sharp as tmux</h2>
             <p className="text-lg leading-relaxed opacity-70 mb-4">
