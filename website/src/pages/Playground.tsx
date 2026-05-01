@@ -28,6 +28,7 @@ function Playground() {
       const registry = await import("mouseterm-lib/lib/terminal-registry");
       const wall = await import("mouseterm-lib/components/Wall");
       const scenarios = await import("mouseterm-lib/lib/platform/fake-scenarios");
+      const asciiSplash = await import("../lib/ascii-splash-runner");
 
       await import("mouseterm-lib/index.css");
 
@@ -41,7 +42,15 @@ function Playground() {
       adapter.setScenario(PANE_MAIN, scenarios.SCENARIO_TUTORIAL_MOTD);
 
       // Wire up the tutorial shell
-      const shell = new TutorialShell((data) => adapter.sendOutput(PANE_MAIN, data));
+      const shell = new TutorialShell(
+        (data) => adapter.sendOutput(PANE_MAIN, data),
+        (args, onExit) => new asciiSplash.AsciiSplashRunner({
+          adapter,
+          terminalId: PANE_MAIN,
+          args,
+          onExit,
+        }),
+      );
       shellRef.current = shell;
       adapter.setInputHandler(PANE_MAIN, (data) => shell.handleInput(data));
 
@@ -55,6 +64,8 @@ function Playground() {
 
     return () => {
       detectorRef.current?.dispose();
+      shellRef.current?.dispose();
+      adapterRef.current?.clearInputHandler(PANE_MAIN);
     };
   }, []);
 

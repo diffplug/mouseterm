@@ -65,16 +65,37 @@ const STEPS: TutorialStep[] = [
 
 export type SendOutput = (data: string) => void;
 
+export interface InteractiveProgram {
+  start(): void;
+  handleInput(data: string): void;
+  dispose(): void;
+}
+
+export type StartInteractiveProgram = (args: string[], onExit: () => void) => InteractiveProgram;
+
 export class TutorialShell {
   private lineBuffer = '';
   private sendOutput: SendOutput;
+  private startAsciiSplash?: StartInteractiveProgram;
+  private activeProgram: InteractiveProgram | null = null;
 
-  constructor(sendOutput: SendOutput) {
+  constructor(sendOutput: SendOutput, startAsciiSplash?: StartInteractiveProgram) {
     this.sendOutput = sendOutput;
+    this.startAsciiSplash = startAsciiSplash;
+  }
+
+  dispose(): void {
+    this.activeProgram?.dispose();
+    this.activeProgram = null;
   }
 
   /** Handle a keystroke from the user. */
   handleInput(data: string): void {
+    if (this.activeProgram) {
+      this.activeProgram.handleInput(data);
+      return;
+    }
+
     for (const ch of data) {
       if (ch === '\r' || ch === '\n') {
         this.sendOutput('\r\n');
@@ -107,8 +128,19 @@ export class TutorialShell {
       this.showStatus();
     } else if (cmd === 'tut reset') {
       this.resetProgress();
+    } else if (cmd === 'ascii-splash' || cmd.startsWith('ascii-splash ') || cmd === 'splash' || cmd.startsWith('splash ')) {
+      if (this.startAsciiSplash) {
+        const args = cmd.split(/\s+/).slice(1);
+        this.activeProgram = this.startAsciiSplash(args, () => {
+          this.activeProgram = null;
+          this.sendOutput(PROMPT);
+        });
+        this.activeProgram.start();
+        return;
+      }
+      this.sendOutput(`${fg(90)}ascii-splash is not available in this environment.${RESET}\r\n`);
     } else {
-      this.sendOutput(`${fg(90)}Unknown command. Type ${fg(36)}tut${fg(90)} to start the tutorial.${RESET}\r\n`);
+      this.sendOutput(`${fg(90)}Unknown command. Type ${fg(36)}tut${fg(90)} or ${fg(36)}ascii-splash${fg(90)}.${RESET}\r\n`);
     }
 
     this.sendOutput(PROMPT);

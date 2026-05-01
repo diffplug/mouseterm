@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,8 +8,25 @@ const repoRoot = resolve(__dirname, "../..");
 const outPath = resolve(__dirname, "../src/data/dependencies.json");
 const themeExtensionsPath = resolve(repoRoot, "lib/src/lib/themes/bundled-extensions.json");
 
+function getInstalledStoreDir() {
+  try {
+    const modulesYaml = readFileSync(resolve(repoRoot, "node_modules/.modules.yaml"), "utf-8");
+    return modulesYaml.match(/"storeDir":\s*"([^"]+)"/)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const storeDir = getInstalledStoreDir();
+const licenseArgs = [
+  ...(storeDir ? [`--config.store-dir=${storeDir}`] : []),
+  "licenses",
+  "list",
+  "--prod",
+  "--json",
+];
 const raw = JSON.parse(
-  execSync("pnpm licenses list --prod --json", { cwd: repoRoot, encoding: "utf-8" })
+  execFileSync("pnpm", licenseArgs, { cwd: repoRoot, encoding: "utf-8" })
 );
 
 const licenseAliases = {
@@ -61,11 +78,16 @@ const missingAuthor = {
   "@tauri-apps/plugin-shell": "Tauri Apps Contributors",
   "@tauri-apps/plugin-updater": "Tauri Apps Contributors",
   "@xterm/xterm": "Christopher Jeffrey, SourceLair Private Company, xterm.js authors",
+  "atomically": "Fabio Spampinato",
   "node-addon-api": "Node.js API collaborators",
+  "pngjs": "pngjs contributors",
   "react": "Meta Platforms, Inc. and affiliates",
   "react-dom": "Meta Platforms, Inc. and affiliates",
   "scheduler": "Meta Platforms, Inc. and affiliates",
+  "stubborn-fs": "Fabio Spampinato",
+  "stubborn-utils": "Fabio Spampinato",
   "tailwindcss": "Tailwind Labs, Inc.",
+  "when-exit": "Fabio Spampinato",
 };
 for (const dep of deps) {
   if (!dep.license) {
