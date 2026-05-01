@@ -179,11 +179,20 @@ fn request_from_sidecar_timeout(
 
     match rx.recv_timeout(timeout) {
         Ok(response) => Ok(response),
-        Err(_) => {
+        Err(err) => {
             if let Ok(mut pending) = state.pending_requests.lock() {
                 pending.remove(&request_id);
             }
-            Err(format!("timed out waiting for {event}"))
+            // Disconnected means the reaper cleared pending_requests because
+            // the sidecar exited — surface that distinctly from a real timeout.
+            match err {
+                mpsc::RecvTimeoutError::Timeout => {
+                    Err(format!("timed out waiting for {event}"))
+                }
+                mpsc::RecvTimeoutError::Disconnected => {
+                    Err(format!("sidecar exited before responding to {event}"))
+                }
+            }
         }
     }
 }
