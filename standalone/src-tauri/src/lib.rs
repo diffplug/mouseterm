@@ -4,8 +4,9 @@ use std::{
     collections::HashMap,
     env,
     fs::{create_dir_all, OpenOptions},
-    io::Write,
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
+    process::Stdio,
     sync::atomic::{AtomicU64, Ordering},
     sync::mpsc,
     sync::{Arc, Mutex},
@@ -15,7 +16,7 @@ use tauri::{
     menu::{AboutMetadata, Menu, PredefinedMenuItem, Submenu},
     AppHandle, DragDropEvent, Emitter, Manager, RunEvent, WindowEvent,
 };
-use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+use process_wrap::std::*;
 
 enum SidecarMsg {
     Json(String),
@@ -24,12 +25,13 @@ enum SidecarMsg {
 
 type SidecarSender = mpsc::Sender<SidecarMsg>;
 type PendingRequests = Arc<Mutex<HashMap<String, mpsc::Sender<JsonValue>>>>;
+type SharedChild = Arc<Mutex<Box<dyn ChildWrapper + Send + Sync>>>;
 
 struct SidecarState {
     tx: SidecarSender,
     pending_requests: PendingRequests,
     next_request_id: AtomicU64,
-    child_pid: u32,
+    child: SharedChild,
 }
 
 const LOG_FILE_ENV: &str = "MOUSETERM_LOG_FILE";
@@ -262,27 +264,16 @@ fn read_update_log() -> Result<String, String> {
 #[tauri::command]
 fn shutdown_sidecar(state: tauri::State<'_, SidecarState>) {
     let _ = state.tx.send(SidecarMsg::Shutdown);
-    kill_process_tree(state.child_pid);
+    kill_sidecar(&state.child);
 }
 
-/// Kill the sidecar process. On Windows, `taskkill /T` kills the entire
-/// process tree so that child shell processes don't outlive the sidecar.
-/// On Unix, a single SIGTERM to the sidecar is sufficient because node-pty
-/// manages its own child processes and cleans them up on exit.
-fn kill_process_tree(pid: u32) {
-    append_log(format!("[sidecar] killing process tree (pid={pid})"));
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/T", "/PID", &pid.to_string()])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
-    }
-    #[cfg(unix)]
-    {
-        unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+/// Kill the sidecar via process-wrap. On Windows the Job Object wrapper
+/// guarantees the kill propagates to grandchildren even if the sidecar
+/// spawned its own children. On Unix it sends to the whole process group.
+fn kill_sidecar(child: &SharedChild) {
+    if let Ok(mut guard) = child.lock() {
+        append_log(format!("[sidecar] killing (pid={})", guard.id()));
+        let _ = guard.start_kill();
     }
 }
 
@@ -337,12 +328,35 @@ fn sidecar_script_arg_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+/// Locate the bundled Node.js binary at runtime. tauri-build/tauri-bundler
+/// place externalBin entries alongside the main exe, sometimes with the
+/// target-triple suffix (`node-x86_64-pc-windows-msvc.exe`) and sometimes
+/// stripped (`node.exe`). Try both, return the first that exists.
+fn resolve_node_binary_path() -> Result<PathBuf, String> {
+    let exe = env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| "current_exe has no parent".to_string())?;
+    Ok(find_node_binary(dir, env!("TAURI_ENV_TARGET_TRIPLE"))
+        .ok_or_else(|| format!("node sidecar not found in {}", dir.display()))?)
+}
+
+fn find_node_binary(dir: &Path, target_triple: &str) -> Option<PathBuf> {
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    let candidates = [
+        dir.join(format!("node-{target_triple}{suffix}")),
+        dir.join(format!("node{suffix}")),
+    ];
+    candidates.into_iter().find(|p| p.is_file())
+}
+
 fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
     let sidecar_path = resolve_sidecar_path(
         app.path().resource_dir().ok(),
         Path::new(env!("CARGO_MANIFEST_DIR")),
     );
     let sidecar_arg_path = sidecar_script_arg_path(&sidecar_path);
+    let node_path = resolve_node_binary_path()?;
     append_log(format!(
         "[sidecar] resolved script: {}",
         sidecar_path.display()
@@ -351,87 +365,99 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
         "[sidecar] script argument: {}",
         sidecar_arg_path.display()
     ));
+    append_log(format!("[sidecar] node binary: {}", node_path.display()));
 
-    let (mut rx, mut child) = app
-        .shell()
-        .sidecar("node")
-        .map_err(|err| format!("failed to resolve bundled Node.js runtime: {err}"))?
-        .arg(&sidecar_arg_path)
-        .set_raw_out(false)
+    let mut wrap = CommandWrap::with_new(&node_path, |c| {
+        c.arg(&sidecar_arg_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+    });
+    #[cfg(windows)]
+    {
+        wrap.wrap(JobObject);
+    }
+    #[cfg(unix)]
+    {
+        wrap.wrap(ProcessGroup::leader());
+    }
+
+    let mut child = wrap
         .spawn()
         .map_err(|err| format!("failed to start Node.js sidecar: {err}"))?;
-    let child_pid = child.pid();
+    let child_pid = child.id();
     append_log(format!("[sidecar] spawned Node.js runtime (pid={child_pid})"));
+
+    let stdin = child
+        .stdin()
+        .take()
+        .ok_or_else(|| "sidecar stdin missing".to_string())?;
+    let stdout = child
+        .stdout()
+        .take()
+        .ok_or_else(|| "sidecar stdout missing".to_string())?;
+    let stderr = child
+        .stderr()
+        .take()
+        .ok_or_else(|| "sidecar stderr missing".to_string())?;
 
     let handle = app.clone();
     let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
     let pending_requests_for_task = Arc::clone(&pending_requests);
 
-    // ── stdout/stderr reader task ───────────────────────────────────────
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            match event {
-                CommandEvent::Stdout(line) => {
-                    let Ok(line) = String::from_utf8(line) else {
-                        append_log("[sidecar stdout] invalid UTF-8");
-                        continue;
-                    };
-                    let Ok(mut msg) = serde_json::from_str::<serde_json::Value>(&line) else {
-                        append_log(format!("[sidecar stdout] {}", line.trim_end()));
-                        continue;
-                    };
-                    let Some(event) = msg.get("event").and_then(|e| e.as_str()).map(String::from)
-                    else {
-                        append_log("[sidecar stdout] JSON line missing event");
-                        continue;
-                    };
-                    let data = msg
-                        .as_object_mut()
-                        .and_then(|m| m.remove("data"))
-                        .unwrap_or(serde_json::Value::Null);
+    // ── stdout reader thread ────────────────────────────────────────────
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line_result in reader.lines() {
+            let Ok(line) = line_result else {
+                break;
+            };
+            let Ok(mut msg) = serde_json::from_str::<JsonValue>(&line) else {
+                append_log(format!("[sidecar stdout] {}", line.trim_end()));
+                continue;
+            };
+            let Some(event) = msg.get("event").and_then(|e| e.as_str()).map(String::from)
+            else {
+                append_log("[sidecar stdout] JSON line missing event");
+                continue;
+            };
+            let data = msg
+                .as_object_mut()
+                .and_then(|m| m.remove("data"))
+                .unwrap_or(JsonValue::Null);
 
-                    if let Some(request_id) = data
-                        .get("requestId")
-                        .and_then(|request_id| request_id.as_str())
-                    {
-                        if let Ok(mut pending) = pending_requests_for_task.lock() {
-                            if let Some(response_tx) = pending.remove(request_id) {
-                                let _ = response_tx.send(data.clone());
-                                continue;
-                            }
-                        }
-                    }
-
-                    let _ = handle.emit(&event, data);
-                }
-                CommandEvent::Stderr(line) => {
-                    if let Ok(line) = String::from_utf8(line) {
-                        let message = format!("[sidecar] {}", line.trim_end());
-                        eprintln!("{message}");
-                        append_log(message);
+            if let Some(request_id) = data
+                .get("requestId")
+                .and_then(|request_id| request_id.as_str())
+            {
+                if let Ok(mut pending) = pending_requests_for_task.lock() {
+                    if let Some(response_tx) = pending.remove(request_id) {
+                        let _ = response_tx.send(data.clone());
+                        continue;
                     }
                 }
-                CommandEvent::Error(err) => {
-                    let message = format!("[sidecar] {err}");
-                    eprintln!("{message}");
-                    append_log(message);
-                }
-                CommandEvent::Terminated(payload) => {
-                    let message = format!(
-                        "[sidecar] exited (code: {:?}, signal: {:?})",
-                        payload.code, payload.signal
-                    );
-                    eprintln!("{message}");
-                    append_log(message);
-                    break;
-                }
-                _ => {}
             }
+
+            let _ = handle.emit(&event, data);
+        }
+    });
+
+    // ── stderr reader thread ────────────────────────────────────────────
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line_result in reader.lines() {
+            let Ok(line) = line_result else {
+                break;
+            };
+            let message = format!("[sidecar] {}", line.trim_end());
+            eprintln!("{message}");
+            append_log(message);
         }
     });
 
     // ── stdin writer thread ─────────────────────────────────────────────
     let (tx, writer_rx) = mpsc::channel::<SidecarMsg>();
+    let mut stdin = stdin;
 
     std::thread::spawn(move || {
         while let Ok(msg) = writer_rx.recv() {
@@ -442,7 +468,7 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
                 }
                 SidecarMsg::Json(line) => {
                     let payload = format!("{}\n", line);
-                    if child.write(payload.as_bytes()).is_err() {
+                    if stdin.write_all(payload.as_bytes()).is_err() {
                         append_log("[sidecar] stdin write failed");
                         break;
                     }
@@ -451,11 +477,13 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
         }
     });
 
+    let child: SharedChild = Arc::new(Mutex::new(child));
+
     Ok(SidecarState {
         tx,
         pending_requests,
         next_request_id: AtomicU64::new(0),
-        child_pid,
+        child,
     })
 }
 
@@ -561,7 +589,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<SidecarState>() {
                     append_log("[app] exit — killing sidecar");
                     let _ = state.tx.send(SidecarMsg::Shutdown);
-                    kill_process_tree(state.child_pid);
+                    kill_sidecar(&state.child);
                 }
             }
         });
@@ -569,7 +597,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_sidecar_path, strip_windows_verbatim_prefix};
+    use super::{find_node_binary, resolve_sidecar_path, strip_windows_verbatim_prefix};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -652,5 +680,41 @@ mod tests {
             path,
             PathBuf::from(r"\\server\share\MouseTerm\sidecar\main.js")
         );
+    }
+
+    #[test]
+    fn finds_node_binary_with_triple_suffix() {
+        let dir = unique_temp_dir("node-triple");
+        fs::create_dir_all(&dir).expect("failed to create dir");
+        let suffix = if cfg!(windows) { ".exe" } else { "" };
+        let triple = "x86_64-pc-windows-msvc";
+        let expected = dir.join(format!("node-{triple}{suffix}"));
+        fs::write(&expected, b"fake").expect("failed to write fake binary");
+
+        let resolved = find_node_binary(&dir, triple).expect("should resolve");
+        assert_eq!(resolved, expected);
+        fs::remove_dir_all(&dir).expect("failed to clean temp dir");
+    }
+
+    #[test]
+    fn finds_node_binary_falls_back_to_stripped_name() {
+        let dir = unique_temp_dir("node-stripped");
+        fs::create_dir_all(&dir).expect("failed to create dir");
+        let suffix = if cfg!(windows) { ".exe" } else { "" };
+        let expected = dir.join(format!("node{suffix}"));
+        fs::write(&expected, b"fake").expect("failed to write fake binary");
+
+        let resolved = find_node_binary(&dir, "x86_64-pc-windows-msvc").expect("should resolve");
+        assert_eq!(resolved, expected);
+        fs::remove_dir_all(&dir).expect("failed to clean temp dir");
+    }
+
+    #[test]
+    fn returns_none_when_no_node_binary_present() {
+        let dir = unique_temp_dir("node-missing");
+        fs::create_dir_all(&dir).expect("failed to create dir");
+
+        assert!(find_node_binary(&dir, "x86_64-pc-windows-msvc").is_none());
+        fs::remove_dir_all(&dir).expect("failed to clean temp dir");
     }
 }
