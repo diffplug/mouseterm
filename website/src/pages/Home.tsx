@@ -13,6 +13,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import SiteHeader from "../components/SiteHeader";
 import posterUrl from "../assets/video-climb-blink-and-stare.webp";
 import videoUrl from "../assets/video-climb-blink-and-stare.mp4";
+import copyPasteVideoUrl from "../assets/video-copy-paste.mp4";
 import visualStudioIconUrl from "../assets/visual-studio-icon.svg";
 import tinyIconUrl from "../../assets/icon-tiny-dark.png";
 import standaloneLatest from "@standalone-latest";
@@ -692,9 +693,14 @@ function Home() {
               MouseTerm lets you copy paste like a human, not a terminal.
             </p>
           </div>
-          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 flex items-center justify-center">
-            <p className="text-sm opacity-40 italic">TODO: Copy/paste with line-break rewrap</p>
-          </div>
+          <video
+            src={copyPasteVideoUrl}
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="-mx-4 md:mx-0 block aspect-video w-[calc(100%+2rem)] max-w-none md:w-full md:max-w-full object-cover"
+          />
         </section>
 
         {/* Section 3: image left, text right */}
