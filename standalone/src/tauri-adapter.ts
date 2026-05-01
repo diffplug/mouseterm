@@ -94,7 +94,7 @@ export class TauriAdapter implements PlatformAdapter {
       unlisten();
     }
     this.unlistenFns = [];
-    invoke("shutdown_sidecar");
+    invoke("kill_sidecar_now");
   }
 
   async getAvailableShells(): Promise<{ name: string; path: string; args?: string[] }[]> {
