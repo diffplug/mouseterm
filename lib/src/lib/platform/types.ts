@@ -29,7 +29,7 @@ export interface PlatformAdapter {
   // Clipboard support for file references and raw images.
   readClipboardFilePaths(): Promise<string[] | null>;
   readClipboardImageAsFilePath(): Promise<string | null>;
-  // Only present on adapters with a native (non-DOM) drag-drop source.
+  // Only present on adapters with a native (non-DOM) drag-drop source. Currently inert in Tauri; see diffplug/mouseterm#38 and tauri-apps/tauri#14373.
   onFilesDropped?(handler: (paths: string[]) => void): () => void;
 
   // PTY event listeners
