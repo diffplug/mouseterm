@@ -413,18 +413,19 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
     let child_pid = child.id();
     append_log(format!("[sidecar] spawned Node.js runtime (pid={child_pid})"));
 
-    let mut stdin = child
-        .stdin()
-        .take()
-        .ok_or_else(|| "sidecar stdin missing".to_string())?;
-    let stdout = child
-        .stdout()
-        .take()
-        .ok_or_else(|| "sidecar stdout missing".to_string())?;
-    let stderr = child
-        .stderr()
-        .take()
-        .ok_or_else(|| "sidecar stderr missing".to_string())?;
+    // We piped all three streams ourselves, so `take` should always succeed —
+    // but if it doesn't, the child is already running and would otherwise
+    // outlive this function. Reap it before bailing.
+    let stdin = child.stdin().take();
+    let stdout = child.stdout().take();
+    let stderr = child.stderr().take();
+    let (mut stdin, stdout, stderr) = match (stdin, stdout, stderr) {
+        (Some(i), Some(o), Some(e)) => (i, o, e),
+        _ => {
+            let _ = child.start_kill();
+            return Err("sidecar pipes missing after spawn".to_string());
+        }
+    };
 
     let handle = app.clone();
     let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
