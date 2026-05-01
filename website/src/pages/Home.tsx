@@ -295,11 +295,10 @@ function Home() {
     const wordRefs = [word0Ref, word1Ref, word2Ref];
     let ticking = false;
     let frameId = 0;
-    let revealAnimationFrameId = 0;
-    let revealTimeoutId = 0;
+    let handoffAnimationFrameId = 0;
+    let handoffTimeoutId = 0;
     let videoFrameCallbackId = 0;
-    let pendingRevealFrame = -1;
-    let revealedVideoFrame = -1;
+    let posterHandoffPending = false;
     let posterIsVisible = true;
     let disposed = false;
     let lastSeekFrame = -1;
@@ -310,43 +309,41 @@ function Home() {
       setShowHeroPoster(visible);
     }
 
-    function clearPendingVideoReveal() {
-      pendingRevealFrame = -1;
+    function cancelPosterHandoff() {
+      posterHandoffPending = false;
       if (videoFrameCallbackId && videoWithFrameCallbacks.cancelVideoFrameCallback) {
         videoWithFrameCallbacks.cancelVideoFrameCallback(videoFrameCallbackId);
       }
       videoFrameCallbackId = 0;
-      if (revealAnimationFrameId) cancelAnimationFrame(revealAnimationFrameId);
-      revealAnimationFrameId = 0;
-      if (revealTimeoutId) window.clearTimeout(revealTimeoutId);
-      revealTimeoutId = 0;
+      if (handoffAnimationFrameId) cancelAnimationFrame(handoffAnimationFrameId);
+      handoffAnimationFrameId = 0;
+      if (handoffTimeoutId) window.clearTimeout(handoffTimeoutId);
+      handoffTimeoutId = 0;
     }
 
-    function revealVideoFrame(frame: number) {
+    function completePosterHandoff() {
       if (disposed) return;
-      clearPendingVideoReveal();
-      revealedVideoFrame = frame;
-      if (frame > 0) setPosterVisible(false);
+      cancelPosterHandoff();
+      setPosterVisible(false);
     }
 
-    function scheduleVideoFrameReveal(frame: number) {
-      if (frame <= 0 || revealedVideoFrame === frame || pendingRevealFrame === frame) return;
-      clearPendingVideoReveal();
-      pendingRevealFrame = frame;
+    function schedulePosterHandoff() {
+      if (!posterIsVisible || posterHandoffPending) return;
+      posterHandoffPending = true;
 
       if (videoWithFrameCallbacks.requestVideoFrameCallback) {
         videoFrameCallbackId = videoWithFrameCallbacks.requestVideoFrameCallback(() => {
           videoFrameCallbackId = 0;
-          revealVideoFrame(frame);
+          completePosterHandoff();
         });
-        revealTimeoutId = window.setTimeout(() => revealVideoFrame(frame), 500);
+        handoffTimeoutId = window.setTimeout(completePosterHandoff, 500);
         return;
       }
 
-      revealAnimationFrameId = requestAnimationFrame(() => {
-        revealAnimationFrameId = requestAnimationFrame(() => {
-          revealAnimationFrameId = 0;
-          revealVideoFrame(frame);
+      handoffAnimationFrameId = requestAnimationFrame(() => {
+        handoffAnimationFrameId = requestAnimationFrame(() => {
+          handoffAnimationFrameId = 0;
+          completePosterHandoff();
         });
       });
     }
@@ -391,19 +388,17 @@ function Home() {
         const frameIsCurrent = Math.abs(video.currentTime - targetTime) <= frameDuration / 2;
 
         if (targetFrame === 0) {
-          clearPendingVideoReveal();
+          cancelPosterHandoff();
           lastSeekFrame = 0;
           setPosterVisible(true);
-          revealedVideoFrame = 0;
         } else if (targetFrame !== lastSeekFrame || (!video.seeking && !frameIsCurrent)) {
           const needsPosterHandoff = posterIsVisible;
-          clearPendingVideoReveal();
-          revealedVideoFrame = needsPosterHandoff ? -1 : targetFrame;
+          if (needsPosterHandoff) cancelPosterHandoff();
           lastSeekFrame = targetFrame;
           video.currentTime = targetTime;
-          if (needsPosterHandoff) scheduleVideoFrameReveal(targetFrame);
+          if (needsPosterHandoff) schedulePosterHandoff();
         } else if (!video.seeking) {
-          scheduleVideoFrameReveal(targetFrame);
+          schedulePosterHandoff();
         }
       } else {
         setPosterVisible(true);
@@ -511,24 +506,16 @@ function Home() {
     const handleCanPlayThrough = () => {
       unlocked = true;
       scheduleScrollSync();
-      scheduleVideoFrameReveal(lastSeekFrame);
     };
     const handleLoadedMetadata = () => {
       lastSeekFrame = -1;
-      revealedVideoFrame = -1;
-      clearPendingVideoReveal();
+      cancelPosterHandoff();
       setPosterVisible(true);
       scheduleScrollSync();
     };
-    const handleVideoFrameReady = () => {
-      scheduleVideoFrameReveal(lastSeekFrame);
-    };
     video.addEventListener("canplaythrough", handleCanPlayThrough, { once: true });
-    video.addEventListener("canplay", handleVideoFrameReady);
-    video.addEventListener("loadeddata", handleVideoFrameReady);
     video.addEventListener("loadedmetadata", handleLoadedMetadata);
     video.addEventListener("durationchange", scheduleScrollSync);
-    video.addEventListener("seeked", handleVideoFrameReady);
 
     function onScroll() {
       if (!unlocked) unlock();
@@ -541,16 +528,13 @@ function Home() {
 
     return () => {
       disposed = true;
-      clearPendingVideoReveal();
+      cancelPosterHandoff();
       cancelAnimationFrame(frameId);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("touchstart", unlock);
       video.removeEventListener("canplaythrough", handleCanPlayThrough);
-      video.removeEventListener("canplay", handleVideoFrameReady);
-      video.removeEventListener("loadeddata", handleVideoFrameReady);
       video.removeEventListener("loadedmetadata", handleLoadedMetadata);
       video.removeEventListener("durationchange", scheduleScrollSync);
-      video.removeEventListener("seeked", handleVideoFrameReady);
     };
   }, []);
 
