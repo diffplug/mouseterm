@@ -3,13 +3,13 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use std::{
     collections::HashMap,
     env,
-    fs::{create_dir_all, OpenOptions},
+    fs::{create_dir_all, File, OpenOptions},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::Stdio,
     sync::atomic::{AtomicU64, Ordering},
     sync::mpsc,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
@@ -58,8 +58,33 @@ fn default_log_path() -> PathBuf {
     env::temp_dir().join("mouseterm.log")
 }
 
+fn log_path() -> &'static Path {
+    static PATH: OnceLock<PathBuf> = OnceLock::new();
+    PATH.get_or_init(default_log_path)
+}
+
+// `append_log` runs per stdout/stderr line from the sidecar; reopening
+// the file each call costs a syscall + dir-walk per chatty subprocess
+// log line. Cache an append handle for the life of the process.
+fn log_file() -> Option<&'static Mutex<File>> {
+    static FILE: OnceLock<Option<Mutex<File>>> = OnceLock::new();
+    FILE.get_or_init(|| {
+        let path = log_path();
+        if let Some(parent) = path.parent() {
+            let _ = create_dir_all(parent);
+        }
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()
+            .map(Mutex::new)
+    })
+    .as_ref()
+}
+
 fn init_log() {
-    let path = default_log_path();
+    let path = log_path();
     if let Some(parent) = path.parent() {
         let _ = create_dir_all(parent);
     }
@@ -68,7 +93,7 @@ fn init_log() {
         .create(true)
         .write(true)
         .truncate(true)
-        .open(&path)
+        .open(path)
     {
         let _ = writeln!(
             file,
@@ -80,19 +105,15 @@ fn init_log() {
 }
 
 fn append_log(message: impl AsRef<str>) {
-    let path = default_log_path();
-    if let Some(parent) = path.parent() {
-        let _ = create_dir_all(parent);
-    }
-
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+    let Some(file) = log_file() else { return };
+    if let Ok(mut file) = file.lock() {
         let _ = writeln!(file, "[{}] {}", log_timestamp(), message.as_ref());
     }
 }
 
 fn read_log_tail(max_bytes: usize) -> Result<String, String> {
-    let path = default_log_path();
-    let contents = std::fs::read_to_string(&path)
+    let path = log_path();
+    let contents = std::fs::read_to_string(path)
         .map_err(|e| format!("read {}: {e}", path.display()))?;
     if contents.len() <= max_bytes {
         return Ok(contents);
@@ -267,9 +288,8 @@ fn shutdown_sidecar(state: tauri::State<'_, SidecarState>) {
     kill_sidecar(&state.child);
 }
 
-/// Kill the sidecar via process-wrap. On Windows the Job Object wrapper
-/// guarantees the kill propagates to grandchildren even if the sidecar
-/// spawned its own children. On Unix it sends to the whole process group.
+// Job Object on Windows / process group on Unix — kill propagates to the
+// sidecar's grandchildren (the spawned shells).
 fn kill_sidecar(child: &SharedChild) {
     if let Ok(mut guard) = child.lock() {
         append_log(format!("[sidecar] killing (pid={})", guard.id()));
@@ -328,19 +348,17 @@ fn sidecar_script_arg_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-/// Locate the bundled Node.js binary at runtime. tauri-build/tauri-bundler
-/// place externalBin entries alongside the main exe, sometimes with the
-/// target-triple suffix (`node-x86_64-pc-windows-msvc.exe`) and sometimes
-/// stripped (`node.exe`). Try both, return the first that exists.
 fn resolve_node_binary_path() -> Result<PathBuf, String> {
     let exe = env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let dir = exe
         .parent()
         .ok_or_else(|| "current_exe has no parent".to_string())?;
-    Ok(find_node_binary(dir, env!("TAURI_ENV_TARGET_TRIPLE"))
-        .ok_or_else(|| format!("node sidecar not found in {}", dir.display()))?)
+    find_node_binary(dir, env!("TAURI_ENV_TARGET_TRIPLE"))
+        .ok_or_else(|| format!("node sidecar not found in {}", dir.display()))
 }
 
+// tauri-bundler sometimes strips the target-triple suffix (e.g. install dir
+// has `node.exe`, dev/bundle has `node-x86_64-pc-windows-msvc.exe`).
 fn find_node_binary(dir: &Path, target_triple: &str) -> Option<PathBuf> {
     let suffix = if cfg!(windows) { ".exe" } else { "" };
     let candidates = [
@@ -388,7 +406,7 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
     let child_pid = child.id();
     append_log(format!("[sidecar] spawned Node.js runtime (pid={child_pid})"));
 
-    let stdin = child
+    let mut stdin = child
         .stdin()
         .take()
         .ok_or_else(|| "sidecar stdin missing".to_string())?;
@@ -405,7 +423,6 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
     let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
     let pending_requests_for_task = Arc::clone(&pending_requests);
 
-    // ── stdout reader thread ────────────────────────────────────────────
     std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line_result in reader.lines() {
@@ -442,7 +459,6 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
         }
     });
 
-    // ── stderr reader thread ────────────────────────────────────────────
     std::thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line_result in reader.lines() {
@@ -455,9 +471,7 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
         }
     });
 
-    // ── stdin writer thread ─────────────────────────────────────────────
     let (tx, writer_rx) = mpsc::channel::<SidecarMsg>();
-    let mut stdin = stdin;
 
     std::thread::spawn(move || {
         while let Ok(msg) = writer_rx.recv() {
