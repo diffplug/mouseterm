@@ -10,7 +10,7 @@ At the `/playground` route on the website. **Status: Implemented** (Epics 14, 15
 
 ### Implementation
 
-- `website/src/pages/Playground.tsx` — Page component. Dynamically imports Wall (SSR-safe). Initializes `FakePtyAdapter`, `TutorialShell`, `AsciiSplashRunner`, and `TutorialDetector`. Passes `onApiReady` to set up the 3-pane layout and `onEvent` for step detection.
+- `website/src/pages/Playground.tsx` — Page component. Dynamically imports Wall (SSR-safe). Initializes `FakePtyAdapter`, per-terminal `TutorialShell` instances through `PlaygroundShellRegistry`, `AsciiSplashRunner`, and `TutorialDetector`. Passes `onApiReady` to set up the 3-pane layout and `onEvent` for step detection.
 - `website/src/components/SiteHeader.tsx` — Shared header. Accepts an optional playground-only `controls` slot and a `themeAware` mode that reads the active VSCode theme variables.
 - `mouseterm-lib/components/ThemePicker` — Shared header dropdown for bundled and installed themes. The playground passes `variant="playground-header"` and the footer action opens the OpenVSX installer.
 - `website/vite.config.ts` — Vite alias `mouseterm-lib` → `../lib/src` for workspace imports.
@@ -19,11 +19,13 @@ At the `/playground` route on the website. **Status: Implemented** (Epics 14, 15
 
 The sandbox starts pre-populated — not empty. Scenarios assigned via `FakePtyAdapter.setScenario()` before Wall mounts:
 
-- **Pane 1** (`tut-main`, left, ~60%): `SCENARIO_TUTORIAL_MOTD` — MOTD welcome message + shell prompt. `TutorialShell` handles all input via `FakePtyAdapter.setInputHandler()`.
-- **Pane 2** (`tut-npm`, right-top, ~40%): `SCENARIO_LONG_RUNNING` — `npm install` with progress dots.
+- **Pane 1** (`tut-main`, left, ~60%): `SCENARIO_TUTORIAL_MOTD` — MOTD welcome message + shell prompt.
+- **Pane 2** (`tut-npm`, right-top, ~40%): `SCENARIO_LONG_RUNNING` — `npm install` with progress dots, then returns to the shell prompt.
 - **Pane 3** (`tut-ls`, right-bottom): `SCENARIO_LS_OUTPUT` — `ls -la` output with a prompt.
 
 The two right-side panes are added in `onApiReady` with `position: { referencePanel, direction }` after Wall creates the initial main pane.
+
+Every playground pane gets its own `TutorialShell` input handler through `PlaygroundShellRegistry`. Initial demo scenarios own their output while they are playing, then the shell handles Enter, line editing, `tut`, and `ascii-splash` / `splash`. Newly split or spawned fake terminals use `SCENARIO_SHELL_PROMPT` by default so they start at `user@mouseterm:~$` instead of a blank terminal.
 
 ## Playground Shell Commands
 
@@ -166,6 +168,7 @@ The picker restores the persisted active theme on mount. The playground header i
 
 - All progress keyed as `mouseterm-tutorial-step-N` in localStorage (values: `'true'`).
 - `FakePtyAdapter` extensions: `setInputHandler(id, fn)` routes `writePty` calls to a custom handler; `sendOutput(id, data)` writes to a terminal's output stream.
+- `PlaygroundShellRegistry` creates one `TutorialShell` per pane id, clears input handlers on disposal, and starts `AsciiSplashRunner` against the pane that launched it.
 - `FakePtyAdapter` also tracks fake PTY dimensions from `spawnPty()` / `resizePty()`, exposes `getPtySize(id)`, and provides `onPtyResize(fn)` for browser-side fake programs such as `AsciiSplashRunner`.
 - `Wall` extensions: `initialPaneIds` prop seeds the first pane(s); `onApiReady` callback prop exposes `DockviewApi`; `onEvent` callback prop fires `WallEvent` for mode/zoom/minimize/selection/split changes (types: `modeChange`, `zoomChange`, `minimizeChange`, `split`, `selectionChange`).
 - `SCENARIO_TUTORIAL_MOTD` scenario added to `lib/src/lib/platform/fake-scenarios.ts`.

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import SiteHeader from "../components/SiteHeader";
 import { ThemePicker } from "mouseterm-lib/components/ThemePicker";
-import { TutorialShell } from "../lib/tutorial-shell";
+import { PlaygroundShellRegistry } from "../lib/playground-shells";
 import { TutorialDetector } from "../lib/tutorial-detection";
 
 export { Playground as Component };
@@ -13,14 +13,16 @@ const PANE_LS = "tut-ls";
 
 type FakePtyAdapter = import("mouseterm-lib/lib/platform/fake-adapter").FakePtyAdapter;
 type WallEvent = import("mouseterm-lib/components/Wall").WallEvent;
+type DockviewDisposable = { dispose: () => void };
 
 function Playground() {
   const [WallModule, setWallModule] = useState<{
     Wall: React.ComponentType<any>;
   } | null>(null);
   const adapterRef = useRef<FakePtyAdapter | null>(null);
-  const shellRef = useRef<TutorialShell | null>(null);
+  const shellRegistryRef = useRef<PlaygroundShellRegistry | null>(null);
   const detectorRef = useRef<TutorialDetector | null>(null);
+  const dockviewDisposablesRef = useRef<DockviewDisposable[]>([]);
 
   useEffect(() => {
     async function loadWall() {
@@ -37,25 +39,29 @@ function Playground() {
       adapterRef.current = adapter;
 
       // Assign scenarios to panes before Wall mounts them
+      adapter.setDefaultScenario(scenarios.SCENARIO_SHELL_PROMPT);
       adapter.setScenario(PANE_NPM, scenarios.SCENARIO_LONG_RUNNING);
       adapter.setScenario(PANE_LS, scenarios.SCENARIO_LS_OUTPUT);
       adapter.setScenario(PANE_MAIN, scenarios.SCENARIO_TUTORIAL_MOTD);
 
-      // Wire up the tutorial shell
-      const shell = new TutorialShell(
-        (data) => adapter.sendOutput(PANE_MAIN, data),
-        (args, onExit) => new asciiSplash.AsciiSplashRunner({
+      // Wire up a shell for every playground terminal. Named scenarios print
+      // demo output first; the shell takes over once scenario playback ends.
+      const shellRegistry = new PlaygroundShellRegistry(
+        adapter,
+        (terminalId, args, onExit) => new asciiSplash.AsciiSplashRunner({
           adapter,
-          terminalId: PANE_MAIN,
+          terminalId,
           args,
           onExit,
         }),
       );
-      shellRef.current = shell;
-      adapter.setInputHandler(PANE_MAIN, (data) => shell.handleInput(data));
+      shellRegistryRef.current = shellRegistry;
+      const mainShell = shellRegistry.ensureShell(PANE_MAIN);
+      shellRegistry.ensureShell(PANE_NPM);
+      shellRegistry.ensureShell(PANE_LS);
 
       // Wire up step detection
-      const detector = new TutorialDetector(shell);
+      const detector = new TutorialDetector(mainShell);
       detectorRef.current = detector;
 
       setWallModule({ Wall: wall.Wall });
@@ -63,13 +69,25 @@ function Playground() {
     loadWall();
 
     return () => {
+      for (const disposable of dockviewDisposablesRef.current) {
+        disposable.dispose();
+      }
+      dockviewDisposablesRef.current = [];
       detectorRef.current?.dispose();
-      shellRef.current?.dispose();
-      adapterRef.current?.clearInputHandler(PANE_MAIN);
+      shellRegistryRef.current?.disposeAll();
+      shellRegistryRef.current = null;
     };
   }, []);
 
   const handleApiReady = useCallback((api: any) => {
+    const shellRegistry = shellRegistryRef.current;
+    shellRegistry?.ensureShell(PANE_MAIN);
+
+    const addDisposable = api.onDidAddPanel((panel: { id?: string } | undefined) => {
+      if (panel?.id) shellRegistryRef.current?.ensureShell(panel.id);
+    });
+    dockviewDisposablesRef.current.push(addDisposable);
+
     api.addPanel({
       id: PANE_NPM,
       component: "terminal",

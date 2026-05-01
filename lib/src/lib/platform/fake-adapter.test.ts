@@ -150,6 +150,36 @@ describe('FakePtyAdapter', () => {
     expect(adapter.getPtySize('t1')).toEqual({ cols: 80, rows: 30 });
   });
 
+  it('clears input handlers on kill', () => {
+    const { adapter, dataEvents } = createAdapter();
+    const handled: string[] = [];
+    adapter.spawnPty('t1');
+    adapter.setInputHandler('t1', (data) => handled.push(data));
+
+    adapter.writePty('t1', 'before');
+    adapter.killPty('t1');
+    adapter.spawnPty('t1');
+    adapter.writePty('t1', 'after');
+
+    expect(handled).toEqual(['before']);
+    expect(dataEvents).toEqual([{ id: 't1', data: 'after' }]);
+  });
+
+  it('clears input handlers on reset', () => {
+    const { adapter, dataEvents } = createAdapter();
+    const handled: string[] = [];
+    adapter.spawnPty('t1');
+    adapter.setInputHandler('t1', (data) => handled.push(data));
+
+    adapter.reset();
+    adapter.onPtyData((detail) => dataEvents.push(detail));
+    adapter.spawnPty('t1');
+    adapter.writePty('t1', 'after-reset');
+
+    expect(handled).toEqual([]);
+    expect(dataEvents).toEqual([{ id: 't1', data: 'after-reset' }]);
+  });
+
   // --- Scenario Playback (Story 11.2) ---
 
   const twoChunkScenario: FakeScenario = {

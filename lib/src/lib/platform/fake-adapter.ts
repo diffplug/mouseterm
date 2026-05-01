@@ -70,6 +70,7 @@ export class FakePtyAdapter implements PlatformAdapter {
     this.dataHandlers.clear();
     this.exitHandlers.clear();
     this.resizeHandlers.clear();
+    this.inputHandlers.clear();
     this.alertManager.dispose();
     this.alertManager = new AlertManager();
     this.alertManager.onStateChange((id, state) => {
@@ -130,6 +131,7 @@ export class FakePtyAdapter implements PlatformAdapter {
     }
     this.terminals.delete(id);
     this.terminalSizes.delete(id);
+    this.inputHandlers.delete(id);
     for (const handler of this.exitHandlers) {
       handler({ id, exitCode: 0 });
     }
