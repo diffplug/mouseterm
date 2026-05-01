@@ -9,7 +9,7 @@ import {
   TerminalIcon,
   WindowsLogoIcon,
 } from "@phosphor-icons/react";
-import { useEffect, useRef, useState, type CSSProperties, type MouseEventHandler, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEventHandler, type ReactNode } from "react";
 import SiteHeader from "../components/SiteHeader";
 import posterUrl from "../assets/video-climb-blink-and-stare.webp";
 import videoUrl from "../assets/video-climb-blink-and-stare.mp4";
@@ -36,6 +36,7 @@ const HERO_VIDEO_FPS = 24;
 
 /** Clamp a value to 0–1. */
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+const useClientLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 const downloadAccentStyle = {
   "--download-accent": "oklch(72% 0.15 72)",
@@ -220,6 +221,33 @@ function Home() {
   const hookRef = useRef<HTMLDivElement>(null);
   const [installGuide, setInstallGuide] = useState<string | null>(null);
   const [heroVideoSrc, setHeroVideoSrc] = useState<string | undefined>();
+  const [heroPosterReady, setHeroPosterReady] = useState(false);
+  const [heroLayoutReady, setHeroLayoutReady] = useState(false);
+  const heroCanPaint = heroPosterReady && heroLayoutReady;
+
+  useEffect(() => {
+    let cancelled = false;
+    const image = new Image();
+    const markReady = () => {
+      if (!cancelled) setHeroPosterReady(true);
+    };
+
+    image.src = posterUrl;
+    if (image.complete && image.naturalWidth > 0) {
+      markReady();
+    } else if (image.decode) {
+      image.decode().then(markReady, markReady);
+    } else {
+      image.onload = markReady;
+      image.onerror = markReady;
+    }
+
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, []);
 
   useEffect(() => {
     let objectUrl: string | null = null;
@@ -245,7 +273,7 @@ function Home() {
     };
   }, []);
 
-  useEffect(() => {
+  useClientLayoutEffect(() => {
     const videoElement = videoRef.current;
     const runwayElement = runwayRef.current;
     if (!videoElement || !runwayElement) return;
@@ -254,121 +282,128 @@ function Home() {
 
     const wordRefs = [word0Ref, word1Ref, word2Ref];
     let ticking = false;
+    let frameId = 0;
+    let disposed = false;
     let lastSeekFrame = -1;
+
+    function syncScrollState() {
+      if (disposed) return;
+
+      // How far through the scroll runway (0–1, clamped for animations)
+      const rect = runway.getBoundingClientRect();
+      const runwayScroll = -rect.top;
+      const runwayHeight = runway.offsetHeight - window.innerHeight;
+      const fraction = runwayHeight > 0
+        ? clamp01(runwayScroll / runwayHeight)
+        : 0;
+
+      // Rendered icon height (object-contain preserves aspect ratio within container).
+      const naturalAspect = video.videoWidth && video.videoHeight
+        ? video.videoWidth / video.videoHeight
+        : 1.22; // fallback before metadata loads
+      const containerAspect = video.offsetWidth / video.offsetHeight;
+      const iconHeight = naturalAspect > containerAspect
+        ? video.offsetWidth / naturalAspect  // width-limited
+        : video.offsetHeight;                 // height-limited
+      const initialOffset = iconHeight * ICON_INITIAL_HIDE_FRAC;
+
+      // Scrub video: hold frame 0 during icon rise, then scrub remaining range.
+      // Quantize to source frames and skip duplicate frame requests. This avoids
+      // issuing repeated seeks while a previous frame seek is still resolving.
+      if (video.duration && isFinite(video.duration)) {
+        let target = 0;
+        if (runwayScroll >= initialOffset) {
+          const videoProgress = (runwayHeight - initialOffset) > 0
+            ? clamp01((runwayScroll - initialOffset) / (runwayHeight - initialOffset))
+            : 0;
+          target = videoProgress * video.duration;
+        }
+        const maxFrame = Math.max(0, Math.round(video.duration * HERO_VIDEO_FPS) - 1);
+        const targetFrame = Math.min(maxFrame, Math.max(0, Math.round(target * HERO_VIDEO_FPS)));
+        const targetTime = targetFrame / HERO_VIDEO_FPS;
+        const frameDuration = 1 / HERO_VIDEO_FPS;
+        const frameIsCurrent = Math.abs(video.currentTime - targetTime) <= frameDuration / 2;
+        if (targetFrame !== lastSeekFrame || (!video.seeking && !frameIsCurrent)) {
+          lastSeekFrame = targetFrame;
+          video.currentTime = targetTime;
+        }
+      }
+
+      // Reveal words
+      for (let i = 0; i < WORD_THRESHOLDS.length; i++) {
+        const el = wordRefs[i].current;
+        if (!el) continue;
+        const progress = clamp01(
+          (fraction - WORD_THRESHOLDS[i]) / 0.08
+        );
+        el.style.opacity = String(progress);
+        el.style.transform = `translateY(${(1 - progress) * 12}px)`;
+      }
+
+      // Asterisk + footnote
+      const astProgress = clamp01(
+        (fraction - ASTERISK_THRESHOLD) / 0.08
+      );
+      if (asteriskRef.current) asteriskRef.current.style.opacity = String(astProgress);
+      if (footnoteRef.current) footnoteRef.current.style.opacity = String(astProgress * 0.7);
+
+      // Header: reveal brand + background just before the tmux-shortcuts
+      // footnote appears, so it reads as dark once the line is visible.
+      const headerProgress = clamp01(
+        (fraction - (ASTERISK_THRESHOLD - HEADER_REVEAL_LEAD)) / HEADER_REVEAL_LEAD
+      );
+      if (headerBrandRef.current) {
+        headerBrandRef.current.style.opacity = String(headerProgress);
+      }
+      if (headerRef.current) {
+        const headerBlur = headerProgress > 0 ? `blur(${headerProgress * 4}px)` : '';
+        headerRef.current.style.backgroundColor = `rgba(0, 0, 0, ${headerProgress * 0.6})`;
+        headerRef.current.style.backdropFilter = headerBlur;
+        headerRef.current.style.setProperty("-webkit-backdrop-filter", headerBlur);
+      }
+
+      // Slide video + hero up once the content section enters the viewport.
+      // Both start at the same scroll position so they move in lockstep.
+      const contentEnterScroll = runway.offsetHeight * UNPIN_THRESHOLD - window.innerHeight;
+      const slideAmount = Math.max(0, runwayScroll - contentEnterScroll);
+
+      // Video transform combines two behaviors:
+      //   1. Icon-rise (runwayScroll 0 → initialOffset): translate down so only
+      //      the top third is visible; scroll lifts it 1:1 until fully in view.
+      //   2. Unpin slide (fraction > UNPIN_THRESHOLD): translate up with content.
+      const iconCurrentOffset = Math.max(0, initialOffset - runwayScroll);
+      const videoTranslateY = iconCurrentOffset > 0
+        ? iconCurrentOffset
+        : slideAmount > 0 ? -slideAmount : 0;
+      video.style.transform = `translate3d(0, ${videoTranslateY.toFixed(3)}px, 0)`;
+
+      // Hook text: visible until the icon nearly finishes rising, then fades out.
+      if (hookRef.current) {
+        const remainingHidden = iconHeight > 0 ? iconCurrentOffset / iconHeight : 0;
+        const fadeProgress = iconCurrentOffset === 0
+          ? 1
+          : clamp01(1 - remainingHidden / HOOK_FADE_REMAINING);
+        hookRef.current.style.opacity = String(1 - fadeProgress);
+        hookRef.current.style.transform = `translateY(${-fadeProgress * 24}px)`;
+      }
+
+      // Hero: cap so it stops at unstick (fraction = 1); natural scroll takes over.
+      const maxHeroOffset = runway.offsetHeight * (1 - UNPIN_THRESHOLD);
+      const heroOffset = Math.min(slideAmount, maxHeroOffset);
+      if (heroRef.current) {
+        heroRef.current.style.transform = heroOffset > 0
+          ? `translate3d(0, -${heroOffset.toFixed(3)}px, 0)`
+          : '';
+      }
+    }
 
     function scheduleScrollSync() {
       if (ticking) return;
       ticking = true;
 
-      requestAnimationFrame(() => {
+      frameId = requestAnimationFrame(() => {
         ticking = false;
-
-        // How far through the scroll runway (0–1, clamped for animations)
-        const rect = runway.getBoundingClientRect();
-        const runwayScroll = -rect.top;
-        const runwayHeight = runway.offsetHeight - window.innerHeight;
-        const fraction = runwayHeight > 0
-          ? clamp01(runwayScroll / runwayHeight)
-          : 0;
-
-        // Rendered icon height (object-contain preserves aspect ratio within container).
-        const naturalAspect = video.videoWidth && video.videoHeight
-          ? video.videoWidth / video.videoHeight
-          : 1.22; // fallback before metadata loads
-        const containerAspect = video.offsetWidth / video.offsetHeight;
-        const iconHeight = naturalAspect > containerAspect
-          ? video.offsetWidth / naturalAspect  // width-limited
-          : video.offsetHeight;                 // height-limited
-        const initialOffset = iconHeight * ICON_INITIAL_HIDE_FRAC;
-
-        // Scrub video: hold frame 0 during icon rise, then scrub remaining range.
-        // Quantize to source frames and skip duplicate frame requests. This avoids
-        // issuing repeated seeks while a previous frame seek is still resolving.
-        if (video.duration && isFinite(video.duration)) {
-          let target = 0;
-          if (runwayScroll >= initialOffset) {
-            const videoProgress = (runwayHeight - initialOffset) > 0
-              ? clamp01((runwayScroll - initialOffset) / (runwayHeight - initialOffset))
-              : 0;
-            target = videoProgress * video.duration;
-          }
-          const maxFrame = Math.max(0, Math.round(video.duration * HERO_VIDEO_FPS) - 1);
-          const targetFrame = Math.min(maxFrame, Math.max(0, Math.round(target * HERO_VIDEO_FPS)));
-          const targetTime = targetFrame / HERO_VIDEO_FPS;
-          const frameDuration = 1 / HERO_VIDEO_FPS;
-          const frameIsCurrent = Math.abs(video.currentTime - targetTime) <= frameDuration / 2;
-          if (targetFrame !== lastSeekFrame || (!video.seeking && !frameIsCurrent)) {
-            lastSeekFrame = targetFrame;
-            video.currentTime = targetTime;
-          }
-        }
-
-        // Reveal words
-        for (let i = 0; i < WORD_THRESHOLDS.length; i++) {
-          const el = wordRefs[i].current;
-          if (!el) continue;
-          const progress = clamp01(
-            (fraction - WORD_THRESHOLDS[i]) / 0.08
-          );
-          el.style.opacity = String(progress);
-          el.style.transform = `translateY(${(1 - progress) * 12}px)`;
-        }
-
-        // Asterisk + footnote
-        const astProgress = clamp01(
-          (fraction - ASTERISK_THRESHOLD) / 0.08
-        );
-        if (asteriskRef.current) asteriskRef.current.style.opacity = String(astProgress);
-        if (footnoteRef.current) footnoteRef.current.style.opacity = String(astProgress * 0.7);
-
-        // Header: reveal brand + background just before the tmux-shortcuts
-        // footnote appears, so it reads as dark once the line is visible.
-        const headerProgress = clamp01(
-          (fraction - (ASTERISK_THRESHOLD - HEADER_REVEAL_LEAD)) / HEADER_REVEAL_LEAD
-        );
-        if (headerBrandRef.current) {
-          headerBrandRef.current.style.opacity = String(headerProgress);
-        }
-        if (headerRef.current) {
-          const headerBlur = headerProgress > 0 ? `blur(${headerProgress * 4}px)` : '';
-          headerRef.current.style.backgroundColor = `rgba(0, 0, 0, ${headerProgress * 0.6})`;
-          headerRef.current.style.backdropFilter = headerBlur;
-          headerRef.current.style.setProperty("-webkit-backdrop-filter", headerBlur);
-        }
-
-        // Slide video + hero up once the content section enters the viewport.
-        // Both start at the same scroll position so they move in lockstep.
-        const contentEnterScroll = runway.offsetHeight * UNPIN_THRESHOLD - window.innerHeight;
-        const slideAmount = Math.max(0, runwayScroll - contentEnterScroll);
-
-        // Video transform combines two behaviors:
-        //   1. Icon-rise (runwayScroll 0 → initialOffset): translate down so only
-        //      the top third is visible; scroll lifts it 1:1 until fully in view.
-        //   2. Unpin slide (fraction > UNPIN_THRESHOLD): translate up with content.
-        const iconCurrentOffset = Math.max(0, initialOffset - runwayScroll);
-        const videoTranslateY = iconCurrentOffset > 0
-          ? iconCurrentOffset
-          : slideAmount > 0 ? -slideAmount : 0;
-        video.style.transform = `translate3d(0, ${videoTranslateY.toFixed(3)}px, 0)`;
-
-        // Hook text: visible until the icon nearly finishes rising, then fades out.
-        if (hookRef.current) {
-          const remainingHidden = iconHeight > 0 ? iconCurrentOffset / iconHeight : 0;
-          const fadeProgress = iconCurrentOffset === 0
-            ? 1
-            : clamp01(1 - remainingHidden / HOOK_FADE_REMAINING);
-          hookRef.current.style.opacity = String(1 - fadeProgress);
-          hookRef.current.style.transform = `translateY(${-fadeProgress * 24}px)`;
-        }
-
-        // Hero: cap so it stops at unstick (fraction = 1); natural scroll takes over.
-        const maxHeroOffset = runway.offsetHeight * (1 - UNPIN_THRESHOLD);
-        const heroOffset = Math.min(slideAmount, maxHeroOffset);
-        if (heroRef.current) {
-          heroRef.current.style.transform = heroOffset > 0
-            ? `translate3d(0, -${heroOffset.toFixed(3)}px, 0)`
-            : '';
-        }
+        syncScrollState();
       });
     }
 
@@ -409,9 +444,12 @@ function Home() {
     }
 
     window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll(); // initial position
+    syncScrollState(); // initial position, before first paint
+    setHeroLayoutReady(true);
 
     return () => {
+      disposed = true;
+      cancelAnimationFrame(frameId);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("touchstart", unlock);
       video.removeEventListener("canplaythrough", handleCanPlayThrough);
@@ -421,7 +459,7 @@ function Home() {
   }, []);
 
   return (
-    <>
+    <div style={{ visibility: heroCanPaint ? "visible" : "hidden" }}>
       <SiteHeader ref={headerRef} brandRef={headerBrandRef} brandVisible={false} />
 
       {/* ── Fixed video layer — bottom-anchored, scrubs for the full runway ── */}
@@ -435,7 +473,6 @@ function Home() {
         className="fixed bottom-0 left-0 w-full object-contain object-bottom z-0 will-change-transform"
         style={{
           height: "min(500px, calc(100vh - 420px))",
-          transform: "translate3d(0, 0, 0)",
         }}
       />
 
@@ -640,6 +677,6 @@ function Home() {
           </div>
         </footer>
       </div>
-    </>
+    </div>
   );
 }
