@@ -100,6 +100,27 @@ test('resolveSpawnConfig falls back to the default directory when explicit cwd i
   assert.equal(config.rows, 40);
 });
 
+test('resolveSpawnConfig treats empty args array as no-override and applies -l', () => {
+  // Regression: detectAvailableShells returns args:[] on Unix, which used to
+  // suppress the -l fallback (empty array is truthy). That caused the login
+  // shell to skip ~/.zprofile, leaving Homebrew/asdf off PATH and producing
+  // "asdf_update_java_home: command not found: asdf" on every prompt.
+  const config = resolveSpawnConfig(
+    { args: [] },
+    {
+      platform: 'darwin',
+      env: { SHELL: '/bin/zsh' },
+      osModule: {
+        homedir: () => '/Users/tester',
+        tmpdir: () => '/tmp/fallback',
+      },
+    },
+  );
+
+  assert.equal(config.shell, '/bin/zsh');
+  assert.deepEqual(config.shellArgs, ['-l']);
+});
+
 test('resolveSpawnConfig skips -l for csh', () => {
   const config = resolveSpawnConfig(undefined, {
     platform: 'darwin',
@@ -223,21 +244,20 @@ test('resolveSpawnConfig uses explicit shell with default args fallback', () => 
   assert.deepEqual(config.shellArgs, ['-l']);
 });
 
-test('resolveSpawnConfig uses explicit args with empty array', () => {
+test('resolveSpawnConfig honors non-empty explicit args (e.g. WSL distro flags)', () => {
   const config = resolveSpawnConfig(
-    { args: [] },
+    { args: ['-d', 'Ubuntu'] },
     {
-      platform: 'linux',
-      env: { SHELL: '/bin/bash' },
+      platform: 'win32',
+      env: {},
       osModule: {
-        homedir: () => '/home/tester',
-        tmpdir: () => '/tmp/fallback',
+        homedir: () => 'C:\\Users\\tester',
+        tmpdir: () => 'C:\\Temp',
       },
     },
   );
 
-  assert.equal(config.shell, '/bin/bash');
-  assert.deepEqual(config.shellArgs, []);
+  assert.deepEqual(config.shellArgs, ['-d', 'Ubuntu']);
 });
 
 // ── detectAvailableShells ───────────────────────────────────────────────
