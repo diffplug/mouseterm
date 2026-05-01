@@ -5,7 +5,6 @@ import {
   SCENARIO_SHELL_PROMPT,
   SCENARIO_LS_OUTPUT,
   SCENARIO_ANSI_COLORS,
-  SCENARIO_LONG_RUNNING,
 } from '../lib/platform';
 import { getActivitySnapshot, primeActivity, type ActivityState } from '../lib/terminal-registry';
 
@@ -47,6 +46,13 @@ async function minimizeSelectedPane() {
   await wait(150);
 }
 
+async function minimizeFirstVisiblePane() {
+  await wait(100);
+  const button = document.querySelector<HTMLButtonElement>('button[aria-label="Minimize"]');
+  button?.click();
+  await wait(200);
+}
+
 async function openAlertDialog() {
   await wait(250);
   const alertButton = document.querySelector<HTMLButtonElement>('[data-alert-button-for]');
@@ -71,33 +77,12 @@ export const MultiPane: Story = {
   play: splitPanes,
 };
 
-export const MultiPaneDark: Story = {
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_LS_OUTPUT) } },
-  globals: { theme: 'GitHub Dark Default' },
-  play: splitPanes,
-};
-
-export const MultiPaneLight: Story = {
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_LS_OUTPUT) } },
-  globals: { theme: 'GitHub Light Default' },
-  play: splitPanes,
-};
-
 export const WithDoors: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_LS_OUTPUT) } },
   play: async () => {
     await splitPanes();
-    await minimizeSelectedPane();
-  },
-};
-
-export const MarketingDemo: Story = {
-  parameters: { fakePty: { scenario: SCENARIO_LONG_RUNNING } },
-  play: async () => {
-    await wait(1_500);
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: '"', bubbles: true }));
-    await wait(1_000);
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: '%', bubbles: true }));
+    await minimizeFirstVisiblePane();
+    await minimizeFirstVisiblePane();
   },
 };
 

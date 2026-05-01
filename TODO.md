@@ -2,9 +2,9 @@
 
 ## Wall Stories
 
-- [ ] Remove `Wall/Multi Pane Dark` and `Wall/Multi Pane Light`; theme-specific Wall stories are not needed.
-- [ ] Fix `Wall/With Doors` so the story actually shows minimized doors.
-- [ ] Remove `Wall/Marketing Demo`.
+- [x] Remove `Wall/Multi Pane Dark` and `Wall/Multi Pane Light`; theme-specific Wall stories are not needed.
+- [x] Fix `Wall/With Doors` so the story actually shows minimized doors.
+- [x] Remove `Wall/Marketing Demo`.
 - [ ] Fix `Wall/Alert Enabled Idle Pane` so the alert-enabled state is visible.
 - [ ] Fix `Wall/Alert Ringing Pane` so the ringing state is visible.
 - [ ] Fix `Wall/Alert Ringing Door` so the minimized door shows the ringing state.
