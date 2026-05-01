@@ -5,13 +5,13 @@
 - [x] Remove `Wall/Multi Pane Dark` and `Wall/Multi Pane Light`; theme-specific Wall stories are not needed.
 - [x] Fix `Wall/With Doors` so the story actually shows minimized doors.
 - [x] Remove `Wall/Marketing Demo`.
-- [ ] Fix `Wall/Alert Enabled Idle Pane` so the alert-enabled state is visible.
-- [ ] Fix `Wall/Alert Ringing Pane` so the ringing state is visible.
-- [ ] Fix `Wall/Alert Ringing Door` so the minimized door shows the ringing state.
-- [ ] Fix `Wall/Alert Modal Open` so the alert dialog is visible.
-- [ ] Fix `Wall/Todo After Dismiss` so the TODO state is visible.
-- [ ] Fix `Wall/Minimized Ringing Session` so the minimized session shows ringing and TODO state.
-- [ ] Fix `Wall/Multiple Ringing Sessions` so all intended alert/TODO states are visible.
+- [x] Fix `Wall/Alert Enabled Idle Pane` so the alert-enabled state is visible.
+- [x] Fix `Wall/Alert Ringing Pane` so the ringing state is visible.
+- [x] Fix `Wall/Alert Ringing Door` so the minimized door shows the ringing state.
+- [x] Fix `Wall/Alert Modal Open` so the alert dialog is visible.
+- [x] Fix `Wall/Todo After Dismiss` so the TODO state is visible.
+- [x] Fix `Wall/Minimized Ringing Session` so the minimized session shows ringing and TODO state.
+- [x] Fix `Wall/Multiple Ringing Sessions` so all intended alert/TODO states are visible.
 
 ## Terminal Header Stories
 

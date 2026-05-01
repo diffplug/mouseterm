@@ -6,7 +6,7 @@ import {
   SCENARIO_LS_OUTPUT,
   SCENARIO_ANSI_COLORS,
 } from '../lib/platform';
-import { getActivitySnapshot, primeActivity, type ActivityState } from '../lib/terminal-registry';
+import type { ActivityState } from '../lib/terminal-registry';
 
 const meta: Meta<typeof Wall> = {
   title: 'App/Wall',
@@ -20,14 +20,12 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function primeByIndex(states: Partial<ActivityState>[]) {
-  const ids = [...getActivitySnapshot().keys()];
-  states.forEach((state, index) => {
-    const id = ids[index];
-    if (id) {
-      primeActivity(id, state);
-    }
-  });
+function withPrimedActivity(byId: Record<string, Partial<ActivityState>>) {
+  return {
+    primedSessionState: {
+      byId,
+    },
+  };
 }
 
 async function splitPanes() {
@@ -87,122 +85,123 @@ export const WithDoors: Story = {
 };
 
 export const AlertEnabledIdlePane: Story = {
+  args: {
+    initialPaneIds: ['wall-alert-enabled'],
+  },
   parameters: {
     fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
-    primedSessionState: {
-      byIndex: [
-        {
-          status: 'NOTHING_TO_SHOW',
-
-          todo: false,
-        },
-      ],
-    },
+    ...withPrimedActivity({
+      'wall-alert-enabled': {
+        status: 'NOTHING_TO_SHOW',
+        todo: false,
+      },
+    }),
   },
 };
 
 export const AlertRingingPane: Story = {
+  args: {
+    initialPaneIds: ['wall-alert-ringing'],
+  },
   parameters: {
     fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
-    primedSessionState: {
-      byIndex: [
-        {
-          status: 'ALERT_RINGING',
-
-          todo: false,
-        },
-      ],
-    },
+    ...withPrimedActivity({
+      'wall-alert-ringing': {
+        status: 'ALERT_RINGING',
+        todo: false,
+      },
+    }),
   },
 };
 
 export const AlertRingingDoor: Story = {
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
-  play: async () => {
-    await minimizeSelectedPane();
-    primeByIndex([
-      {
+  args: {
+    initialPaneIds: ['wall-alert-ringing-door'],
+  },
+  parameters: {
+    fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
+    ...withPrimedActivity({
+      'wall-alert-ringing-door': {
         status: 'ALERT_RINGING',
-
         todo: false,
       },
-    ]);
+    }),
+  },
+  play: async () => {
+    await minimizeSelectedPane();
     await wait(100);
   },
 };
 
 export const AlertModalOpen: Story = {
+  args: {
+    initialPaneIds: ['wall-alert-modal'],
+  },
   parameters: {
     fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
-    primedSessionState: {
-      byIndex: [
-        {
-          status: 'ALERT_RINGING',
-
-          todo: false,
-        },
-      ],
-    },
+    ...withPrimedActivity({
+      'wall-alert-modal': {
+        status: 'ALERT_RINGING',
+        todo: false,
+      },
+    }),
   },
   play: openAlertDialog,
 };
 
 export const TodoAfterDismiss: Story = {
+  args: {
+    initialPaneIds: ['wall-todo-after-dismiss'],
+  },
   parameters: {
     fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
-    primedSessionState: {
-      byIndex: [
-        {
-          status: 'ALERT_RINGING',
-
-          todo: true,
-        },
-      ],
-    },
+    ...withPrimedActivity({
+      'wall-todo-after-dismiss': {
+        status: 'ALERT_RINGING',
+        todo: true,
+      },
+    }),
   },
 };
 
 export const MinimizedRingingSession: Story = {
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
-  play: async () => {
-    await minimizeSelectedPane();
-    primeByIndex([
-      {
+  args: {
+    initialPaneIds: ['wall-minimized-ringing'],
+  },
+  parameters: {
+    fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
+    ...withPrimedActivity({
+      'wall-minimized-ringing': {
         status: 'ALERT_RINGING',
-
         todo: true,
       },
-      {
-        status: 'NOTHING_TO_SHOW',
-
-        todo: false,
-      },
-    ]);
+    }),
+  },
+  play: async () => {
+    await minimizeSelectedPane();
     await wait(100);
   },
 };
 
 export const MultipleRingingSessions: Story = {
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
-  play: async () => {
-    await splitPanes();
-    primeByIndex([
-      {
+  args: {
+    initialPaneIds: ['wall-ringing-one', 'wall-ringing-todo', 'wall-alert-enabled-idle'],
+  },
+  parameters: {
+    fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
+    ...withPrimedActivity({
+      'wall-ringing-one': {
         status: 'ALERT_RINGING',
-
         todo: false,
       },
-      {
+      'wall-ringing-todo': {
         status: 'ALERT_RINGING',
-
         todo: true,
       },
-      {
+      'wall-alert-enabled-idle': {
         status: 'NOTHING_TO_SHOW',
-
         todo: false,
       },
-    ]);
-    await wait(100);
+    }),
   },
 };
