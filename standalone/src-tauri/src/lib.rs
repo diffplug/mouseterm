@@ -489,6 +489,34 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
 
     let child: SharedChild = Arc::new(Mutex::new(child));
 
+    // Reaper: poll for exit so we log a real exit status and unblock any
+    // pending `request_from_sidecar_timeout` callers immediately instead of
+    // making them wait the full timeout when the sidecar has already died.
+    let child_for_reaper = Arc::clone(&child);
+    let pending_for_reaper = Arc::clone(&pending_requests);
+    std::thread::spawn(move || {
+        loop {
+            let status = match child_for_reaper.lock() {
+                Ok(mut guard) => guard.try_wait(),
+                Err(_) => return,
+            };
+            match status {
+                Ok(Some(status)) => {
+                    append_log(format!("[sidecar] exited (status: {status})"));
+                    if let Ok(mut pending) = pending_for_reaper.lock() {
+                        pending.clear();
+                    }
+                    return;
+                }
+                Ok(None) => std::thread::sleep(Duration::from_millis(250)),
+                Err(err) => {
+                    append_log(format!("[sidecar] wait error: {err}"));
+                    return;
+                }
+            }
+        }
+    });
+
     Ok(SidecarState {
         tx,
         pending_requests,
