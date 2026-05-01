@@ -396,11 +396,12 @@ function Home() {
           setPosterVisible(true);
           revealedVideoFrame = 0;
         } else if (targetFrame !== lastSeekFrame || (!video.seeking && !frameIsCurrent)) {
+          const needsPosterHandoff = posterIsVisible;
           clearPendingVideoReveal();
-          revealedVideoFrame = -1;
-          setPosterVisible(true);
+          revealedVideoFrame = needsPosterHandoff ? -1 : targetFrame;
           lastSeekFrame = targetFrame;
           video.currentTime = targetTime;
+          if (needsPosterHandoff) scheduleVideoFrameReveal(targetFrame);
         } else if (!video.seeking) {
           scheduleVideoFrameReveal(targetFrame);
         }
