@@ -24,12 +24,7 @@ use process_wrap::std::ProcessGroup;
 #[cfg(windows)]
 use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
-enum SidecarMsg {
-    Json(String),
-    Shutdown,
-}
-
-type SidecarSender = mpsc::Sender<SidecarMsg>;
+type SidecarSender = mpsc::Sender<String>;
 type PendingRequests = Arc<Mutex<HashMap<String, mpsc::Sender<JsonValue>>>>;
 type SharedChild = Arc<Mutex<Box<dyn ChildWrapper + Send + Sync>>>;
 
@@ -142,7 +137,7 @@ struct PtySpawnOptions {
 }
 
 fn send_to_sidecar(state: &SidecarState, line: String) {
-    let _ = state.tx.send(SidecarMsg::Json(line));
+    let _ = state.tx.send(line);
 }
 
 fn request_from_sidecar(
@@ -290,12 +285,13 @@ fn read_update_log() -> Result<String, String> {
 
 #[tauri::command]
 fn shutdown_sidecar(state: tauri::State<'_, SidecarState>) {
-    let _ = state.tx.send(SidecarMsg::Shutdown);
     kill_sidecar(&state.child);
 }
 
 // Job Object on Windows / process group on Unix — kill propagates to the
-// sidecar's grandchildren (the spawned shells).
+// sidecar's grandchildren (the spawned shells). On Unix this is SIGKILL to
+// the whole process group, which is more thorough than the previous
+// SIGTERM-to-just-node path that left node-pty grandchildren orphaned.
 fn kill_sidecar(child: &SharedChild) {
     if let Ok(mut guard) = child.lock() {
         append_log(format!("[sidecar] killing (pid={})", guard.id()));
@@ -479,22 +475,14 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
         }
     });
 
-    let (tx, writer_rx) = mpsc::channel::<SidecarMsg>();
+    let (tx, writer_rx) = mpsc::channel::<String>();
 
     std::thread::spawn(move || {
-        while let Ok(msg) = writer_rx.recv() {
-            match msg {
-                SidecarMsg::Shutdown => {
-                    append_log("[sidecar] shutdown requested");
-                    break;
-                }
-                SidecarMsg::Json(line) => {
-                    let payload = format!("{}\n", line);
-                    if stdin.write_all(payload.as_bytes()).is_err() {
-                        append_log("[sidecar] stdin write failed");
-                        break;
-                    }
-                }
+        while let Ok(line) = writer_rx.recv() {
+            let payload = format!("{}\n", line);
+            if stdin.write_all(payload.as_bytes()).is_err() {
+                append_log("[sidecar] stdin write failed");
+                break;
             }
         }
     });
@@ -610,7 +598,6 @@ pub fn run() {
             if let RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<SidecarState>() {
                     append_log("[app] exit — killing sidecar");
-                    let _ = state.tx.send(SidecarMsg::Shutdown);
                     kill_sidecar(&state.child);
                 }
             }
