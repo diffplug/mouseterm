@@ -623,48 +623,60 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn unique_temp_dir(name: &str) -> PathBuf {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time before unix epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!("mouseterm-{name}-{suffix}"))
+    // RAII guard so a failing assert doesn't leak the temp dir.
+    struct TempDir(PathBuf);
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let suffix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!("mouseterm-{name}-{suffix}"));
+            fs::create_dir_all(&path).expect("failed to create temp dir");
+            TempDir(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
     fn prefers_packaged_sidecar_when_resource_exists() {
-        let resource_dir = unique_temp_dir("resource");
-        let sidecar_dir = resource_dir.join("sidecar");
+        let resource_dir = TempDir::new("resource");
+        let sidecar_dir = resource_dir.path().join("sidecar");
         let sidecar_path = sidecar_dir.join("main.js");
 
         fs::create_dir_all(&sidecar_dir).expect("failed to create sidecar dir");
         fs::write(&sidecar_path, "console.log('packaged');").expect("failed to create sidecar");
 
         let resolved = resolve_sidecar_path(
-            Some(resource_dir.clone()),
+            Some(resource_dir.path().to_path_buf()),
             Path::new("/repo/standalone/src-tauri"),
         );
 
         assert_eq!(resolved, sidecar_path);
-        fs::remove_dir_all(&resource_dir).expect("failed to clean temp dir");
     }
 
     #[test]
     fn finds_sidecar_under_up_prefix() {
-        let resource_dir = unique_temp_dir("resource-up");
-        let sidecar_dir = resource_dir.join("_up_").join("sidecar");
+        let resource_dir = TempDir::new("resource-up");
+        let sidecar_dir = resource_dir.path().join("_up_").join("sidecar");
         let sidecar_path = sidecar_dir.join("main.js");
 
         fs::create_dir_all(&sidecar_dir).expect("failed to create sidecar dir");
         fs::write(&sidecar_path, "console.log('packaged');").expect("failed to create sidecar");
 
         let resolved = resolve_sidecar_path(
-            Some(resource_dir.clone()),
+            Some(resource_dir.path().to_path_buf()),
             Path::new("/repo/standalone/src-tauri"),
         );
 
         assert_eq!(resolved, sidecar_path);
-        fs::remove_dir_all(&resource_dir).expect("failed to clean temp dir");
     }
 
     #[test]
@@ -705,37 +717,32 @@ mod tests {
 
     #[test]
     fn finds_node_binary_with_triple_suffix() {
-        let dir = unique_temp_dir("node-triple");
-        fs::create_dir_all(&dir).expect("failed to create dir");
+        let dir = TempDir::new("node-triple");
         let suffix = if cfg!(windows) { ".exe" } else { "" };
         let triple = "x86_64-pc-windows-msvc";
-        let expected = dir.join(format!("node-{triple}{suffix}"));
+        let expected = dir.path().join(format!("node-{triple}{suffix}"));
         fs::write(&expected, b"fake").expect("failed to write fake binary");
 
-        let resolved = find_node_binary(&dir, triple).expect("should resolve");
+        let resolved = find_node_binary(dir.path(), triple).expect("should resolve");
         assert_eq!(resolved, expected);
-        fs::remove_dir_all(&dir).expect("failed to clean temp dir");
     }
 
     #[test]
     fn finds_node_binary_falls_back_to_stripped_name() {
-        let dir = unique_temp_dir("node-stripped");
-        fs::create_dir_all(&dir).expect("failed to create dir");
+        let dir = TempDir::new("node-stripped");
         let suffix = if cfg!(windows) { ".exe" } else { "" };
-        let expected = dir.join(format!("node{suffix}"));
+        let expected = dir.path().join(format!("node{suffix}"));
         fs::write(&expected, b"fake").expect("failed to write fake binary");
 
-        let resolved = find_node_binary(&dir, "x86_64-pc-windows-msvc").expect("should resolve");
+        let resolved =
+            find_node_binary(dir.path(), "x86_64-pc-windows-msvc").expect("should resolve");
         assert_eq!(resolved, expected);
-        fs::remove_dir_all(&dir).expect("failed to clean temp dir");
     }
 
     #[test]
     fn returns_none_when_no_node_binary_present() {
-        let dir = unique_temp_dir("node-missing");
-        fs::create_dir_all(&dir).expect("failed to create dir");
+        let dir = TempDir::new("node-missing");
 
-        assert!(find_node_binary(&dir, "x86_64-pc-windows-msvc").is_none());
-        fs::remove_dir_all(&dir).expect("failed to clean temp dir");
+        assert!(find_node_binary(dir.path(), "x86_64-pc-windows-msvc").is_none());
     }
 }
