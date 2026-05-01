@@ -32,7 +32,7 @@ const HEADER_REVEAL_LEAD = 0.04;
 /** Fraction of runway where the hero text unpins and scrolls away (0–1).
  *  The video keeps scrubbing underneath. */
 const UNPIN_THRESHOLD = 0.8;
-const HERO_VIDEO_FPS = 24;
+const HERO_VIDEO_FPS = 120;
 
 /** Clamp a value to 0–1. */
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
