@@ -224,7 +224,7 @@ function Home() {
   const [heroVideoSrc, setHeroVideoSrc] = useState<string | undefined>();
   const [heroPosterReady, setHeroPosterReady] = useState(false);
   const [heroLayoutReady, setHeroLayoutReady] = useState(false);
-  const [heroVideoFrameReady, setHeroVideoFrameReady] = useState(false);
+  const [showHeroPoster, setShowHeroPoster] = useState(true);
   const heroCanPaint = heroPosterReady && heroLayoutReady;
 
   useEffect(() => {
@@ -263,12 +263,12 @@ function Home() {
       .then((blob) => {
         if (abortController.signal.aborted) return;
         objectUrl = URL.createObjectURL(blob);
-        setHeroVideoFrameReady(false);
+        setShowHeroPoster(true);
         setHeroVideoSrc(objectUrl);
       })
       .catch(() => {
         if (!abortController.signal.aborted) {
-          setHeroVideoFrameReady(false);
+          setShowHeroPoster(true);
           setHeroVideoSrc(videoUrl);
         }
       });
@@ -298,13 +298,20 @@ function Home() {
     let revealAnimationFrameId = 0;
     let revealTimeoutId = 0;
     let videoFrameCallbackId = 0;
-    let videoFrameRevealPending = false;
-    let videoFrameShown = false;
+    let pendingRevealFrame = -1;
+    let revealedVideoFrame = -1;
+    let posterIsVisible = true;
     let disposed = false;
     let lastSeekFrame = -1;
 
+    function setPosterVisible(visible: boolean) {
+      if (posterIsVisible === visible) return;
+      posterIsVisible = visible;
+      setShowHeroPoster(visible);
+    }
+
     function clearPendingVideoReveal() {
-      videoFrameRevealPending = false;
+      pendingRevealFrame = -1;
       if (videoFrameCallbackId && videoWithFrameCallbacks.cancelVideoFrameCallback) {
         videoWithFrameCallbacks.cancelVideoFrameCallback(videoFrameCallbackId);
       }
@@ -315,30 +322,31 @@ function Home() {
       revealTimeoutId = 0;
     }
 
-    function revealVideoFrame() {
+    function revealVideoFrame(frame: number) {
       if (disposed) return;
       clearPendingVideoReveal();
-      videoFrameShown = true;
-      setHeroVideoFrameReady(true);
+      revealedVideoFrame = frame;
+      if (frame > 0) setPosterVisible(false);
     }
 
-    function scheduleVideoFrameReveal() {
-      if (videoFrameShown || videoFrameRevealPending) return;
-      videoFrameRevealPending = true;
+    function scheduleVideoFrameReveal(frame: number) {
+      if (frame <= 0 || revealedVideoFrame === frame || pendingRevealFrame === frame) return;
+      clearPendingVideoReveal();
+      pendingRevealFrame = frame;
 
       if (videoWithFrameCallbacks.requestVideoFrameCallback) {
         videoFrameCallbackId = videoWithFrameCallbacks.requestVideoFrameCallback(() => {
           videoFrameCallbackId = 0;
-          revealVideoFrame();
+          revealVideoFrame(frame);
         });
-        revealTimeoutId = window.setTimeout(revealVideoFrame, 500);
+        revealTimeoutId = window.setTimeout(() => revealVideoFrame(frame), 500);
         return;
       }
 
       revealAnimationFrameId = requestAnimationFrame(() => {
         revealAnimationFrameId = requestAnimationFrame(() => {
           revealAnimationFrameId = 0;
-          revealVideoFrame();
+          revealVideoFrame(frame);
         });
       });
     }
@@ -367,6 +375,7 @@ function Home() {
       // Scrub video: hold frame 0 during icon rise, then scrub remaining range.
       // Quantize to source frames and skip duplicate frame requests. This avoids
       // issuing repeated seeks while a previous frame seek is still resolving.
+      let targetFrame = 0;
       if (video.duration && isFinite(video.duration)) {
         let target = 0;
         if (runwayScroll >= initialOffset) {
@@ -376,14 +385,27 @@ function Home() {
           target = videoProgress * video.duration;
         }
         const maxFrame = Math.max(0, Math.round(video.duration * HERO_VIDEO_FPS) - 1);
-        const targetFrame = Math.min(maxFrame, Math.max(0, Math.round(target * HERO_VIDEO_FPS)));
+        targetFrame = Math.min(maxFrame, Math.max(0, Math.round(target * HERO_VIDEO_FPS)));
         const targetTime = targetFrame / HERO_VIDEO_FPS;
         const frameDuration = 1 / HERO_VIDEO_FPS;
         const frameIsCurrent = Math.abs(video.currentTime - targetTime) <= frameDuration / 2;
-        if (targetFrame !== lastSeekFrame || (!video.seeking && !frameIsCurrent)) {
+
+        if (targetFrame === 0) {
+          clearPendingVideoReveal();
+          lastSeekFrame = 0;
+          setPosterVisible(true);
+          revealedVideoFrame = 0;
+        } else if (targetFrame !== lastSeekFrame || (!video.seeking && !frameIsCurrent)) {
+          clearPendingVideoReveal();
+          revealedVideoFrame = -1;
+          setPosterVisible(true);
           lastSeekFrame = targetFrame;
           video.currentTime = targetTime;
+        } else if (!video.seeking) {
+          scheduleVideoFrameReveal(targetFrame);
         }
+      } else {
+        setPosterVisible(true);
       }
 
       // Reveal words
@@ -488,16 +510,18 @@ function Home() {
     const handleCanPlayThrough = () => {
       unlocked = true;
       scheduleScrollSync();
-      scheduleVideoFrameReveal();
+      scheduleVideoFrameReveal(lastSeekFrame);
     };
     const handleLoadedMetadata = () => {
       lastSeekFrame = -1;
-      videoFrameShown = false;
+      revealedVideoFrame = -1;
       clearPendingVideoReveal();
-      setHeroVideoFrameReady(false);
+      setPosterVisible(true);
       scheduleScrollSync();
     };
-    const handleVideoFrameReady = scheduleVideoFrameReveal;
+    const handleVideoFrameReady = () => {
+      scheduleVideoFrameReveal(lastSeekFrame);
+    };
     video.addEventListener("canplaythrough", handleCanPlayThrough, { once: true });
     video.addEventListener("canplay", handleVideoFrameReady);
     video.addEventListener("loadeddata", handleVideoFrameReady);
@@ -554,7 +578,7 @@ function Home() {
         className="pointer-events-none fixed bottom-0 left-0 w-full object-contain object-bottom z-0 will-change-transform"
         style={{
           height: "min(500px, calc(100vh - 420px))",
-          opacity: heroVideoFrameReady ? 0 : 1,
+          opacity: showHeroPoster ? 1 : 0,
         }}
       />
 
