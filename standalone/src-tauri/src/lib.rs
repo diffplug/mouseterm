@@ -13,9 +13,11 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
-    menu::{AboutMetadata, Menu, PredefinedMenuItem, Submenu},
+    menu::{Menu, PredefinedMenuItem, Submenu},
     AppHandle, DragDropEvent, Emitter, Manager, RunEvent, WindowEvent,
 };
+#[cfg(target_os = "macos")]
+use tauri::menu::AboutMetadata;
 use process_wrap::std::{ChildWrapper, CommandWrap};
 #[cfg(windows)]
 use process_wrap::std::{CreationFlags, JobObject};
@@ -545,7 +547,9 @@ pub fn run() {
         // action that fights with the webview's DOM keydown handler. The
         // terminal owns Cmd+C / Cmd+V / Cmd+X in JS (see `Wall.tsx`).
         .menu(|handle| {
+            #[cfg(target_os = "macos")]
             let pkg = handle.package_info();
+            #[cfg(target_os = "macos")]
             let about = AboutMetadata {
                 name: Some(pkg.name.clone()),
                 version: Some(pkg.version.to_string()),
