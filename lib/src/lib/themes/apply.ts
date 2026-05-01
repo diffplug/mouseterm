@@ -1,6 +1,7 @@
 import type { MouseTermTheme } from './types';
 import { getAllThemes, getStoredActiveThemeId, setActiveThemeId } from './store';
 import { completeThemeVars } from './vscode-color-resolver';
+import { flattenSelectionAlpha } from './flatten-alpha';
 
 let appliedThemeSnapshot: AppliedThemeSnapshot | null = null;
 
@@ -32,6 +33,12 @@ export function applyTheme(theme: MouseTermTheme): void {
   // them here so theme.css can read --vscode-* directly without fallbacks.
   const providedVars = { ...HOST_TYPOGRAPHY_VARS, ...theme.vars };
   const vars = completeThemeVars(providedVars, theme.type);
+  // Theme authors give list.*SelectionBackground alpha because VSCode renders
+  // it as an overlay on the sidebar. MouseTerm uses it as a solid AppBar /
+  // tab fill, so flatten the alpha over sideBar.background here — otherwise
+  // whatever sits behind the surface bleeds through (Selenized Dark's bright
+  // cyan AppBar, for instance).
+  flattenSelectionAlpha(vars);
   appliedThemeSnapshot = { theme, providedVars, resolvedVars: vars };
   for (const [name, value] of Object.entries(vars)) {
     document.body.style.setProperty(name, value);
