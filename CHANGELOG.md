@@ -8,6 +8,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/). Release checklist in [deploy.md](docs/specs/deploy.md).
 
+## [0.9.1] - 2026-05-01
+### Changed
+- 🖥️ Drop-to-paste from the OS file explorer is temporarily inert on standalone while we wait on upstream Tauri ([tauri#14373](https://github.com/tauri-apps/tauri/issues/14373)) to allow native drag-drop without blocking HTML5 drag events ([#39](https://github.com/diffplug/mouseterm/pull/39)).
+
+### Fixed
+- The mouse-override banner now renders inline in the terminal pane body and no longer stacks with the action-button tooltip ([#43](https://github.com/diffplug/mouseterm/pull/43)).
+- Themes with translucent selection backgrounds (e.g. Selenized Dark) no longer bleed through MouseTerm's solid AppBar and tab fills ([#37](https://github.com/diffplug/mouseterm/pull/37)).
+- 🖥️ Force-closing the standalone host now reliably kills the Node sidecar tree via a Windows Job Object / Unix process group, so subsequent builds no longer hit orphan `node.exe` processes locking files ([#41](https://github.com/diffplug/mouseterm/pull/41)).
+- 🖥️ Standalone macOS terminals run zsh as a login shell when no args are provided, so `~/.zprofile` runs and Homebrew/asdf land on `PATH` ([#40](https://github.com/diffplug/mouseterm/pull/40)).
+- 🖥️ Pane drag-and-drop reordering works again on standalone ([#39](https://github.com/diffplug/mouseterm/pull/39)).
+
 ## [0.9.0] - 2026-04-30
 
 ### Added
