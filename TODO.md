@@ -24,7 +24,7 @@
 
 ## Selection Overlay Stories
 
-- [ ] Replace `SelectionOverlay` stories with stories that exercise the real selection overlay component instead of a hand-rolled `MarchingAntsRect` demo.
+- [x] Replace `SelectionOverlay` stories with stories that exercise the real selection overlay component instead of a hand-rolled `MarchingAntsRect` demo.
 
 ## Update Banner Stories
 
