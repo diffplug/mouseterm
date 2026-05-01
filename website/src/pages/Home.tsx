@@ -297,9 +297,13 @@ function Home() {
     let frameId = 0;
     let handoffAnimationFrameId = 0;
     let handoffTimeoutId = 0;
+    let initialRevealAnimationFrameId = 0;
+    let initialRevealTimeoutId = 0;
+    let initialVideoFrameCallbackId = 0;
     let videoFrameCallbackId = 0;
     let posterHandoffPending = false;
     let posterIsVisible = true;
+    let videoCanReplacePoster = false;
     let disposed = false;
     let lastSeekFrame = -1;
 
@@ -321,10 +325,48 @@ function Home() {
       handoffTimeoutId = 0;
     }
 
+    function cancelInitialVideoReveal() {
+      if (initialVideoFrameCallbackId && videoWithFrameCallbacks.cancelVideoFrameCallback) {
+        videoWithFrameCallbacks.cancelVideoFrameCallback(initialVideoFrameCallbackId);
+      }
+      initialVideoFrameCallbackId = 0;
+      if (initialRevealAnimationFrameId) cancelAnimationFrame(initialRevealAnimationFrameId);
+      initialRevealAnimationFrameId = 0;
+      if (initialRevealTimeoutId) window.clearTimeout(initialRevealTimeoutId);
+      initialRevealTimeoutId = 0;
+    }
+
     function completePosterHandoff() {
       if (disposed) return;
       cancelPosterHandoff();
       setPosterVisible(false);
+    }
+
+    function revealInitialVideoFrame() {
+      if (disposed || videoCanReplacePoster) return;
+      cancelInitialVideoReveal();
+      videoCanReplacePoster = true;
+      scheduleScrollSync();
+    }
+
+    function scheduleInitialVideoReveal() {
+      if (videoCanReplacePoster || initialVideoFrameCallbackId || initialRevealAnimationFrameId) return;
+
+      if (videoWithFrameCallbacks.requestVideoFrameCallback) {
+        initialVideoFrameCallbackId = videoWithFrameCallbacks.requestVideoFrameCallback(() => {
+          initialVideoFrameCallbackId = 0;
+          revealInitialVideoFrame();
+        });
+        initialRevealTimeoutId = window.setTimeout(revealInitialVideoFrame, 500);
+        return;
+      }
+
+      initialRevealAnimationFrameId = requestAnimationFrame(() => {
+        initialRevealAnimationFrameId = requestAnimationFrame(() => {
+          initialRevealAnimationFrameId = 0;
+          revealInitialVideoFrame();
+        });
+      });
     }
 
     function schedulePosterHandoff() {
@@ -389,8 +431,11 @@ function Home() {
 
         if (targetFrame === 0) {
           cancelPosterHandoff();
+          if (!frameIsCurrent && !video.seeking) {
+            video.currentTime = targetTime;
+          }
           lastSeekFrame = 0;
-          setPosterVisible(true);
+          setPosterVisible(!(videoCanReplacePoster && frameIsCurrent && !video.seeking));
         } else if (targetFrame !== lastSeekFrame || (!video.seeking && !frameIsCurrent)) {
           const needsPosterHandoff = posterIsVisible;
           if (needsPosterHandoff) cancelPosterHandoff();
@@ -505,17 +550,26 @@ function Home() {
     window.addEventListener("touchstart", unlock, { passive: true });
     const handleCanPlayThrough = () => {
       unlocked = true;
+      scheduleInitialVideoReveal();
       scheduleScrollSync();
     };
     const handleLoadedMetadata = () => {
       lastSeekFrame = -1;
+      videoCanReplacePoster = false;
       cancelPosterHandoff();
+      cancelInitialVideoReveal();
       setPosterVisible(true);
       scheduleScrollSync();
     };
+    const handleLoadedData = () => {
+      scheduleInitialVideoReveal();
+      scheduleScrollSync();
+    };
     video.addEventListener("canplaythrough", handleCanPlayThrough, { once: true });
+    video.addEventListener("loadeddata", handleLoadedData);
     video.addEventListener("loadedmetadata", handleLoadedMetadata);
     video.addEventListener("durationchange", scheduleScrollSync);
+    video.addEventListener("seeked", scheduleScrollSync);
 
     function onScroll() {
       if (!unlocked) unlock();
@@ -529,12 +583,15 @@ function Home() {
     return () => {
       disposed = true;
       cancelPosterHandoff();
+      cancelInitialVideoReveal();
       cancelAnimationFrame(frameId);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("touchstart", unlock);
       video.removeEventListener("canplaythrough", handleCanPlayThrough);
+      video.removeEventListener("loadeddata", handleLoadedData);
       video.removeEventListener("loadedmetadata", handleLoadedMetadata);
       video.removeEventListener("durationchange", scheduleScrollSync);
+      video.removeEventListener("seeked", scheduleScrollSync);
     };
   }, []);
 
