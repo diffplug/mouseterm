@@ -9,6 +9,7 @@ import {
   type WallMode,
   type WallActions,
 } from '../components/Wall';
+import { MouseOverrideBanner } from '../components/wall/MouseOverrideBanner';
 import {
   setMouseReporting,
   setOverride,
@@ -69,6 +70,9 @@ function MouseIconStoryFrame({
                   tabLocation={'header' as Parameters<typeof TerminalPaneHeader>[0]['tabLocation']}
                 />
               </div>
+              <div className="relative" style={{ height: 40 }}>
+                <MouseOverrideBanner terminalId={SESSION_ID} />
+              </div>
             </div>
           </RenamingIdContext.Provider>
         </WallActionsContext.Provider>
@@ -99,7 +103,7 @@ export const ReportingOn: Story = {
 };
 
 export const TemporaryOverride: Story = {
-  args: { mouseReporting: 'vt200', override: 'temporary' },
+  args: { mouseReporting: 'vt200', override: 'temporary', width: 500 },
 };
 
 export const PermanentOverride: Story = {
