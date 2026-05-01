@@ -293,7 +293,7 @@ fn read_update_log() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn shutdown_sidecar(state: tauri::State<'_, SidecarState>) {
+fn kill_sidecar_now(state: tauri::State<'_, SidecarState>) {
     kill_sidecar(&state.child);
 }
 
@@ -623,7 +623,7 @@ pub fn run() {
             pty_get_cwd,
             pty_get_scrollback,
             pty_request_init,
-            shutdown_sidecar,
+            kill_sidecar_now,
             get_available_shells,
             read_clipboard_file_paths,
             read_clipboard_image_as_file_path,
