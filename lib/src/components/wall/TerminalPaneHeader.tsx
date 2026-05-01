@@ -40,7 +40,6 @@ import {
   WindowFocusedContext,
   ZoomedContext,
 } from './wall-context';
-import { MouseOverrideBanner } from './MouseOverrideBanner';
 
 const tabVariant = tv({
   base: `flex h-full w-full cursor-grab items-center gap-1.5 ${TERMINAL_TOP_RADIUS_CLASS} pl-2 pr-[5px] text-sm leading-none font-mono select-none active:cursor-grabbing`,
@@ -68,15 +67,16 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
   const mouseState = mouseStates.get(api.id) ?? DEFAULT_MOUSE_SELECTION_STATE;
   const showMouseIcon = mouseState.mouseReporting !== 'none';
   const inOverride = mouseState.override !== 'off';
-  const mouseIconTooltip = inOverride
+  const mouseIconTooltip: string | null = mouseState.override === 'permanent'
     ? "You're overriding the TUI's mouse capture. Click to restore."
-    : 'TUI is intercepting mouse commands. Click to override.';
+    : mouseState.override === 'temporary'
+      ? null
+      : 'TUI is intercepting mouse commands. Click to override.';
   const mouseIconAriaLabel = inOverride ? 'Restore mouse capture' : 'Override mouse capture';
   const isSelected = selectedId === api.id;
   const isActiveHeader = mode === 'passthrough' && isSelected && windowFocused;
   const isRenaming = renamingId === api.id;
   const tabRef = useRef<HTMLDivElement>(null);
-  const [mouseIconAnchor, setMouseIconAnchor] = useState<HTMLDivElement | null>(null);
   const suppressAlertClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
   const [dialogTriggerRect, setDialogTriggerRect] = useState<DOMRect | null>(null);
@@ -210,7 +210,7 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
       {!isRenaming && (
         <>
           {showMouseIcon && (
-            <div ref={setMouseIconAnchor} className="ml-1 shrink-0">
+            <div className="ml-1 shrink-0">
               <HeaderActionButton
                 className="flex h-5 min-w-5 items-center justify-center rounded transition-colors shrink-0 hover:bg-current/10"
                 onMouseDown={(e) => e.stopPropagation()}
@@ -230,13 +230,6 @@ export function TerminalPaneHeader({ api }: IDockviewPanelHeaderProps) {
                 </span>
               </HeaderActionButton>
             </div>
-          )}
-          {mouseIconAnchor && mouseState.override === 'temporary' && (
-            <MouseOverrideBanner
-              anchor={mouseIconAnchor}
-              onMakePermanent={() => setMouseOverride(api.id, 'permanent')}
-              onCancel={() => setMouseOverride(api.id, 'off')}
-            />
           )}
           {tier === 'full' && (
             <div className="ml-1 flex shrink-0 items-center gap-0.5">
