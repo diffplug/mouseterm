@@ -5,7 +5,7 @@ import { PopupButtonRow, renderShortcuts } from './design';
 export interface HeaderActionButtonProps {
   className: string;
   ariaLabel: string;
-  tooltip?: string;
+  tooltip?: string | null;
   tooltipDetail?: string;
   tooltipAlign?: 'left' | 'right';
   onMouseDownCapture?: (e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -32,7 +32,7 @@ export function HeaderActionButton({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties | null>(null);
-  const tooltipPrimary = tooltip ?? ariaLabel;
+  const tooltipPrimary = tooltip === null ? null : (tooltip ?? ariaLabel);
 
   useEffect(() => {
     if (!isVisible || !buttonRef.current) return;
@@ -73,6 +73,7 @@ export function HeaderActionButton({
         }}
         onClick={(e) => {
           e.stopPropagation();
+          setIsVisible(false);
           onClick(e);
         }}
         onContextMenu={onContextMenu ? (e) => {
@@ -89,7 +90,7 @@ export function HeaderActionButton({
         {children}
       </button>
     </div>
-    {isVisible && tooltipStyle && createPortal(
+    {isVisible && tooltipStyle && tooltipPrimary && createPortal(
       <PopupButtonRow
         role="tooltip"
         className="pointer-events-none z-[9999] whitespace-nowrap px-2 py-1.5"

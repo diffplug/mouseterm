@@ -13,8 +13,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import SiteHeader from "../components/SiteHeader";
 import posterUrl from "../assets/video-climb-blink-and-stare.webp";
 import videoUrl from "../assets/video-climb-blink-and-stare.mp4";
+import alertVideoUrl from "../assets/video-alert.mp4";
+import copyPasteVideoUrl from "../assets/video-copy-paste.mp4";
+import tmuxVideoUrl from "../assets/video-tmux.mp4";
 import visualStudioIconUrl from "../assets/visual-studio-icon.svg";
-import tinyIconUrl from "../../assets/icon-tiny-dark.png";
+import tinyIconUrl from "../assets/icon-tiny-dark.png";
 import standaloneLatest from "@standalone-latest";
 
 export { Home as Component };
@@ -130,6 +133,39 @@ const INSTALL_STEPS: Record<string, { pill: string; title: string; steps: string
     ],
   },
 };
+
+const FEATURE_VIDEO_BASE =
+  "-mx-4 md:mx-0 block w-[calc(100%+2rem)] max-w-none md:w-full md:max-w-full";
+
+const FEATURE_VIDEO_VARIANTS = {
+  cover: "aspect-video object-cover",
+  intrinsic: "h-auto",
+} as const;
+
+function FeatureVideo({
+  src,
+  className = "",
+  variant = "cover",
+}: {
+  src: string;
+  className?: string;
+  variant?: keyof typeof FEATURE_VIDEO_VARIANTS;
+}) {
+  return (
+    <video
+      src={src}
+      autoPlay
+      loop
+      muted
+      playsInline
+      className={[
+        FEATURE_VIDEO_BASE,
+        FEATURE_VIDEO_VARIANTS[variant],
+        className,
+      ].filter(Boolean).join(" ")}
+    />
+  );
+}
 
 function DownloadButton({
   href,
@@ -297,11 +333,9 @@ function Home() {
     let frameId = 0;
     let handoffAnimationFrameId = 0;
     let handoffTimeoutId = 0;
-    let initialRevealAnimationFrameId = 0;
-    let initialRevealTimeoutId = 0;
-    let initialVideoFrameCallbackId = 0;
     let videoFrameCallbackId = 0;
     let posterHandoffPending = false;
+    let initialVideoRevealPending = false;
     let posterIsVisible = true;
     let videoCanReplacePoster = false;
     let disposed = false;
@@ -325,17 +359,6 @@ function Home() {
       handoffTimeoutId = 0;
     }
 
-    function cancelInitialVideoReveal() {
-      if (initialVideoFrameCallbackId && videoWithFrameCallbacks.cancelVideoFrameCallback) {
-        videoWithFrameCallbacks.cancelVideoFrameCallback(initialVideoFrameCallbackId);
-      }
-      initialVideoFrameCallbackId = 0;
-      if (initialRevealAnimationFrameId) cancelAnimationFrame(initialRevealAnimationFrameId);
-      initialRevealAnimationFrameId = 0;
-      if (initialRevealTimeoutId) window.clearTimeout(initialRevealTimeoutId);
-      initialRevealTimeoutId = 0;
-    }
-
     function completePosterHandoff() {
       if (disposed) return;
       cancelPosterHandoff();
@@ -344,29 +367,22 @@ function Home() {
 
     function revealInitialVideoFrame() {
       if (disposed || videoCanReplacePoster) return;
-      cancelInitialVideoReveal();
+      initialVideoRevealPending = false;
       videoCanReplacePoster = true;
       scheduleScrollSync();
     }
 
     function scheduleInitialVideoReveal() {
-      if (videoCanReplacePoster || initialVideoFrameCallbackId || initialRevealAnimationFrameId) return;
+      if (videoCanReplacePoster || initialVideoRevealPending) return;
+      initialVideoRevealPending = true;
 
       if (videoWithFrameCallbacks.requestVideoFrameCallback) {
-        initialVideoFrameCallbackId = videoWithFrameCallbacks.requestVideoFrameCallback(() => {
-          initialVideoFrameCallbackId = 0;
-          revealInitialVideoFrame();
-        });
-        initialRevealTimeoutId = window.setTimeout(revealInitialVideoFrame, 500);
+        videoWithFrameCallbacks.requestVideoFrameCallback(revealInitialVideoFrame);
+        window.setTimeout(revealInitialVideoFrame, 500);
         return;
       }
 
-      initialRevealAnimationFrameId = requestAnimationFrame(() => {
-        initialRevealAnimationFrameId = requestAnimationFrame(() => {
-          initialRevealAnimationFrameId = 0;
-          revealInitialVideoFrame();
-        });
-      });
+      requestAnimationFrame(() => requestAnimationFrame(revealInitialVideoFrame));
     }
 
     function schedulePosterHandoff() {
@@ -556,8 +572,8 @@ function Home() {
     const handleLoadedMetadata = () => {
       lastSeekFrame = -1;
       videoCanReplacePoster = false;
+      initialVideoRevealPending = false;
       cancelPosterHandoff();
-      cancelInitialVideoReveal();
       setPosterVisible(true);
       scheduleScrollSync();
     };
@@ -583,7 +599,6 @@ function Home() {
     return () => {
       disposed = true;
       cancelPosterHandoff();
-      cancelInitialVideoReveal();
       cancelAnimationFrame(frameId);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("touchstart", unlock);
@@ -672,9 +687,7 @@ function Home() {
             Works with any CLI tool that prints to a terminal — no plugins, no
             configuration.
           </p>
-          <div className="mt-8 -mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 flex items-center justify-center">
-            <p className="text-sm opacity-40 italic">TODO: Completion detection in action</p>
-          </div>
+          <FeatureVideo src={alertVideoUrl} variant="intrinsic" className="mt-8" />
         </section>
 
         {/* Section 2: text left, image right */}
@@ -692,16 +705,12 @@ function Home() {
               MouseTerm lets you copy paste like a human, not a terminal.
             </p>
           </div>
-          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 flex items-center justify-center">
-            <p className="text-sm opacity-40 italic">TODO: Copy/paste with line-break rewrap</p>
-          </div>
+          <FeatureVideo src={copyPasteVideoUrl} />
         </section>
 
         {/* Section 3: image left, text right */}
         <section className="mx-auto max-w-5xl px-4 md:px-6 py-12 grid md:grid-cols-[3fr_2fr] gap-8 md:gap-12 items-start">
-          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 flex items-center justify-center order-2 md:order-1">
-            <p className="text-sm opacity-40 italic">TODO: Tiling layout and tmux keybinds</p>
-          </div>
+          <FeatureVideo src={tmuxVideoUrl} className="order-2 md:order-1" />
           <div className="order-1 md:order-2">
             <h2 className="font-display text-xl mb-6">Soft as a mouse, sharp as tmux</h2>
             <p className="text-lg leading-relaxed opacity-70 mb-4">

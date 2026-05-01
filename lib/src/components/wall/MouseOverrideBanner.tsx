@@ -1,65 +1,46 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { PopupButtonRow, popupButton } from '../design';
-import { clampOverlayPosition } from '../../lib/ui-geometry';
+import {
+  DEFAULT_MOUSE_SELECTION_STATE,
+  getMouseSelectionSnapshot,
+  setOverride as setMouseOverride,
+  subscribeToMouseSelection,
+} from '../../lib/mouse-selection';
 
-export function MouseOverrideBanner({
-  anchor,
-  onMakePermanent,
-  onCancel,
-}: {
-  anchor: HTMLElement;
-  onMakePermanent: () => void;
-  onCancel: () => void;
-}) {
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+export function MouseOverrideBanner({ terminalId }: { terminalId: string }) {
+  const states = useSyncExternalStore(subscribeToMouseSelection, getMouseSelectionSnapshot);
+  const state = states.get(terminalId) ?? DEFAULT_MOUSE_SELECTION_STATE;
+  const visible = state.override === 'temporary';
   const [flashed, setFlashed] = useState<'sticky' | 'cancel' | null>(null);
-
-  useLayoutEffect(() => {
-    const update = () => {
-      const r = anchor.getBoundingClientRect();
-      setPos({ x: r.left, y: r.bottom + 4 });
-    };
-    update();
-    window.addEventListener('scroll', update, true);
-    window.addEventListener('resize', update);
-    return () => {
-      window.removeEventListener('scroll', update, true);
-      window.removeEventListener('resize', update);
-    };
-  }, [anchor]);
 
   useEffect(() => {
     if (!flashed) return;
     const id = window.setTimeout(() => {
-      if (flashed === 'sticky') onMakePermanent();
-      else onCancel();
+      setMouseOverride(terminalId, flashed === 'sticky' ? 'permanent' : 'off');
+      setFlashed(null);
     }, 260);
     return () => window.clearTimeout(id);
-  }, [flashed, onMakePermanent, onCancel]);
+  }, [flashed, terminalId]);
 
-  if (!pos) return null;
+  if (!visible) return null;
 
-  return createPortal(
+  return (
     <PopupButtonRow
-      className="z-[9999]"
-      style={clampOverlayPosition({ left: pos.x, top: pos.y, width: 340, height: 32 })}
+      className="absolute right-1 top-1 z-20 whitespace-nowrap"
       onMouseDown={(e) => e.stopPropagation()}
       role="status"
     >
-      <span className="px-1.5 py-0.5">Temporary mouse override until mouse-up.</span>
+      <span className="px-1.5 py-0.5 text-muted">Temporary mouse override until mouse-up.</span>
       <button
         type="button"
-        className={popupButton({ tone: 'muted', flashed: flashed === 'sticky' })}
+        className={popupButton({ flashed: flashed === 'sticky' })}
         onClick={() => !flashed && setFlashed('sticky')}
       >Make sticky</button>
       <button
         type="button"
-        className={popupButton({ tone: 'muted', flashed: flashed === 'cancel' })}
+        className={popupButton({ flashed: flashed === 'cancel' })}
         onClick={() => !flashed && setFlashed('cancel')}
       >Cancel</button>
-    </PopupButtonRow>,
-    document.body,
+    </PopupButtonRow>
   );
 }
-
