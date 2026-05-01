@@ -17,6 +17,8 @@ use tauri::{
     AppHandle, DragDropEvent, Emitter, Manager, RunEvent, WindowEvent,
 };
 use process_wrap::std::*;
+#[cfg(windows)]
+use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
 enum SidecarMsg {
     Json(String),
@@ -393,6 +395,7 @@ fn start_sidecar(app: &AppHandle) -> Result<SidecarState, String> {
     });
     #[cfg(windows)]
     {
+        wrap.wrap(CreationFlags(CREATE_NO_WINDOW));
         wrap.wrap(JobObject);
     }
     #[cfg(unix)]

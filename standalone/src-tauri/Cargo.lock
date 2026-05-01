@@ -1953,6 +1953,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-shell",
  "tauri-plugin-updater",
+ "windows 0.62.2",
 ]
 
 [[package]]
