@@ -78,6 +78,7 @@ export class TauriAdapter implements PlatformAdapter {
       }),
     );
 
+    // Inert while dragDropEnabled=false in tauri.conf.json. See diffplug/mouseterm#38 and tauri-apps/tauri#14373.
     this.unlistenFns.push(
       await listen<{ paths: string[] }>("mouseterm://files-dropped", (event) => {
         const paths = event.payload.paths ?? [];
