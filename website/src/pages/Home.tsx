@@ -299,11 +299,9 @@ function Home() {
     let frameId = 0;
     let handoffAnimationFrameId = 0;
     let handoffTimeoutId = 0;
-    let initialRevealAnimationFrameId = 0;
-    let initialRevealTimeoutId = 0;
-    let initialVideoFrameCallbackId = 0;
     let videoFrameCallbackId = 0;
     let posterHandoffPending = false;
+    let initialVideoRevealPending = false;
     let posterIsVisible = true;
     let videoCanReplacePoster = false;
     let disposed = false;
@@ -327,17 +325,6 @@ function Home() {
       handoffTimeoutId = 0;
     }
 
-    function cancelInitialVideoReveal() {
-      if (initialVideoFrameCallbackId && videoWithFrameCallbacks.cancelVideoFrameCallback) {
-        videoWithFrameCallbacks.cancelVideoFrameCallback(initialVideoFrameCallbackId);
-      }
-      initialVideoFrameCallbackId = 0;
-      if (initialRevealAnimationFrameId) cancelAnimationFrame(initialRevealAnimationFrameId);
-      initialRevealAnimationFrameId = 0;
-      if (initialRevealTimeoutId) window.clearTimeout(initialRevealTimeoutId);
-      initialRevealTimeoutId = 0;
-    }
-
     function completePosterHandoff() {
       if (disposed) return;
       cancelPosterHandoff();
@@ -346,29 +333,22 @@ function Home() {
 
     function revealInitialVideoFrame() {
       if (disposed || videoCanReplacePoster) return;
-      cancelInitialVideoReveal();
+      initialVideoRevealPending = false;
       videoCanReplacePoster = true;
       scheduleScrollSync();
     }
 
     function scheduleInitialVideoReveal() {
-      if (videoCanReplacePoster || initialVideoFrameCallbackId || initialRevealAnimationFrameId) return;
+      if (videoCanReplacePoster || initialVideoRevealPending) return;
+      initialVideoRevealPending = true;
 
       if (videoWithFrameCallbacks.requestVideoFrameCallback) {
-        initialVideoFrameCallbackId = videoWithFrameCallbacks.requestVideoFrameCallback(() => {
-          initialVideoFrameCallbackId = 0;
-          revealInitialVideoFrame();
-        });
-        initialRevealTimeoutId = window.setTimeout(revealInitialVideoFrame, 500);
+        videoWithFrameCallbacks.requestVideoFrameCallback(revealInitialVideoFrame);
+        window.setTimeout(revealInitialVideoFrame, 500);
         return;
       }
 
-      initialRevealAnimationFrameId = requestAnimationFrame(() => {
-        initialRevealAnimationFrameId = requestAnimationFrame(() => {
-          initialRevealAnimationFrameId = 0;
-          revealInitialVideoFrame();
-        });
-      });
+      requestAnimationFrame(() => requestAnimationFrame(revealInitialVideoFrame));
     }
 
     function schedulePosterHandoff() {
@@ -558,8 +538,8 @@ function Home() {
     const handleLoadedMetadata = () => {
       lastSeekFrame = -1;
       videoCanReplacePoster = false;
+      initialVideoRevealPending = false;
       cancelPosterHandoff();
-      cancelInitialVideoReveal();
       setPosterVisible(true);
       scheduleScrollSync();
     };
@@ -585,7 +565,6 @@ function Home() {
     return () => {
       disposed = true;
       cancelPosterHandoff();
-      cancelInitialVideoReveal();
       cancelAnimationFrame(frameId);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("touchstart", unlock);
