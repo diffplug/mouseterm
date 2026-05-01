@@ -9,7 +9,7 @@ import {
   TerminalIcon,
   WindowsLogoIcon,
 } from "@phosphor-icons/react";
-import { useEffect, useRef, useState, type CSSProperties, type MouseEventHandler, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEventHandler, type ReactNode } from "react";
 import SiteHeader from "../components/SiteHeader";
 import posterUrl from "../assets/video-climb-blink-and-stare.webp";
 import videoUrl from "../assets/video-climb-blink-and-stare.mp4";
@@ -32,9 +32,11 @@ const HEADER_REVEAL_LEAD = 0.04;
 /** Fraction of runway where the hero text unpins and scrolls away (0–1).
  *  The video keeps scrubbing underneath. */
 const UNPIN_THRESHOLD = 0.8;
+const HERO_VIDEO_FPS = 24;
 
 /** Clamp a value to 0–1. */
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+const useClientLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 const downloadAccentStyle = {
   "--download-accent": "oklch(72% 0.15 72)",
@@ -207,6 +209,7 @@ function DownloadGroupHeader({
 
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const posterRef = useRef<HTMLImageElement>(null);
   const runwayRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
   const word0Ref = useRef<HTMLSpanElement>(null);
@@ -218,170 +221,355 @@ function Home() {
   const headerBrandRef = useRef<HTMLAnchorElement>(null);
   const hookRef = useRef<HTMLDivElement>(null);
   const [installGuide, setInstallGuide] = useState<string | null>(null);
+  const [heroVideoSrc, setHeroVideoSrc] = useState<string | undefined>();
+  const [heroPosterReady, setHeroPosterReady] = useState(false);
+  const [heroLayoutReady, setHeroLayoutReady] = useState(false);
+  const [showHeroPoster, setShowHeroPoster] = useState(true);
+  const heroCanPaint = heroPosterReady && heroLayoutReady;
 
   useEffect(() => {
-    const video = videoRef.current;
-    const runway = runwayRef.current;
-    if (!video || !runway) return;
+    let cancelled = false;
+    const image = new Image();
+    const markReady = () => {
+      if (!cancelled) setHeroPosterReady(true);
+    };
 
-    // Mobile unlock
-    let unlocked = false;
-    function unlock() {
-      if (unlocked) return;
-      unlocked = true;
-      video.play().then(() => {
-        video.pause();
-        video.currentTime = 0;
-      }).catch(() => { unlocked = false; });
-      window.removeEventListener("touchstart", unlock);
+    image.src = posterUrl;
+    if (image.complete && image.naturalWidth > 0) {
+      markReady();
+    } else if (image.decode) {
+      image.decode().then(markReady, markReady);
+    } else {
+      image.onload = markReady;
+      image.onerror = markReady;
     }
-    window.addEventListener("touchstart", unlock, { once: true, passive: true });
-    video.addEventListener("canplaythrough", () => { unlocked = true; }, { once: true });
+
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    const abortController = new AbortController();
+
+    fetch(videoUrl, { cache: "force-cache", signal: abortController.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Failed to load hero video: ${response.status}`);
+        return response.blob();
+      })
+      .then((blob) => {
+        if (abortController.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setShowHeroPoster(true);
+        setHeroVideoSrc(objectUrl);
+      })
+      .catch(() => {
+        if (!abortController.signal.aborted) {
+          setShowHeroPoster(true);
+          setHeroVideoSrc(videoUrl);
+        }
+      });
+
+    return () => {
+      abortController.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, []);
+
+  useClientLayoutEffect(() => {
+    const videoElement = videoRef.current;
+    const posterElement = posterRef.current;
+    const runwayElement = runwayRef.current;
+    if (!videoElement || !posterElement || !runwayElement) return;
+    const video: HTMLVideoElement = videoElement;
+    const poster: HTMLImageElement = posterElement;
+    const runway: HTMLDivElement = runwayElement;
+    const videoWithFrameCallbacks = video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (callback: () => void) => number;
+      cancelVideoFrameCallback?: (handle: number) => void;
+    };
 
     const wordRefs = [word0Ref, word1Ref, word2Ref];
     let ticking = false;
+    let frameId = 0;
+    let handoffAnimationFrameId = 0;
+    let handoffTimeoutId = 0;
+    let videoFrameCallbackId = 0;
+    let posterHandoffPending = false;
+    let posterIsVisible = true;
+    let disposed = false;
+    let lastSeekFrame = -1;
 
-    function onScroll() {
-      if (!unlocked) unlock();
-      if (ticking) return;
-      ticking = true;
+    function setPosterVisible(visible: boolean) {
+      if (posterIsVisible === visible) return;
+      posterIsVisible = visible;
+      setShowHeroPoster(visible);
+    }
 
-      requestAnimationFrame(() => {
-        ticking = false;
-        if (!video || !runway) return;
+    function cancelPosterHandoff() {
+      posterHandoffPending = false;
+      if (videoFrameCallbackId && videoWithFrameCallbacks.cancelVideoFrameCallback) {
+        videoWithFrameCallbacks.cancelVideoFrameCallback(videoFrameCallbackId);
+      }
+      videoFrameCallbackId = 0;
+      if (handoffAnimationFrameId) cancelAnimationFrame(handoffAnimationFrameId);
+      handoffAnimationFrameId = 0;
+      if (handoffTimeoutId) window.clearTimeout(handoffTimeoutId);
+      handoffTimeoutId = 0;
+    }
 
-        // How far through the scroll runway (0–1, clamped for animations)
-        const rect = runway.getBoundingClientRect();
-        const runwayScroll = -rect.top;
-        const runwayHeight = runway.offsetHeight - window.innerHeight;
-        const fraction = runwayHeight > 0
-          ? clamp01(runwayScroll / runwayHeight)
-          : 0;
+    function completePosterHandoff() {
+      if (disposed) return;
+      cancelPosterHandoff();
+      setPosterVisible(false);
+    }
 
-        // Rendered icon height (object-contain preserves aspect ratio within container).
-        const naturalAspect = video.videoWidth && video.videoHeight
-          ? video.videoWidth / video.videoHeight
-          : 1.22; // fallback before metadata loads
-        const containerAspect = video.offsetWidth / video.offsetHeight;
-        const iconHeight = naturalAspect > containerAspect
-          ? video.offsetWidth / naturalAspect  // width-limited
-          : video.offsetHeight;                 // height-limited
-        const initialOffset = iconHeight * ICON_INITIAL_HIDE_FRAC;
+    function schedulePosterHandoff() {
+      if (!posterIsVisible || posterHandoffPending) return;
+      posterHandoffPending = true;
 
-        // Scrub video: hold frame 0 during icon rise, then scrub remaining range.
-        // Skip redundant seeks whose delta is less than one frame's duration —
-        // each seek forces a decode, and sub-frame seeks produce the same output.
-        if (video.duration && isFinite(video.duration)) {
-          let target = 0;
-          if (runwayScroll >= initialOffset) {
-            const videoProgress = (runwayHeight - initialOffset) > 0
-              ? clamp01((runwayScroll - initialOffset) / (runwayHeight - initialOffset))
-              : 0;
-            target = videoProgress * video.duration;
-          }
-          if (Math.abs(video.currentTime - target) > 1 / 24) {
-            video.currentTime = target;
-          }
-        }
+      if (videoWithFrameCallbacks.requestVideoFrameCallback) {
+        videoFrameCallbackId = videoWithFrameCallbacks.requestVideoFrameCallback(() => {
+          videoFrameCallbackId = 0;
+          completePosterHandoff();
+        });
+        handoffTimeoutId = window.setTimeout(completePosterHandoff, 500);
+        return;
+      }
 
-        // Reveal words
-        for (let i = 0; i < WORD_THRESHOLDS.length; i++) {
-          const el = wordRefs[i].current;
-          if (!el) continue;
-          const progress = clamp01(
-            (fraction - WORD_THRESHOLDS[i]) / 0.08
-          );
-          el.style.opacity = String(progress);
-          el.style.transform = `translateY(${(1 - progress) * 12}px)`;
-        }
-
-        // Asterisk + footnote
-        const astProgress = clamp01(
-          (fraction - ASTERISK_THRESHOLD) / 0.08
-        );
-        if (asteriskRef.current) asteriskRef.current.style.opacity = String(astProgress);
-        if (footnoteRef.current) footnoteRef.current.style.opacity = String(astProgress * 0.7);
-
-        // Header: reveal brand + background just before the tmux-shortcuts
-        // footnote appears, so it reads as dark once the line is visible.
-        const headerProgress = clamp01(
-          (fraction - (ASTERISK_THRESHOLD - HEADER_REVEAL_LEAD)) / HEADER_REVEAL_LEAD
-        );
-        if (headerBrandRef.current) {
-          headerBrandRef.current.style.opacity = String(headerProgress);
-        }
-        if (headerRef.current) {
-          headerRef.current.style.backgroundColor = `rgba(0, 0, 0, ${headerProgress * 0.6})`;
-          headerRef.current.style.backdropFilter = headerProgress > 0 ? `blur(${headerProgress * 4}px)` : '';
-          headerRef.current.style.webkitBackdropFilter = headerProgress > 0 ? `blur(${headerProgress * 4}px)` : '';
-        }
-
-        // Slide video + hero up once the content section enters the viewport.
-        // Both start at the same scroll position so they move in lockstep.
-        const contentEnterScroll = runway.offsetHeight * UNPIN_THRESHOLD - window.innerHeight;
-        const slideAmount = Math.max(0, runwayScroll - contentEnterScroll);
-
-        // Video transform combines two behaviors:
-        //   1. Icon-rise (runwayScroll 0 → initialOffset): translate down so only
-        //      the top third is visible; scroll lifts it 1:1 until fully in view.
-        //   2. Unpin slide (fraction > UNPIN_THRESHOLD): translate up with content.
-        const iconCurrentOffset = Math.max(0, initialOffset - runwayScroll);
-        const videoTranslateY = iconCurrentOffset > 0
-          ? iconCurrentOffset
-          : slideAmount > 0 ? -Math.round(slideAmount) : 0;
-        video.style.transform = videoTranslateY !== 0
-          ? `translateY(${Math.round(videoTranslateY)}px)`
-          : '';
-
-        // Hook text: visible until the icon nearly finishes rising, then fades out.
-        if (hookRef.current) {
-          const remainingHidden = iconHeight > 0 ? iconCurrentOffset / iconHeight : 0;
-          const fadeProgress = iconCurrentOffset === 0
-            ? 1
-            : clamp01(1 - remainingHidden / HOOK_FADE_REMAINING);
-          hookRef.current.style.opacity = String(1 - fadeProgress);
-          hookRef.current.style.transform = `translateY(${-fadeProgress * 24}px)`;
-        }
-
-        // Hero: cap so it stops at unstick (fraction = 1); natural scroll takes over.
-        const maxHeroOffset = runway.offsetHeight * (1 - UNPIN_THRESHOLD);
-        const heroOffset = Math.min(slideAmount, maxHeroOffset);
-        if (heroRef.current) {
-          heroRef.current.style.transform = heroOffset > 0
-            ? `translateY(-${Math.round(heroOffset)}px)`
-            : '';
-        }
+      handoffAnimationFrameId = requestAnimationFrame(() => {
+        handoffAnimationFrameId = requestAnimationFrame(() => {
+          handoffAnimationFrameId = 0;
+          completePosterHandoff();
+        });
       });
     }
 
+    function syncScrollState() {
+      if (disposed) return;
+
+      // How far through the scroll runway (0–1, clamped for animations)
+      const rect = runway.getBoundingClientRect();
+      const runwayScroll = -rect.top;
+      const runwayHeight = runway.offsetHeight - window.innerHeight;
+      const fraction = runwayHeight > 0
+        ? clamp01(runwayScroll / runwayHeight)
+        : 0;
+
+      // Rendered icon height (object-contain preserves aspect ratio within container).
+      const naturalAspect = video.videoWidth && video.videoHeight
+        ? video.videoWidth / video.videoHeight
+        : 1.22; // fallback before metadata loads
+      const containerAspect = video.offsetWidth / video.offsetHeight;
+      const iconHeight = naturalAspect > containerAspect
+        ? video.offsetWidth / naturalAspect  // width-limited
+        : video.offsetHeight;                 // height-limited
+      const initialOffset = iconHeight * ICON_INITIAL_HIDE_FRAC;
+
+      // Scrub video: hold frame 0 during icon rise, then scrub remaining range.
+      // Quantize to source frames and skip duplicate frame requests. This avoids
+      // issuing repeated seeks while a previous frame seek is still resolving.
+      let targetFrame = 0;
+      if (video.duration && isFinite(video.duration)) {
+        let target = 0;
+        if (runwayScroll >= initialOffset) {
+          const videoProgress = (runwayHeight - initialOffset) > 0
+            ? clamp01((runwayScroll - initialOffset) / (runwayHeight - initialOffset))
+            : 0;
+          target = videoProgress * video.duration;
+        }
+        const maxFrame = Math.max(0, Math.round(video.duration * HERO_VIDEO_FPS) - 1);
+        targetFrame = Math.min(maxFrame, Math.max(0, Math.round(target * HERO_VIDEO_FPS)));
+        const targetTime = targetFrame / HERO_VIDEO_FPS;
+        const frameDuration = 1 / HERO_VIDEO_FPS;
+        const frameIsCurrent = Math.abs(video.currentTime - targetTime) <= frameDuration / 2;
+
+        if (targetFrame === 0) {
+          cancelPosterHandoff();
+          lastSeekFrame = 0;
+          setPosterVisible(true);
+        } else if (targetFrame !== lastSeekFrame || (!video.seeking && !frameIsCurrent)) {
+          const needsPosterHandoff = posterIsVisible;
+          if (needsPosterHandoff) cancelPosterHandoff();
+          lastSeekFrame = targetFrame;
+          video.currentTime = targetTime;
+          if (needsPosterHandoff) schedulePosterHandoff();
+        } else if (!video.seeking) {
+          schedulePosterHandoff();
+        }
+      } else {
+        setPosterVisible(true);
+      }
+
+      // Reveal words
+      for (let i = 0; i < WORD_THRESHOLDS.length; i++) {
+        const el = wordRefs[i].current;
+        if (!el) continue;
+        const progress = clamp01(
+          (fraction - WORD_THRESHOLDS[i]) / 0.08
+        );
+        el.style.opacity = String(progress);
+        el.style.transform = `translateY(${(1 - progress) * 12}px)`;
+      }
+
+      // Asterisk + footnote
+      const astProgress = clamp01(
+        (fraction - ASTERISK_THRESHOLD) / 0.08
+      );
+      if (asteriskRef.current) asteriskRef.current.style.opacity = String(astProgress);
+      if (footnoteRef.current) footnoteRef.current.style.opacity = String(astProgress * 0.7);
+
+      // Header: reveal brand + background just before the tmux-shortcuts
+      // footnote appears, so it reads as dark once the line is visible.
+      const headerProgress = clamp01(
+        (fraction - (ASTERISK_THRESHOLD - HEADER_REVEAL_LEAD)) / HEADER_REVEAL_LEAD
+      );
+      if (headerBrandRef.current) {
+        headerBrandRef.current.style.opacity = String(headerProgress);
+      }
+      if (headerRef.current) {
+        const headerBlur = headerProgress > 0 ? `blur(${headerProgress * 4}px)` : '';
+        headerRef.current.style.backgroundColor = `rgba(0, 0, 0, ${headerProgress * 0.6})`;
+        headerRef.current.style.backdropFilter = headerBlur;
+        headerRef.current.style.setProperty("-webkit-backdrop-filter", headerBlur);
+      }
+
+      // Slide video + hero up once the content section enters the viewport.
+      // Both start at the same scroll position so they move in lockstep.
+      const contentEnterScroll = runway.offsetHeight * UNPIN_THRESHOLD - window.innerHeight;
+      const slideAmount = Math.max(0, runwayScroll - contentEnterScroll);
+
+      // Video transform combines two behaviors:
+      //   1. Icon-rise (runwayScroll 0 → initialOffset): translate down so only
+      //      the top third is visible; scroll lifts it 1:1 until fully in view.
+      //   2. Unpin slide (fraction > UNPIN_THRESHOLD): translate up with content.
+      const iconCurrentOffset = Math.max(0, initialOffset - runwayScroll);
+      const videoTranslateY = iconCurrentOffset > 0
+        ? iconCurrentOffset
+        : slideAmount > 0 ? -slideAmount : 0;
+      const mediaTransform = `translate3d(0, ${videoTranslateY.toFixed(3)}px, 0)`;
+      video.style.transform = mediaTransform;
+      poster.style.transform = mediaTransform;
+
+      // Hook text: visible until the icon nearly finishes rising, then fades out.
+      if (hookRef.current) {
+        const remainingHidden = iconHeight > 0 ? iconCurrentOffset / iconHeight : 0;
+        const fadeProgress = iconCurrentOffset === 0
+          ? 1
+          : clamp01(1 - remainingHidden / HOOK_FADE_REMAINING);
+        hookRef.current.style.opacity = String(1 - fadeProgress);
+        hookRef.current.style.transform = `translateY(${-fadeProgress * 24}px)`;
+      }
+
+      // Hero: cap so it stops at unstick (fraction = 1); natural scroll takes over.
+      const maxHeroOffset = runway.offsetHeight * (1 - UNPIN_THRESHOLD);
+      const heroOffset = Math.min(slideAmount, maxHeroOffset);
+      if (heroRef.current) {
+        heroRef.current.style.transform = heroOffset > 0
+          ? `translate3d(0, -${heroOffset.toFixed(3)}px, 0)`
+          : '';
+      }
+    }
+
+    function scheduleScrollSync() {
+      if (ticking) return;
+      ticking = true;
+
+      frameId = requestAnimationFrame(() => {
+        ticking = false;
+        syncScrollState();
+      });
+    }
+
+    // Mobile unlock
+    let unlocked = false;
+    let unlockPending = false;
+    function unlock() {
+      if (unlocked || unlockPending) return;
+      if (!video.currentSrc) return;
+      unlockPending = true;
+      video.play().then(() => {
+        video.pause();
+        unlocked = true;
+        window.removeEventListener("touchstart", unlock);
+        scheduleScrollSync();
+      }).catch(() => {
+        unlocked = false;
+      }).finally(() => {
+        unlockPending = false;
+      });
+    }
+    window.addEventListener("touchstart", unlock, { passive: true });
+    const handleCanPlayThrough = () => {
+      unlocked = true;
+      scheduleScrollSync();
+    };
+    const handleLoadedMetadata = () => {
+      lastSeekFrame = -1;
+      cancelPosterHandoff();
+      setPosterVisible(true);
+      scheduleScrollSync();
+    };
+    video.addEventListener("canplaythrough", handleCanPlayThrough, { once: true });
+    video.addEventListener("loadedmetadata", handleLoadedMetadata);
+    video.addEventListener("durationchange", scheduleScrollSync);
+
+    function onScroll() {
+      if (!unlocked) unlock();
+      scheduleScrollSync();
+    }
+
     window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll(); // initial position
+    syncScrollState(); // initial position, before first paint
+    setHeroLayoutReady(true);
 
     return () => {
+      disposed = true;
+      cancelPosterHandoff();
+      cancelAnimationFrame(frameId);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("touchstart", unlock);
+      video.removeEventListener("canplaythrough", handleCanPlayThrough);
+      video.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      video.removeEventListener("durationchange", scheduleScrollSync);
     };
   }, []);
 
   return (
-    <>
+    <div style={{ visibility: heroCanPaint ? "visible" : "hidden" }}>
       <SiteHeader ref={headerRef} brandRef={headerBrandRef} brandVisible={false} />
 
       {/* ── Fixed video layer — bottom-anchored, scrubs for the full runway ── */}
       <video
         ref={videoRef}
-        src={videoUrl}
+        src={heroVideoSrc}
         poster={posterUrl}
         muted
         playsInline
         preload="auto"
-        className="fixed bottom-0 left-0 w-full object-contain object-bottom z-0"
-        style={{ height: "min(500px, calc(100vh - 420px))" }}
+        className="fixed bottom-0 left-0 w-full object-contain object-bottom z-0 will-change-transform"
+        style={{
+          height: "min(500px, calc(100vh - 420px))",
+        }}
+      />
+      <img
+        ref={posterRef}
+        src={posterUrl}
+        alt=""
+        aria-hidden="true"
+        className="pointer-events-none fixed bottom-0 left-0 w-full object-contain object-bottom z-0 will-change-transform"
+        style={{
+          height: "min(500px, calc(100vh - 420px))",
+          opacity: showHeroPoster ? 1 : 0,
+        }}
       />
 
       {/* ── Pinned scroll runway: hero text overlay ── */}
       <div ref={runwayRef} style={{ height: `${RUNWAY_VH}vh` }}>
-        <div ref={heroRef} className="sticky top-0 flex flex-col items-center z-[1]" style={{ height: "100vh" }}>
+        <div ref={heroRef} className="sticky top-0 flex flex-col items-center z-[1] will-change-transform" style={{ height: "100vh" }}>
           {/* Hook copy — visible on load, fades out on first scroll */}
           <div
             ref={hookRef}
@@ -580,6 +768,6 @@ function Home() {
           </div>
         </footer>
       </div>
-    </>
+    </div>
   );
 }
