@@ -63,7 +63,11 @@ function resolveSpawnConfig(options, runtime = {}) {
   const defaultCwd = resolveDefaultCwd(platform, env, osModule);
   const missingExplicitCwd = Boolean(cwd) && !directoryExists(cwd, fsModule);
   const shell = explicitShell || resolveDefaultShell(platform, env);
-  const shellArgs = explicitArgs || resolveLoginArg(shell, platform);
+  // An empty array means "no override," not "no args" — fall through to the
+  // login-flag default so `~/.zprofile` runs and PATH includes Homebrew/asdf.
+  const shellArgs = explicitArgs && explicitArgs.length > 0
+    ? explicitArgs
+    : resolveLoginArg(shell, platform);
 
   return {
     cols,
