@@ -209,6 +209,7 @@ function DownloadGroupHeader({
 
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const posterRef = useRef<HTMLImageElement>(null);
   const runwayRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
   const word0Ref = useRef<HTMLSpanElement>(null);
@@ -223,6 +224,7 @@ function Home() {
   const [heroVideoSrc, setHeroVideoSrc] = useState<string | undefined>();
   const [heroPosterReady, setHeroPosterReady] = useState(false);
   const [heroLayoutReady, setHeroLayoutReady] = useState(false);
+  const [heroVideoFrameReady, setHeroVideoFrameReady] = useState(false);
   const heroCanPaint = heroPosterReady && heroLayoutReady;
 
   useEffect(() => {
@@ -261,10 +263,14 @@ function Home() {
       .then((blob) => {
         if (abortController.signal.aborted) return;
         objectUrl = URL.createObjectURL(blob);
+        setHeroVideoFrameReady(false);
         setHeroVideoSrc(objectUrl);
       })
       .catch(() => {
-        if (!abortController.signal.aborted) setHeroVideoSrc(videoUrl);
+        if (!abortController.signal.aborted) {
+          setHeroVideoFrameReady(false);
+          setHeroVideoSrc(videoUrl);
+        }
       });
 
     return () => {
@@ -275,16 +281,67 @@ function Home() {
 
   useClientLayoutEffect(() => {
     const videoElement = videoRef.current;
+    const posterElement = posterRef.current;
     const runwayElement = runwayRef.current;
-    if (!videoElement || !runwayElement) return;
+    if (!videoElement || !posterElement || !runwayElement) return;
     const video: HTMLVideoElement = videoElement;
+    const poster: HTMLImageElement = posterElement;
     const runway: HTMLDivElement = runwayElement;
+    const videoWithFrameCallbacks = video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (callback: () => void) => number;
+      cancelVideoFrameCallback?: (handle: number) => void;
+    };
 
     const wordRefs = [word0Ref, word1Ref, word2Ref];
     let ticking = false;
     let frameId = 0;
+    let revealAnimationFrameId = 0;
+    let revealTimeoutId = 0;
+    let videoFrameCallbackId = 0;
+    let videoFrameRevealPending = false;
+    let videoFrameShown = false;
     let disposed = false;
     let lastSeekFrame = -1;
+
+    function clearPendingVideoReveal() {
+      videoFrameRevealPending = false;
+      if (videoFrameCallbackId && videoWithFrameCallbacks.cancelVideoFrameCallback) {
+        videoWithFrameCallbacks.cancelVideoFrameCallback(videoFrameCallbackId);
+      }
+      videoFrameCallbackId = 0;
+      if (revealAnimationFrameId) cancelAnimationFrame(revealAnimationFrameId);
+      revealAnimationFrameId = 0;
+      if (revealTimeoutId) window.clearTimeout(revealTimeoutId);
+      revealTimeoutId = 0;
+    }
+
+    function revealVideoFrame() {
+      if (disposed) return;
+      clearPendingVideoReveal();
+      videoFrameShown = true;
+      setHeroVideoFrameReady(true);
+    }
+
+    function scheduleVideoFrameReveal() {
+      if (videoFrameShown || videoFrameRevealPending) return;
+      videoFrameRevealPending = true;
+
+      if (videoWithFrameCallbacks.requestVideoFrameCallback) {
+        videoFrameCallbackId = videoWithFrameCallbacks.requestVideoFrameCallback(() => {
+          videoFrameCallbackId = 0;
+          revealVideoFrame();
+        });
+        revealTimeoutId = window.setTimeout(revealVideoFrame, 500);
+        return;
+      }
+
+      revealAnimationFrameId = requestAnimationFrame(() => {
+        revealAnimationFrameId = requestAnimationFrame(() => {
+          revealAnimationFrameId = 0;
+          revealVideoFrame();
+        });
+      });
+    }
 
     function syncScrollState() {
       if (disposed) return;
@@ -375,7 +432,9 @@ function Home() {
       const videoTranslateY = iconCurrentOffset > 0
         ? iconCurrentOffset
         : slideAmount > 0 ? -slideAmount : 0;
-      video.style.transform = `translate3d(0, ${videoTranslateY.toFixed(3)}px, 0)`;
+      const mediaTransform = `translate3d(0, ${videoTranslateY.toFixed(3)}px, 0)`;
+      video.style.transform = mediaTransform;
+      poster.style.transform = mediaTransform;
 
       // Hook text: visible until the icon nearly finishes rising, then fades out.
       if (hookRef.current) {
@@ -429,14 +488,22 @@ function Home() {
     const handleCanPlayThrough = () => {
       unlocked = true;
       scheduleScrollSync();
+      scheduleVideoFrameReveal();
     };
     const handleLoadedMetadata = () => {
       lastSeekFrame = -1;
+      videoFrameShown = false;
+      clearPendingVideoReveal();
+      setHeroVideoFrameReady(false);
       scheduleScrollSync();
     };
+    const handleVideoFrameReady = scheduleVideoFrameReveal;
     video.addEventListener("canplaythrough", handleCanPlayThrough, { once: true });
+    video.addEventListener("canplay", handleVideoFrameReady);
+    video.addEventListener("loadeddata", handleVideoFrameReady);
     video.addEventListener("loadedmetadata", handleLoadedMetadata);
     video.addEventListener("durationchange", scheduleScrollSync);
+    video.addEventListener("seeked", handleVideoFrameReady);
 
     function onScroll() {
       if (!unlocked) unlock();
@@ -449,12 +516,16 @@ function Home() {
 
     return () => {
       disposed = true;
+      clearPendingVideoReveal();
       cancelAnimationFrame(frameId);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("touchstart", unlock);
       video.removeEventListener("canplaythrough", handleCanPlayThrough);
+      video.removeEventListener("canplay", handleVideoFrameReady);
+      video.removeEventListener("loadeddata", handleVideoFrameReady);
       video.removeEventListener("loadedmetadata", handleLoadedMetadata);
       video.removeEventListener("durationchange", scheduleScrollSync);
+      video.removeEventListener("seeked", handleVideoFrameReady);
     };
   }, []);
 
@@ -473,6 +544,17 @@ function Home() {
         className="fixed bottom-0 left-0 w-full object-contain object-bottom z-0 will-change-transform"
         style={{
           height: "min(500px, calc(100vh - 420px))",
+        }}
+      />
+      <img
+        ref={posterRef}
+        src={posterUrl}
+        alt=""
+        aria-hidden="true"
+        className="pointer-events-none fixed bottom-0 left-0 w-full object-contain object-bottom z-0 will-change-transform"
+        style={{
+          height: "min(500px, calc(100vh - 420px))",
+          opacity: heroVideoFrameReady ? 0 : 1,
         }}
       />
 
