@@ -15,6 +15,7 @@ import posterUrl from "../assets/video-climb-blink-and-stare.webp";
 import videoUrl from "../assets/video-climb-blink-and-stare.mp4";
 import alertVideoUrl from "../assets/video-alert.mp4";
 import copyPasteVideoUrl from "../assets/video-copy-paste.mp4";
+import tmuxVideoUrl from "../assets/video-tmux.mp4";
 import visualStudioIconUrl from "../assets/visual-studio-icon.svg";
 import tinyIconUrl from "../assets/icon-tiny-dark.png";
 import standaloneLatest from "@standalone-latest";
@@ -690,9 +691,14 @@ function Home() {
 
         {/* Section 3: image left, text right */}
         <section className="mx-auto max-w-5xl px-4 md:px-6 py-12 grid md:grid-cols-[3fr_2fr] gap-8 md:gap-12 items-start">
-          <div className="-mx-4 md:mx-0 aspect-video md:rounded-lg border-y md:border border-[var(--color-text)]/20 bg-[var(--color-text)]/5 flex items-center justify-center order-2 md:order-1">
-            <p className="text-sm opacity-40 italic">TODO: Tiling layout and tmux keybinds</p>
-          </div>
+          <video
+            src={tmuxVideoUrl}
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="-mx-4 md:mx-0 block aspect-video w-[calc(100%+2rem)] max-w-none md:w-full md:max-w-full object-cover order-2 md:order-1"
+          />
           <div className="order-1 md:order-2">
             <h2 className="font-display text-xl mb-6">Soft as a mouse, sharp as tmux</h2>
             <p className="text-lg leading-relaxed opacity-70 mb-4">
