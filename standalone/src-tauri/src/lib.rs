@@ -16,7 +16,11 @@ use tauri::{
     menu::{AboutMetadata, Menu, PredefinedMenuItem, Submenu},
     AppHandle, DragDropEvent, Emitter, Manager, RunEvent, WindowEvent,
 };
-use process_wrap::std::*;
+use process_wrap::std::{ChildWrapper, CommandWrap};
+#[cfg(windows)]
+use process_wrap::std::{CreationFlags, JobObject};
+#[cfg(unix)]
+use process_wrap::std::ProcessGroup;
 #[cfg(windows)]
 use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
