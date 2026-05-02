@@ -19,6 +19,10 @@ function createHarness(args: string[] = []) {
   return { adapter, output, onExit, runner };
 }
 
+function stripAnsi(data: string): string {
+  return data.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
 describe("AsciiSplashRunner", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -119,5 +123,43 @@ describe("AsciiSplashRunner", () => {
 
     expect(output.join("")).toContain("Usage: ascii-splash [options]");
     expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps overlays isolated across simultaneous runner instances", () => {
+    const adapter = new FakePtyAdapter();
+    const outputA: string[] = [];
+    const outputB: string[] = [];
+    adapter.onPtyData((detail) => {
+      if (detail.id === "a") outputA.push(detail.data);
+      if (detail.id === "b") outputB.push(detail.data);
+    });
+    adapter.spawnPty("a", { cols: 80, rows: 28 });
+    adapter.spawnPty("b", { cols: 80, rows: 28 });
+    const runnerA = new AsciiSplashRunner({
+      adapter,
+      terminalId: "a",
+      args: ["--pattern", "waves"],
+      onExit: vi.fn(),
+    });
+    const runnerB = new AsciiSplashRunner({
+      adapter,
+      terminalId: "b",
+      args: ["--pattern", "waves"],
+      onExit: vi.fn(),
+    });
+
+    runnerA.start();
+    runnerB.start();
+    outputA.length = 0;
+    outputB.length = 0;
+
+    runnerA.handleInput("?");
+    vi.advanceTimersByTime(40);
+
+    expect(stripAnsi(outputA.join(""))).toContain("ascii-splash Help");
+    expect(stripAnsi(outputB.join(""))).not.toContain("ascii-splash Help");
+
+    runnerA.dispose();
+    runnerB.dispose();
   });
 });

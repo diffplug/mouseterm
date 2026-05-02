@@ -4,11 +4,11 @@ import { CommandExecutor } from "ascii-splash-internal/engine/CommandExecutor.js
 import { CommandParser } from "ascii-splash-internal/engine/CommandParser.js";
 import { defaultConfig, qualityPresets } from "ascii-splash-internal/config/defaults.js";
 import { getNextThemeName, getTheme, THEMES } from "ascii-splash-internal/config/themes.js";
-import { resetTransitionManager, getTransitionManager } from "ascii-splash-internal/renderer/TransitionManager.js";
+import { TransitionManager } from "ascii-splash-internal/renderer/TransitionManager.js";
 import { Buffer as SplashBuffer } from "ascii-splash-internal/renderer/Buffer.js";
-import { resetHelpOverlay, getHelpOverlay } from "ascii-splash-internal/ui/HelpOverlay.js";
-import { resetStatusBar, getStatusBar } from "ascii-splash-internal/ui/StatusBar.js";
-import { resetToastManager, getToastManager } from "ascii-splash-internal/ui/ToastManager.js";
+import { HelpOverlay } from "ascii-splash-internal/ui/HelpOverlay.js";
+import { StatusBar } from "ascii-splash-internal/ui/StatusBar.js";
+import { ToastManager } from "ascii-splash-internal/ui/ToastManager.js";
 import { AquariumPattern } from "ascii-splash-internal/patterns/AquariumPattern.js";
 import { CampfirePattern } from "ascii-splash-internal/patterns/CampfirePattern.js";
 import { DNAPattern } from "ascii-splash-internal/patterns/DNAPattern.js";
@@ -480,6 +480,10 @@ export class AsciiSplashRunner implements InteractiveProgram {
   private commandExecutor: CommandExecutor | null = null;
   private commandBuffer = new CommandBuffer();
   private commandParser = new CommandParser();
+  private helpOverlay = new HelpOverlay();
+  private statusBar = new StatusBar();
+  private toastManager = new ToastManager();
+  private transitionManager = new TransitionManager();
   private patterns: Pattern[] = [];
   private currentPatternIndex = 0;
   private currentPresetIndex = 1;
@@ -519,11 +523,6 @@ export class AsciiSplashRunner implements InteractiveProgram {
       this.finishSoon();
       return;
     }
-
-    resetStatusBar();
-    resetToastManager();
-    resetHelpOverlay();
-    resetTransitionManager();
 
     this.config = {
       ...defaultConfig,
@@ -566,10 +565,10 @@ export class AsciiSplashRunner implements InteractiveProgram {
       const nextPattern = this.patterns[this.currentPatternIndex] ?? this.patterns[0];
       this.engine?.setPattern(nextPattern);
       this.commandExecutor?.updateState(this.currentPatternIndex, this.currentThemeIndex);
-      getStatusBar().update({ themeName: this.currentTheme.displayName });
+      this.statusBar.update({ themeName: this.currentTheme.displayName });
     });
 
-    getStatusBar().update({
+    this.statusBar.update({
       patternName: this.getCurrentPatternDisplayName(),
       presetNumber: this.currentPresetIndex,
       themeName: this.currentTheme.displayName,
@@ -577,10 +576,10 @@ export class AsciiSplashRunner implements InteractiveProgram {
       shuffleMode: "off",
       paused: false,
     });
-    getTransitionManager().setDefaultConfig({ type: "crossfade", duration: 300 });
+    this.transitionManager.setDefaultConfig({ type: "crossfade", duration: 300 });
 
     this.engine.setBeforeTerminalRenderCallback(() => this.renderBufferOverlays());
-    getToastManager().info("ascii-splash - Press ? for help | q to quit", 1500);
+    this.toastManager.info("ascii-splash - Press ? for help | q to quit", 1500);
     this.engine.start();
   }
 
@@ -614,9 +613,7 @@ export class AsciiSplashRunner implements InteractiveProgram {
   }
 
   private handleKey(input: KeyInput): void {
-    const helpOverlay = getHelpOverlay();
-    const statusBar = getStatusBar();
-    const toastManager = getToastManager();
+    const { helpOverlay, statusBar, toastManager } = this;
 
     if (helpOverlay.isVisible()) {
       if (input.name === "ESCAPE" || input.name === "?") {
@@ -757,14 +754,14 @@ export class AsciiSplashRunner implements InteractiveProgram {
     this.currentPatternIndex = index;
     this.currentPresetIndex = 1;
     const newPattern = this.patterns[this.currentPatternIndex];
-    getTransitionManager().start(oldPattern, newPattern, this.renderer?.getSize() ?? { width: 80, height: 30 });
+    this.transitionManager.start(oldPattern, newPattern, this.renderer?.getSize() ?? { width: 80, height: 30 });
     this.engine.setPattern(newPattern);
     this.commandExecutor?.updateState(this.currentPatternIndex, this.currentThemeIndex);
-    getStatusBar().update({
+    this.statusBar.update({
       patternName: this.getCurrentPatternDisplayName(),
       presetNumber: this.currentPresetIndex,
     });
-    getToastManager().info(`Pattern: ${this.getCurrentPatternDisplayName()}`, 2000);
+    this.toastManager.info(`Pattern: ${this.getCurrentPatternDisplayName()}`, 2000);
     setTimeout(() => {
       this.isPatternSwitching = false;
     }, 16);
@@ -778,14 +775,14 @@ export class AsciiSplashRunner implements InteractiveProgram {
       : this.currentPresetIndex === 1 ? 6 : this.currentPresetIndex - 1;
     if (!currentPattern.applyPreset(nextPreset)) return;
     this.currentPresetIndex = nextPreset;
-    getStatusBar().update({ presetNumber: nextPreset });
-    getToastManager().info(`${this.getCurrentPatternDisplayName()} - Preset ${nextPreset}`, 1500);
+    this.statusBar.update({ presetNumber: nextPreset });
+    this.toastManager.info(`${this.getCurrentPatternDisplayName()} - Preset ${nextPreset}`, 1500);
   }
 
   private setFps(fps: number): void {
     this.engine?.setFps(fps);
-    getStatusBar().update({ fps });
-    getToastManager().info(`Speed: ${fps} FPS`, 1500);
+    this.statusBar.update({ fps });
+    this.toastManager.info(`Speed: ${fps} FPS`, 1500);
   }
 
   private setQuality(quality: QualityPreset): void {
@@ -796,7 +793,7 @@ export class AsciiSplashRunner implements InteractiveProgram {
     this.engine?.setPattern(this.patterns[this.currentPatternIndex]);
     this.commandExecutor?.updateState(this.currentPatternIndex, this.currentThemeIndex);
     const qualityNames = { low: "LOW (15 FPS)", medium: "MEDIUM (30 FPS)", high: "HIGH (60 FPS)" };
-    getToastManager().info(`Quality: ${qualityNames[quality]}`, 1500);
+    this.toastManager.info(`Quality: ${qualityNames[quality]}`, 1500);
   }
 
   private cycleTheme(): void {
@@ -806,8 +803,8 @@ export class AsciiSplashRunner implements InteractiveProgram {
     this.patterns = createPatternsFromConfig(this.config, this.currentTheme);
     this.engine?.setPattern(this.patterns[this.currentPatternIndex]);
     this.commandExecutor?.updateState(this.currentPatternIndex, this.currentThemeIndex);
-    getStatusBar().update({ themeName: this.currentTheme.displayName });
-    getToastManager().info(`Theme: ${this.currentTheme.displayName}`, 1500);
+    this.statusBar.update({ themeName: this.currentTheme.displayName });
+    this.toastManager.info(`Theme: ${this.currentTheme.displayName}`, 1500);
   }
 
   private activatePatternBuffer(): void {
@@ -851,10 +848,10 @@ export class AsciiSplashRunner implements InteractiveProgram {
         const pattern = this.patterns[patternNum - 1];
         if (pattern.applyPreset?.(presetNum)) {
           this.currentPresetIndex = presetNum;
-          getStatusBar().update({ presetNumber: presetNum });
-          getToastManager().info(`${this.getCurrentPatternDisplayName()} - Preset ${presetNum}`, 1500);
+          this.statusBar.update({ presetNumber: presetNum });
+          this.toastManager.info(`${this.getCurrentPatternDisplayName()} - Preset ${presetNum}`, 1500);
         } else {
-          getToastManager().error(`Invalid preset: ${presetNum}`, 1500);
+          this.toastManager.error(`Invalid preset: ${presetNum}`, 1500);
         }
         return;
       }
@@ -877,16 +874,16 @@ export class AsciiSplashRunner implements InteractiveProgram {
       this.switchPattern(partialIndex);
       return;
     }
-    getToastManager().error(`Unknown pattern: ${input}`, 1500);
+    this.toastManager.error(`Unknown pattern: ${input}`, 1500);
   }
 
   private showCommandResult(message: string, success: boolean): void {
-    const toastManager = getToastManager();
+    const { toastManager } = this;
     if (success) toastManager.success(message);
     else toastManager.error(message);
 
     const shuffleInfo = this.commandExecutor?.getShuffleInfo() ?? "";
-    getStatusBar().update({
+    this.statusBar.update({
       shuffleMode: shuffleInfo ? (shuffleInfo.includes("ALL") ? "all" : "preset") : "off",
     });
   }
@@ -895,7 +892,7 @@ export class AsciiSplashRunner implements InteractiveProgram {
     const active = this.engine?.getPattern();
     const index = active ? this.patterns.indexOf(active) : -1;
     if (index >= 0) this.currentPatternIndex = index;
-    getStatusBar().update({
+    this.statusBar.update({
       patternName: this.getCurrentPatternDisplayName(),
       presetNumber: this.currentPresetIndex,
       themeName: this.currentTheme.displayName,
@@ -911,16 +908,16 @@ export class AsciiSplashRunner implements InteractiveProgram {
     const cells = buffer.getBuffer();
     const now = Date.now();
 
-    const transitionManager = getTransitionManager();
+    const { transitionManager } = this;
     if (transitionManager.isActive()) {
       transitionManager.render(cells, now, size);
     }
 
-    const toastManager = getToastManager();
+    const { toastManager } = this;
     toastManager.update(now);
     toastManager.render(cells, size);
 
-    const helpOverlay = getHelpOverlay();
+    const { helpOverlay } = this;
     if (helpOverlay.isVisible()) {
       helpOverlay.render(cells, size);
     }
@@ -934,7 +931,7 @@ export class AsciiSplashRunner implements InteractiveProgram {
     } else if (this.patternBufferActive) {
       this.renderPatternOverlay(cells, size);
     } else {
-      getStatusBar().render(cells, size);
+      this.statusBar.render(cells, size);
     }
   }
 
