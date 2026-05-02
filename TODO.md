@@ -28,9 +28,9 @@
 
 ## Update Banner Stories
 
-- [ ] Remove or reframe `UpdateBanner/Idle`; it renders blank because the component returns `null`.
-- [ ] Remove or reframe `UpdateBanner/Dismissed`; it renders blank because the component returns `null`.
-- [ ] Reframe `UpdateBanner/Long Version String` so the long-version stress case is obvious.
+- [x] Keep `UpdateBanner/Idle` and mark the expected empty render in the story canvas.
+- [x] Keep `UpdateBanner/Dismissed` and mark the expected empty render in the story canvas.
+- [x] Remove `UpdateBanner/Long Version String`.
 - [ ] Reframe `UpdateBanner/Narrow Viewport` so the constrained width is visible.
 
 ## App Bar Stories
