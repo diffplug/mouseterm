@@ -35,7 +35,7 @@
 
 ## App Bar Stories
 
-- [ ] Make `AppBar/Default`, `AppBar/Single Shell`, and `AppBar/Many Shells` meaningfully different, likely by opening the shell dropdown or reducing the story set.
+- [x] Make `AppBar/Default`, `AppBar/Single Shell`, and `AppBar/Many Shells` meaningfully different, likely by opening the shell dropdown or reducing the story set.
 
 ## Kill Modal Stories
 
