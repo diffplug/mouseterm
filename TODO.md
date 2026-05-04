@@ -19,8 +19,8 @@
 
 ## Text Selection Stories
 
-- [ ] Fix `TextSelection/Linewise Outline` so it is outline-only.
-- [ ] Fix `TextSelection/Block Outline` so it is outline-only.
+- [x] Keep `TextSelection/Linewise Outline`; it is already good as-is.
+- [x] Keep `TextSelection/Block Outline`; it is already good as-is.
 
 ## Selection Overlay Stories
 
