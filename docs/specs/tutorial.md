@@ -39,7 +39,7 @@ The fake terminal accepts these inputs:
 - **`ascii-splash` / `splash`** — Launches the browser playground runner for `ascii-splash@0.3.0`.
 - **Anything else** — `Unknown command. Type tut or ascii-splash.`
 
-`TutorialShell` provides full line editing (character echo, backspace) and parses commands on Enter. Output goes through `FakePtyAdapter.sendOutput()`.
+`TutorialShell` provides line editing (character echo, backspace), command history (`Up` / `Down` over xterm cursor-key escape sequences), and parses commands on Enter. Output goes through `FakePtyAdapter.sendOutput()`.
 
 ### `ascii-splash`
 

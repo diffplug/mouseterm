@@ -40,4 +40,43 @@ describe("TutorialShell ascii-splash integration", () => {
 
     expect(program.dispose).toHaveBeenCalledTimes(1);
   });
+
+  it("recalls the previous command on up arrow instead of echoing the escape sequence", () => {
+    const { output, shell } = createHarness();
+    shell.handleInput("bogus\r");
+    output.length = 0;
+
+    shell.handleInput("\x1b[A");
+
+    const data = output.join("");
+    expect(data).toContain("bogus");
+    expect(data).not.toContain("[A");
+  });
+
+  it("executes a command recalled from history", () => {
+    const { output, shell } = createHarness();
+    shell.handleInput("bogus\r");
+    output.length = 0;
+
+    shell.handleInput("\x1b[A\r");
+
+    expect(output.join("")).toContain("Unknown command");
+  });
+
+  it("restores the current draft when moving down past the newest history entry", () => {
+    const { output, shell } = createHarness();
+    shell.handleInput("bogus\r");
+    output.length = 0;
+
+    shell.handleInput("draft");
+    output.length = 0;
+    shell.handleInput("\x1b[A");
+    shell.handleInput("\x1b[B");
+
+    const data = output.join("");
+    expect(data).toContain("bogus");
+    expect(data).toContain("draft");
+    expect(data).not.toContain("[A");
+    expect(data).not.toContain("[B");
+  });
 });

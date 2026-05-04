@@ -13,6 +13,7 @@ const DIM = `${ESC}2m`;
 const fg = (code: number) => `${ESC}${code}m`;
 
 const PROMPT = `${fg(32)}user${RESET}@${fg(36)}mouseterm${RESET}:${BOLD}${fg(34)}~${RESET}$ `;
+const CLEAR_LINE = `${ESC}2K`;
 
 const STORAGE_PREFIX = 'mouseterm-tutorial-step-';
 const TOTAL_STEPS = 6;
@@ -75,6 +76,9 @@ export type StartInteractiveProgram = (args: string[], onExit: () => void) => In
 
 export class TutorialShell {
   private lineBuffer = '';
+  private history: string[] = [];
+  private historyIndex: number | null = null;
+  private historyDraft = '';
   private sendOutput: SendOutput;
   private startAsciiSplash?: StartInteractiveProgram;
   private activeProgram: InteractiveProgram | null = null;
@@ -96,24 +100,88 @@ export class TutorialShell {
       return;
     }
 
-    for (const ch of data) {
+    for (let index = 0; index < data.length; index++) {
+      const remaining = data.slice(index);
+      const csi = remaining.match(/^\x1b\[([0-?]*)([ -/]*)([@-~])/);
+      if (csi) {
+        this.handleControlSequence(csi[3]);
+        index += csi[0].length - 1;
+        continue;
+      }
+
+      const ss3 = remaining.match(/^\x1bO(.)/);
+      if (ss3) {
+        this.handleControlSequence(ss3[1]);
+        index += ss3[0].length - 1;
+        continue;
+      }
+
+      const ch = data[index];
       if (ch === '\r' || ch === '\n') {
         this.sendOutput('\r\n');
-        this.processCommand(this.lineBuffer.trim());
+        const command = this.lineBuffer.trim();
+        this.pushHistory(command);
+        this.processCommand(command);
         this.lineBuffer = '';
+        this.historyIndex = null;
+        this.historyDraft = '';
       } else if (ch === '\x7f' || ch === '\b') {
         // Backspace
         if (this.lineBuffer.length > 0) {
           this.lineBuffer = this.lineBuffer.slice(0, -1);
+          this.historyIndex = null;
           // Move cursor back, overwrite with space, move back again
           this.sendOutput('\b \b');
         }
+      } else if (ch === '\x1b') {
+        // Ignore lone escape bytes so partial terminal sequences do not echo.
       } else if (ch >= ' ') {
         // Printable character
         this.lineBuffer += ch;
+        this.historyIndex = null;
         this.sendOutput(ch);
       }
     }
+  }
+
+  private handleControlSequence(finalByte: string): void {
+    if (finalByte === 'A') {
+      this.recallHistory(-1);
+    } else if (finalByte === 'B') {
+      this.recallHistory(1);
+    }
+  }
+
+  private pushHistory(command: string): void {
+    if (!command) return;
+    if (this.history[this.history.length - 1] === command) return;
+    this.history.push(command);
+  }
+
+  private recallHistory(direction: -1 | 1): void {
+    if (this.history.length === 0) return;
+    if (this.historyIndex === null) {
+      if (direction === 1) return;
+      this.historyDraft = this.lineBuffer;
+      this.historyIndex = this.history.length - 1;
+    } else {
+      this.historyIndex += direction;
+      if (this.historyIndex < 0) {
+        this.historyIndex = 0;
+      } else if (this.historyIndex >= this.history.length) {
+        this.historyIndex = null;
+        this.lineBuffer = this.historyDraft;
+        this.redrawPromptLine();
+        return;
+      }
+    }
+
+    this.lineBuffer = this.history[this.historyIndex];
+    this.redrawPromptLine();
+  }
+
+  private redrawPromptLine(): void {
+    this.sendOutput(`\r${CLEAR_LINE}${PROMPT}${this.lineBuffer}`);
   }
 
   private processCommand(cmd: string): void {
