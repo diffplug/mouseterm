@@ -15,7 +15,7 @@
 
 ## Terminal Header Stories
 
-- [ ] Fix or remove `TerminalPaneHeader/Todo Click To Dismiss`; it currently clicks a noop and matches `Todo And Alert Enabled`.
+- [x] Remove `TerminalPaneHeader/Todo Click To Dismiss`; it clicked a noop and matched `Todo And Alert Enabled`.
 
 ## Text Selection Stories
 
