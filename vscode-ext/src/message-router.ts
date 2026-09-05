@@ -223,7 +223,7 @@ ptyManager.addCallbacks({
   },
   onExit(id: string, exitCode: number) {
     log.info(`[alert-feed] ${id}: PTY exited`);
-    if (!ptyManager.helperPtys.has(id)) alertManager.onExit(id, exitCode);
+    alertManager.onExit(id, exitCode);
     ownerPtyStreams.delete(id);
     for (const listener of processedExitListeners) listener(id, exitCode);
   },
@@ -260,9 +260,9 @@ function createOwnerPtyStream(id: string): ProcessedPtyStream {
   return createProcessedPtyStream({
     colorProvider: themeColorProvider,
     onEvents(events) {
-      if (!ptyManager.helperPtys.has(id)) applyTerminalProtocolEvents(alertManager, id, events);
+      applyTerminalProtocolEvents(alertManager, id, events);
       const semanticEvents = collectTerminalSemanticEvents(events);
-      if (!ptyManager.helperPtys.has(id)) alertManager.applyTerminalSemanticEvents(id, semanticEvents);
+      alertManager.applyTerminalSemanticEvents(id, semanticEvents);
       if (semanticEvents.length > 0) {
         for (const listener of semanticEventsListeners) listener(id, semanticEvents);
       }
@@ -271,7 +271,7 @@ function createOwnerPtyStream(id: string): ProcessedPtyStream {
       }
     },
     onChunk(chunk) {
-      if (!ptyManager.helperPtys.has(id)) alertManager.onData(id);
+      alertManager.onData(id);
       for (const listener of processedDataListeners) listener(id, chunk.data, chunk.textData);
     },
   });
@@ -510,14 +510,18 @@ export function attachRouter(
       case 'pty:context': {
         const request = msg.request;
         if ((request.op !== 'settings' && !ownedPtyIds.has(request.id)) || (request.op === 'promote' && request.restore && !ownedPtyIds.has(request.restore.parentId))) {
-          post({ type: 'pty:contextResult', requestId: msg.requestId, result: { home: '', busy: null, command: '', error: 'Terminal is not owned by this workspace' } });
+          post({ type: 'pty:contextResult', requestId: msg.requestId, result: { error: 'Terminal is not owned by this workspace' } });
           break;
         }
-        ptyManager.terminalContext(request).then(result => post({ type: 'pty:contextResult', requestId: msg.requestId, result }), error => post({ type: 'pty:contextResult', requestId: msg.requestId, result: { home: '', busy: null, command: '', error: String(error) } }));
+        ptyManager.terminalContext(request).then(result => {
+          if (!result.error && request.op === 'promote') alertManager.setHelper(request.id, !!request.restore);
+          post({ type: 'pty:contextResult', requestId: msg.requestId, result });
+        }, error => post({ type: 'pty:contextResult', requestId: msg.requestId, result: { error: String(error) } }));
         break;
       }
       case 'pty:spawn': {
         if (msg.options?.helper && (!ownedPtyIds.has(msg.options.helper.parentId) || ptyManager.helperPtys.has(msg.options.helper.parentId))) break;
+        if (msg.options?.helper) alertManager.setHelper(msg.id, true);
         claim(msg.id);
         // A fresh generation under this id: retire the parser rather than let
         // its half-read sequence splice onto the new PTY's first bytes.

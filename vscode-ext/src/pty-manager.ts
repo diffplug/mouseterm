@@ -397,27 +397,32 @@ export interface ShellEntry {
 
 let shellsCache: Promise<ShellEntry[]> | null = null;
 
-export function getAvailableShells(): Promise<ShellEntry[]> {
-  if (shellsCache) return shellsCache;
-  const pending = new Promise<ShellEntry[]>((resolve) => {
-    const requestId = `shells-${Date.now()}`;
-    // Ensure the child process is forked before attaching the listener —
-    // otherwise `child` is null on the cold path and the handler is never
-    // registered, causing the timeout to fire with an empty list.
-    sendToChild({ type: 'getShells', requestId });
+/** One correlated round trip to the PTY host child; rejects on timeout. */
+function requestChild<T>(message: Record<string, unknown>, matches: (msg: any) => boolean, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    // Fork the child before attaching the listener: on the cold path `child`
+    // is null until then and the handler would never be registered.
+    ensureChild(extensionPath_);
     const timeout = setTimeout(() => {
       child?.off('message', handler);
-      resolve([]);
-    }, 15000);
+      reject(new Error('PTY host request timed out'));
+    }, timeoutMs);
     const handler = (msg: any) => {
-      if (msg.type === 'shells' && msg.requestId === requestId) {
-        clearTimeout(timeout);
-        child?.off('message', handler);
-        resolve(msg.shells || []);
-      }
+      if (!matches(msg)) return;
+      clearTimeout(timeout);
+      child?.off('message', handler);
+      resolve(msg);
     };
     child?.on('message', handler);
+    sendToChild(message);
   });
+}
+
+export function getAvailableShells(): Promise<ShellEntry[]> {
+  if (shellsCache) return shellsCache;
+  const requestId = `shells-${Date.now()}`;
+  const pending = requestChild<{ shells?: ShellEntry[] }>({ type: 'getShells', requestId }, (msg) => msg.type === 'shells' && msg.requestId === requestId, 15000)
+    .then((msg) => msg.shells || [], () => []);
   shellsCache = pending;
   // Don't pin an empty result in the cache — lets a subsequent call retry
   // if the first one timed out or the child was still warming up.
@@ -429,56 +434,25 @@ export function getAvailableShells(): Promise<ShellEntry[]> {
 
 let contextSequence = 0;
 export function terminalContext(request: TerminalContextRequest): Promise<TerminalContextInfo> {
-  return new Promise((resolve, reject) => {
-    const requestId = `context-${++contextSequence}`;
-    ensureChild(extensionPath_);
-    const timeout = setTimeout(() => { child?.off('message', handler); reject(new Error('Terminal context request timed out')); }, 10000);
-    const handler = (msg: any) => {
-      if (msg.type !== 'context' || msg.requestId !== requestId) return;
-      clearTimeout(timeout);
-      child?.off('message', handler);
-      if (!msg.error && request.op === 'promote') { if (request.restore) helperPtys.set(request.id, request.restore); else helperPtys.delete(request.id); }
-      resolve(msg);
-    };
-    child?.on('message', handler);
-    sendToChild({ type: 'context', request, requestId });
-  });
+  const requestId = `context-${++contextSequence}`;
+  return requestChild<TerminalContextInfo>({ type: 'context', request, requestId }, (msg) => msg.type === 'context' && msg.requestId === requestId, 10000)
+    .then((result) => {
+      if (!result.error && request.op === 'promote') {
+        if (request.restore) helperPtys.set(request.id, request.restore);
+        else helperPtys.delete(request.id);
+      }
+      return result;
+    });
 }
 
 export function getCwd(id: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    sendToChild({ type: 'getCwd', id });
-    const timeout = setTimeout(() => {
-      child?.off('message', handler);
-      resolve(null);
-    }, 1000);
-    const handler = (msg: any) => {
-      if (msg.type === 'cwd' && msg.id === id) {
-        clearTimeout(timeout);
-        child?.off('message', handler);
-        resolve(msg.cwd);
-      }
-    };
-    child?.on('message', handler);
-  });
+  return requestChild<{ cwd: string | null }>({ type: 'getCwd', id }, (msg) => msg.type === 'cwd' && msg.id === id, 1000)
+    .then((msg) => msg.cwd, () => null);
 }
 
 export function getOpenPorts(id: string): Promise<OpenPort[]> {
-  return new Promise((resolve) => {
-    sendToChild({ type: 'getOpenPorts', id });
-    const timeout = setTimeout(() => {
-      child?.off('message', handler);
-      resolve([]);
-    }, OPEN_PORT_TIMEOUT_MS);
-    const handler = (msg: any) => {
-      if (msg.type === 'openPorts' && msg.id === id) {
-        clearTimeout(timeout);
-        child?.off('message', handler);
-        resolve(msg.ports || []);
-      }
-    };
-    child?.on('message', handler);
-  });
+  return requestChild<{ ports?: OpenPort[] }>({ type: 'getOpenPorts', id }, (msg) => msg.type === 'openPorts' && msg.id === id, OPEN_PORT_TIMEOUT_MS)
+    .then((msg) => msg.ports || [], () => []);
 }
 
 export function write(id: string, data: string): void {
