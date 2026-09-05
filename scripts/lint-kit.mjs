@@ -1,6 +1,6 @@
 /**
  * The plumbing `spec-lint`, `deploy-lint` and `e2e-lint` share with their
- * self-tests.
+ * self-tests, and the script tests that execute shipped workflow blocks.
  *
  * Rules and patterns stay in each lint — this is only the machinery around
  * them, factored out because the self-test contract is the part that must never
@@ -8,8 +8,9 @@
  * in the tree, and two copies of that `finally` is two places to get it wrong.
  */
 
-import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,6 +34,34 @@ export function normalizeEol(text) {
 /** Read a repo-relative file, EOL-normalized. */
 export function readRepoFile(relative) {
   return normalizeEol(readFileSync(join(repoRoot, relative), 'utf8'));
+}
+
+/**
+ * The shell body of one workflow step, dedented. Tests run the shipped block
+ * rather than a copy, so a step that has been renamed must fail loudly here —
+ * silently returning the next step's body, or an empty string, would leave a
+ * test passing against nothing. Scoped to the named step for the same reason.
+ */
+export function workflowRunBlock(workflow, stepName) {
+  const step = workflow.indexOf(`      - name: ${stepName}\n`);
+  if (step < 0) throw new Error(`missing workflow step: ${stepName}`);
+  const next = workflow.indexOf('\n      - name: ', step + 1);
+  const marker = '        run: |\n';
+  const start = workflow.indexOf(marker, step);
+  if (start < 0 || (next >= 0 && start > next)) throw new Error(`missing run block for workflow step: ${stepName}`);
+  const body = [];
+  for (const line of workflow.slice(start + marker.length).split('\n')) {
+    if (line && !line.startsWith('          ')) break;
+    body.push(line.slice(10));
+  }
+  return body.join('\n');
+}
+
+/** A temp directory removed when the test finishes. */
+export function tempDir(t, prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
 }
 
 let trackedCache = null;

@@ -1,19 +1,17 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { tempDir, workflowRunBlock } from './lint-kit.mjs';
 import { restoreExecutables, verifyInventory } from './release-artifact.mjs';
 
 const script = fileURLToPath(new URL('./sign-and-deploy.sh', import.meta.url));
 const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
 function fixture(t) {
-  const root = mkdtempSync(join(tmpdir(), 'dormouse-sign-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  return root;
+  return tempDir(t, 'dormouse-sign-');
 }
 function put(root, path, content = '') {
   mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -237,8 +235,8 @@ test('CI records original executable paths, including app files and dotfiles, in
   chmodSync(join(standalone, `${app}/Contents/MacOS/node`), 0o755);
   chmodSync(join(standalone, `${app}/Contents/Resources/sidecar/dor/bin/dor`), 0o755);
   const workflow = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
-  const block = workflow.split('      - name: Generate artifact manifest\n')[1].split('      - name: Attest artifact manifest')[0];
-  const run = block.split('        run: |\n')[1].replace(/^          /gm, '').replaceAll('${{ matrix.target }}', 'aarch64-apple-darwin');
+  const run = workflowRunBlock(workflow, 'Generate artifact manifest')
+    .replaceAll('${{ matrix.target }}', 'aarch64-apple-darwin');
   succeeds(spawnSync('bash', ['-c', run], { cwd: root, encoding: 'utf8', timeout: 20_000 }));
   verifyInventory(standalone);
   const executables = readFileSync(join(standalone, 'artifact-executables.txt'), 'utf8').trim().split('\n');

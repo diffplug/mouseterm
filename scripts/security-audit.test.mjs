@@ -1,35 +1,21 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { repoRoot, tempDir, workflowRunBlock } from './lint-kit.mjs';
 
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const repo = repoRoot;
 const workflow = readFileSync(join(repo, '.github/workflows/security-audit.yaml'), 'utf8');
 const fragments = workflow.match(/^\s+AUDIT_FRAGMENTS: (.+)$/m)[1].split(/\s+/);
 const publishedSinks = workflow.match(/          path: \|\n((?:            .*\n)+)/)[1]
   .trim().split('\n').map((line) => line.trim().replace('${{ runner.temp }}/', ''));
 
 // Execute the shipped block, so changes to its parser or guards reach these tests.
-function runBlock(name) {
-  const step = workflow.indexOf(`      - name: ${name}\n`);
-  assert.ok(step >= 0, `missing workflow step ${name}`);
-  const start = workflow.indexOf('        run: |\n', step);
-  assert.ok(start >= 0, `missing run block for ${name}`);
-  const lines = workflow.slice(start + '        run: |\n'.length).split('\n');
-  const body = [];
-  for (const line of lines) {
-    if (line && !line.startsWith('          ')) break;
-    body.push(line.slice(10));
-  }
-  return body.join('\n');
-}
+const runBlock = (name) => workflowRunBlock(workflow, name);
 
 function fixture(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'dormouse-audit-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = tempDir(t, 'dormouse-audit-');
   mkdirSync(join(dir, 'bin'));
   mkdirSync(join(dir, 'scripts'));
   copyFileSync(join(repo, 'scripts/clamp-issue-body.mjs'), join(dir, 'scripts/clamp-issue-body.mjs'));
@@ -102,7 +88,7 @@ test('redactor failure removes every published sink', (t) => {
   for (const sink of sinks) assert.equal(existsSync(join(dir, sink)), false, sink);
 });
 
-// 'FAIL \u2014 explained' pins the grammar against CI's: an appended explanation is
+// 'FAIL — explained' pins the grammar against CI's: an appended explanation is
 // still a finding, not an unreadable fragment. Status alone cannot tell the two
 // apart (both exit 1), so that row also checks the message.
 for (const [verdict, cliExit, expected] of [['PASS', 0, 0], ['FAIL', 0, 1], ['FAIL \u2014 explained', 0, 1], ['INCONCLUSIVE', 0, 1], ['PASS extra', 0, 1], ['PASS', 7, 1]]) {
