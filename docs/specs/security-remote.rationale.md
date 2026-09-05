@@ -43,6 +43,13 @@ independently, and a cap only one side honors is not a cap. The whole surface is
 reachable by anything that can sign in — a synced or stolen passkey buys "the ability
 to ask" — and these caps are what stop asking from being a denial of service.
 
+**Why the frame queue is separately bounded.** A stalled crypto operation can
+retain incoming frames before the pending-map caps or token bucket run. The
+bounded FIFO covers that earlier allocation; overflow ends the connection because
+skipping an individual ciphertext would desynchronize Noise. The regression in
+`lib/src/remote/burrow/burrow-bounds.test.ts` stalls WebCrypto while flooding both
+small lifecycle frames and maximum-size ciphertexts.
+
 **Why the bounds are Burrow-local.** A bound that needs the relay to send `client-gone`,
 or a Relay gate, is not a bound: the relay is the party this model assumes is hostile.
 `lib/src/remote/burrow/burrow-bounds.test.ts` counts the crypto a rejected frame

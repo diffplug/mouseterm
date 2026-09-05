@@ -34,7 +34,12 @@ import {
   type NoiseKeyPair,
   type PresenceBinding,
 } from 'remote-lib-common';
-import { BurrowRuntime, type RemoteApiSessionLike } from './burrow-runtime';
+import {
+  BurrowRuntime,
+  MAX_QUEUED_RELAY_FRAMES,
+  MAX_QUEUED_RELAY_FRAME_CHARS,
+  type RemoteApiSessionLike,
+} from './burrow-runtime';
 import type { BurrowEnrollment } from './enrollment';
 import type { PendingPairing } from './pairing-approval';
 import { FakeSocket } from '../test-fake-socket';
@@ -463,6 +468,105 @@ describe('BurrowRuntime bounds', () => {
     // not hand out a token it never earned.
     clock.rewind(10 * 60 * 1_000);
     expect(await flood(4, later.inviteId)).toBe(0);
+  });
+
+  it.each(['count', 'size'] as const)(
+    'closes synchronously when queued frames exceed the %s bound behind stalled crypto',
+    async (bound) => {
+      const live = await establish('c1');
+      const invitation = await burrow.mintInvitation(
+        randomBase64Url(32),
+        clock.now() + DEFAULT_PAIRING_TTL_MS,
+      );
+      const subtle = globalThis.crypto.subtle;
+      const digest = subtle.digest.bind(subtle);
+      let entered = false;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      vi.spyOn(subtle, 'digest').mockImplementationOnce(async (...args) => {
+        entered = true;
+        await gate;
+        return digest(...args);
+      });
+      try {
+        clock.advance(1_000);
+        deliver({
+          t: 'e2e', clientId: 'stalled', burrowId: enrollment.burrowId,
+          kind: 'pairing', id: invitation.inviteId, step: 'init',
+          ct: toBase64Url(new Uint8Array(96)),
+        });
+        await settleUntil(() => entered);
+        const frame = bound === 'count'
+          ? { t: 'client-gone', clientId: 'absent' }
+          : {
+              t: 'e2e', clientId: 'absent', burrowId: enrollment.burrowId,
+              kind: 'connection', id: testRoutingId(), step: 'transport',
+              ct: 'A'.repeat(MAX_E2E_CIPHERTEXT_LENGTH),
+            };
+        const raw = JSON.stringify(frame);
+        const capacity = bound === 'count'
+          ? MAX_QUEUED_RELAY_FRAMES
+          : Math.floor(MAX_QUEUED_RELAY_FRAME_CHARS / raw.length);
+        for (let i = 0; i < capacity; i += 1) socket.receiveRaw(raw);
+        expect(socket.readyState).toBe(1);
+        // Real WebSockets close asynchronously. Teardown cannot wait for that
+        // event: old frames and established handlers must die immediately.
+        socket.closeEmits = false;
+        socket.receiveRaw(raw);
+        expect(socket.readyState).toBe(3);
+        expect(sessions[0]!.disposed).toBe(true);
+        expect(burrow.trackedClientCount).toBe(0);
+        expect(burrow.outstandingInvitationCount).toBe(0);
+
+        // Frames already buffered on the closing socket cannot refill the FIFO.
+        const retiredSocket = socket;
+        burrow.start();
+        socket.open();
+        for (let i = 0; i < capacity + 1; i += 1) retiredSocket.receiveRaw(raw);
+        expect(socket.readyState).toBe(1);
+        const before = crypto.total();
+        deliver({
+          t: 'e2e', clientId: 'new-socket', burrowId: enrollment.burrowId,
+          kind: 'connection', id: testRoutingId(), step: 'init',
+          ct: toBase64Url(new Uint8Array(96)),
+        });
+        await settle();
+        expect(crypto.total()).toBe(before);
+        // Losing another socket still cannot start a second crypto operation.
+        socket.drop();
+        burrow.start();
+        socket.open();
+        release();
+        await settleUntilQuiet(() => crypto.total());
+        expect(burrow.trackedClientCount).toBe(0);
+        expect(socket.sent).toEqual([]);
+
+        // The replacement drains normally once the sole old crypto step ends.
+        const connected = await connectClient('c1-again', live.clientStatic);
+        expect(connected.outcome).toMatchObject({ ok: true });
+      } finally {
+        release();
+        await settleUntilQuiet(() => crypto.total());
+      }
+    },
+  );
+
+  it('drains a maximum-size fragmented application message in arrival order', async () => {
+    const live = await establish('c1');
+    const payload = { data: 'x'.repeat(1024 * 1024 - 64) };
+    const frames = [
+      ...live.session.sendApp(utf8Encode(JSON.stringify(payload))),
+      ...live.session.sendApp(utf8Encode('{"next":true}')),
+    ];
+    for (const ciphertext of frames) {
+      sendE2eFrame(socket, {
+        clientId: 'c1', burrowId: enrollment.burrowId, kind: 'connection',
+        id: live.connectionId, step: 'transport', ct: toBase64Url(ciphertext),
+      });
+    }
+    await settleUntil(() => sessions[0]!.handled.length === 2);
+    expect(sessions[0]!.handled).toEqual([payload, { next: true }]);
+    expect(socket.readyState).toBe(1);
   });
 
   // --- The established-session cap -----------------------------------------

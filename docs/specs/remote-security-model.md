@@ -336,10 +336,16 @@ omits `client-gone`, invents client IDs, or reorders frames.
 | `MAX_CLIENT_ID_LENGTH` | 256 | `remote-lib-common/src/remote/wire.ts` |
 | `MAX_RELAY_TO_BURROW_FRAME_LENGTH` | one maximal `ct` + `MAX_CLIENT_ID_LENGTH` + 512 | same |
 | `MAX_PENDING_CONNECTION_HANDSHAKES` | 8 | `lib/src/remote/burrow/burrow-runtime.ts` |
+| `MAX_QUEUED_RELAY_FRAMES` / `MAX_QUEUED_RELAY_FRAME_CHARS` | 128 frames / 4,194,304 UTF-16 code units | same |
 | `MAX_ESTABLISHED_E2E_SESSIONS` | 16 | `remote-lib-common/src/security/e2e-bounds.ts` |
 | `ESTABLISHED_E2E_IDLE_TIMEOUT_MS` | 120 000 | same |
 | `E2E_INIT_BURST` / `E2E_INIT_REFILL_INTERVAL_MS` | 8 / 1 000 | same |
 
+- **Must bound waiting relay frames before enqueueing**, by count and cumulative
+  received-string length; both `e2e` and `client-gone` share one FIFO and one
+  in-flight operation across reconnects. Overflow synchronously closes the relay
+  connection and clears its queue and transient state; never skip a transport
+  frame and continue its Noise session (rationale).
 - **At most one pairing, one connection, and one established session per relay
   client**; a replacement disposes its predecessor, whatever identity it
   belonged to (rationale). Pending pairings expire on the pairing TTL, pending
