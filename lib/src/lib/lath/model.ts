@@ -116,35 +116,54 @@ export function nodeAtPath(tree: LathTree, path: number[]): LathNode | null {
 /** Human-readable invariant violations; empty array = valid. Enforces: splits have
  *  ≥ 2 children; no split directly contains a same-`dir` split; weights are > 0 and
  *  sum to 1 (tolerance 1e-6) within each split; leaf ids are unique. */
-export function validate(tree: LathTree): string[] {
+export function validate(tree: unknown): string[] {
   const errors: string[] = [];
-  const seen = new Set<LeafId>();
-  const walk = (node: LathNode, path: number[]): void => {
+  const record = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!record(tree) || !('root' in tree)) return ['tree must have a root'];
+  const pending: Array<{ node: unknown; path: number[]; parentDir?: unknown }> =
+    tree.root === null ? [] : [{ node: tree.root, path: [] }];
+  const seenIds = new Set<string>();
+  const seenNodes = new Set<object>();
+  // Persisted input is untrusted shape-wise: validate iteratively before any typed
+  // tree traversal, and reject cycles/shared nodes instead of recursing forever.
+  while (pending.length) {
+    const { node, path, parentDir } = pending.pop()!;
     const at = `[${path.join(',')}]`;
+    if (!record(node) || seenNodes.has(node)) {
+      errors.push(`invalid or repeated node at path ${at}`);
+      continue;
+    }
+    seenNodes.add(node);
     if (node.kind === 'leaf') {
-      if (seen.has(node.id)) errors.push(`duplicate leaf id "${node.id}" at path ${at}`);
-      seen.add(node.id);
-      return;
+      if (typeof node.id !== 'string') errors.push(`leaf at ${at} has invalid id`);
+      else {
+        if (seenIds.has(node.id)) errors.push(`duplicate leaf id "${node.id}" at path ${at}`);
+        seenIds.add(node.id);
+      }
+      continue;
     }
-    if (node.children.length < 2) {
-      errors.push(`split at ${at} has ${node.children.length} children (< 2)`);
+    if (node.kind !== 'split' || (node.dir !== 'row' && node.dir !== 'col') || !Array.isArray(node.children)) {
+      errors.push(`invalid split at path ${at}`);
+      continue;
     }
+    if (node.dir === parentDir) errors.push(`split at ${at} directly contains a same-direction (${node.dir}) split`);
+    if (node.children.length < 2) errors.push(`split at ${at} has ${node.children.length} children (< 2)`);
     let sum = 0;
-    node.children.forEach((child, i) => {
-      if (!(child.weight > 0)) {
-        errors.push(`child ${i} of split at ${at} has non-positive weight ${child.weight}`);
+    node.children.forEach((child: unknown, i: number) => {
+      if (!record(child)) {
+        errors.push(`invalid child ${i} of split at ${at}`);
+        return;
       }
-      sum += child.weight;
-      if (child.node.kind === 'split' && child.node.dir === node.dir) {
-        errors.push(`split at ${at} directly contains a same-direction (${node.dir}) split at child ${i}`);
-      }
-      walk(child.node, [...path, i]);
+      if (typeof child.weight !== 'number' || !Number.isFinite(child.weight) || child.weight <= 0) {
+        errors.push(`child ${i} of split at ${at} has non-positive or non-finite weight ${child.weight}`);
+      } else sum += child.weight;
+      pending.push({ node: child.node, path: [...path, i], parentDir: node.dir });
     });
     if (node.children.length > 0 && Math.abs(sum - 1) > 1e-6) {
       errors.push(`weights of split at ${at} sum to ${sum} (≠ 1)`);
     }
-  };
-  if (tree.root) walk(tree.root, []);
+  }
   return errors;
 }
 
