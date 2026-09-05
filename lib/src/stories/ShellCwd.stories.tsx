@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { Baseboard } from '../components/Baseboard';
 import {
+  Wall,
   ModeContext,
   RenamingIdContext,
   SelectedIdContext,
@@ -26,6 +27,7 @@ import {
   type TerminalTitle,
 } from '../lib/terminal-registry';
 import { createTerminalPaneState } from '../lib/terminal-state';
+import { requireElement, settleTerminals, waitForPrimedState } from './settle-terminals';
 
 const HEADER_WIDTH = 380;
 const DOOR_WIDTH = 300;
@@ -128,9 +130,10 @@ export const TitleCandidatesInHeaderMenu: Story = {
       'title-candidates-popup',
       'Title candidates in header menu',
       titleCandidateState(),
-      'Right-click menu embeds the latest title per channel above the port rows',
+      'The context title explanation shows the latest title per channel',
     ),
   ]),
+  render: () => <div style={{ width: 900, height: 680 }}><Wall initialPaneIds={['title-candidates-popup']} /></div>,
   play: openHeaderContextMenu,
 };
 
@@ -384,14 +387,9 @@ function titleCandidateState(): TerminalPaneState {
   });
 }
 
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function openHeaderContextMenu() {
-  await wait(100);
-  const title = document.querySelector<HTMLElement>('[data-pane-title-for="title-candidates-popup"]');
-  if (!title) return;
+  await waitForPrimedState();
+  const title = await requireElement<HTMLElement>('[data-pane-title-for="title-candidates-popup"]', 'terminal title');
 
   const rect = title.getBoundingClientRect();
   title.dispatchEvent(new MouseEvent('contextmenu', {
@@ -401,7 +399,10 @@ async function openHeaderContextMenu() {
     clientX: rect.left + rect.width / 2,
     clientY: rect.top + rect.height / 2,
   }));
-  await wait(100);
+  const explain = await requireElement<HTMLButtonElement>('[data-terminal-context] [aria-label="Explain this title"]', 'title explanation action');
+  explain.click();
+  await requireElement('[role="dialog"][aria-label="Title sources"]', 'title sources');
+  await settleTerminals();
 }
 
 function makeDoorItem(id: string, title: string): DoorChip {
