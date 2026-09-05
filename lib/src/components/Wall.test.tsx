@@ -18,6 +18,7 @@ import { FakePtyAdapter } from '../lib/platform/fake-adapter';
 import type { PlatformAdapter } from '../lib/platform/types';
 import * as terminalRegistry from '../lib/terminal-registry';
 import { UNNAMED_PANEL_TITLE } from '../lib/terminal-registry';
+import { createTerminalPaneState, type TerminalPaneState } from '../lib/terminal-state';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -87,6 +88,84 @@ async function flushFrame(): Promise<void> {
 }
 
 describe('Wall on the Lath engine', () => {
+  it('cancels an ensure restart before a late prompt can relaunch its command', async () => {
+    await act(async () => {
+      root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
+    });
+    await flush();
+    const cwd = { path: '/repo', pathKind: 'posix', isRemote: false, source: 'osc633', updatedAt: 0 } as const;
+    let state: TerminalPaneState = createTerminalPaneState({
+      cwd,
+      currentCommand: {
+        id: 'run-1', rawCommandLine: 'pnpm dev', displayCommand: 'pnpm dev',
+        cwdAtStart: cwd, startedAt: 0, source: 'osc633_E',
+      },
+    });
+    const stateSpy = vi.spyOn(terminalRegistry, 'getTerminalPaneState').mockImplementation(() => state);
+    const integratedSpy = vi.spyOn(terminalRegistry, 'isPaneOscDriven').mockReturnValue(true);
+    const writeSpy = vi.spyOn(fake, 'writePty');
+    const controller = new AbortController();
+    const respond = vi.fn();
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('dormouse:control-request', {
+          detail: {
+            method: SURFACE_CONTROL_METHODS.ensure,
+            params: { command: ['pnpm', 'dev'], cwd: '/repo', restart: true },
+            signal: controller.signal,
+            respond,
+          },
+        }));
+      });
+      expect(writeSpy).toHaveBeenCalledWith('pane-a', '\x03');
+      expect(respond).not.toHaveBeenCalled();
+      await act(async () => { controller.abort(); });
+      expect(respond).toHaveBeenCalledWith({ ok: false, error: "surface 'surface:1' restart was cancelled" });
+      state = createTerminalPaneState({ cwd });
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(writeSpy.mock.calls).toEqual([['pane-a', '\x03']]);
+    } finally {
+      vi.useRealTimers();
+      stateSpy.mockRestore();
+      integratedSpy.mockRestore();
+      writeSpy.mockRestore();
+    }
+  });
+
+  it('removes an unintegrated ensure split as soon as its client cancels', async () => {
+    await act(async () => {
+      root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
+    });
+    await flush();
+    const integratedSpy = vi.spyOn(terminalRegistry, 'isPaneOscDriven').mockReturnValue(false);
+    const shellSpy = vi.spyOn(terminalRegistry, 'getDefaultShellOpts').mockReturnValue({ shell: '/bin/bash' });
+    const controller = new AbortController();
+    const respond = vi.fn();
+    try {
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('dormouse:control-request', {
+          detail: {
+            method: SURFACE_CONTROL_METHODS.ensure,
+            params: { command: ['pnpm', 'dev'], cwd: '/repo', surface: 'surface:1' },
+            signal: controller.signal,
+            respond,
+          },
+        }));
+      });
+      expect(leafCount()).toBe(2);
+      expect(respond).not.toHaveBeenCalled();
+      await act(async () => { controller.abort(); });
+      expect(respond).toHaveBeenCalledWith({ ok: false, error: 'ensure was cancelled' });
+      await flush();
+      expect(leafCount()).toBe(1);
+      expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+    } finally {
+      integratedSpy.mockRestore();
+      shellSpy.mockRestore();
+    }
+  });
+
   it('renders a pane through LathHost, splits via wallActions, kills, and persists the Lath layout on save', async () => {
     await act(async () => {
       root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);

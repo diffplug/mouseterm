@@ -144,9 +144,9 @@ export class SocketControlClient implements ControlClient {
    *
    * The token is a bearer credential for the whole surface-control API (`send`
    * types into any pane, `read` returns its scrollback), so it never goes on the
-   * wire: the peer must first prove it holds the token over a nonce we did not
-   * choose, and we answer over a nonce it did not choose. Whoever merely bound
-   * the socket path learns two nonces and nothing else.
+   * wire: each peer proves knowledge over the other peer's fresh nonce. A
+   * squatter receives a client proof tied to its own challenge, but neither the
+   * token nor a Surface request; the client waits for the server proof first.
    *
    * `timeoutMs` overrides the client's configured deadline for one call. It also
    * travels on the wire — in the request frame, after the handshake — so the
