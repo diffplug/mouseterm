@@ -28,6 +28,7 @@ import {
   SETUP_CODE_DEAD_MESSAGE,
   RelayRefusalError,
   SetupTokenInvalidError,
+  PasskeyUnavailableError,
 } from '../client/pocket-client';
 import type { KnownBurrowV1 } from '../client/pocket-db';
 import {
@@ -61,6 +62,7 @@ const fake = vi.hoisted(() => ({
   connect: vi.fn<(burrowId: string) => Promise<ConnectResult>>(),
   forgetBurrow: vi.fn<(burrowId: string) => Promise<void>>(),
   clientClose: vi.fn<() => void>(),
+  hello: vi.fn<() => Promise<unknown>>(),
   adapterInit: vi.fn<() => Promise<void>>(),
   adapterDispose: vi.fn<() => void>(),
 }));
@@ -108,7 +110,7 @@ vi.mock('../client/pocket-client', async (importOriginal) => ({
       onCode?: (code: string) => void,
     ) => fake.pair(invitation, label, onCode);
     connect = (burrowId: string) => fake.connect(burrowId);
-    hello = async () => ({});
+    hello = () => fake.hello();
     getPushConfig = async () => null;
     listPushSubscribedBurrows = async () => [];
   },
@@ -181,6 +183,7 @@ beforeEach(() => {
   fake.connect.mockReset().mockResolvedValue({ ok: true, burrowLabel: 'First laptop' });
   fake.forgetBurrow.mockReset().mockResolvedValue(undefined);
   fake.clientClose.mockReset();
+  fake.hello.mockReset().mockResolvedValue({});
   fake.adapterInit.mockReset().mockResolvedValue(undefined);
   fake.adapterDispose.mockReset();
   container = document.createElement('div');
@@ -543,6 +546,35 @@ describe('the Burrows list', () => {
     expect(alertText(container)).toContain('the directory did not answer');
     expect(buttonNamed(container, 'Connect')).not.toBeNull();
     expect(fake.adapterDispose).toHaveBeenCalled();
+    expect(fake.clientClose).toHaveBeenCalled();
+  });
+
+  it('ends an authorized session when hello fails before adapter creation', async () => {
+    fake.hasPriorUse = true;
+    fake.listKnownBurrows.mockResolvedValue([await knownBurrow('burrow-1')]);
+    fake.listBurrows.mockResolvedValue([{ burrowId: 'burrow-1', label: '', online: true }]);
+    fake.hello.mockRejectedValue(new Error('hello refused'));
+    await boot();
+    await click(container, 'Sign in with passkey');
+    await click(container, 'Connect');
+
+    expect(alertText(container)).toContain('hello refused');
+    expect(buttonNamed(container, 'Connect')).not.toBeNull();
+    expect(fake.adapterInit).not.toHaveBeenCalled();
+    expect(fake.clientClose).toHaveBeenCalled();
+  });
+
+  it('returns to sign-in when the cached proof key disappears', async () => {
+    fake.hasPriorUse = true;
+    fake.listKnownBurrows.mockResolvedValue([await knownBurrow('burrow-1')]);
+    fake.listBurrows.mockResolvedValue([{ burrowId: 'burrow-1', label: '', online: true }]);
+    fake.connect.mockRejectedValue(new PasskeyUnavailableError());
+    await boot();
+    await click(container, 'Sign in with passkey');
+    await click(container, 'Connect');
+
+    expect(alertText(container)).toContain('Sign in again');
+    expect(buttonNamed(container, 'Sign in with passkey')).not.toBeNull();
     expect(fake.clientClose).toHaveBeenCalled();
   });
 });

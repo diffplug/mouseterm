@@ -20,6 +20,7 @@ import {
   PocketClient,
   RelayRefusalError,
   SessionExpiredError,
+  PasskeyUnavailableError,
   type ConnectResult,
   type PocketSocket,
 } from '../client/pocket-client';
@@ -297,7 +298,7 @@ export default function App({
         // way, and an installed Pocket has no reload affordance to escape with.
         // Drop to sign-in, where one passkey prompt restores everything —
         // the pinned Burrows and push registration both outlive the session.
-        if (err instanceof SessionExpiredError) {
+        if (err instanceof SessionExpiredError || err instanceof PasskeyUnavailableError) {
           endSession();
           setPhase({ at: 'auth' });
           setError(err.message);
@@ -349,16 +350,16 @@ export default function App({
         if (decision.pairingRequired) await loadBurrows();
         throw new Error(decision.message);
       }
-      await client.hello();
-
-      // Stand up the remote adapter as the platform, prep a clean registry,
-      // then start watching the directory before the wall renders.
-      const adapter = new RemotePtyAdapter(client);
-      adapterRef.current = adapter;
-      setPlatform(adapter);
-      disposeAllSessions();
-      initAlertStateReceiver();
       try {
+        await client.hello();
+
+        // Stand up the remote adapter as the platform, prep a clean registry,
+        // then start watching the directory before the wall renders.
+        const adapter = new RemotePtyAdapter(client);
+        adapterRef.current = adapter;
+        setPlatform(adapter);
+        disposeAllSessions();
+        initAlertStateReceiver();
         await adapter.init();
       } catch (err) {
         // The session is already established, and the throw sends the user back
