@@ -88,7 +88,7 @@ export class DormouseViewProvider implements vscode.WebviewViewProvider {
       reconnect: true,
       savedSession,
       onSaveState: (state) => {
-        void saveSessionState(this.context, mergeAlertStates(state, getAlertStates()));
+        return saveSessionState(this.context, mergeAlertStates(state, getAlertStates()));
       },
       getSelectedShell: () => this.selectedShell,
       // Reflect this view's Workspace union onto the panel container's badge.

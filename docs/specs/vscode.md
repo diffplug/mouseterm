@@ -26,7 +26,7 @@ The webview is the shared `lib/` frontend, unmodified for this host (`docs/specs
 
 ### Extension manifest
 
-**Activation is limited to the contributed view and restored editor panels**, so a window without either stays cold. The manifest contributes the panel container/view, the Focus/Open/Debug Theme/New Terminal/Select Shell commands, and the view-title actions, owning their exact ids, titles, icons, and ordering.
+**Must activate on the contributed view, restored editor panels, or an invoked contributed command.** Command activation is implicit on the supported VS Code versions ([activation events](https://code.visualstudio.com/api/references/activation-events#oncommand)). The manifest owns contributed commands, views, and title actions: ids, titles, icons, and ordering.
 
 **No `configuration`, no `keybindings`, no context key**: settings live in the in-webview Settings dialog rather than `settings.json`, chords are handled inside the webview, and nothing is `when`-gated on Dormouse state. Context keys are [Future](#context-keys). Source of truth: `vscode-ext/package.json`.
 
@@ -101,14 +101,9 @@ The QuickPick is the only shell control here: `VSCodeAdapter` sets the optional 
 
 A `WebviewPanelSerializer` registered under the `dormouse` view type restores editor panels after a restart; `onWebviewPanel:dormouse` activates the extension early enough for it to be there. The persisted shapes it round-trips (`PersistedSession` / `PersistedPane` / `PersistedAlertState` / `PersistedDoor`) are transport.md's.
 
-**While running.** The frontend saves via `dormouse:saveState` on the shared
-cadence (`docs/specs/layout.md` → Session persistence). The
-router's `onSaveState` merges in current alert states (`mergeAlertStates()`), then
-the **WebviewView** writes `workspaceState` (`dormouse.session`) while
-**WebviewPanels** persist through VS Code's per-panel `vscode.setState()`, so
-several panels cannot clobber each other. **Alert state must ride every save, not
-just teardown** — otherwise it does not survive an extension host killed before
-`deactivate()` returns.
+**Must persist every periodic save with current alerts** (`docs/specs/layout.md` → Session persistence). The WebviewView's `onSaveState` merges host alerts into `workspaceState` (`dormouse.session`); WebviewPanels use per-panel `vscode.setState()` from the frontend.
+
+**Must serialize host saves and await them after the webview's flush acknowledgement, within the existing flush deadline**, before the deactivate refresh reads the snapshot. Failed writes are logged without blocking subsequent saves. Pinned by `session flush` in `vscode-ext/test/message-router.test.ts`.
 
 **On deactivate**, in this order (`extension.ts:deactivate()`):
 
@@ -148,7 +143,7 @@ invocation when interrupted, not when signalled, and the tty line discipline
 delivers the SIGINT to the foreground process group, so the hint comes back as
 ordinary `pty:data` (rationale).
 **Interrupt every live PTY, not just recognized agents** — `detectResumeCommand`
-is the real filter and `^C` into a non-agent is inert (rationale) — but
+filters the recovery invocations (rationale) — but
 **exclude exited PTYs**, which can yield no hint and would permanently defeat the
 "nothing left to wait for" early exit.
 

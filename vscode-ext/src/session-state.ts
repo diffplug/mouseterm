@@ -105,17 +105,8 @@ interface PersistedRecovery {
   commands: Record<string, string>;
 }
 
-// Claude's own words when it wants a second press. This is the ONLY trigger for
-// pressing a pane again — a timing window is not good enough, because a second
-// press that lands while codex is still printing destroys its hint outright, and
-// codex's latency is not a constant (measured 255ms standalone, >400ms in a real
-// project inside a pane). Keying on the explicit ask makes double-pressing codex
-// impossible by construction instead of merely unlikely.
-//
-// The coupling to an English UI string is deliberate and no worse than the
-// invocation patterns themselves. Note the asymmetry in how it can fail: if the
-// wording changes we lose claude's recovery, which is recoverable and visible. A
-// timing window that guesses wrong destroys codex's every time.
+// Claude's explicit request permits an immediate second press. Other panes
+// without a recovery hint must pass both fallback clocks below before retrying.
 const ASKS_FOR_SECOND_PRESS = /Press Ctrl-C again/i;
 
 // When to press a silent pane again without having been asked.
@@ -260,7 +251,7 @@ export async function captureAgentRecoveryCommands(
   };
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // One press to everything, then press again only where a pane asks for it.
+  // One press to everything, then retry through the ask or quiet fallback gate.
   // `interrupt` is already bounded and always settles within its own timeout.
   await ptyManager.interrupt(liveIds);
   // The clock the second-press rules run on, taken *after* the ack rather than at
@@ -292,10 +283,7 @@ export async function captureAgentRecoveryCommands(
     scanPending();
     if (pending().length === 0) break;
 
-    // Press a second time when the pane asks, or — for a claude that never asks —
-    // once enough time has passed that a one-press agent would already have
-    // spoken. Panes that have yielded are excluded either way, so codex is never
-    // the one retried.
+    // Retry an uncaptured pane when it asks, or after both fallback clocks pass.
     const elapsed = Date.now() - interruptedAt;
     for (const id of pending()) {
       const mark = ptyManager.getScrollbackReceived(id);
