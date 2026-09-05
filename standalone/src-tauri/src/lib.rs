@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
+mod log_tail;
 use std::{
     collections::HashMap,
     env,
@@ -264,17 +265,9 @@ fn set_macos_dock_icon() {
 
 fn read_log_tail(max_bytes: usize) -> Result<String, String> {
     let path = log_path();
-    let contents = std::fs::read_to_string(path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
-    if contents.len() <= max_bytes {
-        return Ok(contents);
-    }
-    // Slice on a char boundary so we never split a multi-byte sequence.
-    let start = contents.len() - max_bytes;
-    let start = (start..contents.len())
-        .find(|&i| contents.is_char_boundary(i))
-        .unwrap_or(contents.len());
-    Ok(contents[start..].to_string())
+    File::open(path)
+        .and_then(|mut file| log_tail::read_utf8_tail(&mut file, max_bytes))
+        .map_err(|e| format!("read {}: {e}", path.display()))
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -731,7 +724,7 @@ fn read_clipboard_text(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn read_update_log() -> Result<String, String> {
     read_log_tail(10_000)
 }
