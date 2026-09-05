@@ -468,6 +468,8 @@ export function MobileTerminalUi({
   // Cancel delayed blur retries on unmount, including after test DOM teardown.
   const blurRetryTimersRef = useRef<number[]>([]);
   const blurRetryFrameRef = useRef<number | null>(null);
+  const focusRetryTimersRef = useRef<number[]>([]);
+  const focusRetryFrameRef = useRef<number | null>(null);
   const [gestureState, setGestureState] = useState<MobileGestureTrackingState>(MOBILE_GESTURE_IDLE_STATE);
   const [pendingGestureConfirmation, setPendingGestureConfirmation] = useState<MobileGestureConfirmationAction | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -497,6 +499,15 @@ export function MobileTerminalUi({
     }
   }, []);
 
+  const cancelFocusRetries = useCallback(() => {
+    for (const timer of focusRetryTimersRef.current) window.clearTimeout(timer);
+    focusRetryTimersRef.current = [];
+    if (focusRetryFrameRef.current !== null) {
+      window.cancelAnimationFrame(focusRetryFrameRef.current);
+      focusRetryFrameRef.current = null;
+    }
+  }, []);
+
   const scheduleGestureCompletionClear = useCallback(() => {
     clearGestureCompletionTimer();
     gestureCompletionTimerRef.current = window.setTimeout(() => {
@@ -507,13 +518,15 @@ export function MobileTerminalUi({
 
   const focusInput = useCallback(() => {
     if (!interactive) return;
+    cancelBlurRetries();
     onFocusInput?.();
     inputRef.current?.focus({ preventScroll: true });
-  }, [interactive, onFocusInput]);
+  }, [cancelBlurRetries, interactive, onFocusInput]);
 
   const blurInput = useCallback(() => {
+    cancelFocusRetries();
     inputRef.current?.blur();
-  }, []);
+  }, [cancelFocusRetries]);
 
   const configurePaneTextInputs = useCallback(() => {
     const host = terminalHostRef.current;
@@ -538,13 +551,14 @@ export function MobileTerminalUi({
     };
     // Wall can restore xterm focus in rAF; retry across its focus window. A new
     // blur supersedes the old retries. See mobile-terminal-ui.md.
+    cancelFocusRetries();
     cancelBlurRetries();
     blurActivePaneInput();
     for (const delay of [0, 50, 200]) {
       blurRetryTimersRef.current.push(window.setTimeout(blurActivePaneInput, delay));
     }
     blurRetryFrameRef.current = window.requestAnimationFrame(blurActivePaneInput);
-  }, [cancelBlurRetries, configurePaneTextInputs]);
+  }, [cancelBlurRetries, cancelFocusRetries, configurePaneTextInputs]);
 
   const setKeyboardMode = useCallback((nextMode: MobileTerminalKeyboardMode) => {
     if (activeKeyboardMode === undefined && activeSection === undefined) {
@@ -568,6 +582,27 @@ export function MobileTerminalUi({
   const flushInputValue = useCallback((value: string) => {
     if (value) sendInput(value);
     setInputValue('');
+  }, [sendInput]);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    // Software keyboards need not emit keydown, and deleting from our empty
+    // input produces no change event. Native beforeinput supplies inputType;
+    // React's compatibility before-input event does not preserve that contract.
+    const handleBeforeInput = (event: InputEvent) => {
+      if (composingRef.current || event.isComposing || !event.cancelable || event.defaultPrevented) return;
+      const sequence = event.inputType === 'deleteContentBackward'
+        ? MOBILE_TERMINAL_KEY_SEQUENCES.backspace
+        : event.inputType === 'insertLineBreak' || event.inputType === 'insertParagraph'
+          ? MOBILE_TERMINAL_KEY_SEQUENCES.enter
+          : null;
+      if (!sequence) return;
+      event.preventDefault();
+      sendInput(sequence);
+    };
+    input.addEventListener('beforeinput', handleBeforeInput);
+    return () => input.removeEventListener('beforeinput', handleBeforeInput);
   }, [sendInput]);
 
   const executeGestureAction = useCallback((action: MobileGestureAction | undefined) => {
@@ -599,16 +634,14 @@ export function MobileTerminalUi({
   }, [executeGestureAction, pendingGestureConfirmation]);
 
   useEffect(() => {
-    if (keyboardMode !== 'type' || !interactive) return;
-    const frame = window.requestAnimationFrame(focusInput);
-    const delayedFocus = window.setTimeout(focusInput, 120);
-    const settledFocus = window.setTimeout(focusInput, 500);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(delayedFocus);
-      window.clearTimeout(settledFocus);
-    };
-  }, [focusInput, interactive, keyboardMode]);
+    if (keyboardMode !== 'type' || !interactive) {
+      blurInput();
+      return;
+    }
+    focusRetryFrameRef.current = window.requestAnimationFrame(focusInput);
+    focusRetryTimersRef.current = [120, 500].map((delay) => window.setTimeout(focusInput, delay));
+    return cancelFocusRetries;
+  }, [blurInput, cancelFocusRetries, focusInput, interactive, keyboardMode]);
 
   useEffect(() => {
     if (touchMode === 'cursor' && !cursorTouchAvailable) {
@@ -721,10 +754,10 @@ export function MobileTerminalUi({
   }, [commitGestureState, executeGestureAction, scheduleGestureCompletionClear, touchMode]);
 
   const handlePanePointerUpCapture = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (touchMode === 'cursor' && cursorPointerIdRef.current === event.pointerId && isTouchLikePrimaryPointer(event)) {
+    if (cursorPointerIdRef.current === event.pointerId && isTouchLikePrimaryPointer(event)) {
       event.preventDefault();
       event.stopPropagation();
-      dispatchMouseFromPointer('mouseup', event, cursorPointerTargetRef.current ?? targetAtPointer(event));
+      dispatchMouseFromPointer('mouseup', event, targetAtPointer(event));
       cursorPointerIdRef.current = null;
       cursorPointerTargetRef.current = null;
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -758,7 +791,7 @@ export function MobileTerminalUi({
     commitGestureState(completionState ?? result.state);
     executeGestureAction(result.action);
     if (completionState) scheduleGestureCompletionClear();
-  }, [commitGestureState, executeGestureAction, scheduleGestureCompletionClear, touchMode]);
+  }, [commitGestureState, executeGestureAction, scheduleGestureCompletionClear]);
 
   const handlePaneFocusStartCapture = useCallback(() => {
     blurPaneTextInputs();
@@ -880,6 +913,9 @@ export function MobileTerminalUi({
         inputMode="text"
         enterKeyHint="enter"
         onKeyDown={(event) => {
+          // IME navigation and confirmation belong to the composition. Safari
+          // can clear isComposing before its final keydown but still reports 229.
+          if (composingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) return;
           const sequence = keyDownSequence(event);
           if (!sequence) return;
           event.preventDefault();
