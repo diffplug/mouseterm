@@ -32,7 +32,7 @@ This repository runs the [tend](https://github.com/max-sixty/tend) agent harness
 
 **Bot collaborator authority.** `dormouse-bot` is a direct repo collaborator with `push` permission and 2FA enforced by org policy; its PAT (`TEND_BOT_TOKEN`) carries the scopes `repo`, `workflow`, `notifications`, `write:discussion`, `gist`, and `user`. `workflow`, required for the nightly regeneration of `tend-*.yaml`, is the same scope that lets the harness add arbitrary new workflow files. **Ref-protection rulesets restrict where bot-controlled commits can land but do not gate workflow execution on feature branches.**
 
-**The notifications poll widens what the bot sees.** `tend-notifications.yaml` alone takes its subjects from the bot account's own unread feed rather than from an event payload or a fixed scheduled sweep, and its inlined pre-check `PUT /repos/diffplug/dormouse/subscription -F subscribed=true` runs every `*/15` cycle to keep that feed wide. `dormouse-bot` watches this repository today, so the feed is *all repository activity* rather than *threads the bot has participated in*, and whether to speak moves from the trigger to the prompt — **a prompt is not a control** (`docs/specs/security-audit.md` -> "Domains" draws the same point; rationale). What still bounds the bot on an undispatched thread is `author_association` tiering and the admin gate on `main`. **Never expect unwatching by hand to stick**: the PUT is idempotent and repeated every cycle, so the lever is `tend-notifications.yaml`, not the Unwatch button.
+**The notifications poll widens its input.** `tend-notifications.yaml` alone takes its subjects from the bot account's own unread feed rather than from an event payload or a fixed scheduled sweep, and its inlined pre-check `PUT /repos/diffplug/dormouse/subscription -F subscribed=true` runs every `*/15` cycle to keep that feed wide. `dormouse-bot` watches all repository activity; its prompt decides whether to respond (rationale). What still bounds the bot on an undispatched thread is `author_association` tiering and the admin gate on `main`. **Never expect unwatching by hand to stick**: the PUT is idempotent and repeated every cycle, so the lever is `tend-notifications.yaml`, not the Unwatch button.
 
 **Reachable repo-level secrets.** `CHROMATIC_PROJECT_TOKEN` is reachable by any workflow the bot can author: `.github/workflows/chromatic.yml` is `pull_request`-triggered, and GitHub environment policies cannot distinguish a bot from a human contributor at the ref level. **Accepted, with rotation as the mitigation** — the token is scoped to a single project and easy to rotate. `OVSX_PAT` and `VSCE_PAT` are protected: they live only in the `vscode-extension-publish` environment, whose deployment-branch-policy admits only `v*` tags, and tag creation is admin-only.
 
@@ -48,17 +48,16 @@ This repository runs the [tend](https://github.com/max-sixty/tend) agent harness
 - A **tend regeneration** — byte-for-byte reproducible from `uvx tend@<version> init` at the version in the files' own header, not touching `.config/tend.yaml` in the same commit (rationale).
 
 - **Identity is not evidence here at all**: `TEND_BOT_TOKEN` is precisely the credential in question.
-- **Both classifiers fail open** — any error or ambiguity reports the commit.
+- **Must report classifier errors and ambiguity as unexplained commits.**
+- **FAIL IF** tend regeneration materializes anything except regular `.config/tend.yaml` and workflow YAML blobs from the audited commit. `scripts/workflow-audit.test.mjs` pins this boundary (rationale).
 - **Must still report commits already merged to `main`**; review is not proof (rationale).
 - **Never deduplicate by branch or file set**, or a benign change is reported once and a later force-push of malicious content to the same files passes unremarked.
-- **The liveness check below keys on a successful run, not on an issue existing** — a silent run is the healthy steady state; a bot push that disables or modifies the audit is caught in the next successful run's diff window.
+- **Must key liveness on a successful run, not on an issue existing**; a silent run is the healthy steady state.
 
 **Two known evasions of that diff window**, both in how the window is computed rather than in what it classifies, **neither closed today**:
 
 - `git log --all --since` applies the server-set lower bound against the **committer date**, which the pusher sets freely: `GIT_COMMITTER_DATE=2020-01-01` on a commit adding a workflow hides it from every future window.
 - A branch pushed, run with repo-level secrets in scope, and deleted before the nightly fetch is in no window at all — the audit only ever sees refs that still exist.
-
-Closing both means keying on server-observed ref changes — the repository activity API's pushes, force-pushes, and deletions, with server timestamps and before/after SHAs — rather than on the commit graph as the client presents it.
 
 - **FAIL IF** `.github/workflows/workflow-audit.yaml` starts deriving its lower bound from anything the pusher controls; it must stay the previous successful run's server-set `created_at` (rationale). The `--since` filter is the known evasion above.
 - **FAIL IF** either admin-gating ruleset is missing or weakened. `Merge access` must target `~DEFAULT_BRANCH`, block nothing beyond `update`, and carry admin (`RepositoryRole` actor `5`) as its sole bypass actor; `Tag operations` must target `~ALL` tags, block both `creation` and `update`, and carry the same admin-only bypass.
@@ -76,15 +75,16 @@ Closing both means keying on server-observed ref changes — the repository acti
 - **FAIL IF** `.github/workflows/workflow-audit.yaml` is missing, disabled, or has not produced a successful run in the last 48 hours. Treat one skipped run as a signal rather than as slack in the window (rationale).
 - **FAIL IF** any `tend-*.yaml` pins `max-sixty/tend` below `0.1.19`, the release that pins instruction files by glob at any depth (rationale).
 - **FAIL IF** any `tend-*.yaml` workflow uses an unpinned action reference (e.g. `@main`, no version). Tag pins are accepted inside `tend-*.yaml` alone, the file being owned by the upstream generator; every other workflow — agent-managed or not — must SHA-pin per "GitHub Actions Policies".
-- **FAIL IF** any job in an agent-managed workflow has **effective** `GITHUB_TOKEN` permissions beyond `contents: write`, `pull-requests: write`, `issues: write`, `id-token: write`, `actions: read`, or any `read` permission. Effective, not declared: a job with no `permissions:` block inherits the repository default, so this check is meaningful only together with the next one (rationale).
+- **FAIL IF** any job in an agent-managed workflow has **effective** `GITHUB_TOKEN` permissions beyond `contents: write`, `pull-requests: write`, `issues: write`, `id-token: write`, `actions: read`, or any `read` permission. Effective, not declared: apply job permissions over workflow permissions over the repository default; omitted scopes in an explicit block become `none` (rationale).
 - **FAIL IF** `default_workflow_permissions` for this repository is not `read`, or `can_approve_pull_request_reviews` is not `false` (`gh api repos/diffplug/dormouse/actions/permissions/workflow`) — the backstop for every permission bullet in this spec (rationale).
 
-Source of truth: `WINDOW` in `.github/workflows/workflow-audit.yaml`.
+Source of truth: `WINDOW` and `is_tend_regen` in `.github/workflows/workflow-audit.yaml`.
 
 ## VS Code Extension Releases
 
-The extension is published by GitHub Actions, and the publishing secrets `VSCE_PAT` and `OVSX_PAT` live only in a protected GitHub environment. **That environment must require a manual human approval, never from the account that triggered the publish**, so no single compromised tag or maintainer account publishes a new extension version without an explicit release approval.
+The extension is published by GitHub Actions, and the publishing secrets `VSCE_PAT` and `OVSX_PAT` live only in a protected GitHub environment. **Must require human approval from an account other than the triggering account**, with administrator bypass disabled.
 
+- **FAIL IF** `vscode-extension-publish` lacks nonempty required reviewers, `prevent_self_review: true`, or `can_admins_bypass: false`; read that environment through the GitHub API.
 - **FAIL IF** `.github/workflows/release.yml` is missing the `vscode-extension-publish` environment on the VS Code publish job, or if `VSCE_PAT` / `OVSX_PAT` are referenced anywhere under `.github/workflows/**` from a job not bound to that environment. The second clause is repo-wide on purpose (rationale).
 - **FAIL IF** `.github/workflows/release.yml` uses production desktop signing secrets in CI, or stops generating an ephemeral Tauri updater key for unsigned CI artifacts.
 
@@ -97,10 +97,10 @@ The extension is published by GitHub Actions, and the publishing secrets `VSCE_P
 | Secret | Where it travels | What bounds it |
 | --- | --- | --- |
 | `TAURI_SIGNING_PRIVATE_KEY` | **env-only**; `tauri signer sign` documents `--private-key` as falling back to that variable | — |
-| `EV_SIGN_PIN` | argv — `jsign` takes `--storepass` as a literal option value only, with no environment or file indirection | local `ps` for one call's duration, for a PIN inert without the physical YubiKey it unlocks |
+| `EV_SIGN_PIN` | **env-only**; `jsign --storepass env:EV_SIGN_PIN` resolves it from the process environment | the physical YubiKey |
 | `APPLE_SIGN_PASS` | argv — `xcrun notarytool` offers no environment form either | the weakest of the three: unlike the PIN a standalone credential, and `--wait --timeout 30m` holds it on the command line up to half an hour per architecture |
 
 **Known gap.** The documented remedy for `APPLE_SIGN_PASS` is `notarytool store-credentials` plus `--keychain-profile`, moving the exposure to one short call instead of every submission. Not yet done — it changes the release runbook and cannot be exercised without live Apple credentials.
 
 - **FAIL IF** `scripts/sign-and-deploy.sh` stops doing any of three things: verifying GitHub artifact attestations, verifying artifact SHA-256 manifests, or using PIV-backed Windows signing.
-- **FAIL IF** `TAURI_SIGNING_PRIVATE_KEY` is passed on a command line anywhere in `scripts/sign-and-deploy.sh` rather than through the environment. `jsign --storepass` is the one documented exception, for the reason in the table above.
+- **FAIL IF** `TAURI_SIGNING_PRIVATE_KEY` is passed on a command line anywhere in `scripts/sign-and-deploy.sh` rather than through the environment, or `EV_SIGN_PIN` is passed literally to `jsign --storepass` instead of by environment-variable reference.

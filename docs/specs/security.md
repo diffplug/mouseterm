@@ -90,8 +90,6 @@ run this knows what they are taking on.
 - **The Chromatic token is reachable by any workflow the bot can author.**
   Accepted with rotation; abuse is visible in Chromatic's dashboard
   ([Automated Maintainer](./security-ci.md#automated-maintainer-tend)).
-- **Two signing secrets travel on a command line** for the life of one local
-  call, because their tools offer nowhere else ([Desktop Releases](./security-ci.md#desktop-releases)).
 
 ## Known gaps
 
