@@ -135,22 +135,25 @@ async function runUpdateCheck(): Promise<void> {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       localStorage.removeItem(STORAGE_KEY);
-      const marker: unknown = JSON.parse(raw);
+      // Narrowed once, so every field below is an ordinary read. JSON cannot
+      // produce an explicitly-present `undefined`, so `=== undefined` and
+      // `!(key in marker)` agree here.
+      const marker = JSON.parse(raw) as Record<string, unknown> | null;
       if (!marker || typeof marker !== 'object' || Array.isArray(marker)) {
         throw new Error('Invalid update marker');
       }
-      if ('failed' in marker && marker.failed === true
-        && 'version' in marker && typeof marker.version === 'string' && marker.version
-        && (!('error' in marker) || typeof marker.error === 'string')) {
+      if (marker.failed === true
+        && typeof marker.version === 'string' && marker.version
+        && (marker.error === undefined || typeof marker.error === 'string')) {
         setState({
           status: 'post-update-failure',
           version: marker.version,
-          error: 'error' in marker ? marker.error as string : undefined,
+          error: marker.error as string | undefined,
         });
         hadFailureMarker = true;
-      } else if (!('failed' in marker)
-        && 'from' in marker && typeof marker.from === 'string' && marker.from
-        && 'to' in marker && typeof marker.to === 'string' && marker.to) {
+      } else if (marker.failed === undefined
+        && typeof marker.from === 'string' && marker.from
+        && typeof marker.to === 'string' && marker.to) {
         // The marker precedes install because Windows kills this process. Only
         // the version running on the next launch confirms installation worked.
         if (marker.to !== currentVersion) {
