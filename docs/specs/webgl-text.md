@@ -28,14 +28,18 @@
   lockfile records a sha512 integrity hash, so cut a new iteration.
 - **Canopy's three pins move together.** Renovate ignores canopy's `@xterm/**`
   (it cannot follow the tarball URL); bump them with
-  `node scripts/xterm-bump.mjs --canopy <forkVersion>`. `lib/` and `standalone/`
-  may track a newer upstream beta between fork rebases.
+  `node scripts/xterm-bump.mjs --canopy <forkVersion>`.
+- **Must derive canopy's core from the released tarball's peer**, verifying its
+  package name, version and counter before writing pins; select the upstream
+  addon by matching commit and peer. `scripts/xterm-bump.test.mjs` pins this
+  behavior and standalone drift repair.
 - **Every pin must be exact, and every addon's core peer must equal its
   workspace's core pin** — the first-party `@xterm/*` packages share a repo but carry
   independent beta counters (rationale). `scripts/xterm-lint.mjs` also requires
   `lib` ≡ `standalone` and checks the canopy tarball's tag, filename, counter
   and peer as one set; `scripts/xterm-bump.mjs` (`pnpm bump:xterm`) writes the
-  newest coherent per-commit set for `lib` and `standalone`.
+  newest coherent per-commit set for both `lib` and `standalone`, even when only
+  one has drifted.
 - **Releases are hand-cut today** per FORK.md; automating this is staged in
   `## Future`.
 - **Dev loop**: `pnpm link ~/projects/xterm.js/addons/addon-webgl` from
@@ -55,15 +59,15 @@ PR:
 1. **Read the upstream diff first.** `node scripts/xterm-bump.mjs --dry-run`
    names the newest coherent set (rationale) and lists the
    `addons/addon-webgl/` files touched since canopy's fork base. Most betas
-   touch none and the fork does not move; when they do, that diff is the risk
-   assessment.
-2. **Rebase and release the fork** per FORK.md's `Merging upstream` —
+   touch none; otherwise review that diff.
+2. **May retain canopy's older baseline after reviewing a bump that leaves the
+   forked addon unchanged.** Otherwise, **must rebase and release the fork** per
+   FORK.md's `Merging upstream` —
    **a conflict-free merge is not a correct one** (rationale).
-3. **Bump `canopy/package.json`** with `--canopy <forkVersion>` and update the
-   recorded triple (see "Canopy lab").
+3. **After rebasing, bump `canopy/package.json`** with `--canopy <forkVersion>`
+   and update its recorded triple ("Canopy lab").
 
-**Land all of it in one PR** with the `@xterm/*` bump, so the tree never
-records lib and the fork on different upstreams.
+**Must land any required fork rebase with the `@xterm/*` bump in one PR.**
 
 ## SDF glyph architecture
 

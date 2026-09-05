@@ -163,7 +163,7 @@ export class BurrowService {
   #burrow: BurrowRuntime | null = null;
   #enrollment: BurrowEnrollment | null = null;
   /**
-   * Everything that starts or stops the Burrow runs one at a time on this chain.
+   * Lifecycle changes and pairing approvals run one at a time on this chain.
    *
    * Each of those reads `#burrow`, awaits a store round trip, and then acts on
    * what it read — so overlapping them (an activation `start` and a reconnect
@@ -171,6 +171,8 @@ export class BurrowService {
    * The second `BurrowRuntime` would hold a relay socket nothing has a
    * reference to and could not be stopped, and the two would displace each
    * other on the Relay forever.
+   * Approval holds the same lease through persistence, so a replacement cannot
+   * load an ACL snapshot before the previous runtime's approved write finishes.
    */
   readonly #serialize = createSerialQueue();
   /** Disposal is terminal: no in-flight store read may resurrect the Burrow. */
@@ -241,8 +243,8 @@ export class BurrowService {
 
   async #run(cmd: string, params: unknown): Promise<unknown> {
     switch (cmd) {
-      // The ones that start or stop the Burrow share the lifecycle chain with
-      // `start()`; everything below only reads what they left. `reconnect` takes
+      // Lifecycle changes and approval writes share the chain with `start()`.
+      // `reconnect` takes
       // the lease itself, for just the restart half (see `#reconnect`).
       case 'enroll':
         return this.#serialize(() => this.#enroll(params as EnrollParams));
@@ -257,7 +259,7 @@ export class BurrowService {
       case 'setupQr':
         return this.#setupQr();
       case 'approve':
-        return this.#approve(params as ApproveParams);
+        return this.#serialize(() => this.#approve(params as ApproveParams));
       case 'deny':
         return this.#deny(params as DenyParams);
       case 'push':
@@ -464,11 +466,11 @@ export class BurrowService {
     };
   }
 
-  #approve(params: ApproveParams): Record<string, never> {
+  async #approve(params: ApproveParams): Promise<Record<string, never>> {
     // The code the person typed, straight through. The service never held the
     // expected one — the Burrow compares, once (`service-protocol.ts` →
     // `PairingQueueItem`).
-    this.#pendingPairing(params.clientId, params.pairingId).approve(
+    await this.#pendingPairing(params.clientId, params.pairingId).approve(
       typeof params.code === 'string' ? params.code : '',
     );
     return {};
@@ -594,10 +596,8 @@ export class BurrowService {
     // `#burrow` here would be dropped without its socket being closed, so the
     // replacement is explicit rather than implied by the assignment below.
     this.#stopBurrow();
-    // The controller wants the ACL synchronously; the store is async because
-    // the places it lives are. Read it before constructing, and let saves run
-    // in the background — a failed write must not fail the pairing that is
-    // already approved and already on the wire.
+    // Seed the synchronous ACL lookup before constructing. Approval awaits the
+    // async store before publishing that record or telling the Client it paired.
     const records = await this.#store.loadAcl(enrollment.burrowId);
     // Deactivation can land during that store round trip. Disposal is terminal:
     // constructing here would leave a relay socket alive after its owner had
@@ -614,11 +614,7 @@ export class BurrowService {
           provider: this.#provider,
         }),
       loadAcl: () => records,
-      saveAcl: (burrowId, next) => {
-        void this.#store.saveAcl(burrowId, next).catch((error: unknown) => {
-          console.warn('[burrow] could not persist the ACL', error);
-        });
-      },
+      saveAcl: (burrowId, next) => this.#store.saveAcl(burrowId, next),
       requestApproval: (pending) => this.#enqueuePairing(pending),
       dismissApproval: (clientId) => this.#resolvePairing(clientId),
       onInvitationChanged: (inviteId, state, outcome) =>

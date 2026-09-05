@@ -20,7 +20,7 @@
 
 State-driving and security-sensitive OSCs — plus the `CSI > q` query — are parsed by the process that owns the PTY: **one parser per PTY generation, fed from spawn, never one per consumer**, because **a second over the same bytes answers every query twice and writes the duplicate into the PTY's input**. One site per host — the VS Code extension host (`ptyManager.addCallbacks`), the standalone sidecar (`main.js`'s `pty-core` tap) — each ahead of `pty:data`; the fake adapter is the same rule with the owner in the browser.
 
-**An unterminated OSC the parser will consume is buffered across chunks up to `OSC_INCOMPLETE_LIMIT` (16 KiB), then dropped — never buffered without bound** (rationale). It bounds only *unterminated* sequences; a complete one in a single read is parsed whole. **An unterminated OSC the parser will forward streams to xterm.js instead**, preserving a split `ESC \` terminator (rationale). **Route by the OSC id, and decide nothing while more digits could follow** — `133` becomes `1337` — for `1337` by the subcommand ([Inline graphics](#inline-graphics)).
+**Must buffer an unterminated consumed OSC up to `OSC_INCOMPLETE_LIMIT` (16,384 UTF-16 code units), then discard through its terminator or cancellation**, retaining only a split `ESC`, never promoting payload to text or its terminating BEL to an alert (rationale). A complete sequence in a single read is parsed whole. Pinned by `discards an oversized consumed OSC through its %j terminator` in `lib/src/lib/terminal-protocol.test.ts`. **An unterminated OSC the parser will forward streams to xterm.js instead**, preserving a split `ESC \` terminator (rationale). **Route by the OSC id, and decide nothing while more digits could follow** — `133` becomes `1337` — for `1337` by the subcommand ([Inline graphics](#inline-graphics)).
 
 **Every semantic value `TerminalProtocolParser` *retains* is bounded and stripped of control characters before storage**, whatever the emitter: `TITLE_LIMIT` / `BODY_LIMIT` for titles and notification bodies, whose whitespace controls collapse to spaces before the trim; `COMMAND_LINE_LIMIT` for the OSC 633 `E` command line, bounded *before* the `\xNN` unescape and sanitized *after* it (rationale); `MAX_CWD_LENGTH` for every CWD source, interior whitespace preserved. **Every limit counts code points**, so a cut never splits a surrogate pair. **A value that reduces to nothing is dropped, never stored empty.**
 
@@ -50,7 +50,7 @@ Replay (`pty:replay`) is the one raw stream and the one legitimate re-parse: **t
 | `OSC 0 ; <title> ST` | Window/icon title | [terminal-state.md](terminal-state.md#supported-osc-inputs) |
 | `OSC 2 ; <title> ST` | Window title | [terminal-state.md](terminal-state.md#supported-osc-inputs) |
 | `OSC 7 ; file://host/path ST` | CWD (xterm-style URI) | [terminal-state.md](terminal-state.md#supported-osc-inputs) |
-| `OSC 8 ; <params> ; <URI> ST ... OSC 8 ; ; ST` | Explicit hyperlink region — the one supported OSC passed through to xterm.js, opened only after a confirmation dialog. | This spec |
+| `OSC 8 ; <params> ; <URI> ST ... OSC 8 ; ; ST` | Explicit hyperlink region; passed through to xterm.js, opened only after a confirmation dialog. | This spec |
 | `OSC 10 ; ? ST` / `OSC 11 ; ? ST` / `OSC 12 ; ? ST` | Foreground / background / cursor color **query**. Consumed and answered `OSC <code> ; rgb:RRRR/GGGG/BBBB ST` (8-bit channels doubled) from the active terminal theme (rationale). Only the `?` (report) form is intercepted; *set* requests pass through, and an unknown or unparseable theme falls the query through to xterm.js. Theme: read where the parser stands if it has a DOM, pushed up where it has none ([vscode.md](vscode.md#osc-color-query-answering), [standalone.md](standalone.md#burrow-service)). | This spec |
 | `OSC 9 ; <message> ST` | iTerm2 legacy notification | [alert.md](alert.md#terminal-reports) |
 | `OSC 9 ; 4 ; <state> [; <progress>] ST` | iTerm2 progress | [alert.md](alert.md#terminal-reports) |
@@ -88,13 +88,11 @@ Neither `params` nor the URI is parsed at the PTY boundary.
 | **Deceptive** | display text URL-shaped (a full URL or a bare domain) but resolving to a different host than the target; one that merely *differs* — a human phrase, a same-host sibling URL — is **plain**, not deceptive, and stays openable | **No open action at all**: close and "Copy deceptive URL to clipboard", the copy button taking initial focus so a reflexive Enter cannot open anything |
 | **Blocked** | malformed URIs, control-character-bearing targets, browser-executable or opaque pseudo-schemes (`javascript:`, `data:`, `blob:`, `about:`) | **Never silently dropped**: the dialog opens with the reason, close the only action |
 
-**Cancel/close is the safe default**, and long targets wrap and scroll rather than truncate so a deceptive one cannot hide past the fold. **Every adapter must revalidate through `normalizeExternalUri` before opening** (VS Code before `vscode.env.openExternal`) — the dialog is a user-consent affordance, not the security boundary.
+**Cancel/close is the safe default; long targets must wrap and scroll without truncation.** **The confirmation host must reject deceptive verdicts even if its callback runs.** **Every adapter must revalidate through `normalizeExternalUri` before opening** (VS Code before `vscode.env.openExternal`) — consent does not replace validation.
 
 Source of truth: `lib/src/lib/external-links.ts`, `lib/src/lib/external-link-confirmation.ts`, `lib/src/components/ExternalLinkModal.tsx`.
 
 ## Supported CSI
-
-Dormouse intervenes only in these cases.
 
 | Sequence | Role | Disposition | Where |
 |---|---|---|---|
@@ -177,7 +175,7 @@ The identity provokes more iTerm2 escape codes than Dormouse implements, so **un
 
 Wired in `applyShellIntegration`, called from `resolveSpawnConfig` (`standalone/sidecar/pty-core.js`), so both distributions spawn through it. The scripts are static files under `standalone/sidecar/shell-integration/`, located via `DORMOUSE_SHELL_INTEGRATION_DIR` (set by the host, mirroring `DORMOUSE_CLI_BIN`) and falling back to the sidecar's own directory; standalone ships them through the Tauri `../sidecar/**/*` glob, the VS Code build into `dist/shell-integration`. **Injection is fail-safe** — missing scripts mean it is skipped and the shell spawns as before.
 
-**Emitted fields must be filtered before they are written — a security boundary, not tidiness.** An attacker-chosen directory name or command can carry an OSC terminator (BEL, `ESC \`, or the C1 ST `U+009C` — all three of what `findOscTerminator` scans for), ending the `633` sequence early so the remainder arrives as a fresh, fully-trusted OSC. **The parser cannot defend against this** — it scans raw bytes — so the boundary is emit-side, in the scripts Dormouse ships (rationale):
+**Emitted fields must be filtered before they are written — a security boundary, not tidiness.** An attacker-chosen directory name or command can carry an OSC terminator (BEL, `ESC \`, or the C1 ST `U+009C`), ending the `633` sequence early so the remainder arrives as a fresh, fully-trusted OSC. **The parser cannot defend against this** — it scans raw bytes — so the boundary is emit-side, in the scripts Dormouse ships (rationale):
 
 - **`E` (command line)** is escaped by `__dormouse_633_escape`: BEL, ESC and the C1 ST alongside `\`, `;`, LF and CR. The parser decodes `\xNN` back, so it still reports verbatim.
 - **`Cwd=`** is read verbatim, no `\xNN` decoding, so a Windows path's backslashes arrive intact — `__dormouse_633_safe_cwd` therefore *removes* control characters instead of escaping them, preserving backslashes and semicolons. **Under `LC_ALL=C` the scripts strip the C1 ST explicitly first**, `[[:cntrl:]]` not matching its two ordinary bytes.

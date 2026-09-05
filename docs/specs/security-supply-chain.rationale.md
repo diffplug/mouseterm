@@ -22,9 +22,9 @@ What the pin buys the disclosure: because the supply-chain page reads the same `
 
 Why the Windows subsystem byte is flipped: leaving the bundled `node.exe` as a console-subsystem binary lets Windows Terminal's default-terminal handoff spawn a stray terminal window behind the app.
 
-Why the patch is safe: Node reads its stdio handles from `STARTUPINFO`, which is subsystem-agnostic, so the flipped field changes nothing about Node.js semantics.
+Why the patch works for the sidecar: its explicitly piped stdio survives the subsystem change. Inherited console handles do not: `dor` therefore uses a console-subsystem copy. The platform evidence is in `docs/specs/standalone.rationale.md` → Windows node subsystem.
 
-Why the absence of `volta.node` and `engines.node` is load-bearing: adding either would silently change the bundled runtime, with no diff to the workflow to show that it had.
+Why alternate version declarations are excluded: in the pinned [setup-node implementation](https://github.com/actions/setup-node/blob/820762786026740c76f36085b0efc47a31fe5020/src/util.ts), `volta.node` overrides `devEngines.runtime`; `engines.node` is a lower-precedence fallback. Forbidding both keeps one version declaration, though only Volta overrides the current pin. The build's version check rejects a mismatched binary rather than silently bundling it.
 
 ## Cooldown and alerts
 

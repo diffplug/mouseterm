@@ -110,7 +110,7 @@ export async function verifyPresenceProof(
   proof: unknown,
   expected: PresenceBinding,
   policy: ConnectionPolicy,
-  crypto: WebCryptoLike = getWebCrypto(),
+  crypto?: WebCryptoLike,
 ): Promise<PresenceProofResult> {
   if (!isPresenceProofV1(proof)) return { ok: false, reason: 'malformed' };
   if (!bindingEquals(proof.binding, expected)) return { ok: false, reason: 'binding-mismatch' };
@@ -125,6 +125,7 @@ export async function verifyPresenceProof(
   }
   let challenge: string;
   try {
+    crypto ??= getWebCrypto();
     challenge = await presenceChallenge(proof.binding, proof.relayNonce, crypto);
   } catch {
     // A non-base64url binding field or an over-long nonce; the builder throws
@@ -181,10 +182,8 @@ const PAIRING_CODE_REJECT_AT = 200;
 /**
  * A uniform pairing code, `00`–`99`.
  *
- * Rejection sampling rather than `% 100`: a byte reduces to 0–55 with
- * probability 3/256 and to 56–99 with 2/256, so a modulo would make a fifth of
- * the code space over twice as likely as the rest — a 100-way secret is small
- * enough that the bias is worth removing.
+ * Reject bytes 200–255 before `% 100`, leaving exactly two equally likely
+ * byte values for every code.
  */
 export function samplePairingCode(crypto: WebCryptoLike = getWebCrypto()): string {
   const byte = new Uint8Array(1);

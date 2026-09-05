@@ -81,7 +81,7 @@ export type TerminalSemanticEvent =
   | { type: 'promptEnd' }
   | { type: 'commandLine'; commandLine: string }
   | { type: 'commandStart'; source?: CommandRunSource; startedAt?: number }
-  | { type: 'commandFinish'; exitCode?: number }
+  | { type: 'commandFinish'; exitCode?: number; finishedAt?: number }
   | { type: 'title'; title: TerminalTitle };
 
 export interface DirectoryDisplayOptions {
@@ -214,7 +214,7 @@ export function reduceTerminalState(
         if (sameActivity(state.activity, next)) return state;
         return { ...state, activity: next };
       }
-      const finishedAt = now();
+      const finishedAt = event.finishedAt ?? now();
       const finalTerminalTitle = snapshotInRunTerminalTitle(state, state.currentCommand, finishedAt);
       const finishedCommand: CommandRun = {
         ...state.currentCommand,
@@ -287,7 +287,7 @@ export function cwdFromOsc7(rawUriInput: string, now = Date.now()): CwdState | n
 }
 
 export function cwdFromOsc9_9(rawPath: string, now = Date.now()): CwdState | null {
-  const path = boundedCwdValue(safeDecodeURIComponent(boundedCwdValue(rawPath).trim()));
+  const path = boundedCwdValue(rawPath);
   if (!path) return null;
   return {
     path,
@@ -646,7 +646,7 @@ function statusBucket(kind: ShellActivity['kind']): 'unknown' | 'idle' | 'runnin
 }
 
 function cwdFromDecodedPath(rawPath: string, source: CwdSource, now: number): CwdState | null {
-  const path = boundedCwdValue(safeDecodeURIComponent(boundedCwdValue(rawPath).trim()));
+  const path = boundedCwdValue(rawPath);
   if (!path) return null;
   return {
     path,
@@ -1121,7 +1121,7 @@ function latestTerminalTitleCandidate(state: TerminalPaneState | null | undefine
   if (!state) return null;
   let latest: TerminalTitle | null = null;
   for (const candidate of Object.values(state.titleCandidates)) {
-    if (!candidate || candidate.source === 'user') continue;
+    if (!candidate || !HEADER_APP_TITLE_SOURCES.includes(candidate.source)) continue;
     if (!latest || candidate.updatedAt > latest.updatedAt) latest = candidate;
   }
   return latest;

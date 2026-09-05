@@ -26,7 +26,7 @@ The webview is the shared `lib/` frontend, unmodified for this host (`docs/specs
 
 ### Extension manifest
 
-**Activation is limited to the contributed view and restored editor panels**, so a window without either stays cold. The manifest contributes the panel container/view, the Focus/Open/Debug Theme/New Terminal/Select Shell commands, and the view-title actions, owning their exact ids, titles, icons, and ordering.
+**Must activate on the contributed view, restored editor panels, or an invoked contributed command.** Command activation is implicit on the supported VS Code versions ([activation events](https://code.visualstudio.com/api/references/activation-events#oncommand)). The manifest owns contributed commands, views, and title actions: ids, titles, icons, and ordering.
 
 **No `configuration`, no `keybindings`, no context key**: settings live in the in-webview Settings dialog rather than `settings.json`, chords are handled inside the webview, and nothing is `when`-gated on Dormouse state. Context keys are [Future](#context-keys). Source of truth: `vscode-ext/package.json`.
 
@@ -101,14 +101,9 @@ The QuickPick is the only shell control here: `VSCodeAdapter` sets the optional 
 
 A `WebviewPanelSerializer` registered under the `dormouse` view type restores editor panels after a restart; `onWebviewPanel:dormouse` activates the extension early enough for it to be there. The persisted shapes it round-trips (`PersistedSession` / `PersistedPane` / `PersistedAlertState` / `PersistedDoor`) are transport.md's.
 
-**While running.** The frontend saves via `dormouse:saveState` on the shared
-cadence (`docs/specs/layout.md` → Session persistence). The
-router's `onSaveState` merges in current alert states (`mergeAlertStates()`), then
-the **WebviewView** writes `workspaceState` (`dormouse.session`) while
-**WebviewPanels** persist through VS Code's per-panel `vscode.setState()`, so
-several panels cannot clobber each other. **Alert state must ride every save, not
-just teardown** — otherwise it does not survive an extension host killed before
-`deactivate()` returns.
+**Must persist every periodic save with current alerts** (`docs/specs/layout.md` → Session persistence). The WebviewView's `onSaveState` merges host alerts into `workspaceState` (`dormouse.session`); WebviewPanels use per-panel `vscode.setState()` from the frontend.
+
+**Must serialize host saves and await them after the webview's flush acknowledgement, within the existing flush deadline**, before the deactivate refresh reads the snapshot. Failed writes are logged without blocking subsequent saves. Pinned by `session flush` in `vscode-ext/test/message-router.test.ts`.
 
 **On deactivate**, in this order (`extension.ts:deactivate()`):
 
@@ -148,7 +143,7 @@ invocation when interrupted, not when signalled, and the tty line discipline
 delivers the SIGINT to the foreground process group, so the hint comes back as
 ordinary `pty:data` (rationale).
 **Interrupt every live PTY, not just recognized agents** — `detectResumeCommand`
-is the real filter and `^C` into a non-agent is inert (rationale) — but
+filters the recovery invocations (rationale) — but
 **exclude exited PTYs**, which can yield no hint and would permanently defeat the
 "nothing left to wait for" early exit.
 
@@ -254,7 +249,7 @@ Source of truth: `getWebviewHtml` in `vscode-ext/src/webview-html.ts`, `CSP_NONC
 
 **Never swap the token for an `event.source` / `event.origin` check, and never reuse the CSP nonce as the token** (rationale). **The guard fails closed both ways**: a webview served without the global accepts nothing, a host send without a token delivers nothing, and framed content cannot read the parent's globals cross-origin.
 
-Messages from proxied iframes are guarded by origin instead (`docs/specs/dor-browser.md`) and are unaffected by the token, which covers only the adapter's host channel. **Scope is VS Code**: the standalone adapters receive the equivalent events over Tauri's `listen()` IPC and the dev harness's host WebSocket (`docs/specs/standalone.md`), never `window.postMessage`, so they have no forgeable inbox to guard.
+Messages from proxied iframes are guarded by origin instead (`docs/specs/dor-browser.md`) and are unaffected by the token, which covers only the adapter's host channel. **Scope is VS Code**: standalone receives equivalent events over Tauri's `listen()` IPC or the browser-dev HTTP/SSE bridge (`docs/specs/transport.md` → "Standalone browser-dev harness"), never `window.postMessage`.
 
 Source of truth: `isHostMessage` in `lib/src/lib/vscode-message-token.ts`, `WebviewChannel` / `serveWebview` in `vscode-ext/src/webview-messaging.ts`, `getWebviewHtml` in `vscode-ext/src/webview-html.ts`, `VSCodeAdapter` in `lib/src/lib/platform/vscode-adapter.ts`; pinned by the `host message authentication` block in `lib/src/lib/platform/vscode-adapter.test.ts`.
 
@@ -347,7 +342,7 @@ bursts on one microtask (a focus move alone emits `focusout` plus `focusin`).
 
 **Attach-is-the-resize is answered by the owning webview's live xterm, never the PTY directly**, under `docs/specs/remote-api.md` → "Size authority: last-attach-wins". **Cross-window attach fans out a read-only `resolve` first**, selects its first answer, then sends the mutating `attach` only to that answer's tier and peer, so duplicated cold-restored windows do not both resize. The owner replies with the size it settled at plus the `ptyId`; the service then streams that PTY. **There is no `detach` op** — the service stops streaming on its side and the pane keeps its last size.
 
-**Which webview owns a pane never reaches the protocol layer.** `resolveSurface` / `SurfaceHandle` are `docs/specs/remote-api.md`'s and the ask-backed half of the provider is shared with standalone (`createAskSurfaceProvider`); VS Code's part is that **the first read-only resolve answer is the answer**, and the mutating attach plus every later handle resize are addressed only to that selected tier/window. A resize nobody answered leaves the last known size standing.
+**Which webview owns a pane never reaches the protocol layer.** `resolveSurface` / `SurfaceHandle` are `docs/specs/remote-api.md`'s and the ask-backed half of the provider is shared with standalone (`createAskSurfaceProvider`); VS Code's part is that **the first read-only resolve answer is the answer**, and the mutating attach plus every later handle resize are addressed only to that selected tier/window. Missing resize answers follow `docs/specs/remote-api.md` → "Attachment invariants".
 
 **No second strip parser.** The extension host already parses each PTY chunk and answers its queries (`message-router.ts`); webviews receive that parser's projection pair, and the service's `streamPty` subscribes to the very same parse. **A second parser would answer every query twice and corrupt the PTY** (`docs/specs/terminal-escapes.md`, which owns the rule for both hosts).
 

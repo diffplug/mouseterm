@@ -4,7 +4,9 @@
  * the file: the searches over CLI output nobody bounds — whether the loopback
  * port is bound anywhere but 127.0.0.1 and whether an existing Serve config
  * already claims the root path — plus the install's reading of a possibly
- * half-written `config/relay.env`. Runs from the repo root via `pnpm test`.
+ * half-written `config/relay.env`, credential ownership, and exclusive release
+ * staging. Env-reader cases also execute the shipped wrapper parser. Runs
+ * from the repo root via `pnpm test`.
  *
  * Why this exists: `deploy-lint.mjs` is textual, so it can say a control is
  * still present and nothing more. These are controls where "present" was not
@@ -34,7 +36,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -114,6 +116,12 @@ function writeEnvFixtures(dir) {
     emptyOrigin: ENV_COMPLETE.replace(/^DORMOUSE_ORIGIN=.*$/m, 'DORMOUSE_ORIGIN='),
     // An operator's own addition is not a defect.
     extraKey: `${ENV_COMPLETE}\nDORMOUSE_LOG_LEVEL=debug`,
+    duplicateBinding: `${ENV_COMPLETE}\nDORMOUSE_BIND_HOST=0.0.0.0`,
+    emptyLastBinding: `${ENV_COMPLETE}\nDORMOUSE_BIND_HOST=`,
+    quotedBinding: `${ENV_COMPLETE}\nDORMOUSE_BIND_HOST="127.0.0.1"`,
+    unmatchedQuote: `${ENV_COMPLETE}\nDORMOUSE_BIND_HOST="127.0.0.1`,
+    duplicateOrigin: `${ENV_COMPLETE}\nDORMOUSE_ORIGIN=https://another.tail.ts.net`,
+    duplicatePort: `${ENV_COMPLETE}\nPORT=31000`,
   };
   const paths = {};
   for (const [name, body] of Object.entries(files)) {
@@ -126,7 +134,36 @@ function writeEnvFixtures(dir) {
 /** `[label, body, expected]`, where `body` echoes exactly one word. */
 function cases(platform, env) {
   const { loopback, offLoopback } = listenerFixtures[platform];
+  const ownerCases = [
+    ['700 fixture-owner', 'pass', 'private path owned by this account'],
+    ['755 fixture-owner', 'fail', 'world-readable mode'],
+    ['700 another-owner', 'fail', 'private path owned by another account'],
+    ['', 'fail', 'stat failed or path missing'],
+  ].map(([metadata, expected, label]) => [
+    `owner_only: ${label}`,
+    `pass() { echo pass; }; fail() { echo fail; }; id() { echo fixture-owner; }; stat() { printf '%s' '${metadata}'; }; owner_only /unused 700 secret`,
+    expected,
+  ]);
+  const configCases = [
+    ['duplicateBinding', 'DORMOUSE_BIND_HOST', '0.0.0.0'],
+    ['emptyLastBinding', 'DORMOUSE_BIND_HOST', ''],
+    ['quotedBinding', 'DORMOUSE_BIND_HOST', '127.0.0.1'],
+    ['unmatchedQuote', 'DORMOUSE_BIND_HOST', '"127.0.0.1'],
+    ['duplicateOrigin', 'DORMOUSE_ORIGIN', 'https://another.tail.ts.net'],
+    ['duplicatePort', 'PORT', '31000'],
+  ].map(([fixture, key, value]) => [
+    `env_file_value: ${fixture} agrees with the shipped wrapper`,
+    `ENV_FILE='${env[fixture]}'; load_runtime_env; printf '[%s|%s]\\n' "$(env_file_value "$ENV_FILE" ${key})" "$${key}"`,
+    `[${value}|${value}]`,
+  ]);
   return [
+    ...ownerCases,
+    ...configCases,
+    [
+      'env_missing_keys: a later empty assignment overrides the earlier value',
+      `printf '[%s]\\n' "$(env_missing_keys '${env.emptyLastBinding}')"`,
+      '[ DORMOUSE_BIND_HOST]',
+    ],
     [
       'has_off_loopback: off-loopback first, 1 MiB of loopback after',
       `if has_off_loopback 3100 "$(printf '%s\\n' "${offLoopback}"; awk 'BEGIN{for(i=0;i<20000;i++) print "${loopback}"}')"; then echo detected; else echo clean; fi`,
@@ -254,12 +291,20 @@ export function run() {
 
   const fixtureDir = mkdtempSync(join(tmpdir(), 'dormouse-installer-verify-'));
   const env = writeEnvFixtures(fixtureDir);
+  const protectedDir = join(fixtureDir, 'protected');
+  const publicDir = join(fixtureDir, 'public');
+  mkdirSync(protectedDir, { mode: 0o700 });
+  mkdirSync(publicDir);
+  chmodSync(publicDir, 0o755);
   try {
     for (const { platform, file } of PLATFORMS) {
       const text = readRepoFile(file);
       let helpers;
       try {
         helpers = [
+          'create_release_stage',
+          'env_file_value',
+          'owner_only',
           'has_off_loopback',
           'env_missing_keys',
           'serve_state',
@@ -268,11 +313,37 @@ export function run() {
         ]
           .map((name) => extractFunction(text, name))
           .join('\n\n');
+        const parser = text.match(/while IFS= read -r line[^]*?done < "\$ENV_FILE"/);
+        if (!parser) throw new Error('missing wrapper env parser');
+        helpers += `\nload_runtime_env() {\n${parser[0]}\n}\n`;
+        const readers = [...text.matchAll(/env_file_value\(\) \{[^]*?\n\}/g)];
+        if (readers.length !== 2 || readers[0][0] !== readers[1][0]) {
+          throw new Error('installer and manage env readers differ');
+        }
       } catch (err) {
         failures.push(`${platform}: ${err.message} in ${file}`);
         continue;
       }
-      for (const [label, body, expected] of cases(platform, env)) {
+      const allCases = cases(platform, env);
+      const stagePath = join(fixtureDir, `stage-${platform}`);
+      const quotedStage = "'" + stagePath.replaceAll("'", "'\\''") + "'";
+      allCases.push([
+        'create_release_stage: collision preserves an existing release',
+        `create_release_stage ${quotedStage}; printf keep > ${quotedStage}/marker; if create_release_stage ${quotedStage} 2>/dev/null; then echo overwritten; else cat ${quotedStage}/marker; fi`,
+        'keep',
+      ]);
+      if ((platform === 'macOS' && process.platform === 'darwin') ||
+          (platform === 'Linux' && process.platform === 'linux')) {
+        for (const [path, expected] of [[protectedDir, 'pass'], [publicDir, 'fail']]) {
+          const quoted = "'" + path.replaceAll("'", "'\\''") + "'";
+          allCases.push([
+            `owner_only: native stat on ${expected === 'pass' ? '0700' : '0755'} directory`,
+            `pass() { echo pass; }; fail() { echo fail; }; owner_only ${quoted} 700 secret`,
+            expected,
+          ]);
+        }
+      }
+      for (const [label, body, expected] of allCases) {
         checked += 1;
         // The same options `manage` sets. `pipefail` is not incidental here: it
         // is the setting that turns an early `grep -q` into a wrong answer.

@@ -1047,6 +1047,16 @@ module.exports.create = function create(send, ptyModule) {
   const pty = ptyModule;
   const ptys = new Map(); // id -> pty.IPty
   const ptyShells = new Map(); // id -> resolved shell executable
+  // Repaint restoration belongs to the PTY owner, where every local and remote
+  // resize passes. A Viewer-local timer cannot see another display taking size
+  // authority (docs/specs/remote-api.md -> Attach is the resize).
+  const repaintTimers = new Map();
+  const FORCE_REPAINT_BOUNCE_MS = 60;
+
+  function cancelRepaint(id) {
+    clearTimeout(repaintTimers.get(id));
+    repaintTimers.delete(id);
+  }
 
   function spawn(id, options) {
     const config = resolveSpawnConfig({ ...options, id, surfaceId: id });
@@ -1082,6 +1092,7 @@ module.exports.create = function create(send, ptyModule) {
       return;
     }
 
+    cancelRepaint(id);
     ptys.set(id, p);
     ptyShells.set(id, config.shell);
 
@@ -1092,6 +1103,7 @@ module.exports.create = function create(send, ptyModule) {
     p.onExit(({ exitCode, signal }) => {
       send('exit', { id, exitCode, signal });
       if (ptys.get(id) === p) {
+        cancelRepaint(id);
         ptys.delete(id);
         ptyShells.delete(id);
       }
@@ -1109,9 +1121,28 @@ module.exports.create = function create(send, ptyModule) {
     if (p) p.write(data);
   }
 
-  function resize(id, cols, rows) {
+  function resize(id, cols, rows, repaint = false) {
+    cancelRepaint(id);
     const p = ptys.get(id);
-    if (p) p.resize(cols, rows);
+    if (!p) return;
+    if (!repaint) {
+      p.resize(cols, rows);
+      return;
+    }
+    p.resize(cols, rows > 1 ? rows - 1 : rows + 1);
+    const timer = setTimeout(() => {
+      if (repaintTimers.get(id) !== timer) return;
+      repaintTimers.delete(id);
+      if (ptys.get(id) !== p) return;
+      try {
+        p.resize(cols, rows);
+      } catch (error) {
+        // Process death can race its onExit callback; never crash the owner.
+        console.error(`[pty-core] repaint failed for ${id}:`, error.message);
+      }
+    }, FORCE_REPAINT_BOUNCE_MS);
+    timer.unref?.();
+    repaintTimers.set(id, timer);
   }
 
   // Synchronous lifetime observation for the Burrow's atomic
@@ -1122,6 +1153,7 @@ module.exports.create = function create(send, ptyModule) {
   }
 
   function kill(id) {
+    cancelRepaint(id);
     const p = ptys.get(id);
     if (p) {
       p.kill();
@@ -1131,6 +1163,7 @@ module.exports.create = function create(send, ptyModule) {
   }
 
   function killAll() {
+    for (const id of repaintTimers.keys()) cancelRepaint(id);
     for (const [, p] of ptys) {
       p.kill();
     }

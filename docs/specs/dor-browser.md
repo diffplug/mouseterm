@@ -69,10 +69,9 @@ the pane the user is currently selected on moves selection to the replacement
 
 Surface lifetime owns backing resources:
 
-- **Minimizing parks the pane** — mounted and connected but invisible, with
-  `useSurfaceVisibility` reporting it hidden, so a doored `ab-screencast` stops
-  pulling frames while its daemon and socket stay up. **Killing a doored pane
-  unparks it first**, so the parked DOM dies with the Surface.
+- **Must retain the mounted DOM when minimizing.** Agent-browser connection
+  parking follows [Agent-Browser Connection](#agent-browser-connection).
+  **Must unpark a doored pane before killing it**, so its DOM dies with the Surface.
 - **Killing an agent-browser-rendered pane — or swapping away from that renderer
   — must mark the session closed, run `agent-browser close` through
   `closeAgentBrowserSession`, then dispose the surface controller**
@@ -169,9 +168,10 @@ pane appears **before** `agent-browser open` runs (rationale).
   `Connecting to browser session…` placeholder rather than the idle
   `run dor ab open <url>` line (rationale).
 - `agent-browser open <url>` runs, then a best-effort `stream status`.
-- The pane receives `{session, wsPort, binaryPath}` as **one** params refresh
-  (rationale). A failed `open` still hands over the `session` so the placeholder
-  names it, and logs rather than reporting into the closed menu.
+- **Must hand over `{session, wsPort, binaryPath}` in one params refresh**
+  (rationale). Failed or rejected `open` still hands over session and binary;
+  a rejected stream-status lookup omits only the port. Failures log into the
+  console after the menu closes. Pinned by `connect-port.test.ts`.
 
 The lookup reuses before it creates: (a) a surface bound to the default session,
 else (b) a still-booting session-less `key: 'default'` pane, so a double-click
@@ -209,7 +209,7 @@ size landed**, so a resize transient is not read as an external override.
 | From -> To | Behavior |
 | --- | --- |
 | `iframe` -> `ab-screencast` / `ab-popout` | **The pane swaps at once** to a session-less agent-browser pane — inert, so it cannot race the boot (rationale) — while the host spawns a fresh `gui-<hex>` session at the current URL via `agentBrowserOpen` and hands over `{session, wsPort, binaryPath}` as **one** params refresh. `ab-popout` spawns headed in one shot, so the surface mounts already popped out. A spawn that rejects or yields no session restores the iframe; a Surface minimized meanwhile receives either outcome through its Door, while one killed meanwhile closes a spawned session. Hidden/inert without that capability. |
-| `ab-screencast` <-> `ab-popout` | Same session, headed/headless relaunch in `AgentBrowserPanel`; preserves only the active URL. |
+| `ab-screencast` <-> `ab-popout` | Same Surface id and session, headed/headless relaunch in the surface controller; preserves only the active URL. |
 | `ab-*` -> `iframe` | Uses canonical `params.url`; with multiple tabs, requires the user to press `c` in the warning overlay, because only the active tab survives. |
 
 Source of truth: `lib/src/components/wall/AgentBrowserScreenModal.tsx`,
@@ -263,9 +263,9 @@ Source of truth: `dor/src/commands/agent-browser.ts`, `dor/src/commands/types.ts
 A surface-id-keyed controller registry (mirroring `terminal-lifecycle.ts`) owns
 one `AgentBrowserConnection` for `{ session, streamPort, binaryPath }` plus its
 screenshot loop. **The controller is Surface-scoped, not panel-scoped** — it
-survives panel unmount (minimize, layout churn, StrictMode), so the
-daemon/session stays alive and reattaches from persisted params, and client
-resources are released only at pane kill or a render swap away.
+survives panel unmount (layout churn, StrictMode). **Must keep the daemon/session
+alive while parked**, releasing viewer resources as specified below; killing
+or swapping away disposes the controller too.
 
 **A controller whose params carry no `session` must stay inert** — no connection,
 no `stream status`, and **never derive the session from `key`**, which is what
@@ -313,9 +313,9 @@ Rules that keep the two paths honest:
   decode; a provisional paint during an in-flight capture marks it stale.
 - **No capture may start inside the provisional window** (rationale) — one
   settled shot at its end, and continued pointer input pushes the window out.
-- **A capture dropped as stale must leave the loop dirty** (rationale); an
-  unpainted pulse alone must not suppress a crisp draw, so idle animated pages
-  still update.
+- **Must leave the loop dirty when capture or bitmap decode becomes stale**
+  (rationale); an unpainted pulse alone must not suppress a crisp draw.
+  Pinned by `agent-browser-screenshot-loop.test.ts`.
 - Byte-identical heartbeat frames and crisp captures are dropped before drawing.
   **That dedup assumes the crisp loop is the only canvas writer, so any other
   painter must bump the draw generation** in its key — re-attach and every
@@ -456,21 +456,22 @@ The proxy instruments any `http://` upstream, loopback and remote alike:
   range-checking, so `0xA9FEA9FE` and `::ffff:169.254.169.254` are caught too;
   pinned by `lib/src/host/iframe-proxy-rewrite.test.ts`.
 
-What is rewritten, exactly:
+Header rewriting:
 
 | Direction | Header | Treatment |
 | --- | --- | --- |
 | request | `Host` | upstream host |
 | request | `Origin` | upstream origin **only** when it is the proxy's own; else forwarded untouched (absent stays absent) |
-| request | `Referer` | proxy origin substituted for the upstream origin |
+| request | `Referer` | proxy origin replaced with the upstream origin |
 | request | `Accept-Encoding` | deleted, so HTML comes back identity for rewriting |
-| response | `X-Frame-Options`, `Content-Security-Policy`, `Content-Security-Policy-Report-Only` | replaced **whole** by `frame-ancestors 'self' <validated chain>` (rationale) |
+| request | `Cookie` | dropped, including WebSocket handshakes |
+| response | `Set-Cookie` | dropped, including successful and refused WebSocket handshakes |
+| response | `X-Frame-Options`, `Content-Security-Policy`, `Content-Security-Policy-Report-Only` | with validated chain, replaced **whole** by `frame-ancestors 'self' <validated chain>` (rationale) |
 | response | hop-by-hop (RFC 7230 §6.1) | dropped |
 | response | `Location` | upstream origin rewritten back to the proxy origin, so a redirect stays inside the proxy |
 | response body | `<meta http-equiv="content-security-policy">` | removed, like the header |
 
-**Must update** this table and `FRAMING_RESPONSE_HEADERS` /
-`HOP_BY_HOP_RESPONSE_HEADERS` together for every new stripped response header.
+**Must update this table whenever header rewriting changes.**
 
 **One dedicated `127.0.0.1:0` server per grant, with no token in the path** — the
 origin itself is the grant boundary (rationale). Grants have a sliding idle TTL
@@ -506,8 +507,8 @@ Leader messages feed the same Wall command-mode exit path as in-document
 dual-tap; `IframePanel` maps proxy-origin `location` URLs back to upstream URLs
 for chrome/history without reloading the frame.
 
-New-tab requests show an overlay prompt — accept opens a browser pane beside the
-current one, cancel drops it; neither switches the pane to agent-browser.
+New-tab requests show an overlay: accept opens an adjacent browser pane; cancel drops it.
+Neither switches to agent-browser.
 
 Source of truth: `lib/src/host/iframe-proxy-rewrite.ts` (`iframeShim`),
 `lib/src/components/wall/browser-url.ts` (`browserSurfaceUrl`),
@@ -579,9 +580,11 @@ foreign.** `isOwnOrigin` and `isForeignOrigin` are not each other's negation —
 
 **Must rewrite `Origin` only when it names the proxy itself.** Forward a foreign
 origin unchanged and keep an absent origin absent, on request and upgrade paths;
-`Referer` only substitutes the proxy's own origin. (rationale) The shared rule
+`Referer` substitutes only an exact parsed proxy origin, preserving its path and query; redirects likewise substitute only an exact upstream origin. (rationale) The shared rule
 for all loopback listeners lives in `lib/src/host/loopback-guard.ts` and is
 audited by `docs/specs/security-local.md` → "Loopback Listeners".
+
+Iframe cookies and script-access limits: `docs/specs/security-local.md` → "Loopback Listeners".
 
 **Never relax** the `Host` validation, the conditional `Origin` gate, or the
 `frame-ancestors` replacement without updating that `docs/specs/security-local.md` audit. Pinned

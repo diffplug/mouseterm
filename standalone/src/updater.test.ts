@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
+import { flushSync } from 'react-dom';
+import { createRoot } from 'react-dom/client';
+import type { UpdateBannerState } from './UpdateBanner';
 
 // --- Mocks ---
 
@@ -51,10 +55,23 @@ import {
   approveUpdate,
   openChangelog,
   buildDebugReport,
+  useUpdateState,
   hasPendingUpdate,
   installPendingUpdate,
   _resetForTesting,
 } from './updater';
+
+function readBannerState(): UpdateBannerState {
+  let state!: UpdateBannerState;
+  function Probe() {
+    state = useUpdateState();
+    return null;
+  }
+  const root = createRoot(document.createElement('div'));
+  flushSync(() => root.render(createElement(Probe)));
+  root.unmount();
+  return state;
+}
 
 describe('updater', () => {
   beforeEach(() => {
@@ -80,6 +97,7 @@ describe('updater', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+      expect(readBannerState()).toEqual({ status: 'post-update-success', from: '0.3.0', to: '0.4.0' });
     });
 
     it('reads a failure marker and clears it from localStorage', async () => {
@@ -113,9 +131,51 @@ describe('updater', () => {
 
       expect(mocks.check).not.toHaveBeenCalled();
     });
+
+    it('reports an unconfirmed install as failure and skips the update check', async () => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ from: '0.4.0', to: '0.5.0' }));
+
+      startUpdateCheck();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(readBannerState()).toEqual({
+        status: 'post-update-failure',
+        version: '0.5.0',
+        error: 'Expected version 0.5.0 after update, but running 0.4.0.',
+      });
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+      expect(mocks.check).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      'invalid JSON', 'null', '[]',
+      JSON.stringify({ failed: true, version: {} }),
+      JSON.stringify({ failed: true, version: '0.5.0', error: {} }),
+      JSON.stringify({ failed: 'yes', version: '0.5.0' }),
+      JSON.stringify({ from: {}, to: '0.4.0' }),
+      JSON.stringify({ from: '0.3.0', to: [] }),
+    ])('ignores a corrupt marker without suppressing checks: %s', async (raw) => {
+      localStorage.setItem(STORAGE_KEY, raw);
+
+      startUpdateCheck();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(readBannerState()).toEqual({ status: 'idle' });
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+      expect(mocks.check).toHaveBeenCalledOnce();
+    });
   });
 
   describe('update check', () => {
+    it('handles a failed app-version lookup without an unhandled rejection', async () => {
+      mocks.getVersion.mockRejectedValueOnce(new Error('version unavailable'));
+
+      startUpdateCheck();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(mocks.check).not.toHaveBeenCalled();
+      expect(readBannerState()).toEqual({ status: 'idle' });
+    });
     it('waits 5 seconds before checking', async () => {
       startUpdateCheck();
       await vi.advanceTimersByTimeAsync(4_999);

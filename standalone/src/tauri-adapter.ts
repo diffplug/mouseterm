@@ -585,9 +585,9 @@ export class TauriAdapter implements PlatformAdapter {
   // plumbing below it — TauriSessionStore, the Rust temp-then-rename file store,
   // the quit flush/drain ordering — is intact and still needed by the
   // workspaces-rollout scope (docs/specs/layout.md -> `## Future`). Bringing
-  // VS Code-style restoration to standalone later is flipping this flag plus
-  // adding capture to the existing quit teardown, which already has the right
-  // shape (flush -> kill -> flush -> drain).
+  // VS Code-style restoration to standalone later also needs to reconcile
+  // the unconditional boot deletion in clearLegacySessionState and add capture
+  // to the existing quit teardown (flush -> kill -> flush -> drain).
   private static PERSIST_SESSION = false;
 
   /**

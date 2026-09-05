@@ -6,7 +6,7 @@
 
 ## Overview
 
-Terminal mouse and clipboard behavior across macOS, Linux, and Windows: selection, copy, paste, and their coexistence with mouse-driven TUI programs. Owns the mouse-override icon and banner, the selection overlay and popup, and every paste path into a terminal; `docs/specs/layout.md` owns where the header icon sits, `docs/specs/terminal-escapes.md` registers the sequences.
+Owns terminal selection, copy, paste, mouse override, and their chrome across platforms. Header placement: `docs/specs/layout.md`; sequence registry: `docs/specs/terminal-escapes.md`.
 
 ## Background: The Two Mouse Regimes
 
@@ -14,8 +14,6 @@ Mouse events belong to one of two consumers:
 
 1. **The terminal** — the default. Drags paint a selection; clicks shift focus or hit terminal chrome.
 2. **The inside program** (`tmux`, `vim`, `less`, `htop`), once it emits a mouse-reporting escape sequence (`\e[?1000h`, `\e[?1002h`, `\e[?1003h`, optionally `\e[?1006h` SGR encoding). Events reach it as input, and the terminal's own selection is unreachable meanwhile.
-
-The pane header makes the current regime visible, the user can override it to select text, and the selection actions (copy, copy-rewrapped, extend-to-URL) work across both.
 
 ## Terminology
 
@@ -76,7 +74,7 @@ Source of truth: `lib/src/lib/terminal-mouse-router.ts`.
 - **Linewise (default):** reading order, wrapping end-of-line to start-of-next-line.
 - **Block (rectangular):** hold **Alt** (Option on macOS) during the drag.
 - **The shape updates live as Alt is pressed and released mid-drag**, including while the mouse is stationary.
-- Touch has no Alt key, so block mode is armed by **starting the drag with a double-tap** — a press within 300 ms and 24 px of a previous touch that *ended as a tap*. Unlike Alt, it latches for the whole drag.
+- Touch has no Alt key, so block mode is armed by **starting the drag with a double-tap** — a press within 300 ms and 24 px of a previous touch that *ended as a tap*. **Must retain that block shape for the whole drag**, including hardware-keyboard events. Pinned by `lib/src/lib/terminal-mouse-router.test.ts`.
 
 ### 3.3 Selection Hint Text
 
@@ -119,7 +117,7 @@ Source of truth: `lib/src/components/SelectionPopup.tsx` (Copy Raw, Copy Rewrapp
 
 #### 4.1.1 Copy Raw
 
-Copies the selection exactly as it appears in the terminal cells, hard line breaks and any box-drawing or decorative characters included.
+**Must preserve displayed row breaks and decorative characters**, trimming trailing whitespace on each selected row; soft-wrapped rows also get `\n`. Source of truth: `extractSelectionText` in `lib/src/lib/selection-text.ts`.
 
 #### 4.1.2 Copy Rewrapped
 
@@ -139,7 +137,7 @@ With an active, finalized terminal selection, popup focused or not: **Cmd+C** (C
 ### 4.3 Dismissing the Popup
 
 - **Esc**, or a click outside the selection, dismisses the popup and cancels the selection.
-- A copy action (button or shortcut) swaps the shortcut text on the active button for a checkmark for ~700 ms, then clears the selection and dismisses the popup. (The touch UI has no shortcut label, so the checkmark just appears.)
+- **Must flash only after a successful clipboard write, and only for the selection copied**: swap the active button's shortcut text for a checkmark for ~700 ms, then clear the selection. Failed writes retain it for retry; canceling clears the flash immediately. Touch shows the checkmark without a shortcut label. Pinned by `lib/src/components/SelectionPopup.test.tsx`.
 
 ---
 
@@ -150,6 +148,8 @@ Offered **mid-drag**, alongside the Alt block modifier (§3.2–§3.3): each dra
 ### 5.1 Detection
 
 A token is whitespace-delimited. Trailing characters unlikely to be part of it — `.`, `,`, `;`, `:`, `!`, `?`, single quotes, double quotes — are stripped from its end, along with unmatched closing brackets (`)`, `]`, `}`, `>`); matched pairs are preserved. **Strip before pattern matching, never after** (rationale).
+
+**Must map detection offsets through xterm cells**, preserving wide characters, combining marks, and multi-codepoint emoji. Source of truth: `detectTokenInBufferLine` in `lib/src/lib/smart-token.ts`, pinned by `lib/src/lib/smart-token.test.ts`.
 
 Source of truth: `PATTERNS` in `lib/src/lib/smart-token.ts` — the detected shapes in priority order, error locations (`<path>:line[:col]`) ahead of the generic path patterns. The generic patterns require an anchor (`~/`, `/`, `./`, `../`, or a drive letter), so a bare relative path like `src/foo.ts` qualifies only in its error-location form.
 
@@ -199,7 +199,7 @@ Source of truth: `terminalOwnsEvent` in `lib/src/lib/terminal-mouse-router.ts`, 
 
 - **Must render outlines, hints, and popups above the cell grid**, isolated from inside-program output and redraws; header icons and banners remain persistent chrome.
 - **Geometry comes from the *measured* xterm cell grid** (`cellWidth`/`cellHeight`/`gridLeft`/`gridTop`), never element-width ÷ cols, so the outline stays aligned across xterm's internal padding.
-- Overlay and popup share one render-tick signal, bumped on every xterm render (scroll, resize, output), so they re-measure and re-anchor together; the popup dismisses if the selection is canceled.
+- **Must remeasure both overlay and popup on every shared render tick** (scroll, resize, output), even when the selection is unchanged; the popup dismisses if the selection is canceled. Pinned by `lib/src/components/SelectionPopup.test.tsx`.
 
 Source of truth: `lib/src/lib/selection-text.ts` (extraction and normalization), `lib/src/lib/selection-geometry.ts` (perimeter construction), `TerminalPaneHeader` in `lib/src/components/wall/TerminalPaneHeader.tsx` and `MouseOverrideBanner` in `lib/src/components/wall/MouseOverrideBanner.tsx` — tested in `lib/src/components/wall/mouse-chrome.test.tsx`.
 
@@ -283,7 +283,7 @@ Dormouse's own `<input>`s — pane rename, the browser URL editor, dialog fields
 - The edit goes through `document.execCommand('insertText')` where the webview allows it (native undo), else **the prototype `value` setter plus a synthetic `input` event** — a plain `value` assignment desyncs a React-controlled field.
 - Chords are §8.2's: paste takes either modifier on every platform, copy/cut take `⌘` on macOS and `Ctrl` elsewhere.
 - **Scope is narrow.** Excluded: xterm's `.xterm-helper-textarea` (the terminal owns its chords), read-only and disabled fields. The handler runs only where the adapter implements the optional `readClipboardText` — today the two standalone adapters, slightly over-reaching the menu-less macOS build it is written for (rationale). Elsewhere — VS Code, the website, Pocket — it never fires and the webview's own chords are untouched.
-- **Must skip the edit when the field has unmounted** during the asynchronous clipboard read (Escape, or the blur that commits a rename): `execCommand` acts on whatever is focused at that moment, usually the terminal, so an unguarded write would type the clipboard into the shell.
+- **Must skip an asynchronous edit if the field unmounts, loses focus, becomes read-only/disabled, or changes value or selection**; a cut deletes only after clipboard-write success. Pinned by `lib/src/components/wall/keyboard/handle-editable-clipboard.test.ts`.
 
 ---
 

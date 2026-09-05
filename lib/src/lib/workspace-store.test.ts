@@ -48,6 +48,37 @@ describe('workspace-store', () => {
     expect(a.id).not.toBe(DEFAULT_WORKSPACE_ID);
   });
 
+  it('keeps generated identities unique when the random source repeats', () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      const a = createWorkspace();
+      const b = createWorkspace();
+      expect(a.id).not.toBe(b.id);
+      expect(closeWorkspace(b.id)).toBe(true);
+      expect(getActiveWorkspaceId()).toBe(a.id);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it('rejects duplicate identities without mutation or notification', () => {
+    const initial = getWorkspacesSnapshot();
+    const listener = vi.fn();
+    const unsubscribe = subscribeToWorkspaces(listener);
+    try {
+      expect(() => createWorkspace({ id: DEFAULT_WORKSPACE_ID })).toThrow('Duplicate Workspace id');
+      expect(() => setWorkspaces({
+        activeId: DEFAULT_WORKSPACE_ID,
+        workspaces: [...initial.workspaces, { id: DEFAULT_WORKSPACE_ID, name: 'Duplicate' }],
+      })).toThrow('Duplicate Workspace id');
+      expect(getWorkspacesSnapshot()).toBe(initial);
+      expect(listener).not.toHaveBeenCalled();
+      expect(closeWorkspace(DEFAULT_WORKSPACE_ID)).toBe(false);
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('setActiveWorkspace switches and ignores unknown ids', () => {
     createWorkspace({ id: 'ws-2', activate: false });
     setActiveWorkspace('ws-2');

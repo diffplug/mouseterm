@@ -11,8 +11,8 @@
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#362712" />
     <!-- Installability (docs/specs/pocket-app.md -> Installable web app). iOS
-         only grants Web Push to a Home Screen web app, and only honors
-         `apple-touch-icon` — it ignores the manifest's `icons`. The manifest's
+         only grants Web Push to a Home Screen web app; `apple-touch-icon`
+         takes precedence over the manifest's `icons`. The manifest's
          `theme_color` is a pre-boot default like the meta tag above; unlike it,
          it is static, because a splash screen is drawn before any script runs. -->
     <link rel="manifest" href="/manifest.webmanifest" />

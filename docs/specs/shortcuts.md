@@ -23,17 +23,17 @@ A focused cross-origin iframe surface swallows the gesture; the proxy shim detec
 | `z` | Zoom and focus | Enters passthrough; on the pane that already owns zoom, unzooms. |
 | `m` or `d` | Minimize / reattach | Stays in command mode, unlike `Enter` on a door. |
 | `k` or `x` | Kill | Kills the selected pane or door behind a random-letter prompt; an untouched Surface skips it. |
-| `,` | Rename | Inline rename of the selected pane's title. |
+| `,` | Rename | Inline rename of the selected terminal pane's title; consumed no-op on browser surfaces and doors. |
 | `a` | Toggle alert | Dismiss or toggle the bell alert. Terminal Surfaces only; doors excluded. |
 | `t` | Toggle todo | Toggle the TODO marker on the selected Surface, terminal or browser; doors excluded. |
-| `>` | Header context menu | Terminal panes only; a consumed no-op on browser surfaces and doors. |
+| `>` | Header context menu | Terminal panes only; consumed no-op on browser panes, inert on doors. |
 
 ## Navigation (command mode)
 
 | Key | Action | Description |
 |-----|--------|-------------|
-| `↑` / `↓` / `←` / `→` | Move selection | To the adjacent pane, or into and out of the baseboard's doors; the opposite direction returns to the origin. |
-| `⌘`+arrows or `Ctrl`+arrows | Swap surfaces | Swap the two panes' Surfaces; the opposite chord swaps back exactly. Either modifier, every platform. |
+| `↑` / `↓` / `←` / `→` | Move selection | Navigate panes and doors; opposite directions backtrack between panes. Down with no pane below selects the first door; Up from a door selects the last pane. |
+| `⌘`+arrows or `Ctrl`+arrows | Swap surfaces | Swap the two panes' Surfaces; the opposite chord swaps back exactly. Either modifier, every platform; consumed no-op on doors. |
 
 ## Terminal selection & clipboard
 
@@ -68,7 +68,7 @@ Every key not claimed above forwards to the embedded page while a screencast pan
 | `Esc` | Close / cancel | Dismiss a dialog or popover; cancel a rename or kill confirmation; abort an in-progress sash or pane drag. |
 | `Enter` | Confirm rename | Save the new name while renaming a pane; blur commits too. |
 | `Tab` / `Shift+Tab` | Focus cycle | Cycle focus through an open popover or dialog (trapped, wrapping). |
-| Prompted letter | Confirm kill | Type the letter shown to confirm; **any** other key cancels, so `Esc` is only the documented spelling. |
+| Prompted letter | Confirm kill | Type the letter shown to confirm; other keys reaching the prompt cancel (see layout's dispatch order). |
 | `a` / `t` (alert dialog open) | Toggle alert / todo | Same as command-mode `a` / `t`, for the dialog's Session. |
 | `1`–`9` (header context menu open) | Connect port | Open the nth port row in a browser surface, select it, enter passthrough. Dropped, never buffered, unless the scan loaded a row for that digit and the host can open one. |
 | `↑` / `↓` (header context menu open) | Move row focus | Rove focus across port rows, wrapping; `Enter`/`Space` activates the focused row. |

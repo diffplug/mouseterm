@@ -5,6 +5,8 @@ import {
   toggleSessionTodo,
 } from '../../../lib/terminal-registry';
 import { randomKillChar } from '../../KillConfirm';
+import { hasTerminal } from 'dor/commands/types';
+import { surfaceKindFromParams } from '../browser-surface';
 import { ARROW_OPPOSITES, isArrowKey, type NavHistoryRef, type WallKeyboardCtx } from './types';
 
 function findAlertButtonForSession(id: string): HTMLButtonElement | null {
@@ -53,7 +55,7 @@ export function handlePaneShortcuts(
   if (isArrowKey(e.key) && (e.metaKey || e.ctrlKey)) {
     e.preventDefault();
     e.stopPropagation();
-    if (!sid) return true;
+    if (!sid || ctx.selectedTypeRef.current !== 'pane') return true;
 
     const dir = e.key;
     const hist = navHistory.current;
@@ -103,6 +105,9 @@ export function handlePaneShortcuts(
   if (e.key === ',' && sid) {
     e.preventDefault();
     e.stopPropagation();
+    // Only a visible terminal header mounts the rename editor. Setting the
+    // global rename gate for a Door/browser would strand keyboard dispatch.
+    if (ctx.selectedTypeRef.current !== 'pane' || !hasTerminal(surfaceKindFromParams(ctx.nav.paneParams(sid)))) return true;
     ctx.setRenamingPaneId(sid);
     return true;
   }

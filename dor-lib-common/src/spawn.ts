@@ -38,7 +38,16 @@ const CLOSE_GRACE_MS = 250;
  */
 export function spawnAndCapture(binary: string, args: readonly string[]): Promise<SpawnCaptureResult> {
   return new Promise((resolve) => {
-    const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    } catch (error) {
+      // Invalid argv (for example a NUL in an eval string) throws before a child
+      // exists; preserve the same result contract as an asynchronous ENOENT.
+      const cause = error as NodeJS.ErrnoException;
+      resolve({ ok: false, error: { code: cause.code, message: cause.message } });
+      return;
+    }
     let stdout = '';
     let stderr = '';
     // Latch on the first terminal event so the error-vs-exit/close race can't

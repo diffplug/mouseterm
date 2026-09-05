@@ -62,7 +62,7 @@ export interface PeerLinkDeps {
    */
   streamPty(ptyId: string, sink: PtySink): () => void;
   writePty(ptyId: string, data: string): void;
-  resizePty(ptyId: string, cols: number, rows: number): void;
+  resizePty(ptyId: string, cols: number, rows: number, repaint?: boolean): void;
   /**
    * Broker side: run a webview command from `from` on this window's service.
    * The answer goes back through {@link sendCommandResult}, so the answering
@@ -568,11 +568,11 @@ export function remoteWrite(ptyId: string, data: string): boolean {
   return true;
 }
 
-export function remoteResize(ptyId: string, cols: number, rows: number): boolean {
+export function remoteResize(ptyId: string, cols: number, rows: number, repaint?: boolean): boolean {
   const client = routes.get(ptyId);
   const ownerPtyId = routePtyIds.get(ptyId);
   if (!client || !ownerPtyId) return false;
-  send(client, { kind: 'resizePty', ptyId: ownerPtyId, cols, rows });
+  send(client, { kind: 'resizePty', ptyId: ownerPtyId, cols, rows, repaint });
   return true;
 }
 
@@ -901,7 +901,7 @@ async function onClientFrame(socket: Socket, frame: unknown): Promise<void> {
       deps?.writePty(request.ptyId, request.data);
       break;
     case 'resizePty':
-      deps?.resizePty(request.ptyId, request.cols, request.rows);
+      deps?.resizePty(request.ptyId, request.cols, request.rows, request.repaint);
       break;
     case 'commandResult':
       deps?.deliverCommandResult(request.payload);

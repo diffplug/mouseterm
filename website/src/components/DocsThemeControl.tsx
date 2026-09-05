@@ -15,7 +15,7 @@
 import { useEffect, useState } from "react";
 import { XIcon } from "@phosphor-icons/react";
 import { ThemePicker } from "dormouse-lib/components/ThemePicker";
-import { dismissThemePrompt, isThemePromptDismissed } from "../lib/docs-theme";
+import { dismissThemePrompt, isThemePromptDismissed, subscribeToThemePromptDismissal } from "../lib/docs-theme";
 
 /**
  * Both floating panels sit over the page's own themed background, so they take
@@ -38,12 +38,10 @@ export default function DocsThemeControl({
   // browser-only storage. Unknown stays hidden; after hydration, only a reader
   // who has not answered sees the prompt, so a dismissed prompt never flashes.
   const [dismissed, setDismissed] = useState<boolean | null>(null);
-  useEffect(() => setDismissed(isThemePromptDismissed()), []);
-
-  const dismiss = () => {
-    dismissThemePrompt();
-    setDismissed(true);
-  };
+  useEffect(() => {
+    setDismissed(isThemePromptDismissed());
+    return subscribeToThemePromptDismissal(() => setDismissed(true));
+  }, []);
 
   const inline = variant === "inline";
 
@@ -65,7 +63,7 @@ export default function DocsThemeControl({
         <button
           type="button"
           aria-label="Dismiss theme prompt"
-          onClick={dismiss}
+          onClick={dismissThemePrompt}
           className="absolute right-1.5 top-1.5 rounded p-1 opacity-50 hover:opacity-100"
         >
           <XIcon size={12} weight="bold" />
@@ -87,7 +85,7 @@ export default function DocsThemeControl({
       <ThemePicker
         variant="compact"
         menuSide={inline ? "below" : "above"}
-        onPick={dismiss}
+        onPick={dismissThemePrompt}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Mechanical check for the self-host installer invariants in `docs/specs/security-remote.md`
- * ("Credentials at rest", "Network posture (self-hosted)"). Runs from the repo
+ * Mechanical check for the installer invariants in `docs/specs/security-remote.md`
+ * ("Credentials at rest", "Network posture (self-hosted)") and SELF_HOST.md. Runs from the repo
  * root via `pnpm test` (see the root package.json). Exits non-zero with a
  * per-violation report naming the rule that was broken.
  *
@@ -9,9 +9,9 @@
  * now nothing executed them. No workflow parses `deploy/local/`, no script
  * references it, and the installers are the one part of the tree that CI never
  * touches — so the rules were enforced entirely by whoever remembered to read
- * them. The observed cost of that is real: the macOS `manage verify` checks
- * file modes but not owner while the Linux one checks both, which is the same
- * rule held to two different standards, found by an audit rather than a build.
+ * them. The observed cost of that is real: the macOS `manage verify` once checked
+ * modes without owners while Linux checked both; the owner rules below now
+ * pin the same property on all three platforms.
  *
  * The check: every installer must still contain the load-bearing control each
  * rule names. This is a *textual* check on purpose — the same ceiling
@@ -78,6 +78,64 @@ export const INSTALLERS = [
  * require at least one match.
  */
 export const RULES = [
+  {
+    rule: 'State outlives code — staging never overwrites an existing release directory',
+    patterns: {
+      macOS: /mkdir "\$1" \|\| return 1|create_release_stage "\$STAGE" \|\| die/,
+      Linux: /mkdir "\$1" \|\| return 1|create_release_stage "\$STAGE" \|\| die/,
+      Windows: /-Script 'require\("fs"\)\.mkdirSync\(process\.argv\[2\]\);' -Arguments @\(\$STAGE\)\s+if \(\$r\.ExitCode -ne 0\) \{ Die/,
+    },
+    exactMatches: { macOS: 2, Linux: 2, Windows: 1 },
+  },
+  {
+    rule: 'Network posture — binding checks read the value the service will export',
+    patterns: {
+      macOS: /\[ "\$\((?:env_file_value "\$ENV_FILE"|env_value) DORMOUSE_BIND_HOST\)" = "127\.0\.0\.1" \]/,
+      Linux: /\[ "\$\((?:env_file_value "\$ENV_FILE"|env_value) DORMOUSE_BIND_HOST\)" = "127\.0\.0\.1" \]/,
+      Windows: /\$lastValue = \$value\s+\}\s+return \$lastValue/,
+    },
+    exactMatches: { macOS: 2, Linux: 2, Windows: 2 },
+  },
+  {
+    rule: 'Credentials at rest — permission checks bind ownership to the installing account',
+    patterns: {
+      macOS: /me="\$\(id -u\)"|out="\$\(stat -f '%Lp %u' "\$1"|if \[ "\$mode" = "\$2" \] && \[ "\$owner" = "\$me" \]/,
+      Linux: /me="\$\(id -un\)"|out="\$\(stat -c '%a %U' "\$1"|if \[ "\$mode" = "\$2" \] && \[ "\$owner" = "\$me" \]/,
+      Windows: /\$ownerSid = \$acl\.GetOwner\(\[Security\.Principal\.SecurityIdentifier\]\)\.Value\s+if \(\$ownerSid -ne \$script:CurrentUserSid\) \{\s+return \[pscustomobject\]@\{ Ok = \$false;/,
+    },
+    exactMatches: { macOS: 3, Linux: 3, Windows: 2 },
+  },
+  {
+    rule: 'Credentials at rest — unix verify checks every protected path through owner_only',
+    patterns: {
+      macOS: /owner_only "\$(?:ROOT\/(?:config|run)|STATE_DIR|ENV_FILE|OFFER_FILE)" (?:700|600)/,
+      Linux: /owner_only "\$(?:ROOT\/(?:config|run)|STATE_DIR|ENV_FILE|OFFER_FILE)" (?:700|600)/,
+    },
+    exactMatches: { macOS: 5, Linux: 5 },
+    skip: { Windows: 'Test-OwnerOnly implements the same account/DACL property instead of unix modes' },
+  },
+  {
+    rule: 'Credentials at rest — Windows rejects a NULL or empty DACL',
+    patterns: {
+      Windows: /if \(\$rules\.Count -eq 0\) \{\s+return \[pscustomobject\]@\{ Ok = \$false; Reason = 'DACL has no access rules' \}/,
+    },
+    exactMatches: { Windows: 2 },
+    skip: { macOS: 'unix modes apply', Linux: 'unix modes apply' },
+  },
+  {
+    rule: 'A 200 does not say who answered — Windows health waits honor the requested release',
+    patterns: { Windows: /\(-not \$ExpectedRelease -or \(Get-ListeningRelease\) -eq \$ExpectedRelease\)/ },
+    exactMatches: { Windows: 2 },
+    skip: { macOS: 'wait_for_health binds identity directly', Linux: 'service_healthy binds identity directly' },
+  },
+  {
+    rule: 'A 200 does not say who answered — Windows restart and rollback request a nonempty release',
+    patterns: {
+      Windows: /\$expected = Get-CurrentRelease|if \(-not \$expected\) \{ Write-Host 'current release pointer is missing'; return 1 \}|-Seconds 40 -ExpectedRelease \$(?:expected|prev)/,
+    },
+    exactMatches: { Windows: 4 },
+    skip: { macOS: 'wait_for_health binds identity directly', Linux: 'service_healthy binds identity directly' },
+  },
   {
     // The *refusal*, not the value: the literal `DORMOUSE_BIND_HOST=127.0.0.1`
     // also appears in the env-file heredoc, so matching it would keep passing
@@ -553,7 +611,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     console.error('deploy-lint: the installers no longer hold controls docs/specs/security-remote.md requires\n');
     for (const failure of failures) console.error(`  ${failure}\n`);
     console.error(
-      'Each line above maps to a FAIL IF in docs/specs/security-remote.md. If a control moved rather than\n' +
+      'Each line above maps to docs/specs/security-remote.md or SELF_HOST.md. If a control moved rather than\n' +
         'disappeared, update the pattern in scripts/deploy-lint.mjs in the same commit.',
     );
     process.exit(1);

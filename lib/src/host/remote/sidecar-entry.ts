@@ -41,7 +41,7 @@ import {
 /** The slice of `pty-core`'s manager the Burrow drives. */
 export interface SidecarPtyManager {
   write(id: string, data: string): void;
-  resize(id: string, cols: number, rows: number): void;
+  resize(id: string, cols: number, rows: number, repaint?: boolean): void;
   /** Whether the current PTY generation still has a live process. */
   hasPty(id: string): boolean;
 }
@@ -174,7 +174,7 @@ export function createSidecarSurfaceBridge(
 
   const { provider, notifyDirectoryChanged } = createAskSurfaceProvider(ask, {
     writePty: (ptyId, data) => options.mgr.write(ptyId, data),
-    resizePty: (ptyId, cols, rows) => options.mgr.resize(ptyId, cols, rows),
+    resizePty: (ptyId, cols, rows, repaint) => options.mgr.resize(ptyId, cols, rows, repaint),
 
     streamPty(ptyId, sink) {
       const subscribed = ownerStream(ptyId);

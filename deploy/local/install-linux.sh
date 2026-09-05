@@ -459,6 +459,19 @@ else
   fi
 fi
 
+# Match run-relay's KEY=VALUE parser: the last assignment wins, and only
+# a matched pair of double quotes is removed. Never source configuration.
+env_file_value() {
+  [ -r "$1" ] || return 1
+  awk -v key="$2" '
+    index($0, key "=") == 1 { value = substr($0, length(key) + 2) }
+    END {
+      if (value ~ /^".*"$/) value = substr(value, 2, length(value) - 2)
+      printf "%s", value
+    }
+  ' "$1"
+}
+
 # --------------------------------------------------------- origin identity ---
 
 CONFIG_DIR="$INSTALL_ROOT/config"
@@ -474,7 +487,7 @@ PREVIOUS_LINK="$INSTALL_ROOT/previous"
 FIRST_INSTALL=1
 if [ -f "$ENV_FILE" ]; then
   FIRST_INSTALL=0
-  EXISTING_ORIGIN="$(sed -n 's/^DORMOUSE_ORIGIN=//p' "$ENV_FILE" | head -1 | sed 's/^"//; s/"$//')"
+  EXISTING_ORIGIN="$(env_file_value "$ENV_FILE" DORMOUSE_ORIGIN)"
   if [ -n "$EXISTING_ORIGIN" ] && [ "$EXISTING_ORIGIN" != "$ORIGIN" ]; then
     printf '\n' >&2
     warn "This machine already has an installation bound to a DIFFERENT origin."
@@ -570,6 +583,13 @@ NODE_BUILD_ARCH="$("$NODE_BIN" -e 'process.stdout.write(process.arch)')"
 [ "$NODE_BUILD_VERSION" = "v$NODE_PIN" ] || die "the build ran under Node $NODE_BUILD_VERSION but the repository pins v$NODE_PIN."
 ok "pinned runtime: $NODE_BUILD_VERSION ($NODE_BUILD_ARCH)"
 
+# A release id can repeat within one second. Claim its directory exclusively;
+# an existing path may be a live release and must never be cleared for staging.
+create_release_stage() {
+  mkdir "$1" || return 1
+  mkdir "$1/lib" "$1/runtime"
+}
+
 # ------------------------------------------------------------- stage build ---
 
 step "Staging the new release"
@@ -587,8 +607,7 @@ RELEASE_ID="$(date -u +%Y%m%dT%H%M%SZ)-$GIT_SHORT"
 [ "$GIT_DIRTY" = "true" ] && RELEASE_ID="$RELEASE_ID-dirty"
 STAGE="$RELEASES_DIR/$RELEASE_ID"
 
-rm -rf "$STAGE"
-mkdir -p "$STAGE/lib" "$STAGE/runtime"
+create_release_stage "$STAGE" || die "could not create a new release directory: $STAGE (existing releases are never overwritten)."
 
 info "pnpm deploy --prod --legacy"
 if [ -f "$WS_STATE" ]; then
@@ -660,7 +679,7 @@ random_hex32() {
 env_missing_keys() {
   local key missing=""
   for key in DORMOUSE_ORIGIN DORMOUSE_STATE_DIR DORMOUSE_BIND_HOST PORT; do
-    grep -q "^$key=." "$1" || missing="$missing $key"
+    [ -n "$(env_file_value "$1" "$key")" ] || missing="$missing $key"
   done
   printf '%s' "$missing"
 }
@@ -707,9 +726,9 @@ An install interrupted between creating that file and writing it leaves exactly 
 # The bind host is a security boundary whenever the TLS proxy is local: Serve
 # reaches the app over loopback, so an unbound socket would also publish the
 # plaintext port to the LAN and to the tailnet.
-grep -q '^DORMOUSE_BIND_HOST=127\.0\.0\.1$' "$ENV_FILE" \
+[ "$(env_file_value "$ENV_FILE" DORMOUSE_BIND_HOST)" = "127.0.0.1" ] \
   || die "config/relay.env must set DORMOUSE_BIND_HOST=127.0.0.1. Fix it before continuing — Tailscale access control is not a reason to expose the plaintext backend."
-grep -q "^PORT=$LOOPBACK_PORT$" "$ENV_FILE" \
+[ "$(env_file_value "$ENV_FILE" PORT)" = "$LOOPBACK_PORT" ] \
   || die "config/relay.env must set PORT=$LOOPBACK_PORT to match the Serve mapping."
 
 # ------------------------------------------------------------- bin scripts ---
@@ -800,9 +819,21 @@ fail() { printf '  %s✗%s %s\n' "$C_RED" "$C_OFF" "$1"; FAILURES=$((FAILURES + 
 note() { printf '  %s%s%s\n' "$C_DIM" "$1" "$C_OFF"; }
 warn() { printf '  %s!%s %s\n' "$C_YEL" "$C_OFF" "$1"; }
 
+# Match run-relay's KEY=VALUE parser: the last assignment wins, and only
+# a matched pair of double quotes is removed. Never source configuration.
+env_file_value() {
+  [ -r "$1" ] || return 1
+  awk -v key="$2" '
+    index($0, key "=") == 1 { value = substr($0, length(key) + 2) }
+    END {
+      if (value ~ /^".*"$/) value = substr(value, 2, length(value) - 2)
+      printf "%s", value
+    }
+  ' "$1"
+}
+
 env_value() {
-  [ -r "$ENV_FILE" ] || return 1
-  sed -n "s/^$1=//p" "$ENV_FILE" | head -1 | sed 's/^"//; s/"$//'
+  env_file_value "$ENV_FILE" "$1"
 }
 
 PORT="$(env_value PORT || echo 3100)"
@@ -1143,7 +1174,7 @@ cmd_verify() {
     note "no enrollment offer on disk (spent, or minted by an older installer)"
   fi
 
-  if grep -q '^DORMOUSE_BIND_HOST=127\.0\.0\.1$' "$ENV_FILE" 2>/dev/null; then
+  if [ "$(env_value DORMOUSE_BIND_HOST)" = "127.0.0.1" ]; then
     pass "DORMOUSE_BIND_HOST=127.0.0.1"
   else
     fail "DORMOUSE_BIND_HOST is not pinned to 127.0.0.1"

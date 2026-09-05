@@ -617,8 +617,15 @@ export function createApp(config: AppConfig): CreatedApp {
     if (typeof token !== 'string') return invalid();
     const entry = gate === 'consume' ? setupTokens.consume(token) : setupTokens.peek(token);
     if (!entry) return invalid();
-    // Nothing is restored here: a revoked minter's token is dead, not unlucky.
-    if (!(await burrowStore.has(entry.burrowId))) return invalid();
+    try {
+      // A revoked minter's token is dead, not unlucky.
+      if (!(await burrowStore.has(entry.burrowId))) return invalid();
+    } catch (error) {
+      // An unreadable file does not establish revocation. The finish route's
+      // restoration finally has not started yet, so this gate owns recovery.
+      if (gate === 'consume') setupTokens.restore(token, entry);
+      throw error;
+    }
     return { body: body as T, spent: gate === 'consume' ? { token, entry } : null };
   }
 
@@ -645,7 +652,10 @@ export function createApp(config: AppConfig): CreatedApp {
   const heartbeats = new Set<RelayHeartbeat>();
 
   /** Track `ws` for the heartbeat; returns the teardown for its `onClose`. */
-  function watchLiveness(ws: { raw?: unknown; close: (code?: number, reason?: string) => void }) {
+  function watchLiveness(
+    ws: { raw?: unknown; close: (code?: number, reason?: string) => void },
+    unregister: () => void,
+  ) {
     const raw = ws.raw as PingableSocket | undefined;
     if (typeof raw?.ping !== 'function' || typeof raw.on !== 'function') return () => {};
     const entry: RelayHeartbeat = {
@@ -654,6 +664,9 @@ export function createApp(config: AppConfig): CreatedApp {
         raw.ping();
       },
       close: () => {
+        // Close starts a handshake: release routing and capacity immediately,
+        // so buffered frames cannot act through the retired connection.
+        unregister();
         ws.close(WS_CLOSE_IDLE, WS_CLOSE_IDLE_REASON);
       },
     };
@@ -1048,7 +1061,7 @@ export function createApp(config: AppConfig): CreatedApp {
    * register a passkey afterwards.
    *
    * Every refusal — mistyped, unknown, expired, already spent, or minted by a
-   * since-revoked Burrow — is the one delayed 401 the setup gates answer with,
+   * since-revoked Burrow — is the same immediate 401 the setup gates answer with,
    * for the same reason: none of them may tell a caller which one it hit.
    */
   app.post(API_ROUTES.setupRetire, requireSession, async (c) => {
@@ -1294,7 +1307,8 @@ export function createApp(config: AppConfig): CreatedApp {
       return {
         onOpen: (_evt, ws) => {
           conn = hub.registerBurrow(burrow.burrowId, ws);
-          unwatch = watchLiveness(ws);
+          const registered = conn;
+          unwatch = watchLiveness(ws, () => hub.unregisterBurrow(registered));
         },
         onMessage: (evt) => {
           if (conn && typeof evt.data === 'string') hub.onBurrowFrame(conn, evt.data);
@@ -1336,7 +1350,7 @@ export function createApp(config: AppConfig): CreatedApp {
             return;
           }
           conn = registered;
-          unwatch = watchLiveness(ws);
+          unwatch = watchLiveness(ws, () => hub.unregisterClient(registered));
         },
         onMessage: (evt) => {
           if (conn && typeof evt.data === 'string') hub.onClientFrame(conn, evt.data);

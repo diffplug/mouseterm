@@ -904,7 +904,7 @@ describe('burrow provider', () => {
     expect(await provider.resolveSurface('nobody', {})).toBeNull();
   });
 
-  it('leaves the last known size standing when a resize goes unanswered', async () => {
+  it('rejects when a resize goes unanswered and keeps only the cached dimensions', async () => {
     const mod = await freshBurrow();
     const bound = fakeDeps();
     bound.answers.set('surfaceOp', [{ ptyId: 'pty-1', cols: 100, rows: 30 }]);
@@ -912,7 +912,7 @@ describe('burrow provider', () => {
     const handle = (await provider.resolveSurface('surface-1', { cols: 100, rows: 30 }))!;
 
     bound.answers.set('surfaceOp', []);
-    expect(await handle.resize(120, 40)).toEqual({ cols: 100, rows: 30 });
+    await expect(handle.resize(120, 40)).rejects.toThrow('surface owner unavailable');
     expect(handle.cols).toBe(100);
   });
 
@@ -1013,6 +1013,9 @@ describe('serving the other windows', () => {
     await waitFor(() => far.writes.length > 0 && far.resizes.length > 0);
     expect(far.writes).toEqual([{ ptyId: 'pty-far', data: 'ls\r' }]);
     expect(far.resizes).toEqual([{ ptyId: 'pty-far', cols: 120, rows: 40 }]);
+    provider.resizePty(handle!.ptyId, 120, 40, true);
+    await waitFor(() => far.resizes.length === 2);
+    expect(far.resizes[1]).toEqual({ ptyId: 'pty-far', cols: 120, rows: 40, repaint: true });
 
     stream.stop();
     await tick();

@@ -81,7 +81,7 @@ configurePeerLink({
   invalidateDirectory: notifyDirectoryChanged,
   streamPty: processedPtyStreams.streamPty,
   writePty: (ptyId, data) => ptyManager.write(ptyId, data),
-  resizePty: (ptyId, cols, rows) => ptyManager.resize(ptyId, cols, rows),
+  resizePty: (ptyId, cols, rows, repaint) => ptyManager.resize(ptyId, cols, rows, repaint),
   // Peer PTYs use generated provider-local route handles. Keep those handles
   // outside this window's real PTY namespace so local ids always fall through
   // to the manager that owns them.
@@ -100,7 +100,7 @@ configureBurrow({
   broadcastToWebviews,
   streamPty: processedPtyStreams.streamPty,
   writePty: (ptyId, data) => ptyManager.write(ptyId, data),
-  resizePty: (ptyId, cols, rows) => ptyManager.resize(ptyId, cols, rows),
+  resizePty: (ptyId, cols, rows, repaint) => ptyManager.resize(ptyId, cols, rows, repaint),
 });
 
 /**
@@ -322,7 +322,7 @@ export function attachRouter(
   options?: {
     reconnect?: boolean;
     killOnDispose?: boolean;
-    onSaveState?: (state: unknown) => void;
+    onSaveState?: (state: unknown) => void | PromiseLike<void>;
     savedSession?: PersistedSession | null;
     getSelectedShell?: () => { shell?: string; args?: string[] } | null;
     // Called with this webview's Workspace union status whenever it changes
@@ -342,6 +342,7 @@ export function attachRouter(
   // Track which PTY IDs were spawned (or reconnected) through this webview
   const ownedPtyIds = new Set<string>();
   const pendingFlushRequests = new Map<string, { resolve: () => void; timeout: ReturnType<typeof setTimeout> }>();
+  let pendingSave = Promise.resolve();
   // `dor await`s this webview has parked in the shared alert manager, keyed by
   // the requestId that will carry the outcome back.
   const pendingAwaits = new Map<string, { handle: AwaitHandle; startedAt: number }>();
@@ -807,10 +808,16 @@ export function attachRouter(
         break;
       }
       case 'dormouse:flushSessionSaveDone':
-        resolveFlushRequest(msg.requestId);
+        // The webview has sent its snapshot, but workspaceState.update may still
+        // be writing it. Keep the existing deadline while awaiting those writes
+        // so deactivate's subsequent refresh reads the completed snapshot.
+        void pendingSave.then(() => resolveFlushRequest(msg.requestId));
         break;
       case 'dormouse:saveState':
-        options?.onSaveState?.(msg.state);
+        // Preserve snapshot order even when a host persistence callback is async.
+        pendingSave = pendingSave.then(() => options?.onSaveState?.(msg.state)).catch((error) => {
+          log.error('[session] save failed:', String(error));
+        });
         break;
       case 'dor:controlResponse':
         ptyManager.respondDorControl({

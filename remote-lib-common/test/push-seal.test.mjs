@@ -65,6 +65,18 @@ test('a sealed push round-trips between the paired statics', async () => {
   assert.deepEqual(utf8Decode(opened), utf8Decode(PLAINTEXT));
 });
 
+test('missing WebCrypto returns null so the worker can show a generic notice', async () => {
+  const { burrow, client } = await parties();
+  const sealed = await seal(burrow, client);
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: undefined });
+  try {
+    assert.equal(await open(client, burrow, sealed), null);
+  } finally {
+    Object.defineProperty(globalThis, 'crypto', descriptor);
+  }
+});
+
 test('every message gets its own salt, and so its own key and ciphertext', async () => {
   const { burrow, client } = await parties();
 

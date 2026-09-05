@@ -82,4 +82,28 @@ describe('connectPortToDefaultBrowser', () => {
     await connectPortToDefaultBrowser({ url: URL, platform, binaryPath: '/bin/ab', ensureEagerSurface: vi.fn(okEager), refreshSurface });
     expect(refreshSurface).toHaveBeenCalledWith('pane-2', { session: SESSION, binaryPath: '/bin/ab' });
   });
+
+  it('binds the pane with its binary after a rejected open and returns the failure', async () => {
+    const refreshSurface = vi.fn();
+    const platform = {
+      agentBrowserCommand: vi.fn(async () => { throw new Error('host disconnected'); }),
+      agentBrowserStreamStatus: vi.fn(),
+    };
+    const result = await connectPortToDefaultBrowser({ url: URL, platform, binaryPath: '/bin/ab', ensureEagerSurface: okEager, refreshSurface });
+    expect(result).toEqual({ ok: false, message: 'host disconnected' });
+    expect(refreshSurface).toHaveBeenCalledExactlyOnceWith('pane-2', { session: SESSION, binaryPath: '/bin/ab' });
+    expect(platform.agentBrowserStreamStatus).not.toHaveBeenCalled();
+  });
+
+  it('still binds the pane when best-effort stream status rejects', async () => {
+    const refreshSurface = vi.fn();
+    const platform = {
+      agentBrowserCommand: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+      agentBrowserStreamStatus: vi.fn(async () => { throw new Error('status timed out'); }),
+    };
+    const result = await connectPortToDefaultBrowser({ url: URL, platform, binaryPath: '/bin/ab', ensureEagerSurface: okEager, refreshSurface });
+    expect(result).toEqual({ ok: true });
+    expect(refreshSurface).toHaveBeenCalledExactlyOnceWith('pane-2', { session: SESSION, binaryPath: '/bin/ab' });
+  });
+
 });

@@ -38,6 +38,15 @@ test('reports a missing binary as a spawn failure, never throwing', async () => 
   assert.equal(result.error.code, 'ENOENT');
 });
 
+test('reports synchronous spawn validation failures without rejecting', async () => {
+  for (const [binary, args] of [[node, ['bad\0argument']], ['bad\0binary', []]]) {
+    const result = await spawnAndCapture(binary, args);
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'ERR_INVALID_ARG_VALUE');
+    assert.match(result.error.message, /null bytes/);
+  }
+});
+
 test('drains normal command output before releasing capture pipes', async () => {
   const result = await spawnAndCapture(node, ['-e', `
     process.stdout.write('x'.repeat(512 * 1024));

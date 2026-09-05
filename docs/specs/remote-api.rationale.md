@@ -34,6 +34,8 @@ In September 2026, both production installations use `createAskSurfaceProvider`:
 
 ## Attach is the resize
 
+In September 2026, the Viewer-local 60ms restoration timer could overwrite a later local or other-Viewer resize, because neither writer touched the first Viewer's timer. Cancelling it on detach also stranded the PTY one row below its xterm. Moving restoration to the shared PTY owner makes all size writers cancel it and lets a detached Viewer's temporary resize complete.
+
 **Why a resize is a whole screen.** `SIGWINCH` makes full-screen TUIs repaint completely and shells redraw their prompt line, so the client's first screen arrives from the live stream alone and no snapshot transfer is needed. The same-size case has to be forced because xterm sends no `SIGWINCH` for a resize to the current size, leaving the client staring at an empty screen until the next output.
 
 ## Attachment invariants

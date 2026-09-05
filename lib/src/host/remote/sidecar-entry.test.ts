@@ -10,7 +10,7 @@ import { ASK_BUDGET_MS, type BurrowAsk } from './service-protocol';
 
 let sent: Array<{ event: string; data: unknown }>;
 let written: Array<{ id: string; data: string }>;
-let resized: Array<{ id: string; cols: number; rows: number }>;
+let resized: Array<{ id: string; cols: number; rows: number; repaint?: boolean }>;
 let livePtys: Set<string>;
 /** A PTY that died between the read and a reply write. */
 let writeThrows: boolean;
@@ -59,7 +59,9 @@ beforeEach(() => {
         if (writeThrows) throw new Error('write EIO');
         written.push({ id, data });
       },
-      resize: (id, cols, rows) => void resized.push({ id, cols, rows }),
+      resize: (id, cols, rows, repaint) => void resized.push({
+        id, cols, rows, ...(repaint === undefined ? {} : { repaint }),
+      }),
       hasPty: (id) => livePtys.has(id),
     },
   });
@@ -174,14 +176,15 @@ describe('resolveSurface', () => {
     expect([handle.cols, handle.rows]).toEqual([100, 28]);
   });
 
-  it('leaves the last known size standing when nobody answers a resize', async () => {
+  it('fails when nobody answers a resize and retains only the cached dimensions', async () => {
     const attach = bridge.provider.resolveSurface('s1', {});
     answer(asks()[0]!, [{ ptyId: 'pty-1', cols: 80, rows: 24 }]);
     const handle = (await attach)!;
 
     const pending = handle.resize(100, 30);
     answer(asks()[1]!, []);
-    expect(await pending).toEqual({ cols: 80, rows: 24 });
+    await expect(pending).rejects.toThrow('surface owner unavailable');
+    expect([handle.cols, handle.rows]).toEqual([80, 24]);
   });
 });
 
@@ -191,6 +194,8 @@ describe('PTYs', () => {
     bridge.provider.resizePty('pty-1', 80, 24);
     expect(written).toEqual([{ id: 'pty-1', data: 'ls\r' }]);
     expect(resized).toEqual([{ id: 'pty-1', cols: 80, rows: 24 }]);
+    bridge.provider.resizePty('pty-1', 80, 24, true);
+    expect(resized[1]).toEqual({ id: 'pty-1', cols: 80, rows: 24, repaint: true });
   });
 
   it('routes output by id, parsed', () => {

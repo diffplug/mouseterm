@@ -216,7 +216,7 @@ export async function sendWithinDeadline(
     return await Promise.race([
       // A `PushSender` is contracted to classify its own errors, but it is an
       // injection point — a throwing one must not take the whole fan-out down.
-      Promise.resolve(sender.send(target, payload)).catch(() => 'failed' as const),
+      Promise.resolve().then(() => sender.send(target, payload)).catch(() => 'failed' as const),
       new Promise<PushDeliveryResult>((resolve) => {
         timer = setTimeout(() => {
           // Same reasoning as the failure log below: origin only, and this is

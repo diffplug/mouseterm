@@ -8,6 +8,8 @@
 
 **Why a dropped dotfile fails the release instead of degrading it.** The dotfiles are the ZDOTDIR files under `standalone/sidecar/shell-integration/zsh/`: `.zshenv`, `.zshrc`, `.zprofile`. `artifact-manifest.sha256` is generated from the runner's disk *before* upload, so a dotfile `actions/upload-artifact` silently omitted is still listed in the manifest, and Stage 2's hash verification fails on an artifact CI reported green.
 
+**Why executable metadata travels with the hashes.** `actions/upload-artifact` ZIP transport restores files as `0644` ([upstream documentation](https://github.com/actions/upload-artifact#permission-loss), reviewed 2026-09-05). Without an attested executable inventory, the Mac Node sidecar and `dor` launcher lose their executable bits, and the signer's executable-file scan misses nested binaries. Restoring permissions on working copies preserves the downloaded evidence.
+
 ## Job: `security-audit`
 
 **Why dispatch instead of `uses:`.** `GITHUB_EVENT_NAME` is a default variable that cannot be overridden, so a tag-triggered `workflow_call` inherits `push`. A dispatched run sees a supported `workflow_dispatch` — the same path the nightly audit uses, and the documented exception where the default `GITHUB_TOKEN` still creates a run, so no extra PAT is needed.
@@ -15,6 +17,8 @@
 ## Stage 2: Local script
 
 **Why the manifest is the attested subject rather than the signed app.** The signed app does not exist until Stage 2, so what attestation must cover is the gap between CI's unsigned artifact production and the local machine holding the signing credentials. Verifying the manifest first rejects stale cached artifacts, wrong-tag artifacts, and tampered downloads before codesign, jsign, notarization, Tauri signing, or release upload can run.
+
+The 2026-09-05 audit found that standalone resume commands reset every working artifact; `notarize` even replaced the signed Mac app with its unsigned download. Per-platform refresh and completion markers keep retries ordered and prevent stale updater bundles from being published after a partial signing failure. Exact inventory checks also close the gap where valid listed hashes coexisted with extra unverified code in a cached app.
 
 ## Two signing layers
 

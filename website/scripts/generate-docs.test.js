@@ -80,6 +80,17 @@ describe('delta operations', () => {
 });
 
 describe('self-host runbook', () => {
+  it('keeps all first-run steps in one numbered sequence', () => {
+    const start = data.selfhost.blocks.findIndex((b) => b.id === 'checkpoint-4-first-run-setup');
+    const end = data.selfhost.blocks.findIndex((b) => b.id === 'checkpoint-5-updating-rollback-uninstall');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const lists = data.selfhost.blocks.slice(start, end).filter((b) => b.type === 'list');
+    expect(lists).toHaveLength(1);
+    expect(lists[0].items).toHaveLength(5);
+    expect(lists[0].items[1].children).toHaveLength(2);
+  });
+
   it('withholds the assistant and maintainer halves, and nothing else', () => {
     expect(data.selfhost.delta.map((r) => r.id)).toEqual([
       'drop-document-title',

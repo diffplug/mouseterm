@@ -12,7 +12,7 @@ Folding the application-security scope back into a shared context is how that sp
 
 The model split is where the findings that needed real reasoning came from: tracing a relay-minted `clientId` to a keystroke-injection path, and working out that an eight-character device fingerprint carried ~40 bits rather than ~48 because a P-256 point's leading byte is constant. The other two domains run a generator, read an API response, and compare a pin.
 
-Both sides of the local split are pinned, not only the strong one. Unpinned, the mechanical domains inherit whatever the operator's default is — not necessarily weaker: on a machine defaulting to `opus[1m]` it is *stronger*, inverting the relation and turning the local loop into something other than a rehearsal of the nightly. CI gets this free, its session default being Sonnet with one override.
+Both sides of the model split are pinned. An unpinned mechanical domain inherits the operator or action default, which may be Opus and invert the intended relation. An explicit Sonnet baseline keeps the local and CI runs aligned.
 
 A local runner with its own copy of the prompts drifts, invisibly, until a nightly disagrees with a local pass.
 
@@ -49,6 +49,8 @@ Issue prose per combination of conditions cannot be kept correct by fixing combi
 Gating a fragment guard on the status produced the same defect three times: gated on `PASS`, one empty fragment silenced the dissent check; widened to `!= FAIL`, an orchestrator that wrote `FAIL` itself silenced both, so a domain that left no report beside a real finding appeared nowhere at all. Recording what is true of a run and deciding its verdict are separate jobs.
 
 Existence is not agreement. The missing-fragment guard catches a domain that produced nothing; the verdict-line guard catches one whose `FAIL` the merge lost, which is worse, because `PASS` closes the open failure issue and opens the release gate. A fragment the check cannot read must not fall through to an unchallenged `PASS` either — that puts the verdict back on a prompt having been followed, the thing the guard exists to stop being the control.
+
+The September 2026 spec audit found that prefix matching accepted `VERDICT: PASS but unfinished`, whitespace deletion accepted `P A S S`, and the local runner returned success for a failed domain or a process that wrote a fragment before failing. The shared preamble also permitted `UNVERIFIABLE` checks without giving the domain an inconclusive verdict. Exact passing verdicts and the third domain outcome keep incomplete evidence from becoming a passing audit. Failure prefixes remain dissent: an appended explanation cannot turn an actual finding into an inconclusive report.
 
 The redaction step is the only thing between an accidental `printenv` and a world-readable artifact, and until its `FAIL IF` existed nothing would have tripped on its deletion. Its sinks are deleted rather than truncated on error because `: >` has to open the file and so fails on exactly the unreadable file that made the redactor throw, whereas `rm` needs only the directory.
 

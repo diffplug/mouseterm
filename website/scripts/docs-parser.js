@@ -67,9 +67,14 @@ export function createSlugger() {
   const seen = new Map();
   return (text) => {
     const base = slugify(text) || 'section';
-    const n = seen.get(base) ?? 0;
-    seen.set(base, n + 1);
-    return n === 0 ? base : `${base}-${n}`;
+    let id = base;
+    let n = seen.get(base) ?? 0;
+    // Generated suffixes also reserve their ids: "Usage", "Usage", and
+    // "Usage-1" must not send two headings to #usage-1.
+    while (seen.has(id)) id = `${base}-${++n}`;
+    seen.set(base, n);
+    seen.set(id, 0);
+    return id;
   };
 }
 
@@ -133,7 +138,7 @@ export function parseInline(text, line) {
     const ch = text[i];
 
     // Backslash escape
-    if (ch === '\\' && i + 1 < text.length) {
+    if (ch === '\\' && /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(text[i + 1] ?? '')) {
       buf += text[i + 1];
       i += 2;
       continue;
@@ -544,6 +549,24 @@ function parseList(lines, start, slug) {
     if (!m) {
       // A blank line inside a list is allowed if a further item follows.
       if (lines[i].trim() === '' && LIST_ITEM.test(lines[i + 1] ?? '')) { i++; continue; }
+      // A blank-separated, indented paragraph still belongs to the last
+      // item. Dropping that membership restarts the runbook's next step at 1.
+      let next = i;
+      while (next < lines.length && lines[next].trim() === '') next++;
+      if (items.length > 0 && next < lines.length
+        && !THEMATIC_BREAK.test(lines[next])
+        && /^\s*/.exec(lines[next])[0].length > baseIndent) {
+        const indent = /^\s*/.exec(lines[next])[0].length;
+        const body = [];
+        i = next;
+        while (i < lines.length && lines[i].trim() !== ''
+          && /^\s*/.exec(lines[i])[0].length >= indent) {
+          body.push(lines[i].slice(indent));
+          i++;
+        }
+        items[items.length - 1].children.push(...parseMarkdown(body.join('\n'), { slug }).blocks);
+        continue;
+      }
       break;
     }
     const indent = m[1].length;
@@ -555,6 +578,7 @@ function parseList(lines, start, slug) {
       i = next;
       continue;
     }
+    if (/\d/.test(m[2]) !== ordered) break;
     const contentLines = [m[3]];
     i++;
     // Continuation lines: indented further, not themselves list items.
@@ -571,7 +595,7 @@ function parseList(lines, start, slug) {
     items.push({ type: 'listItem', children: [{ type: 'paragraph', tight: true, children: parseInline(contentLines.join(' '), i) }] });
   }
 
-  return { node: { type: 'list', ordered, items }, next: i };
+  return { node: { type: 'list', ordered, ...(ordered ? { start: Number.parseInt(first[2], 10) } : {}), items }, next: i };
 }
 
 /**

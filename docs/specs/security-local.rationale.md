@@ -34,11 +34,7 @@ the scripts Dormouse ships. `lib/src/lib/terminal-protocol.test.ts` proves the
 parser *cannot* defend it: for each of the three terminators it forges an
 `OSC 9` notification with the body `PWNED` through an unfiltered `Cwd=`.
 
-Why the deceptive verdict needs the component read rather than a test reference.
-`ExternalLinkModalHost` gates its open call on the URI's `openable` status alone,
-and a deceptive link is still openable; the only thing withholding the open
-action is which buttons `ExternalLinkModal` renders. No test asserts that
-absence, so the property is one render change away from being lost silently.
+Why deceptive links are gated twice. The modal omits its Open action and focuses Copy, while the host callback independently rejects the deceptive verdict. The component regression exercises both the rendered buttons and a direct callback invocation, so an accidental presentation change cannot alone enable opening.
 
 ## Browser panes
 
@@ -71,9 +67,7 @@ process already running under the user's own uid, which can read the socket path
 out of its own environment. The same limit is already stated for the Burrow ACL
 store in `docs/specs/security-remote.md`, and stating it here keeps an agent
 holding `dor` from being read as a lesser principal than the person at the
-keyboard. Note that `docs/specs/dor-cli.rationale.md` names "any process running
-as the user" among the attackers the control channel defends against, which the
-mechanism does not support; one of the two needs correcting.
+keyboard.
 
 Why the proof construction being hand-mirrored matters. `proveToken` and
 `proofMatches` exist twice, in `standalone/sidecar/dor-control-server.js` and
@@ -82,14 +76,6 @@ the copies by `lib/src/lib/mirrored-constants.test.ts`. A change to the HMAC
 construction or the comparison in one copy breaks the channel loudly; a change
 that weakens the comparison in both — a string compare for a `timingSafeEqual` —
 breaks nothing visible.
-
-Where the directory check actually runs. `ensureControlDir` is called once, from
-`resolveControlSocketPath` inside `createDorControlServer`, at host start-up —
-not on every use. `docs/specs/dor-cli.md` -> "Control-channel security" says
-"re-checked on every use", which is true of the peer link's `peerDirIsSafe()`
-(re-run per contention round) and not of this one. The bind is what the
-channel's life depends on, so a check before the bind is the load-bearing one,
-but the two specs should agree.
 
 ## Loopback Listeners
 
@@ -142,6 +128,10 @@ demanding an unguessable one-shot secret.
 the endpoint is CORS-simple and needs no preflight to survive, and what it dispatches
 is `pty_spawn` with caller-supplied `shell`, `args`, `cwd` and `env`.
 
+Why proxy cookies are stripped in both directions. [RFC 6265 §8.5](https://www.rfc-editor.org/rfc/rfc6265#section-8.5) scopes cookies by host, not port. An inbound cookie can therefore belong to another local service, including an HttpOnly credential, rather than the fixed upstream. Forwarding it leaks that credential; forwarding an upstream Set-Cookie lets even a remote HTTP target overwrite loopback cookies. The WebSocket handshake is HTTP too, including a refused upgrade. Parsing that handshake before piping bytes closes the same boundary without filtering WebSocket payloads.
+
+What header stripping cannot protect. A proxied script runs on `127.0.0.1` and can still read or write non-HttpOnly cookies through `document.cookie`, subject to browser partitioning. The per-grant port isolates origins, not cookie storage. Full isolation needs a separate browser storage context or host namespace; cookie-backed login in the iframe renderer cannot be preserved safely by forwarding ambient cookies.
+
 ## Persisted state
 
 Why session snapshots earn the strongest protection on disk. They are
@@ -158,10 +148,7 @@ What the current writers actually store. `normalizeSessionV3` in
 `lib/src/lib/session-types.ts` destructures `scrollback` out of every pane on
 read, `saveSession` never emits it, and standalone's `PERSIST_SESSION` is
 `false`, so the shipped app writes no snapshot at all and clears a legacy one at
-boot. `docs/specs/standalone.md` -> "Persistence" and the `restrict_to_owner`
-doc comment in `standalone/src-tauri/src/lib.rs` both still say the blob carries
-transcripts; that is true of files older versions left behind and false of
-anything written now.
+boot.
 
 Why the peer-link token is listed here. It is a `randomUUID()` in the VS Code
 extension's global storage, and its own comment says it is the only thing between
@@ -180,11 +167,4 @@ Linux with `TMPDIR` unset — `/tmp` at `1777` — and wherever an operator poin
 neither sets a mode, and `restrict_to_owner` is never called on it. The socket
 path arrives via the sidecar's stderr, which Rust appends verbatim.
 
-What the Windows session-snapshot test does and does not cover.
-`restrict_to_owner_leaves_one_owner_only_ace` is `#[cfg(windows)]`, runs in CI's
-`standalone-platform-check` matrix, and asserts `SE_DACL_PROTECTED`, an ACE count
-of one, and the SID — but it calls `restrict_to_owner` directly. Nothing asserts
-the unix modes, and nothing exercises `write_session_to`'s two calls: deleting
-either leaves the suite green on every platform. The single-ACE property also
-depends on `FILE_ALL_ACCESS` rather than `GENERIC_ALL`, which would split into
-two ACEs.
+What the snapshot tests cover. `restrict_to_owner_leaves_one_owner_only_ace` is Windows-only and asserts `SE_DACL_PROTECTED`, one ACE, and the SID. `session_write_tightens_directory_and_existing_temp_file` exercises the unix writer against deliberately loose modes. The failure regression injects rejection at each permission stage, verifying the old snapshot survives and no replacement bytes reach disk. The single-ACE property depends on `FILE_ALL_ACCESS` rather than `GENERIC_ALL`, which would split into two ACEs.

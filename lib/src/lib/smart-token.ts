@@ -3,6 +3,7 @@
  * Used by the smart-extension feature to offer "Press e to select the full
  * URL/path" during a mid-drag (spec §5).
  */
+import type { IBufferCell, IBufferLine } from '@xterm/xterm';
 
 export interface DetectedToken {
   kind: 'url' | 'path';
@@ -97,4 +98,33 @@ export function detectTokenAt(line: string, col: number): DetectedToken | null {
     return { kind, start, end: start + cleaned.length, text: cleaned };
   }
   return null;
+}
+
+/** Convert the string detector's UTF-16 offsets to xterm cell columns. Wide
+ * characters have a zero-width continuation cell; combining marks and emoji
+ * can occupy several code units within one cell. */
+export function detectTokenInBufferLine(line: IBufferLine, col: number): DetectedToken | null {
+  let text = '';
+  let probe = -1;
+  const starts: number[] = [];
+  const ends: number[] = [];
+  // Reuse the first cell for the rest of the line — `getCell` allocates a fresh
+  // CellData per call otherwise, and this runs on every pointermove of a drag.
+  let scratch: IBufferCell | undefined;
+  for (let c = 0; c < line.length; c++) {
+    const cell = line.getCell(c, scratch);
+    if (!cell) continue;
+    scratch ??= cell;
+    const width = cell.getWidth();
+    if (width === 0) continue;
+    if (c <= col && col < c + width) probe = text.length;
+    const chars = cell.getChars() || ' ';
+    for (let i = 0; i < chars.length; i++) {
+      starts.push(c);
+      ends.push(c + width);
+    }
+    text += chars;
+  }
+  const token = detectTokenAt(text, probe);
+  return token ? { ...token, start: starts[token.start], end: ends[token.end - 1] } : null;
 }

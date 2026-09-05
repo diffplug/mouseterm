@@ -113,6 +113,17 @@ one attachment per session, so pane switching is detach → attach, whose repain
 dropped**, since the Burrow rejects them anyway. Badges for non-attached panes come
 from `directory.watch` without attaching.
 
+**Must normalize dimensions before sending or caching them.** **Must settle
+fire-and-forget PTY failures and release subscriptions that arrive after
+disposal.** A disposed adapter never restarts or delivers events. Pinned by
+`lib/src/remote/client/remote-adapter.test.ts`.
+**Must serialize attachment transitions**, completing stale detaches before
+another attachment to the same surface starts.
+
+**Must close an authorized connection when `hello` or adapter initialization
+fails, or the wall's current attachment fails; report on the Burrows list.**
+Pinned by `lib/src/remote/pocket-app/App.scan.test.tsx`.
+
 Three details the table leaves implicit:
 
 - **`PtyInfo.alive` is `entry.alive`, never derived from `entry.exitCode`** —
@@ -139,7 +150,8 @@ Source of truth: `PlatformAdapter` in `lib/src/lib/platform/types.ts`;
 `lib/src/remote/pocket-app/PocketWall.tsx`;
 `lib/src/remote/pocket-app/pair-link.ts`;
 `lib/src/remote/pocket-app/ScanInvitation.tsx`; `PocketClient.pair` in
-`lib/src/remote/client/pocket-client.ts`; `attachableDirectoryEntries` in
+`lib/src/remote/client/pocket-client.ts`; `RemotePtyAdapter` in
+`lib/src/remote/client/remote-adapter.ts`; `attachableDirectoryEntries` in
 `lib/src/remote/pocket-app/wall-model.ts`.
 
 ## Design system and theming
@@ -184,12 +196,10 @@ Source of truth: `pkButton` / `PK` in
 Pocket ships a web app manifest and a service worker: installable to a home
 screen, able to receive Web Push while backgrounded or closed.
 
-**On iOS, installing is a prerequisite, not a nicety.** Web Push is granted only
-to a Home Screen web app, never to a Safari tab: hence `display: standalone` in
-the manifest (iOS ignores any other value) and a permission request from a real
-user gesture. Adding to the Home Screen is manual and cannot be automated or
-prompted for. **iOS also ignores the manifest's `icons` and honors only
-`apple-touch-icon`**, so `lib/pocket/index.html` declares both.
+**Must request iOS push permission from a user gesture in a Home Screen web
+app.** Pocket declares `display: standalone`; installation is manual.
+**Must ship manifest icons and `apple-touch-icon`**, which takes precedence on
+iOS (rationale).
 
 **The manifest and icons must be checked-in source under `lib/pocket/public/`**,
 which Vite copies verbatim, each referenced by an absolute root path:
@@ -225,9 +235,8 @@ checks a real bundler output (rationale; `assert-pocket-worker.test.ts`).
   continues (rationale) — ordinary without support and on an insecure origin,
   since service workers need a secure context (`localhost` exempt), as WebAuthn
   does (Deployment, below).
-- **Clicking a notification focuses the app and leaves the user on the
-  directory.** There is no deep link to a Pane: protocol-v1 carries no routable
-  surface ref.
+- **Must focus an existing app window on notification click, preserving its
+  screen, or open `/` if none exists.** Pushes carry no Pane navigation target.
 
 **The installed app is a separate storage partition from the browser tab** —
 cookies, `localStorage`, and IndexedDB are not shared between iOS Safari and a
@@ -240,8 +249,9 @@ passkey's public key, which a Client needs to build a presence proof, so a
 profile that never registered can still pair (rationale); holding that public key
 authorizes nothing ([remote-security-model.md](./remote-security-model.md) ->
 Client statics). **If
-the cached copy disappears mid-session, Pocket directs the user to sign in
-again**; the verified response restores it on any profile.
+the cached copy disappears mid-session, Pocket clears the session token and
+returns to sign-in** (`PasskeyUnavailableError`); the verified response restores
+it on any profile.
 
 **Pocket states the order on the screen that leads with the scan**, above the
 action rather than after it: install to the Home Screen **first**, then scan,
@@ -448,7 +458,7 @@ timer, clock, and visibility seams in `lib/src/remote/client/pocket-client.ts`.
 
 Sessions live only in the Relay's memory ([relay.md](./relay.md)), so they end
 on their 12h expiry *and* on every Relay restart, while the passkey and
-paired-burrow markers in `localStorage` outlive both. **Pocket therefore treats a
+paired Burrow records in IndexedDB outlive both. **Pocket therefore treats a
 dead session as actionable, not reportable** (rationale): `PocketClient` clears
 its in-memory token and throws `SessionExpiredError`; the app tears down any live
 adapter and returns to sign-in carrying that message. One passkey prompt restores

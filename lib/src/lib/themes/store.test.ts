@@ -10,6 +10,7 @@ import {
   getInstalledThemes,
 } from './store';
 import { installLocalStorageStub } from '../test-local-storage';
+import { restoreActiveTheme } from './apply';
 
 const INSTALLED_KEY = 'dormouse:installed-themes';
 
@@ -63,6 +64,26 @@ describe('theme store', () => {
   it('returns [] for non-JSON garbage in storage', () => {
     localStorage.setItem(INSTALLED_KEY, 'not json at all');
     expect(getInstalledThemes()).toEqual([]);
+  });
+
+  it.each([
+    { vars: { '--vscode-editor-background': 123 } },
+    { vars: null },
+    { label: { invalid: true } },
+    { origin: null },
+    { origin: { kind: 'installed', installedAt: '2026-07-17' } },
+    { type: 'unknown' },
+    { swatch: false },
+    { accent: [] },
+  ])('ignores a corrupt active theme while retaining valid entries: %j', (corruption) => {
+    localStorage.setItem(INSTALLED_KEY, JSON.stringify([
+      { ...makeInstalledTheme('corrupt'), ...corruption },
+      makeInstalledTheme('good'),
+    ]));
+    localStorage.setItem('dormouse:active-theme', 'corrupt');
+
+    expect(getInstalledThemes().map((theme) => theme.id)).toEqual(['good']);
+    expect(restoreActiveTheme()?.id).not.toBe('corrupt');
   });
 
   it('installs a theme and dedupes by id on reinstall', () => {

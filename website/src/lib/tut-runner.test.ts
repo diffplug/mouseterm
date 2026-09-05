@@ -1,13 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { FakePtyAdapter } from "dormouse-lib/lib/platform/fake-adapter";
+import * as alertSettings from "dormouse-lib/lib/alert-settings";
+import type { AlertStateDetail } from "dormouse-lib/lib/platform/types";
 import {
   POCKET_TUTORIAL_PROFILE,
   SECTIONS,
   type ItemId,
   type TutorialProfile,
 } from "./tut-items";
-import { TutRunner } from "./tut-runner";
+import { BUSY_DEMO_INTERVAL_MS, TutRunner } from "./tut-runner";
 import { TutorialState } from "./tutorial-state";
+
+type TutRunnerOptions = ConstructorParameters<typeof TutRunner>[0];
 
 const FRAME_RESET = "\x1b[H\x1b[2J";
 
@@ -34,6 +38,9 @@ function mountRunner(
     onNotifyPocket?: () => void;
     pocketTouchMode?: "gestures" | "selection" | "cursor";
     profile?: TutorialProfile;
+    getInactivityTimeoutMs?: () => number;
+    onTriggerBusyDemo?: TutRunnerOptions["onTriggerBusyDemo"];
+    onTriggerCommandExitDemo?: TutRunnerOptions["onTriggerCommandExitDemo"];
   } = {},
 ) {
   const adapter = new FakePtyAdapter();
@@ -62,6 +69,9 @@ function mountRunner(
     onOpenGithub: options.onOpenGithub,
     onOpenPocket: options.onOpenPocket,
     onNotifyPocket: options.onNotifyPocket,
+    getInactivityTimeoutMs: options.getInactivityTimeoutMs,
+    onTriggerBusyDemo: options.onTriggerBusyDemo,
+    onTriggerCommandExitDemo: options.onTriggerCommandExitDemo,
     getPocketTouchMode: () => pocketTouchMode,
     subscribeToPocketTouchMode: (listener) => {
       pocketTouchModeListeners.add(listener);
@@ -74,6 +84,7 @@ function mountRunner(
   runner.start();
 
   return {
+    adapter,
     state,
     sendKeys: (data: string) => adapter.writePty(id, data),
     lastFrame: () => {
@@ -91,6 +102,83 @@ function mountRunner(
 }
 
 describe("TutRunner snapshots", () => {
+  it.each([1_000, 60_000])("uses the configured %i ms timeout for demo timers and countdowns", (inactivityTimeoutMs) => {
+    vi.useFakeTimers();
+    // Semantic timestamps are monotonic across parsers, so later cases must
+    // not move their wall clock behind the preceding case’s simulated exit.
+    vi.setSystemTime(2_000_000_000_000 + inactivityTimeoutMs * 1_000);
+    const settings = { ...alertSettings.DEFAULT_ALERT_SETTINGS, inactivityTimeoutMs };
+    const events: AlertStateDetail[] = [];
+    const demoId = "demo-target";
+    let currentTimeoutMs = alertSettings.DEFAULT_ALERT_SETTINGS.inactivityTimeoutMs;
+    let durationMs = 0;
+    let finishTimer: ReturnType<typeof setTimeout> | undefined;
+    let cancelPump: (() => void) | undefined;
+    const { adapter, sendKeys, lastFrame, dispose } = mountRunner([], {
+      getInactivityTimeoutMs: () => currentTimeoutMs,
+      onTriggerBusyDemo: (duration, commandDuration) => {
+        durationMs = duration;
+        adapter.sendOutput(demoId, "\x1b]633;E;longtask\x07\x1b]633;C\x07");
+        cancelPump = adapter.pumpActivity(demoId, duration, BUSY_DEMO_INTERVAL_MS);
+        finishTimer = setTimeout(() => adapter.sendOutput(demoId, "\x1b]633;D;0\x07"), commandDuration);
+      },
+      onTriggerCommandExitDemo: (duration) => {
+        durationMs = duration;
+        adapter.sendOutput(demoId, "\x1b]633;E;slowbuild\x07\x1b]633;C\x07");
+        adapter.alertAttend(demoId);
+        adapter.alertClearAttention(demoId);
+        finishTimer = setTimeout(() => adapter.sendOutput(demoId, "\x1b]633;D;0\x07"), duration);
+      },
+    });
+    try {
+      adapter.setScenario(demoId, { name: "none", chunks: [] });
+      adapter.spawnPty(demoId);
+      currentTimeoutMs = inactivityTimeoutMs;
+      adapter.alertPublishSettings(settings);
+      adapter.onAlertState((event) => { if (event.id === demoId) events.push(event); });
+      sendKeys(sectionRow("alert") + ENTER + "x");
+      expect(durationMs).toBeGreaterThan(inactivityTimeoutMs);
+      expect(lastFrame()).toContain(`${Math.ceil(durationMs / 1000)}\x1b[0m seconds`);
+      vi.advanceTimersByTime(durationMs - 1);
+      expect(events.some((event) => event.notification?.source === "COMMAND_EXIT")).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(events.some((event) => event.notification?.source === "COMMAND_EXIT")).toBe(true);
+
+      adapter.alertDismiss(demoId);
+      adapter.alertSetCommandWatched("longtask", true);
+      events.length = 0;
+      sendKeys("s");
+      vi.advanceTimersByTime(durationMs + 7_000);
+      expect(events.some((event) => event.status === "BUSY")).toBe(true);
+      expect(events.some((event) => event.status === "ALERT_RINGING")).toBe(true);
+    } finally {
+      clearTimeout(finishTimer);
+      cancelPump?.();
+      dispose();
+      adapter.reset();
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores unsupported terminal keys without navigating back or corrupting reset input", () => {
+    const { sendKeys, lastFrame, exitCount, dispose } = mountRunner();
+    const unsupportedKeys = "\x1b[H\x1b[3~\x1b[1;5A";
+    sendKeys(unsupportedKeys);
+    expect(lastFrame()).toContain("Make it yours");
+    expect(exitCount()).toBe(0);
+    sendKeys(extraRow("reset") + ENTER + "re" + unsupportedKeys + "set" + ENTER);
+    expect(lastFrame()).toContain("Make it yours");
+    expect(lastFrame()).not.toContain("didn't match");
+    dispose();
+  });
+
+  it("accepts application-mode arrow keys in the menu", () => {
+    const { sendKeys, lastFrame, dispose } = mountRunner();
+    sendKeys(ESC + "\x1bOB" + ENTER);
+    expect(lastFrame()).toContain("Keyboard navigation");
+    dispose();
+  });
+
   // The desktop profile opens inside its first section (`initialSectionId`), so
   // every menu-driven test below pops out with a leading Esc first.
   it("starts the desktop tutorial inside Make it yours", () => {

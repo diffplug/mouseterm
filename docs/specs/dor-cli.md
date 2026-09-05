@@ -104,7 +104,8 @@ tab/eval/screenshot commands, and anything added later. It is the only code
   later scribbles stay out.
 
 **`spawnAndCapture` never throws:** a spawn-level failure resolves as
-`{ ok: false, error }`.
+`{ ok: false, error }`, including synchronous argv-validation errors
+(`dor-lib-common/test/spawn.test.mjs`).
 
 **Must decode stdout/stderr as continuous UTF-8 streams**, retaining partial
 characters across pipe chunks (rationale).
@@ -165,10 +166,8 @@ a request with no surface id goes to the first active router.
 
 ### Control-channel security
 
-The control channel carries the whole surface API — keystrokes into any pane,
-its screen and scrollback back out, `dor kill` — so the threat is another local
-principal getting between `dor` and its host (rationale). Three defences, in the
-control server both hosts load:
+The shared control server protects the Surface API against local interposition
+(rationale):
 
 **The server picks the path, and picks it unguessably.** POSIX:
 `<tmpdir>/dormouse-dor-<uid>/<8 random bytes>.sock`, the parent directory
@@ -181,8 +180,8 @@ bytes>` — its machine-wide namespace has no directory to harden, leaving only
 unpredictability. **Neither spelling may derive from the PID**, which is
 enumerable and recycled.
 
-**The server proves itself first, and the token — a bearer credential — never
-goes on the wire in either direction.** The server speaks first with a challenge
+**Must authenticate both peers before sending a Surface request; never send the
+token on the wire.** The server speaks first with a challenge
 nonce; the client answers `HMAC-SHA256(token, "dor-control/client <nonce>")` and
 a nonce of its own; the server answers `HMAC-SHA256(token, "dor-control/server
 <nonce>")` before the client sends any request (rationale). **A peer that fails
@@ -227,6 +226,11 @@ handler receives that controller's `signal`, a cancel aborts it, responding
 forgets it. **A handler that parks must release whatever it armed when the
 signal fires** — nothing it responds with afterwards can reach the client. A
 late response for a reaped id is a silent no-op on the server.
+
+**Must cancel `ensure`'s polling when the client disconnects.** Cancellation
+before an interrupted command returns to its prompt prevents relaunch;
+cancellation during initial integration detection removes the throwaway split.
+`lib/src/components/Wall.test.tsx` pins both paths.
 
 Source of truth: `standalone/sidecar/dor-control-server.js`,
 `dor/src/control-client.ts`, `dor/src/protocol.ts`, `peerDirIsSafe` in
@@ -281,12 +285,13 @@ Invariants:
   Surface refs never collide with it; the flag and the commands consuming it are
   staged — see [Future](#future). The webview handler already rejects any
   workspace/window target other than the singleton `workspace:1` / `window:1`.
-  Stable Surface ids are globally unique, but cross-Workspace id routing is
-  staged with Workspace-aware listing/targeting; today's handler resolves ids in
-  the mounted Workspace.
+  Today's handler resolves stable Surface ids within the mounted Workspace;
+  cross-Workspace routing is staged with Workspace-aware listing/targeting.
+  Cross-window duplicate ids follow `docs/specs/vscode.md` → "Peer surfaces
+  across windows".
 
 Source of truth: `dor/src/commands/shared.ts`, `dor/src/commands/types.ts`, and
-the ref registry in `lib/src/components/wall/use-dor-control.ts`.
+`surfaceRefForId` / `transferSurfaceRef` in `lib/src/components/Wall.tsx`.
 
 ## Current Implemented Commands
 
@@ -311,8 +316,8 @@ parallel, shelling out per pane (`lsof` / `Get-NetTCPConnection`) under
 degrades to an empty list rather than failing the call.
 
 **`dor` forwards command tails as raw argv; the host quotes them** — `dor`
-cannot know which shell the target surface runs, so tails after `--` travel as
-`command: string[]` and the host renders **one** command string, used for
+cannot know the configured default shell used for creation, so tails after `--`
+travel as `command: string[]` and the host renders **one** command string, used for
 output, JSON responses, default `ensure` titles, and the launched command alike.
 It picks the style (`cmd` / `posix` / `powershell`) with the same classifier
 clipboard/drop path escaping uses
@@ -467,10 +472,9 @@ Source of truth: `extractSessionFlags` / `resolveSession` in
 
 ## Agent Workflows
 
-These scenarios are the CLI's product-level acceptance tests: the commands must
-*compose*, not merely work alone. All reduce to one shape — **discover the
+These acceptance workflows **discover the
 target Surface with `dor list` (filtered), then act on it with a handle-taking
-command.** So matching lives in `dor list` alone; `read` / `send` / `await` /
+command.** Matching lives in `dor list` alone; `read` / `send` / `await` /
 `kill` **must not grow their own match syntax**, and a bare `dor kill "npm dev"`
 stays unsupported.
 
