@@ -483,6 +483,17 @@ describe('TerminalProtocolParser', () => {
     });
   });
 
+  it('snapshots the in-run title when start, title, and finish arrive in one millisecond', () => {
+    const parser = new TerminalProtocolParser();
+    const events = collectTerminalSemanticEvents(parser.process(
+      '\x1b]633;E;npm test\x07\x1b]633;C\x07\x1b]0;vitest\x07\x1b]633;D;0\x07\x1b]0;zsh\x07',
+    ).events, { now: () => 100 });
+    let pane = createTerminalPaneState();
+    for (const event of events) pane = reduceTerminalState(pane, event, { now: () => 100 });
+    expect(pane.lastCommand?.finalTerminalTitle?.title).toBe('vitest');
+    expect(deriveHeader(pane, [pane]).primary).toBe('<idle> vitest');
+  });
+
   it('decodes OSC 633 command lines without including the optional nonce', () => {
     const parser = new TerminalProtocolParser();
 
@@ -558,7 +569,7 @@ describe('TerminalProtocolParser', () => {
         event: {
           type: 'cwd',
           cwd: {
-            path: '/tmp/with space',
+            path: '/tmp/with%20space',
             pathKind: 'posix',
             isRemote: false,
             source: 'osc633',

@@ -473,6 +473,8 @@ function timestampSemanticEvent(
       return { ...event, cwd: { ...event.cwd, updatedAt: nextTimestamp() } };
     case 'commandStart':
       return { ...event, startedAt: nextTimestamp() };
+    case 'commandFinish':
+      return { ...event, finishedAt: nextTimestamp() };
     case 'title':
       return { ...event, title: { ...event.title, updatedAt: nextTimestamp() } };
     default:

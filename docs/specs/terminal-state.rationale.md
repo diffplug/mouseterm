@@ -8,6 +8,8 @@
 
 **What the CWD bound and control-character strip protect.** A directory name may hold any byte but `/` and NUL, and the CWD it produces is retained per Session, rendered in the pane header, and used as a grouping key — so unbounded or control-bearing text reaches the UI and a map key, not just a log line.
 
+Native path payloads are not URLs: decoding `%20` or trimming edge spaces changes directory identity. The [iTerm2 CurrentDir contract](https://iterm2.com/documentation-escape-codes.html) reports a directory, while OSC 7 carries a file URL; Dormouse's OSC 633 emitters likewise write the sanitized path verbatim.
+
 ## OSC-driven events
 
 **What clearing on a prompt boundary buys.** Pending input no `commandStart` consumed is dropped instead of attaching to the next command, and a `user_input` run that never got an explicit finish returns the header to `<idle>` rather than a command that ended long ago.
@@ -26,7 +28,7 @@
 
 **Why synthesis is scoped to `user_input` while shape learning is not.** Shape learning is harmless for every shell and useful the moment integration is lost, but synthesizing finish/start transitions for a shell that emits its own boundaries would fight the authentic ones.
 
-**Why alt-screen spans are dropped.** Fullscreen TUIs (vim, lazygit, less) render into the alt buffer, so a `$` painted there is the program's, not the user's prompt.
+**Why alt-screen spans are dropped.** Fullscreen TUIs (vim, lazygit, less) render into the alt buffer, so a `$` painted there is the program's, not the user's prompt. The previous stateless scan ran after truncation: once enough output displaced the enter marker, a TUI could falsely end the command. `keeps long chunked alternate-screen output out of the prompt heuristic` in `lib/src/lib/terminal-state-store.test.ts` reproduces that failure.
 
 **Why the heuristic reads `textData` rather than filtering for itself.** The protocol parser has already framed every string control on that chunk, so a separate scanner in front of the prompt detector re-derived a classification the parser threw away — and did it per character over 100% of PTY output, which measured 5.9 ms/MB on plain text. Projecting the answer the parser already has costs nothing on the wire (the field is omitted when it would equal `data`) and leaves one classifier instead of three.
 
