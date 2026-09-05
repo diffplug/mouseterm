@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registry, pendingShellOpts, type TerminalEntry } from './terminal-store';
 import { applyTerminalSemanticEvents, resetTerminalPaneState, removeTerminalPaneState } from './terminal-state-store';
-import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHelper, helperHasWork, openHelper, restoreHelper, setHelperVisible } from './helper-terminal';
+import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHelper, helperHasWork, openHelper, restoreHelper, setHelperVisible, subscribeHelpers } from './helper-terminal';
 
 const host = vi.hoisted(() => ({ writePty: vi.fn(), terminalContext: vi.fn() }));
 vi.mock('./platform', () => ({ getPlatform: () => host }));
@@ -22,6 +22,26 @@ afterEach(() => { setHelperVisible('parent', false); disposeHelper('parent'); re
 const prompt = (id: string) => applyTerminalSemanticEvents(id, [{ type: 'promptStart' }, { type: 'promptEnd' }]);
 
 describe('helper lifecycle', () => {
+  it.each(['exited', 'preserved', 'completed'] as const)('publishes %s on reopening before another polling tick', async status => {
+    const helper = await openHelper('parent');
+    helper.status = 'running';
+    setHelperVisible('parent', false);
+    const entry = registry.get(helper.id)!;
+    entry.exited = status === 'exited';
+    entry.untouched = status !== 'preserved';
+    prompt(helper.id);
+    // Preserve even an untouched completion so this asserts publication on
+    // reuse, rather than observing a replacement helper's creation event.
+    host.terminalContext.mockResolvedValue({ busy: true });
+    const notified = vi.fn();
+    const unsubscribe = subscribeHelpers(notified);
+    try {
+      setHelperVisible('parent', true);
+      expect(await openHelper('parent')).toBe(helper);
+      expect(helper.status).toBe(status);
+      expect(notified).toHaveBeenCalledOnce();
+    } finally { unsubscribe(); }
+  });
   it('stops hidden polling, invalidates idle, and still checks running work on demand', async () => {
     const helper = await openHelper('parent');
     registry.get(helper.id)!.untouched = false;

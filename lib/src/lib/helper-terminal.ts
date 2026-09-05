@@ -114,9 +114,13 @@ export async function openHelper(parentId: string): Promise<HelperTerminal> {
     const previous = helpers.get(parentId);
     if (previous) {
       const entry = registry.get(previous.id);
+      const priorStatus = previous.status;
       if (entry?.exited) previous.status = 'exited';
       else if (!entry?.untouched) previous.status = 'preserved';
       else if (previous.status === 'running' && atPrompt(previous.id)) previous.status = 'completed';
+      // The first context render preceded this effect; the next tick would
+      // see the already-updated status and have no change left to publish.
+      if (previous.status !== priorStatus) notifyHelpers();
       if (!entry?.untouched || (previous.status !== 'completed' && previous.status !== 'off') || await helperHasWork(previous)) return previous;
       // Input or ownership can change during process inspection.
       if (helpers.get(parentId) !== previous || !entry.untouched) return helpers.get(parentId) ?? previous;

@@ -15,7 +15,7 @@
 - **Must hide a retained helper without terminating its PTY**, parking its xterm element in the document. Revealing or promoting reuses the same element; cleanup from an older mount cannot detach a newer mount.
 - **Must keep a preserved helper's directory independent of its source**, showing both locations prominently when they differ. Unknown directory state is not evidence of a match.
 - **Must retain exited output**, offer Reset, and avoid automatic restart loops.
-- **Must pause status and process-inspection polling while the context is hidden**, invalidating cached idle results. Reopening resumes status from current terminal state; source closure inspects work on demand.
+- **Must pause status and process-inspection polling while the context is hidden**, invalidating cached idle results. Reopening publishes current terminal status; source closure inspects work on demand.
 
 | State | Status and action |
 |---|---|
