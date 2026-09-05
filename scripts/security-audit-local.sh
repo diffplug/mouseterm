@@ -20,6 +20,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 AUDIT_DIR=.github/audit
+export GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-diffplug/dormouse}"
 
 if ! command -v claude >/dev/null 2>&1; then
   echo "error: the \`claude\` CLI is not on PATH." >&2
@@ -63,12 +64,20 @@ run_domain() {
   echo "==> $domain -> $out${model_args:+ ($model_args)}"
   rm -f "$out"
   # shellcheck disable=SC2086
-  claude -p "$(cat "$AUDIT_DIR/_preamble.md"; echo; cat "$AUDIT_DIR/$domain.md")" \
+  if ! claude -p "$(cat "$AUDIT_DIR/_preamble.md"; echo; cat "$AUDIT_DIR/$domain.md")" \
     $model_args \
     --allowed-tools "Read,Write,Edit,Bash,Grep,Glob" \
-    --disallowed-tools "Task,Agent,Workflow"
+    --disallowed-tools "Task,Agent,Workflow"; then
+    echo "==> $domain auditor process failed" >&2
+    return 1
+  fi
   if [ -s "$out" ]; then
     echo "==> wrote $out"
+    case "$(head -n1 "$out")" in
+      'VERDICT: PASS') return 0 ;;
+      'VERDICT: FAIL'|'VERDICT: INCONCLUSIVE') return 1 ;;
+      *) echo "==> $domain produced no readable verdict" >&2; return 1 ;;
+    esac
   else
     echo "==> $domain produced no fragment — in CI that is an INCONCLUSIVE audit, not a FAIL" >&2
     return 1
@@ -82,7 +91,7 @@ fi
 
 # All three, sequentially rather than fanned out. CI parallelises because it is
 # paying wall-clock for a nightly; locally, serial output is readable and a
-# failure stops where it happened.
+# each domain's failure is recorded while the remaining domains still run.
 status=0
 for domain in supply-chain ci-and-secrets application-security; do
   run_domain "$domain" || status=1

@@ -25,16 +25,17 @@ or a gap is known ("Known gaps"), do not re-report it as a finding — report
 only if the situation has changed or is worse than described.
 
 Write your findings to the file named in your own prompt. **Its very first
-line must be literally `VERDICT: PASS` or `VERDICT: FAIL`** — nothing else on
-that line. The reporting step greps for it, so it is the one part of your
+line must be literally `VERDICT: PASS`, `VERDICT: FAIL`, or `VERDICT: INCONCLUSIVE`** — nothing else on
+that line. The reporting step reads it, so it is the one part of your
 report a machine reads: a `FAIL` there cannot be lost in a merge, and it is
 what stops an optimistic summary from overriding you. Then two sections:
 `### FAIL IF results` (one line per check) and `### Qualitative findings`
 (severity-tagged). **Write that file before you return** — your caller reads
 the file, not your reply, and a fragment that does not exist fails the whole
-audit. Then return a single line: `PASS` or `FAIL`, followed by a one-sentence
+audit. Then return a single line: `PASS`, `FAIL`, or `INCONCLUSIVE`, followed by a one-sentence
 rationale. FAIL if any `FAIL IF` in your scope is violated or any of your
-qualitative findings is BLOCKER.
+qualitative findings is BLOCKER. Otherwise INCONCLUSIVE if any check is
+`UNVERIFIABLE` or unfinished; PASS only when every check was determined.
 
 Never print a secret value. `$AUDIT_PAT` is passed only as an unexpanded
 `GH_TOKEN=` prefix; do not echo it, do not run `printenv` or `set -x`, and do

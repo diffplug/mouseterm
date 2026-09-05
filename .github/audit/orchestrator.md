@@ -111,14 +111,14 @@ an overall `PASS` covering an unaudited domain.
 
 ## 4. The verdict
 
-Write `PASS` or `FAIL` — no other text — to `audit-status.txt`, and only when
-you reached a verdict that covers all three domains.
+Write `PASS` or `FAIL` — no other text — to `audit-status.txt` according to
+the precedence below. PASS requires all three domains to pass.
 
 FAIL if any subagent returned FAIL. That is a finding, and it stays a finding
 whether or not the other domains reported.
 
-If no subagent returned FAIL but a fragment is missing or empty — the
-`DEADLINE` branch fired, or a domain died — **write no status file at all.** A
+If no subagent returned FAIL but any domain returned INCONCLUSIVE, or a fragment
+is missing, empty, or has no exact verdict line, **write no status file at all.** A
 domain that produced no report did not pass, but it did not fail either:
 `FAIL` publishes it as `[security-audit] FAIL`, relabels an open issue upward,
 and files a run that merely ran out of time as a security finding. That is the
@@ -131,5 +131,5 @@ but do not make it do that work.
 **Write `audit-report.md` before `audit-status.txt`**, always, even if you are
 running short: a partial report reaches a human through the INCONCLUSIVE issue,
 while a status file with no report behind it reaches nobody. Write
-`audit-status.txt` only once the verdict covers every check. Do not call
+`audit-status.txt` only once the rules above establish a verdict. Do not call
 `exit` — the workflow inspects the status file.
