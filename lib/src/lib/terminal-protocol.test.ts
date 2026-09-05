@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { collectTerminalSemanticEvents, formatOscColorResponse, ITERM2_DEVICE_ATTRIBUTES_RESPONSE, TerminalProtocolParser } from './terminal-protocol';
 import { createTerminalPaneState, deriveHeader, reduceTerminalState, type TerminalSemanticEvent } from './terminal-state';
 
@@ -205,13 +205,29 @@ describe('TerminalProtocolParser', () => {
     expect(parser.process('\x1b\\text').visibleData).toBe('\x1b\\text');
   });
 
-  it('still drops an oversized OSC it would consume itself', () => {
+  it.each(['\x07', '\x9c', '\x1b\\'])('discards an oversized consumed OSC through its %j terminator', (terminator) => {
     const parser = new TerminalProtocolParser();
     const title = `\x1b]0;${'t'.repeat(17_000)}`;
 
     expect(parser.process(title)).toMatchObject({ visibleData: '', events: [] });
-    // The held bytes were dropped, so the tail is read as fresh ground text.
-    expect(parser.process('\x07after').visibleData).toBe('after');
+    expect(parser.process('still payload')).toMatchObject({ visibleData: '', textData: '', events: [] });
+    for (const byte of terminator) {
+      expect(parser.process(byte)).toMatchObject({ visibleData: '', textData: '', events: [] });
+    }
+    expect(parser.process('after')).toMatchObject({ visibleData: 'after', textData: 'after', events: [] });
+  });
+
+  it.each(['\x18', '\x1a', '\x1b[0m'])('resumes ground text after an oversized OSC is cancelled by %j', (cancel) => {
+    const parser = new TerminalProtocolParser();
+    expect(parser.process(`\x1b]52;c;${'x'.repeat(17_000)}\x1b`)).toMatchObject({ visibleData: '', events: [] });
+    // Finish a split ST first, then exercise the other cancellation paths.
+    expect(parser.process('\\')).toMatchObject({ visibleData: '', events: [] });
+    parser.process(`\x1b]0;${'x'.repeat(17_000)}`);
+    let visible = '';
+    for (const byte of cancel) visible += parser.process(byte).visibleData;
+    const result = parser.process('after\x1b]0;valid\x07');
+    expect(visible + result.visibleData).toBe((cancel.startsWith('\x1b') ? cancel : '') + 'after');
+    expect(result.events).toMatchObject([{ kind: 'semantic', event: { type: 'title', title: { title: 'valid' } } }]);
   });
 
   it('waits for the id to settle before routing a split OSC introducer', () => {
@@ -494,6 +510,28 @@ describe('TerminalProtocolParser', () => {
     expect(deriveHeader(pane, [pane]).primary).toBe('<idle> vitest');
   });
 
+  it('orders semantic events across PTY reads when the clock stalls or moves backward', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000);
+    try {
+      const parser = new TerminalProtocolParser();
+      let pane = createTerminalPaneState();
+      for (const chunk of [
+        '\x1b]633;E;npm test\x07\x1b]633;C\x07',
+        '\x1b]0;vitest\x07',
+        '\x1b]633;D;0\x07\x1b]0;zsh\x07',
+      ]) {
+        for (const event of collectTerminalSemanticEvents(parser.process(chunk).events)) {
+          pane = reduceTerminalState(pane, event);
+        }
+        now.mockReturnValue(1_999_999_999_999);
+      }
+      expect(pane.lastCommand?.finalTerminalTitle?.title).toBe('vitest');
+      expect(deriveHeader(pane, [pane]).primary).toBe('<idle> vitest');
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('decodes OSC 633 command lines without including the optional nonce', () => {
     const parser = new TerminalProtocolParser();
 
@@ -555,7 +593,14 @@ describe('TerminalProtocolParser', () => {
     expect(result.visibleData).toBe('rest');
     expect(result.events.filter((e) => e.kind === 'notification')).toHaveLength(0);
     expect(result.events).toHaveLength(1);
-    expect(result.events[0]).toMatchObject({ kind: 'semantic', event: { type: 'cwd' } });
+    expect(result.events[0]).toMatchObject({ kind: 'semantic', event: { type: 'cwd', cwd: { path: '/tmp/evil]9;PWNED' } } });
+  });
+
+  it.each(['/tmp/one;two', 'C:\\one;two'])('preserves semicolons in OSC 633 CWD %j', (path) => {
+    const parser = new TerminalProtocolParser();
+    expect(parser.process(`\x1b]633;P;Cwd=${path}\x07`).events).toMatchObject([
+      { kind: 'semantic', event: { type: 'cwd', cwd: { path } } },
+    ]);
   });
 
   it('parses OSC 633 and 1337 CWD plus title fallbacks', () => {

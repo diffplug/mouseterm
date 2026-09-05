@@ -7,7 +7,7 @@
 
 ## Core Model
 
-`TerminalPaneState`'s fields and unions are canonical in `lib/src/lib/terminal-state.ts` (`CwdState`, `ShellActivity`, `CommandRun`, `TerminalTitle`).
+`TerminalPaneState`'s canonical types: `lib/src/lib/terminal-state.ts` (`CwdState`, `ShellActivity`, `CommandRun`, `TerminalTitle`).
 
 - **Host identity is part of directory identity**: `file://localhost/Users/me/project` and `file://prod-box/home/me/project` are different locations even where their display labels compact alike.
 - **`ShellActivity` is not `isRunning`** — the shell process keeps running; what matters is whether a foreground command is active.
@@ -16,7 +16,7 @@
 ## Normalized Events
 
 - **Feature code must consume `TerminalPaneState` or `TerminalSemanticEvent`, never raw OSC sequences** — all protocol parsing emits that canonical union (`lib/src/lib/terminal-state.ts`) first.
-- **Protocol-derived events are timestamped in stream order before the reducer**, so command boundaries and title candidates from one PTY chunk stay comparable when parsed in the same millisecond.
+- **Must timestamp protocol-derived events in stream order before the reducer, across PTY chunks and clock adjustments.** Pinned by `orders semantic events across PTY reads when the clock stalls or moves backward` in `lib/src/lib/terminal-protocol.test.ts`.
 - `AlertManager` consumes command lifecycle events too, but only those the protocol parser produced (`docs/specs/alert.md`).
 
 ## Supported OSC Inputs
@@ -30,7 +30,7 @@ CWD:
 | `OSC 633 ; P ; Cwd=<cwd> ST` | `osc633` | VS Code-style. |
 | `OSC 1337 ; CurrentDir=<cwd> ST` | `osc1337` | iTerm2 compatibility. |
 
-**Must preserve native CWD text, including percent signs and edge spaces; percent-decode only OSC 7 file URIs.** Pinned by `preserves literal percent escapes and whitespace in native CWDs` in `lib/src/lib/terminal-state.test.ts`.
+**Must preserve native CWD text, including percent signs, semicolons and edge spaces; percent-decode only OSC 7 file URIs.** Pinned by `preserves literal percent escapes and whitespace in native CWDs` in `lib/src/lib/terminal-state.test.ts` and `preserves semicolons in OSC 633 CWD %j` in `lib/src/lib/terminal-protocol.test.ts`.
 
 **Every CWD is bounded at `MAX_CWD_LENGTH` and stripped of control characters before storage**, whatever the source ([terminal-escapes.md](terminal-escapes.md), rationale).
 

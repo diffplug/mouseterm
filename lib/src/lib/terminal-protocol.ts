@@ -118,6 +118,10 @@ export class TerminalProtocolParser {
    * most one character, so forwarding never grows.
    */
   private forwarding: { kind: StringControlKind; heldEsc: string } | null = null;
+  // Once a consumed OSC exceeds its buffer cap, discard through its end. Its
+  // tail is still payload, and its BEL terminator must not become a new alert.
+  // Retain only a split ESC terminator/cancel, never the oversized payload.
+  private discarding: { heldEsc: string } | null = null;
   private osc99Pending = new Map<string, Osc99PendingNotification>();
 
   /** Resolves OSC 10/11/12 queries; null lets xterm.js handle the sequence. */
@@ -134,6 +138,16 @@ export class TerminalProtocolParser {
   }
 
   process(data: string): TerminalProtocolParseResult {
+    if (this.discarding !== null) {
+      const text = this.discarding.heldEsc + data;
+      const end = findStringControlEnd(text, 0, 'osc');
+      if (!end) {
+        this.discarding.heldEsc = text.endsWith('\x1b') ? '\x1b' : '';
+        return { visibleData: '', textData: '', events: [], resumedStringEnd: 0 };
+      }
+      this.discarding = null;
+      return this.process(text.slice(end.end));
+    }
     if (this.forwarding !== null) return this.processForwarded(data);
     if (this.pending === '' && !NEEDS_PARSE_RE.test(data)) {
       return {
@@ -188,6 +202,8 @@ export class TerminalProtocolParser {
           visibleData += this.beginForwarding(control.kind, incomplete);
         } else if (incomplete.length <= OSC_INCOMPLETE_LIMIT) {
           this.pending = incomplete;
+        } else {
+          this.discarding = { heldEsc: incomplete.endsWith('\x1b') ? '\x1b' : '' };
         }
         break;
       }
@@ -432,12 +448,16 @@ export function collectTerminalProtocolResponses(events: TerminalProtocolEvent[]
   return events.flatMap((event) => (event.kind === 'response' ? [event.data] : []));
 }
 
+// Keep ordering across successive PTY reads, including a clock adjustment. A
+// realm-wide clock orders each of its streams without retaining per-PTY state.
+const nextSemanticTimestamp = createOrderedEventTimestamp(() => Date.now());
+
 export function collectTerminalSemanticEvents(
   events: TerminalProtocolEvent[],
   options: { now?: () => number } = {},
 ): TerminalSemanticEvent[] {
   const semanticEvents: TerminalSemanticEvent[] = [];
-  const nextTimestamp = createOrderedEventTimestamp(options.now ?? Date.now);
+  const nextTimestamp = options.now ? createOrderedEventTimestamp(options.now) : nextSemanticTimestamp;
   for (const event of events) {
     if (event.kind === 'semantic') {
       semanticEvents.push(timestampSemanticEvent(event.event, nextTimestamp));
@@ -620,12 +640,11 @@ function parsePromptBoundary(fields: string[], commandStartSource: CommandRunSou
 }
 
 function parseOsc633Property(rawProperties: string): TerminalProtocolEvent[] {
-  for (const property of rawProperties.split(';')) {
-    if (!property.startsWith('Cwd=')) continue;
-    const cwd = cwdFromOsc633(property.slice('Cwd='.length));
-    return cwd ? [{ kind: 'semantic', event: { type: 'cwd', cwd } }] : [];
-  }
-  return [];
+  // P carries one property; semicolons are literal path characters. Unlike E,
+  // Cwd is emitted verbatim, so splitting it would change directory identity.
+  if (!rawProperties.startsWith('Cwd=')) return [];
+  const cwd = cwdFromOsc633(rawProperties.slice('Cwd='.length));
+  return cwd ? [{ kind: 'semantic', event: { type: 'cwd', cwd } }] : [];
 }
 
 /**
