@@ -128,15 +128,19 @@ function PlaygroundDesktopExperience() {
     async function loadWall() {
       // Phone hydration briefly mounts this desktop prerender before reconciling media.
       if (getPreferredPlayground() === "pocket") return;
-      const platform = await import("dormouse-lib/lib/platform");
-      const registry = await import("dormouse-lib/lib/terminal-registry");
-      const mouseSelection = await import("dormouse-lib/lib/mouse-selection");
-      const themes = await import("dormouse-lib/lib/themes");
-      const alertSettings = await import("dormouse-lib/lib/alert-settings");
-      const wall = await import("dormouse-lib/components/Wall");
-      const scenarios = await import("dormouse-lib/lib/platform/fake-scenarios");
-      const asciiSplash = await import("../lib/ascii-splash-runner");
-      await import("dormouse-lib/index.css");
+      // None of these consumes another, so load the whole bundle at once rather
+      // than paying a round of module resolution each on the boot path.
+      const [platform, registry, mouseSelection, themes, alertSettings, wall, scenarios, asciiSplash] = await Promise.all([
+        import("dormouse-lib/lib/platform"),
+        import("dormouse-lib/lib/terminal-registry"),
+        import("dormouse-lib/lib/mouse-selection"),
+        import("dormouse-lib/lib/themes"),
+        import("dormouse-lib/lib/alert-settings"),
+        import("dormouse-lib/components/Wall"),
+        import("dormouse-lib/lib/platform/fake-scenarios"),
+        import("../lib/ascii-splash-runner"),
+        import("dormouse-lib/index.css"),
+      ]);
       if (cancelled) return;
 
       const adapter = platform.initPlatform("fake");
