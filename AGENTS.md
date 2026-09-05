@@ -40,6 +40,7 @@ One implementation map per spec: an exhaustive `Files` / `Code Map` section or s
 - **`docs/specs/tiling-engine.md`** — **Lath**, the in-house headless tiling engine: pure split-tree core, never-re-parent LathHost adapter, wall store + engine, Lath-only persistence.
 - **`docs/specs/alert.md`** — The Activity layer: alert tracks, attention model, TODO lifecycle, notification protocols with their sanitization rules, the Workspace union projection.
 - **`docs/specs/terminal-state.md`** — Per-Session semantic state: CWD, prompt/command lifecycle, title candidates and header derivation, grouping keys.
+- **`docs/specs/terminal-context.md`** — Unified terminal context and helper terminal (design-stage): lifecycle, promotion, host integration, and implementation questions.
 - **`docs/specs/terminal-escapes.md`** — Registry of every escape sequence parsed, answered, or ignored, each row pointing at its owning spec. Read before touching OSC/CSI parsing.
 - **`docs/specs/transport.md`** — Adapter-agnostic webview ↔ host protocol: PTY lifecycle and buffering, reconnection, message contracts, persisted-session types, the invariants every adapter honors.
 - **`docs/specs/mouse-and-clipboard.md`** — Terminal-owned selection, copy (Raw / Rewrapped), paste tiers, smart URL/path extension, the mouse-ownership state matrix.
