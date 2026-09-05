@@ -124,6 +124,33 @@ describe('handleEditableClipboard', () => {
     expect(survivor.value).toBe('elsewhere');
   });
 
+  it('retains cut text when clipboard access is denied', async () => {
+    withNativeClipboardRead('');
+    writeText.mockRejectedValue(new Error('clipboard denied'));
+    const input = field('one two', [4, 7]);
+    handleEditableClipboard(chord(input, 'x', 'ctrl'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(input.value).toBe('one two');
+  });
+
+  it.each(['focus', 'value', 'selection'] as const)(
+    'abandons a pending edit when %s changes', async (change) => {
+      let deliverClipboard!: (text: string) => void;
+      (platform as PlatformAdapter).readClipboardText = () =>
+        new Promise<string>((resolve) => { deliverClipboard = resolve; });
+      const input = field('old-title', [0, 3]);
+      handleEditableClipboard(chord(input, 'v', 'meta'));
+      if (change === 'focus') field('elsewhere', [0, 0]);
+      if (change === 'value') input.value = 'new-title';
+      if (change === 'selection') input.setSelectionRange(4, 9);
+      const focused = document.activeElement;
+      deliverClipboard('pasted');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(input.value).toBe(change === 'value' ? 'new-title' : 'old-title');
+      expect(document.activeElement).toBe(focused);
+    },
+  );
+
   it('prefers execCommand insertText when the webview provides it', async () => {
     // jsdom has no execCommand, so every other case here exercises the manual
     // fallback; this pins the branch that actually runs in production, cut's

@@ -61,8 +61,10 @@ export function handleMouseSelectionKeys(e: KeyboardEvent, ctx: WallKeyboardCtx)
     e.preventDefault();
     e.stopImmediatePropagation();
     const rewrapped = e.shiftKey;
-    void (rewrapped ? copyRewrapped(sid) : copyRaw(sid)).then(() => {
-      flashCopy(sid, rewrapped ? 'rewrapped' : 'raw');
+    void (rewrapped ? copyRewrapped(sid) : copyRaw(sid)).then((copied) => {
+      if (copied && getMouseSelectionState(sid).selection === sel) {
+        flashCopy(sid, rewrapped ? 'rewrapped' : 'raw');
+      }
     });
     return true;
   }

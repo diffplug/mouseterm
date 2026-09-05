@@ -3,6 +3,7 @@ import {
   DEFAULT_MOUSE_SELECTION_STATE,
   flashCopy,
   getMouseSelectionSnapshot,
+  getMouseSelectionState,
   getRenderTick,
   setSelection,
   subscribeToMouseSelection,
@@ -26,7 +27,7 @@ interface Props {
 export function SelectionPopup({ terminalId }: Props) {
   const touchUi = useContext(TouchUiContext);
   const states = useSyncExternalStore(subscribeToMouseSelection, getMouseSelectionSnapshot);
-  useSyncExternalStore(subscribeToRenderTick, getRenderTick);
+  const renderTick = useSyncExternalStore(subscribeToRenderTick, getRenderTick);
 
   const state = states.get(terminalId) ?? DEFAULT_MOUSE_SELECTION_STATE;
   const selection = state.selection;
@@ -72,7 +73,7 @@ export function SelectionPopup({ terminalId }: Props) {
       const y = Math.max(gridTop + (endRow - 1) * cellHeight - 4, 28);
       setAnchor({ left, bottom: dims.elementHeight - y });
     }
-  }, [terminalId, shouldRender, selection, touchUi]);
+  }, [terminalId, shouldRender, selection, touchUi, renderTick]);
 
   useEffect(() => {
     if (!shouldRender) return;
@@ -115,12 +116,10 @@ export function SelectionPopup({ terminalId }: Props) {
   };
 
   const onCopy = async (rewrapped: boolean) => {
-    if (rewrapped) {
-      await copyRewrapped(terminalId);
-    } else {
-      await copyRaw(terminalId);
+    const copied = await (rewrapped ? copyRewrapped(terminalId) : copyRaw(terminalId));
+    if (copied && getMouseSelectionState(terminalId).selection === selection) {
+      flashCopy(terminalId, rewrapped ? 'rewrapped' : 'raw');
     }
-    flashCopy(terminalId, rewrapped ? 'rewrapped' : 'raw');
   };
 
   const flashed = (kind: 'raw' | 'rewrapped') => state.copyFlash === kind;
