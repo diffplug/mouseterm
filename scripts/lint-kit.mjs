@@ -45,7 +45,7 @@ export function readRepoFile(relative) {
 export function workflowRunBlock(workflow, stepName) {
   const step = workflow.indexOf(`      - name: ${stepName}\n`);
   if (step < 0) throw new Error(`missing workflow step: ${stepName}`);
-  const next = workflow.indexOf('\n      - name: ', step + 1);
+  const next = workflow.indexOf('\n      - ', step + 1);
   const marker = '        run: |\n';
   const start = workflow.indexOf(marker, step);
   if (start < 0 || (next >= 0 && start > next)) throw new Error(`missing run block for workflow step: ${stepName}`);
