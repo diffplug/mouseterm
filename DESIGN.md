@@ -234,6 +234,7 @@ The system uses **raised surfaces**, not "cards." There are no nested cards. The
 - Used by `ThemePicker`. Style: `bg-input-bg`, `border border-input-border`, `rounded`, `font-mono`, `text-sm`.
 - **Focus:** native browser focus outline; this is acceptable because the entire input lives inside a raised surface that already has `shadow-2xl` and a border.
 - **Form fields inside a dialog** use the underlined pair in `design.tsx` instead, so a form mixing them reads as one: `NumericInput` for a number (filtered at the keystroke, sized in `ch`) and `TextInput` for a string (full width, `type` passed through — `type="password"` for a credential). The app has no checkbox anywhere: a boolean is an `OnOffSwitch`.
+- **On/off switch:** a compact track with the thumb left when off and right when on, followed by only the current `On` / `Off` label. Off is neutral; on uses the host link accent. Its 60×24px button uses the subdued action tint and hover from `design.tsx`, with native keyboard and disabled-fieldset behavior. Nested settings text aligns through `UNDER_SWITCH_INDENT`.
 
 ### Navigation
 

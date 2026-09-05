@@ -4,9 +4,9 @@ import {
   ArrowCounterClockwiseIcon, ArrowLineUpIcon, ArrowSquareOutIcon,
   BellIcon, BugBeetleIcon, CheckIcon,
   CircleNotchIcon, CopyIcon, FrameCornersIcon, PauseIcon, TerminalIcon,
-  WarningIcon, XIcon,
+  SlidersHorizontalIcon, WarningIcon, XIcon,
 } from '@phosphor-icons/react';
-import { OnOffSwitch, PANE_HEADER_HEIGHT_PX, POPUP_SURFACE_CLASS } from '../components/design';
+import { OnOffSwitch, PANE_HEADER_HEIGHT_PX, POPUP_SURFACE_CLASS, SUBTLE_ACTION_COLOR_CLASS as ACTION_COLOR_CLASS, SUBTLE_ACTION_INTERACTION_CLASS as ACTION_INTERACTION_CLASS } from '../components/design';
 import { AgentRobotIcon } from '../components/wall/BrowserDisplayIcon';
 
 // Presentation only: no PTYs, platform calls, persistence, or production menu
@@ -26,12 +26,10 @@ const SCENARIOS: { id: Scenario; label: string }[] = [
 ];
 const PARENT_DIR = '~/projects/dormouse';
 const HELPER_DIR = '~/projects/dormouse-fix';
-const noop = () => {};
-const ACTION_COLOR_CLASS = 'text-[color:color-mix(in_srgb,var(--color-link)_35%,var(--color-muted))] hover:text-link focus-visible:text-link';
 
 function Action({ children, label, onClick, muted = false }: { children: ReactNode; label: string; onClick?: () => void; muted?: boolean }) {
   return <button type="button" title={label} aria-label={label} onClick={onClick}
-    className={`inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 hover:bg-current/10 focus-visible:outline focus-visible:outline-focus-ring ${muted ? 'text-muted' : ACTION_COLOR_CLASS}`}>
+    className={`inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 ${ACTION_INTERACTION_CLASS} ${muted ? 'text-muted' : ACTION_COLOR_CLASS}`}>
     {children}
   </button>;
 }
@@ -102,6 +100,8 @@ function TerminalOutput({ scenario }: { scenario: Scenario }) {
 function ContextPrototype({ scenario, initialDetail = null, paneWidth }: { scenario: Scenario; initialDetail?: 'title' | 'modify' | 'reset' | null; paneWidth: number }) {
   const [detail, setDetail] = useState(initialDetail);
   const [port, setPort] = useState('5173');
+  const [watching, setWatching] = useState(false);
+  const [todo, setTodo] = useState(scenario === 'notification');
   const preserved = ['preserved', 'editor', 'differentDirectory'].includes(scenario);
   const mismatch = scenario === 'differentDirectory';
   const notification = scenario === 'notification';
@@ -143,9 +143,9 @@ function ContextPrototype({ scenario, initialDetail = null, paneWidth }: { scena
           <span className="text-muted">Alerts</span>
           <div className="flex h-6 items-center gap-2">
             <span>{notification ? 'Tests complete' : 'Watch all pnpm commands'}</span>
-            {!notification && <OnOffSwitch on={false} onEnable={noop} onDisable={noop} label="Watch all pnpm commands" />}
+            {!notification && <OnOffSwitch on={watching} onEnable={() => setWatching(true)} onDisable={() => setWatching(false)} label="Watch all pnpm commands" />}
             <span className="mx-1 h-3 border-l border-border" />
-            <span>TODO</span><OnOffSwitch on={notification} onEnable={noop} onDisable={noop} label="TODO" />
+            <span>TODO</span><OnOffSwitch on={todo} onEnable={() => setTodo(true)} onDisable={() => setTodo(false)} label="TODO" />
           </div>
         </div>
         {notification && <div className="ml-16 mt-2 border-l-2 border-border py-1 pl-3">
@@ -162,7 +162,7 @@ function ContextPrototype({ scenario, initialDetail = null, paneWidth }: { scena
             : <>
               {scenario === 'running' ? <CircleNotchIcon size={13} className="shrink-0" /> : scenario === 'autorunOff' ? <PauseIcon size={13} className="shrink-0" /> : <CheckIcon size={13} className="shrink-0" />}
               <span className="truncate">{scenario === 'autorunOff' ? 'Autorun off' : scenario === 'running' ? <>Running <span className="text-foreground">git status</span> automatically</> : <>Automatically ran <span className="text-foreground">git status</span></>}</span>
-              <button type="button" onClick={() => setDetail('modify')} className={`shrink-0 hover:underline ${ACTION_COLOR_CLASS}`}>Modify</button>
+              <Action label="Modify autorun command" onClick={() => setDetail('modify')}><SlidersHorizontalIcon size={15} />Modify</Action>
             </>}
           </div>
           <div className="ml-auto shrink-0"><Action label="Move this terminal into a new pane"><ArrowLineUpIcon size={15} />Promote</Action></div>

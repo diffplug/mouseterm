@@ -382,11 +382,11 @@ A store commit that empties the tree (last pane killed or minimized) triggers th
 
 **Must isolate the Terminal context prototype to Storybook.** Static presentation never spawns helpers or changes production menus.
 
-**Must put the prototype's Surface ref and close button at the right of the Title row**, without a separate heading row or terminal clipboard actions.
+**Must place the Surface ref and close button at the Title row's right**, without a heading row or terminal clipboard actions.
 
 **Must keep the prototype's helper header on one line**, hiding its name at narrow widths. Notification details appear directly when present.
 
-**Must label Title, Dir, and all four port actions in subdued link color; put counts beside dropdowns.**
+**Must label Title, Dir, Modify, and four port actions in subdued link color; put counts beside dropdowns.** Switches use `OnOffSwitch` (`DESIGN.md` → Inputs).
 
 Source of truth: `TerminalContextStory` in `lib/src/stories/TerminalContext.stories.tsx`.
 
