@@ -32,6 +32,7 @@ function hasVisibleTheme(snapshot: AppliedThemeSnapshot): boolean {
   const body = document.body;
   const expectedClass = snapshot.theme.type === 'light' ? 'vscode-light' : 'vscode-dark';
   if (!body.classList.contains(expectedClass)) return false;
+  if (body.style.colorScheme !== snapshot.theme.type) return false;
 
   for (const [name, value] of Object.entries(snapshot.resolvedVars)) {
     if (body.style.getPropertyValue(name).trim() !== value) return false;

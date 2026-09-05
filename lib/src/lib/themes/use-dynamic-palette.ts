@@ -6,10 +6,9 @@ export function useDynamicPalette(): void {
     const ctx = document.createElement('canvas').getContext('2d');
     if (!ctx) return;
 
-    const lastPublished = new Map<string, string>();
     const publish = (name: string, value: string) => {
-      if (lastPublished.get(name) === value) return;
-      lastPublished.set(name, value);
+      // Hydration or another publisher can remove a value we already wrote.
+      if (document.body.style.getPropertyValue(name) === value) return;
       document.body.style.setProperty(name, value);
     };
 
@@ -23,9 +22,9 @@ export function useDynamicPalette(): void {
     update();
     const mo = new MutationObserver(update);
     mo.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
     return () => {
       mo.disconnect();
-      lastPublished.clear();
       document.body.style.removeProperty('--color-door-bg');
       document.body.style.removeProperty('--color-door-fg');
       document.body.style.removeProperty('--color-focus-ring');
