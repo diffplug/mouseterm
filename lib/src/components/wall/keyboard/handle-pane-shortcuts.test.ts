@@ -2,7 +2,10 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
 import { handlePaneShortcuts } from './handle-pane-shortcuts';
+import { useWallKeyboard } from '../use-wall-keyboard';
 import type { WallKeyboardCtx } from './types';
 
 const terminalRegistryMocks = vi.hoisted(() => ({
@@ -22,6 +25,8 @@ vi.mock('../../../lib/terminal-registry', () => ({
 vi.mock('../../KillConfirm', () => ({
   randomKillChar: () => 'Q',
 }));
+
+vi.mock('./handle-mouse-selection-keys', () => ({ handleMouseSelectionKeys: () => false }));
 
 // jsdom here ships no `CSS` global; the header lookup escapes ids via CSS.escape.
 globalThis.CSS ??= {
@@ -129,6 +134,52 @@ describe('handlePaneShortcuts kill behavior', () => {
       { id: 'pane-a', title: 'Pane A' },
       { enterPassthrough: false, afterRestore: 'confirm-kill' },
     );
+  });
+});
+
+describe('comma rename eligibility', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('opens the terminal pane title editor', () => {
+    const ctx = makeCtx();
+    expect(handlePaneShortcuts(keydown(','), ctx, { current: null })).toBe(true);
+    expect(ctx.setRenamingPaneId).toHaveBeenCalledWith('pane-a');
+  });
+
+  it.each([
+    { name: 'terminal Door', selectedType: 'door', params: {} },
+    { name: 'browser pane', selectedType: 'pane', params: { surfaceType: 'browser' } },
+    { name: 'render-mode browser pane', selectedType: 'pane', params: { renderMode: 'iframe' } },
+  ] as const)('keeps command dispatch live after comma on a $name', async ({ selectedType, params }) => {
+    const renamingRef = { current: null as string | null };
+    const ctx = makeCtx({
+      selectedTypeRef: { current: selectedType },
+      nav: makeNav({ paneParams: () => params }),
+      renamingRef,
+      confirmKillRef: { current: null },
+      setRenamingPaneId: vi.fn((id) => { renamingRef.current = id as string; }),
+    });
+    function Harness() {
+      useWallKeyboard(ctx);
+      return null;
+    }
+    const root = createRoot(document.createElement('div'));
+    await act(async () => root.render(createElement(Harness)));
+    try {
+      const comma = keydown(',');
+      window.dispatchEvent(comma);
+      expect(comma.defaultPrevented).toBe(true);
+      expect(ctx.setRenamingPaneId).not.toHaveBeenCalled();
+
+      window.dispatchEvent(keydown('Enter'));
+      if (selectedType === 'door') {
+        expect(ctx.handleReattachRef.current).toHaveBeenCalled();
+      } else {
+        expect(ctx.enterTerminalMode).toHaveBeenCalledWith('pane-a');
+      }
+    } finally {
+      await act(async () => root.unmount());
+    }
   });
 });
 

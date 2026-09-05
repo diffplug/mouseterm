@@ -161,7 +161,7 @@ Wall starts in `command` mode. Embedders may pass `initialMode="passthrough"` wh
 
 All keys are handled in one capture-phase `keydown` listener on `window` (`use-wall-keyboard.ts`), which delegates in a fixed order to the modules in `lib/src/components/wall/keyboard/`: dual-tap → editable-field clipboard → mouse-selection keys → *(passthrough stops here)* → *(rename stops here)* → kill confirmation → *(an open dialog stops here)* → pane shortcuts → pane navigation. **Must prevent default and stop propagation for handled command keys.** Bare Meta/Shift presses stop only internal dispatch; the detector leaves their DOM event untouched.
 
-That order is load-bearing twice: a rename input suppresses the pane shortcuts but **not** the mode-exit gesture or the field's own clipboard chords; and a staged kill confirmation hijacks *every* key before the dialog gate, so the confirm letter works even though the modal is open.
+That order is load-bearing twice: a rename input suppresses the pane shortcuts but **not** the mode-exit gesture or the field's own clipboard chords; and a staged kill confirmation hijacks each key reaching it before the dialog gate, so the confirm letter works even though the modal is open.
 
 ### Split cwd inheritance
 
@@ -262,6 +262,8 @@ A door dragged out of the baseboard skips the token entirely and inserts at the 
 ## Inline rename
 
 Triggered by `,` in command mode or by clicking the session name in the pane header.
+
+**Must consume `,` without starting a rename on a Door or browser Surface.** Only a terminal pane mounts the title editor. Pinned by `handle-pane-shortcuts.test.ts`.
 
 The name `<span>` is replaced by an `InlineEditInput` (shared with the browser URL editor in `docs/specs/dor-browser.md`): same font (`font-mono font-medium`), `bg-transparent`, no border, seeded from the label with the failure glyph stripped. `Enter` confirms, `Escape` cancels, `blur` confirms — **whichever lands first settles the edit**, so the blur following an Enter/Escape unmount cannot submit a second time. It stops propagation on `mousedown`/`click`/`keydown` so the panel click and the header drag never fire.
 
