@@ -190,6 +190,32 @@ function listen(server: http.Server): Promise<number> {
   });
 }
 
+/**
+ * The rules every upstream request obeys, whichever path it takes: Host is the
+ * upstream's, the proxy vouches with an Origin only for a caller it actually
+ * served, and loopback cookies never cross.
+ *
+ * The Origin rewrite is the proxy vouching for the request upstream, and
+ * vouching for a stranger is what turns a transparent proxy into a CSRF
+ * amplifier: the port is discoverable, so any page could otherwise POST here
+ * and have its `Origin: https://evil.example` relabelled as the upstream's own
+ * — defeating exactly the origin check the rewrite exists to satisfy. Forward a
+ * foreign Origin untouched instead of blocking it: the upstream then sees the
+ * truth and applies its own policy, which leaves the proxy granting nothing the
+ * attacker did not already have by hitting the upstream's port directly. An
+ * absent Origin stays absent — that is a top-level navigation or a same-origin
+ * GET, the ordinary iframe case.
+ *
+ * Cookies share the loopback hostname across ports; these are not upstream
+ * credentials.
+ */
+function upstreamRequestHeaders(grant: Grant, req: http.IncomingMessage): http.OutgoingHttpHeaders {
+  const headers: http.OutgoingHttpHeaders = { ...req.headers, host: grant.upstream.host };
+  if (isOwnOrigin(req.headers.origin, grant.port)) headers.origin = grant.upstream.origin;
+  delete headers.cookie;
+  return headers;
+}
+
 function handleRequest(grant: Grant, req: http.IncomingMessage, res: http.ServerResponse): void {
   if (!isLoopbackHost(req.headers.host, grant.port)) {
     // DNS rebinding: a hostile domain re-pointed at 127.0.0.1 reaches this
@@ -207,35 +233,14 @@ function handleRequest(grant: Grant, req: http.IncomingMessage, res: http.Server
   if (!isForeignOrigin(req.headers.origin, grant.port)) grant.lastUsed = Date.now();
   const path = req.url ?? '/';
 
-  const headers: http.OutgoingHttpHeaders = { ...req.headers };
-  headers.host = grant.upstream.host;
-  // Present the request as coming from the upstream's own origin so origin-aware
-  // dev servers (Vary: Origin, CSRF checks) treat it as same-origin, and drop
-  // Accept-Encoding so HTML comes back identity (we rewrite it).
-  //
-  // Only for a caller we actually served. This rewrite is the proxy vouching
-  // for the request upstream, and vouching for a stranger is what turns a
-  // transparent proxy into a CSRF amplifier: the port is discoverable, so any
-  // page could otherwise POST here and have its `Origin: https://evil.example`
-  // relabelled as the upstream's own — defeating exactly the origin check the
-  // rewrite exists to satisfy. Forward a foreign Origin untouched instead of
-  // blocking it: the upstream then sees the truth and applies its own policy,
-  // which leaves the proxy granting nothing the attacker did not already have
-  // by hitting the upstream's port directly.
-  //
-  // An absent Origin stays absent, as before — that is a top-level navigation
-  // or a same-origin GET, which is the ordinary iframe case.
-  if (isOwnOrigin(req.headers.origin, grant.port)) {
-    headers.origin = grant.upstream.origin;
-  }
-  // Referer needs no such test: it only substitutes our own proxy origin, so a
-  // foreign referer already passes through untouched.
+  const headers = upstreamRequestHeaders(grant, req);
+  // Referer needs no own-origin test: it only substitutes our own proxy origin,
+  // so a foreign referer already passes through untouched.
   if (typeof headers.referer === 'string') {
     headers.referer = rewriteOrigin(headers.referer, grant.proxyOrigin, grant.upstream.origin);
   }
+  // Drop Accept-Encoding so HTML comes back identity — we rewrite it.
   delete headers['accept-encoding'];
-  // Cookies share the loopback hostname across ports; these are not upstream credentials.
-  delete headers.cookie;
 
   const upstreamReq = http.request({
     protocol: 'http:',
@@ -390,9 +395,7 @@ function handleUpgrade(grant: Grant, req: http.IncomingMessage, socket: net.Sock
   }
   if (!isForeignOrigin(req.headers.origin, grant.port)) grant.lastUsed = Date.now();
   socket.on('error', () => {});
-  const headers: http.OutgoingHttpHeaders = { ...req.headers, host: grant.upstream.host };
-  delete headers.cookie;
-  if (isOwnOrigin(req.headers.origin, grant.port)) headers.origin = grant.upstream.origin;
+  const headers = upstreamRequestHeaders(grant, req);
 
   // Parse the HTTP handshake before becoming a byte pipe: Set-Cookie on a 101
   // would otherwise poison cookies belonging to other loopback ports.
