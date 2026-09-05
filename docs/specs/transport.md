@@ -116,7 +116,7 @@ Transport constraints:
 - **VS Code broadcasts results**, safe because a `burrowRequestId` carries a per-adapter random tag and is globally unique, so only the adapter that asked can settle one (rationale; `docs/specs/vscode.md` → "Peer surfaces across windows").
 - **Standalone's correlation field is `burrowRequestId`, never `requestId`** — Rust swallows any sidecar line whose `data.requestId` matches a pending invoke (`docs/specs/standalone.md` → "Burrow service").
 
-**Workspace union status adds no message** (`docs/specs/alert.md`): standalone computes it in-webview, VS Code from the module-level `AlertManager` filtered to each router's `ownedPtyIds` — so the host sees every PTY's alert state but no browser-surface TODO (that webview→host Surface-state message is staged, `docs/specs/vscode.md` `## Future`).
+**Workspace union status adds no message.** Its projection and shipped host displays are owned by `docs/specs/alert.md` → Workspace union; the browser Surface-state message is staged in `docs/specs/vscode.md` → Future.
 
 | Direction | Message | Contract |
 | --- | --- | --- |

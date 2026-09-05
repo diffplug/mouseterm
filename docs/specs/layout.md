@@ -122,11 +122,11 @@ Source of truth: `lib/src/components/Baseboard.tsx`, `lib/src/components/Door.ts
 
 ## Workspaces
 
-Each Wall renders one Workspace's Content (Lath layout) and Baseboard (doors). Union status is `docs/specs/alert.md`'s; VS Code's per-webview mapping is `docs/specs/vscode.md`'s.
+Each Wall renders one Workspace's Content (Lath layout) and Baseboard (doors). VS Code's per-webview mapping is owned by `docs/specs/vscode.md`.
 
-The in-memory model and container verbs, union projection, and Window persistence wrapper are implemented but unwired. **Must reject duplicate Workspace IDs before mutating the model**, preserving the last-Workspace close guard (`workspace-store.test.ts`). `dormouse.flags.workspaces` is off by default and selects the wrapper's bare `PersistedSession` versus `PersistedWindow` format (`docs/specs/transport.md`). **Both standalone adapters disable session persistence**, so the flag alone enables no storage or Workspace UI. No production code calls the container verbs; `setActiveWorkspace` does not re-render the Wall, and standalone runs one implicit Workspace.
+The in-memory model, container verbs, and Window persistence wrapper are implemented but unwired. The live union projection and its host displays are owned by `docs/specs/alert.md` → Workspace union. **Must reject duplicate Workspace IDs before mutating the model**, preserving the last-Workspace close guard (`workspace-store.test.ts`). `dormouse.flags.workspaces` is off by default and selects the wrapper's bare `PersistedSession` versus `PersistedWindow` format (`docs/specs/transport.md`). **Both standalone adapters disable session persistence**, so the flag alone enables no storage or Workspace UI. No production code calls the container verbs; `setActiveWorkspace` does not re-render the Wall, and standalone runs one implicit Workspace.
 
-Source of truth: `createWorkspace` / `setWorkspaces` / `closeWorkspace` / `renameWorkspace` / `setActiveWorkspace` in `lib/src/lib/workspace-store.ts`; `computeWorkspaceUnion` in `lib/src/lib/workspace-union.ts`; `WORKSPACES_FLAG_KEY` in `lib/src/lib/feature-flags.ts`; `loadSessionState` / `saveSessionState` in `lib/src/lib/window-persistence.ts`; `PERSIST_SESSION` in `standalone/src/tauri-adapter.ts` and `standalone/src/browser-sidecar-adapter.ts`.
+Source of truth: `createWorkspace` / `setWorkspaces` / `closeWorkspace` / `renameWorkspace` / `setActiveWorkspace` in `lib/src/lib/workspace-store.ts`; `WORKSPACES_FLAG_KEY` in `lib/src/lib/feature-flags.ts`; `loadSessionState` / `saveSessionState` in `lib/src/lib/window-persistence.ts`; `PERSIST_SESSION` in `standalone/src/tauri-adapter.ts` and `standalone/src/browser-sidecar-adapter.ts`.
 
 The strip UI, real switching, and lifecycle UX are staged in [Future](#future) — this spec's `## Future` is the single rollout ledger; other specs link here.
 
@@ -386,7 +386,7 @@ A store commit that empties the tree (last pane killed or minimized) triggers th
 
 ## Future
 
-**Scope: workspaces-rollout** — the remaining stages of the multi-Workspace feature. The model, container verbs, Window persistence (behind `dormouse.flags.workspaces`), and union projection are implemented but unwired ([Workspaces](#workspaces); persisted containers in `docs/specs/transport.md`, union projection in `docs/specs/alert.md`). This ledger is the single home for what remains; other specs link here rather than restating it.
+**Scope: workspaces-rollout** — the remaining stages of the multi-Workspace feature. Current implementation: [Workspaces](#workspaces). Persisted containers are owned by `docs/specs/transport.md`; union projection by `docs/specs/alert.md`. This ledger is the single home for what remains; other specs link here rather than restating it.
 
 ### Stage 3 — workspace strip and switching UI (standalone)
 
