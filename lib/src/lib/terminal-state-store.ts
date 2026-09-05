@@ -204,8 +204,11 @@ export function seedLaunchedCommand(id: string, command: string, cwdPath?: strin
 export function recordTerminalOutput(id: string, output: string): void {
   if (!output) return;
 
-  const filter = promptAltScreenFilters.get(id) ?? new PromptAltScreenFilter();
-  promptAltScreenFilters.set(id, filter);
+  let filter = promptAltScreenFilters.get(id);
+  if (!filter) {
+    filter = new PromptAltScreenFilter();
+    promptAltScreenFilters.set(id, filter);
+  }
   const visible = filter.process(output);
   if (!visible) return;
   const buffer = `${promptOutputBuffers.get(id) ?? ''}${visible}`.slice(-1024);
@@ -385,6 +388,9 @@ function precedingLineHasPromptContext(text: string, lastNewlineIndex: number): 
   return false;
 }
 
+// Sticky so the ground-state jump costs no copy of the chunk tail.
+const ALT_GROUND_SCAN = /[\x1b\x9b]/g;
+
 // Elide alternate-buffer output before truncating the prompt window. Keep mode
 // state across chunks and command boundaries: neither can imply a buffer switch.
 // CSI parameters are accumulated numerically with a cap, so arbitrary-length
@@ -399,48 +405,61 @@ class PromptAltScreenFilter {
   process(input: string): string {
     let output = '';
     let cursor = 0;
+    // Start of an unflushed verbatim run, or -1 while output is suppressed.
+    // Emitting by slice rather than per character keeps an escape-dense chunk
+    // from costing a string concat per byte.
+    let runStart = -1;
     while (cursor < input.length) {
       if (this.state === 'ground') {
-        const next = input.slice(cursor).search(/[\x1b\x9b]/);
-        const end = next < 0 ? input.length : cursor + next;
-        if (!this.inAlt) output += input.slice(cursor, end);
+        ALT_GROUND_SCAN.lastIndex = cursor;
+        const introducer = ALT_GROUND_SCAN.exec(input);
+        const end = introducer ? introducer.index : input.length;
+        if (!this.inAlt && runStart < 0) runStart = cursor;
         cursor = end;
         if (cursor === input.length) break;
       }
-      const char = input[cursor++];
-      if (!this.inAlt) output += char;
-      if (char === '\x1b') {
+      const code = input.charCodeAt(cursor);
+      if (this.inAlt) {
+        if (runStart >= 0) { output += input.slice(runStart, cursor); runStart = -1; }
+      } else if (runStart < 0) {
+        runStart = cursor;
+      }
+      cursor++;
+      if (code === 0x1b) {
         this.state = 'escape';
-      } else if (char === '\x9b' || (this.state === 'escape' && char === '[')) {
+      } else if (code === 0x9b || (this.state === 'escape' && code === 0x5b /* [ */)) {
         this.state = 'csiStart';
         this.parameter = 0;
         this.hasAltParameter = false;
-      } else if (this.state === 'csiStart' && char === '?') {
+      } else if (this.state === 'csiStart' && code === 0x3f /* ? */) {
         this.state = 'parameters';
-      } else if (this.state === 'parameters' && /[0-9]/.test(char)) {
-        this.parameter = Math.min(1050, this.parameter * 10 + Number(char));
-      } else if (this.state === 'parameters' && (char === ';' || char === 'h' || char === 'l')) {
+      } else if (this.state === 'parameters' && code >= 0x30 && code <= 0x39 /* 0-9 */) {
+        this.parameter = Math.min(1050, this.parameter * 10 + (code - 0x30));
+      } else if (this.state === 'parameters' && (code === 0x3b /* ; */ || code === 0x68 /* h */ || code === 0x6c /* l */)) {
         this.hasAltParameter ||= this.parameter === 47 || this.parameter === 1047 || this.parameter === 1049;
         this.parameter = 0;
-        if (char !== ';') {
+        if (code !== 0x3b) {
           if (this.hasAltParameter) {
-            this.inAlt = char === 'h';
+            this.inAlt = code === 0x68;
             // Separate normal-buffer regions across a screen switch, and avoid
             // retaining a partial CSI from an enter split over output chunks.
+            if (runStart >= 0) { output += input.slice(runStart, cursor); runStart = -1; }
             output += '\n';
           }
           this.state = 'ground';
         }
-      } else if (this.state === 'escape' && char === 'c') {
+      } else if (this.state === 'escape' && code === 0x63 /* c */) {
         this.inAlt = false;
         this.state = 'ground';
+        if (runStart >= 0) { output += input.slice(runStart, cursor); runStart = -1; }
         output += '\n';
-      } else if (this.state === 'escape' || /[@-~]/.test(char) || char === '\x18' || char === '\x1a') {
+      } else if (this.state === 'escape' || (code >= 0x40 && code <= 0x7e) || code === 0x18 || code === 0x1a) {
         this.state = 'ground';
       } else {
         this.state = 'ignore';
       }
     }
+    if (runStart >= 0) output += input.slice(runStart, cursor);
     return output;
   }
 }

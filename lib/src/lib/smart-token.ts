@@ -3,7 +3,7 @@
  * Used by the smart-extension feature to offer "Press e to select the full
  * URL/path" during a mid-drag (spec §5).
  */
-import type { IBufferLine } from '@xterm/xterm';
+import type { IBufferCell, IBufferLine } from '@xterm/xterm';
 
 export interface DetectedToken {
   kind: 'url' | 'path';
@@ -108,10 +108,15 @@ export function detectTokenInBufferLine(line: IBufferLine, col: number): Detecte
   let probe = -1;
   const starts: number[] = [];
   const ends: number[] = [];
+  // Reuse the first cell for the rest of the line — `getCell` allocates a fresh
+  // CellData per call otherwise, and this runs on every pointermove of a drag.
+  let scratch: IBufferCell | undefined;
   for (let c = 0; c < line.length; c++) {
-    const cell = line.getCell(c);
-    if (!cell || cell.getWidth() === 0) continue;
+    const cell = line.getCell(c, scratch);
+    if (!cell) continue;
+    scratch ??= cell;
     const width = cell.getWidth();
+    if (width === 0) continue;
     if (c <= col && col < c + width) probe = text.length;
     const chars = cell.getChars() || ' ';
     for (let i = 0; i < chars.length; i++) {
