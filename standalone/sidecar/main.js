@@ -44,7 +44,7 @@ const mgr = create((event, data) => {
     console.error(`[sidecar] burrow ${event} tap failed:`, err && err.message || err);
   }
   if (event !== 'data') send(`pty:${event}`, data);
-}, nodePty);
+}, nodePty, { replay: true });
 
 const burrow = createSidecarBurrow({
   send,

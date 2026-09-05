@@ -16,7 +16,7 @@ test('helper ownership survives a live listing and promotion preserves the PTY a
       const terminal = { pid: 42, write() {}, resize() {}, kill() {}, onData(callback) { this.output = callback; }, onExit() {} };
       spawned.push(terminal); return terminal;
     },
-  });
+  }, { replay: true });
   manager.spawn('parent');
   manager.spawn('helper', { helper: { parentId: 'parent', command: 'git status' } });
   spawned[1].output('unsaved editor text');
