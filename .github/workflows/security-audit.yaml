@@ -361,8 +361,10 @@ jobs:
             # read is an audit that did not finish rather than a finding, and
             # deliberately not folded into MISSING_FRAGMENTS, whose message
             # says no fragment was left at all.
+            # A failure with an appended explanation is still a finding;
+            # only the PASS arm needs exact matching to open the gate.
             case "$(head -n1 "$f")" in
-              'VERDICT: FAIL')
+              'VERDICT: FAIL'*)
                 echo "::error::$f opens with VERDICT: FAIL; the merged verdict cannot stand."
                 DISSENTING="${DISSENTING:+$DISSENTING, }$f" ;;
               'VERDICT: PASS') ;;

@@ -52,6 +52,8 @@ const cases = [
   { name: 'missing fragment', status: 'PASS', verdicts: [null, 'PASS', 'PASS'], expected: 'INCONCLUSIVE' },
   { name: 'unverifiable checks override merged PASS', status: 'PASS', verdicts: ['INCONCLUSIVE', 'PASS', 'PASS'], expected: 'INCONCLUSIVE' },
   { name: 'dissent overrides missing merged verdict', verdicts: ['FAIL', 'PASS', 'PASS'], expected: 'FAIL' },
+  { name: 'FAIL with explanation overrides merged PASS', status: 'PASS', verdicts: ['FAIL — credential leaked', 'PASS', 'PASS'], expected: 'FAIL' },
+  { name: 'FAIL with explanation overrides missing merged verdict', verdicts: ['FAIL — credential leaked', 'PASS', 'PASS'], expected: 'FAIL' },
   { name: 'FAIL records every incomplete condition', status: 'FAIL', verdicts: [null, 'garbled', 'INCONCLUSIVE'], expected: 'FAIL', notes: ['left no report', 'could not be read', 'could not determine every check'] },
   { name: 'dissent and incomplete domains coexist', status: 'PASS', verdicts: ['FAIL', null, 'INCONCLUSIVE'], expected: 'FAIL', notes: ['returned `FAIL`', 'left no report', 'could not determine every check'] },
 ];
