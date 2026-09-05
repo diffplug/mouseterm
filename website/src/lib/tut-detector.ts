@@ -11,6 +11,7 @@ interface ActivityStoreModule {
   getActivitySnapshot: () => Map<string, ActivityState>;
   subscribeToWatchedCommands: (listener: () => void) => () => void;
   getWatchedCommands: () => string[];
+  getRunningCommandArgv0: (id: string) => string | null;
 }
 
 /** Notification sources a program emits for itself, as opposed to the ones
@@ -46,7 +47,8 @@ export class TutDetector {
   private currentMode: WallMode = "command";
   private currentPaneId: string | null = null;
   private commandModePanels = new Set<string>();
-  private watchingEnabledPaneIds = new Set<string>();
+  private pendingSpreadIds = new Set<string>();
+  private spreadCheckQueued = false;
   private pendingMoveTargetId: string | null = null;
   private pendingMoveClearTimer: ReturnType<typeof setTimeout> | null = null;
   private prevActivity = new Map<string, ActivityState>();
@@ -73,7 +75,6 @@ export class TutDetector {
     // mis-read as a transition from "nothing".
     for (const [id, s] of this.activityStore.getActivitySnapshot()) {
       this.prevActivity.set(id, { ...s });
-      if (s.watchingEnabled) this.watchingEnabledPaneIds.add(id);
     }
     for (const [id, s] of this.mouseStore.getMouseSelectionSnapshot()) {
       this.prevMouse.set(id, { ...s });
@@ -208,14 +209,7 @@ export class TutDetector {
       }
 
       if (!prev.watchingEnabled && current.watchingEnabled) {
-        this.watchingEnabledPaneIds.add(id);
-        // One rule, many panes: the second pane to light up never had its own
-        // bell clicked, which is the whole point of command-keyed WATCHING.
-        if (this.watchingEnabledPaneIds.size > 1) {
-          this.state.markComplete("al-spreads");
-        }
-      } else if (prev.watchingEnabled && !current.watchingEnabled) {
-        this.watchingEnabledPaneIds.delete(id);
+        this.queueSpreadCheck(id);
       }
 
       // Gate al-busy / al-ring on a true status transition. Without the
@@ -259,9 +253,39 @@ export class TutDetector {
     for (const id of this.prevActivity.keys()) {
       if (!snapshot.has(id)) {
         this.prevActivity.delete(id);
-        this.watchingEnabledPaneIds.delete(id);
+        this.pendingSpreadIds.delete(id);
       }
     }
+  }
+
+  private queueSpreadCheck(id: string): void {
+    if (this.state.isComplete("al-spreads")) return;
+    this.pendingSpreadIds.add(id);
+    if (this.spreadCheckQueued) return;
+    this.spreadCheckQueued = true;
+    // FakePtyAdapter publishes Activity before updating the command store.
+    // Read both at the end of this turn so a new command cannot borrow the
+    // previous command's identity and falsely look like the same WATCHING rule.
+    queueMicrotask(() => {
+      this.spreadCheckQueued = false;
+      if (this.pendingSpreadIds.size === 0) return;
+      const snapshot = this.activityStore.getActivitySnapshot();
+      const commandCounts = new Map<string, number>();
+      for (const [paneId, current] of snapshot) {
+        if (!current.watchingEnabled) continue;
+        const command = this.activityStore.getRunningCommandArgv0(paneId);
+        if (command) commandCounts.set(command, (commandCounts.get(command) ?? 0) + 1);
+      }
+      for (const paneId of this.pendingSpreadIds) {
+        if (!snapshot.get(paneId)?.watchingEnabled) continue;
+        const command = this.activityStore.getRunningCommandArgv0(paneId);
+        if (command && (commandCounts.get(command) ?? 0) > 1) {
+          this.state.markComplete("al-spreads");
+          break;
+        }
+      }
+      this.pendingSpreadIds.clear();
+    });
   }
 
   private processMouse(): void {
@@ -293,6 +317,7 @@ export class TutDetector {
     for (const fn of this.disposables) fn();
     this.disposables = [];
     this.clearPendingMoveTarget();
+    this.pendingSpreadIds.clear();
   }
 
 }

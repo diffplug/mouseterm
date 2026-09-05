@@ -20,18 +20,23 @@ import {
 } from "./tut-items";
 import type { TutorialState } from "./tutorial-state";
 
-/** Must outlast the attention window so the fake task can ring. */
-export const BUSY_DEMO_DURATION_MS = cfg.alert.userAttention + 250;
+/** Snapshot each launch: both the countdown and the fake command use this
+ *  duration. The floor keeps a shortened attention setting from ending output
+ *  before the WATCHING detector can confirm BUSY. */
+function getDemoDurationMs(inactivityTimeoutMs: number): number {
+  return Math.max(
+    inactivityTimeoutMs,
+    cfg.alert.busyCandidateGap + cfg.alert.busyConfirmGap,
+  ) + 250;
+}
 
 /** Must stay below `busyCandidateGap` to form one activity burst. */
 export const BUSY_DEMO_INTERVAL_MS = Math.floor(cfg.alert.busyCandidateGap / 2);
 
 /** Must outlive WATCHING's silence chain or exit disposes its monitor early. */
-export const WATCH_DEMO_COMMAND_MS =
-  BUSY_DEMO_DURATION_MS
-  + cfg.alert.mightNeedAttention
-  + cfg.alert.needsAttentionConfirm
-  + 2_000;
+function getWatchCommandDurationMs(busyDurationMs: number): number {
+  return busyDurationMs + cfg.alert.mightNeedAttention + cfg.alert.needsAttentionConfirm + 2_000;
+}
 
 // Replace `` `KEY` `` markers with a cyan span. Uses default-foreground
 // (39m) to close the span so the highlight composes cleanly with
@@ -105,12 +110,14 @@ interface TutRunnerOptions {
   state: TutorialState;
   profile?: TutorialProfile;
   onExit: () => void;
+  /** Injected by the loaded desktop runtime to keep platform imports out of hydration. */
+  getInactivityTimeoutMs?: () => number;
   /** Called when the user presses `s` inside the Alert section. */
-  onTriggerBusyDemo?: () => void;
+  onTriggerBusyDemo?: (durationMs: number, commandMs: number) => void;
   /** Called when the user presses `n` inside the Alert section. */
   onTriggerNotifyDemo?: () => void;
   /** Called when the user presses `x` inside the Alert section. */
-  onTriggerCommandExitDemo?: () => void;
+  onTriggerCommandExitDemo?: (durationMs: number) => void;
   /** Called when the user presses `p` inside the Copy paste section. */
   onTogglePlaceToPaste?: () => void;
   /** Called when the user presses `Enter` on the GitHub star prompt. */
@@ -135,9 +142,10 @@ export class TutRunner implements InteractiveProgram {
   private state: TutorialState;
   private profile: TutorialProfile;
   private onExit: () => void;
-  private onTriggerBusyDemo?: () => void;
+  private getInactivityTimeoutMs: () => number;
+  private onTriggerBusyDemo?: (durationMs: number, commandMs: number) => void;
   private onTriggerNotifyDemo?: () => void;
-  private onTriggerCommandExitDemo?: () => void;
+  private onTriggerCommandExitDemo?: (durationMs: number) => void;
   private onTogglePlaceToPaste?: () => void;
   private onOpenGithub?: () => void;
   private onOpenPocket?: () => void;
@@ -158,7 +166,9 @@ export class TutRunner implements InteractiveProgram {
   private pocketTouchModeUnsub: (() => void) | null = null;
   private resizeUnsub: (() => void) | null = null;
   private busyDemoStart: number | null = null;
+  private busyDemoDurationMs = 0;
   private commandExitDemoStart: number | null = null;
+  private commandExitDemoDurationMs = 0;
   private disposed = false;
 
   constructor(options: TutRunnerOptions) {
@@ -167,6 +177,7 @@ export class TutRunner implements InteractiveProgram {
     this.state = options.state;
     this.profile = options.profile ?? DESKTOP_TUTORIAL_PROFILE;
     this.onExit = options.onExit;
+    this.getInactivityTimeoutMs = options.getInactivityTimeoutMs ?? (() => cfg.alert.userAttention);
     this.onTriggerBusyDemo = options.onTriggerBusyDemo;
     this.onTriggerNotifyDemo = options.onTriggerNotifyDemo;
     this.onTriggerCommandExitDemo = options.onTriggerCommandExitDemo;
@@ -575,24 +586,26 @@ export class TutRunner implements InteractiveProgram {
 
   private busyDemoInProgress(): boolean {
     if (this.busyDemoStart === null) return false;
-    return Date.now() - this.busyDemoStart < BUSY_DEMO_DURATION_MS;
+    return Date.now() - this.busyDemoStart < this.busyDemoDurationMs;
   }
 
   private startBusyDemo(): void {
     this.busyDemoStart = Date.now();
-    this.onTriggerBusyDemo?.();
+    this.busyDemoDurationMs = getDemoDurationMs(this.getInactivityTimeoutMs());
+    this.onTriggerBusyDemo?.(this.busyDemoDurationMs, getWatchCommandDurationMs(this.busyDemoDurationMs));
     this.startSpinnerTicks();
     this.render();
   }
 
   private commandExitDemoInProgress(): boolean {
     if (this.commandExitDemoStart === null) return false;
-    return Date.now() - this.commandExitDemoStart < BUSY_DEMO_DURATION_MS;
+    return Date.now() - this.commandExitDemoStart < this.commandExitDemoDurationMs;
   }
 
   private startCommandExitDemo(): void {
     this.commandExitDemoStart = Date.now();
-    this.onTriggerCommandExitDemo?.();
+    this.commandExitDemoDurationMs = getDemoDurationMs(this.getInactivityTimeoutMs());
+    this.onTriggerCommandExitDemo?.(this.commandExitDemoDurationMs);
     this.startSpinnerTicks();
     this.render();
   }
@@ -895,9 +908,9 @@ export class TutRunner implements InteractiveProgram {
 
   private renderBusyDemoLines(): string[] {
     return [
-      this.renderDemoLine("s", "longtask", "Fake task", this.busyDemoStart),
+      this.renderDemoLine("s", "longtask", "Fake task", this.busyDemoStart, this.busyDemoDurationMs),
       `  ${DIM}Press \`n\` for a program that rings the bell itself.${RESET}`,
-      this.renderDemoLine("x", "slowbuild", "Slow build", this.commandExitDemoStart),
+      this.renderDemoLine("x", "slowbuild", "Slow build", this.commandExitDemoStart, this.commandExitDemoDurationMs),
     ];
   }
 
@@ -907,14 +920,15 @@ export class TutRunner implements InteractiveProgram {
     command: string,
     label: string,
     startedAt: number | null,
+    durationMs: number,
   ): string {
     if (startedAt === null) {
       return `  ${DIM}Press \`${key}\` to start a fake \`${command}\`.${RESET}`;
     }
     const elapsed = Date.now() - startedAt;
-    if (elapsed < BUSY_DEMO_DURATION_MS) {
+    if (elapsed < durationMs) {
       const spinner = SPINNER_FRAMES[this.spinnerFrame];
-      const secsLeft = Math.max(1, Math.ceil((BUSY_DEMO_DURATION_MS - elapsed) / 1_000));
+      const secsLeft = Math.max(1, Math.ceil((durationMs - elapsed) / 1_000));
       return `  ${fg(33)}${spinner}${RESET} ${label} finishes in ${BOLD}${secsLeft}${RESET} seconds.`;
     }
     return `  ${fg(32)}✓${RESET} ${label} finished. ${DIM}Press \`${key}\` for another.${RESET}`;
