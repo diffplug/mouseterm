@@ -705,6 +705,9 @@ describe('bind-as-lease', () => {
     await waitFor(() => peerSide.writes.length > 0 && peerSide.resizes.length > 0);
     expect(peerSide.writes).toEqual([{ ptyId: 'pty-far', data: 'ls\r' }]);
     expect(peerSide.resizes).toEqual([{ ptyId: 'pty-far', cols: 120, rows: 40 }]);
+    expect(broker.remoteResize(handle.ptyId, 120, 40, true)).toBe(true);
+    await waitFor(() => peerSide.resizes.length === 2);
+    expect(peerSide.resizes[1]).toEqual({ ptyId: 'pty-far', cols: 120, rows: 40, repaint: true });
   });
 
   it('refuses to route a PTY it has never placed', async () => {

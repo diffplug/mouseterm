@@ -14,7 +14,7 @@ same human geometry, while only the screencast is available to an agent. A
 separate presentation glyph then distinguishes pane-sized, fixed, and popped-out
 views without weakening that first signal.
 
-**What the scheme ladder decides.** A typed `host:port` renders in the iframe: the proxy frames remote `http://` as readily as loopback. A bare remote host carries no port to mark it a dev server, so `https://` sends it to agent-browser — the path for pages needing real HTTPS or a login.
+**What the scheme ladder decides.** A typed `host:port` chooses `http://`, which the iframe proxy supports for remote and loopback targets alike. A bare remote host chooses `https://`; entering it in an iframe reports the unsupported scheme and requires an explicit render swap to agent-browser.
 
 ## Pane Context Menu Connect
 
@@ -46,7 +46,7 @@ The persisted `wsPort` mirror can lag the controller's already-live port after a
 
 **Why no crisp capture starts inside the provisional window.** A host screenshot round trip is ~120ms against a ~20Hz stream, so *every* capture started while provisional frames are still landing is superseded before it resolves; the shots skipped would never have drawn anything.
 
-**Why a stale-dropped capture must leave the loop dirty.** Nothing is guaranteed to pulse the loop again: a single pointer move over a static page pulses exactly once, and that one pulse is consumed by the very capture the provisional paint supersedes — leaving the pane on the blurry provisional frame until the page happens to change on its own.
+**Why a stale-dropped capture must leave the loop dirty.** A provisional frame can supersede the host capture or its pending bitmap decode. Nothing is guaranteed to pulse the loop again: a single pointer move over a static page pulses exactly once, and that one pulse is consumed by the very capture the provisional paint supersedes — leaving the pane on the blurry provisional frame until the page happens to change on its own.
 
 **Why every non-crisp painter must bump the draw generation.** The byte-dedup compares an incoming capture against the last crisp draw. A resting page whose crisp bytes match that draw dedups to a no-op and strands the pane on the blurry provisional frame; a freshly re-attached canvas mounts blank and has the same problem.
 

@@ -82,11 +82,11 @@ export interface BurrowSurfaceProvider {
   writePty(ptyId: string, data: string): void;
 
   /**
-   * Resize the PTY *only*, leaving any owning xterm alone. This is the
-   * same-size repaint bounce's path, not the attach path — attach-is-the-resize
-   * goes through {@link SurfaceHandle.resize} so the owner's own view follows.
+   * Resize the PTY only. `repaint` requests an owner-managed bounce away from
+   * these dimensions, then restoration; every later owner resize supersedes
+   * that restoration. The xterm is already at the requested size.
    */
-  resizePty(ptyId: string, cols: number, rows: number): void;
+  resizePty(ptyId: string, cols: number, rows: number, repaint?: boolean): void;
 
   /**
    * Subscribe to one PTY's output and exit. Subscription and liveness observation

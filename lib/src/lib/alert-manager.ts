@@ -747,6 +747,10 @@ export class AlertManager {
           if (entry.pendingCommandLine !== null || entry.commandExitWatch !== null) {
             this.finishCommandExitWatch(id, entry, undefined);
             changed = true;
+          } else {
+            // Prompt rendering can produce busy output even without a reported
+            // command. Its history ends at this boundary too.
+            entry.detector.reset();
           }
           break;
       }
@@ -1058,11 +1062,10 @@ export class AlertManager {
 
   clearTodo(id: string): void {
     const entry = this.getOrCreateEntry(id);
-    // Explicit: the early return below skips `clearAllRingsIfActive`.
-    this.clearDeferredNotification(entry);
-    if (!entry.todo) return;
     entry.todo = false;
     entry.notification = null;
+    // A WATCHING ring may not have created TODO yet; clearing must still
+    // release it and any deferred notification. `notify` dedupes unchanged state.
     this.clearAllRingsIfActive(entry);
     this.notify(id);
   }

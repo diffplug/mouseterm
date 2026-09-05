@@ -676,6 +676,38 @@ describe('AlertManager in isolation', () => {
 
   // --- The always-on detector vs. the rule set as pure policy ---
 
+  it.each(['promptStart', 'promptEnd'] as const)('resets unwatched output history on %s without a command watch', (type) => {
+    const id = `prompt-boundary-${type}`;
+    const completions: CompletionEvent[] = [];
+    manager.registerCompletionClaimant(id, (event) => {
+      completions.push(event);
+      return false;
+    });
+    driveToBusy(id);
+    manager.applyTerminalSemanticEvents(id, [{ type }]);
+    settle();
+    expect(completions).toEqual([]);
+
+    // The prompt reset forgets old work but keeps observing subsequent output.
+    driveToBusy(id);
+    settle();
+    expect(completions).toEqual([{ kind: 'settled' }]);
+  });
+
+  it('clears a WATCHING ring before it has created a TODO', () => {
+    const id = 'clear-unattended-watching';
+    driveToRinging(id);
+    expect(manager.getState(id)).toMatchObject({ status: 'ALERT_RINGING', todo: false });
+
+    manager.clearTodo(id);
+    expect(manager.getState(id)).toMatchObject({
+      status: 'NOTHING_TO_SHOW', watchingEnabled: true, todo: false, notification: null,
+    });
+    driveToBusy(id);
+    settle();
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
+  });
+
   it('drives the detector on an unwatched Session without showing it or ringing', () => {
     const id = 'unwatched-detector';
     manager.setWatchedCommands(['claude']);

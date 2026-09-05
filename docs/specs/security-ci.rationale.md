@@ -10,7 +10,7 @@
 
 **Why instruction files are a class of their own.** They are not read as data the way a diff is; Claude Code loads them as authoritative guidance, which is what makes a fork PR's copy of them a different class of input from the fork's code.
 
-**The `0.1.18` gap, reported from this audit and now fixed.** At the previously pinned `0.1.18` the revert list was a flat, root-relative `SENSITIVE` array naming `CLAUDE.md` but no `AGENTS.md` at all — and this repo keeps its instructions in `AGENTS.md` with `CLAUDE.md` as a one-line `@AGENTS.md` pointer, so the control reverted a pointer and left the content it pointed at attacker-controlled. The fix ([max-sixty/tend#1005](https://github.com/max-sixty/tend/pull/1005), merged 2026-08-22, released in `0.1.19` on 2026-08-26) replaces that list with pathspec globs — `':(glob)**/AGENTS.md'`, `':(glob)**/CLAUDE.md'`, `':(glob)**/.claude/**'` — which `restore-sensitive-config.sh` passes to `pin_to_base`, covering every depth rather than a hand-enumerated set of root paths. This repo regenerated onto `0.1.19`, so the gap is closed here rather than merely closable.
+**The `0.1.18` gap, reported from this audit and now fixed.** At the previously pinned `0.1.18` the revert list was a flat, root-relative `SENSITIVE` array naming `CLAUDE.md` but no `AGENTS.md` at all — and this repo keeps its instructions in `AGENTS.md` with `CLAUDE.md` as a one-line `@AGENTS.md` pointer, so the control reverted a pointer and left the content it pointed at attacker-controlled. The fix ([max-sixty/tend#1005](https://github.com/max-sixty/tend/pull/1005), merged 2026-08-22, released in `0.1.19` on 2026-08-26) replaces that list with pathspec globs — `':(glob)**/AGENTS.md'`, `':(glob)**/CLAUDE.md'`, `':(glob)**/.claude/**'` — which `restore-sensitive-config.sh` passes to `pin_to_base`, covering every depth rather than a hand-enumerated set of root paths. The checked-in workflows use `0.1.24` as inspected in September 2026; `0.1.19` remains the minimum security floor.
 
 **The local remedy if it ever regresses.** The nightly regen overwrites the *workflow*, not this repository's instruction files, so moving the instruction body into `CLAUDE.md` and dropping the pointer would close it with no upstream dependency, at the cost of the filename convention other agent harnesses read.
 
@@ -34,9 +34,11 @@
 
 **Why the tend-regeneration classifier refuses a commit that also edits `.config/tend.yaml`.** The config's values land verbatim in the generated YAML: such a commit would reproduce by construction, making "reproducible" contingent on the upstream generator escaping its inputs.
 
+**Why regeneration materializes only its inputs.** In [tend 0.1.24's generator](https://github.com/max-sixty/tend/blob/0.1.24/generator/src/tend/cli.py), `init` writes workflows and `.github/actionlint.yaml` with `Path.write_text`, following symlinks. The former full worktree let an audited commit redirect those writes outside the checkout. Materializing only regular config/workflow blobs also excludes attacker-controlled ignore rules that could hide unexpected generated files from `git status`. The regression tests exercise both failures against the shipped classifier.
+
 **Why merged commits are still reported.** Review is not proof — the social-engineering path ends in an admin merge.
 
-**Why the lower bound stays server-set.** It is what stops the window from being attacker-movable in both directions at once; the `--since` committer-date comparison already moves one end.
+**Why the lower bound stays server-set.** It prevents the pusher from choosing the lower bound, but `--since` still compares attacker-controlled committer dates. Closing backdating and ephemeral-branch evasions would require server-observed pushes, force-pushes, and deletions with timestamps and before/after SHAs, rather than only the current commit graph.
 
 **Why the secret inventory is placement-checked.** Env-scoping is what stops a workflow pushed to an excluded branch from reading a secret, so a repo-level copy of an environment secret reopens exactly what the environment gate closes. The `release-attest` environment exists only to bound the ref a provenance OIDC token can be minted from.
 
@@ -56,4 +58,4 @@
 
 **Why argv exposure matters more here than usual.** `pnpm exec` means a dependency's lifecycle scripts share that session, so a `ps` reader is not hypothetical.
 
-**Why one of the three is env-only and two are not.** `TAURI_SIGNING_PRIVATE_KEY` used to be passed both on argv and through the environment; `tauri signer sign` documents `--private-key` as falling back to the variable, so the argv copy was redundant exposure and was removed. The other two stay on a command line only because their tools offer nowhere else to put them.
+**Why the updater key and PIN are env-only.** `tauri signer sign` reads `TAURI_SIGNING_PRIVATE_KEY` without the argv copy. [Jsign documents](https://ebourg.github.io/jsign/) `env:` and `file:` password indirection, available since 4.1; the previous literal-only claim was incorrect. The Windows signer now uses `env:EV_SIGN_PIN`. The notarization password still travels on argv.

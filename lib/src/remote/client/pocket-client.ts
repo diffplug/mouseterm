@@ -253,6 +253,14 @@ export const PASSKEY_UNAVAILABLE_MESSAGE =
   "This app no longer has the signed-in passkey's public key, so it cannot pair or connect. " +
   'Sign in again to restore it.';
 
+/** Missing cached proof material requires a fresh sign-in, just like expiry. */
+export class PasskeyUnavailableError extends Error {
+  constructor() {
+    super(PASSKEY_UNAVAILABLE_MESSAGE);
+    this.name = 'PasskeyUnavailableError';
+  }
+}
+
 /**
  * What the user reads for each Burrow-sent denial.
  *
@@ -1478,7 +1486,10 @@ export class PocketClient {
 
   #requirePasskeyPublicKey(credentialId: string): string {
     const publicKey = this.#storage.getPasskeyPublicKey(credentialId);
-    if (!publicKey) throw new Error(PASSKEY_UNAVAILABLE_MESSAGE);
+    if (!publicKey) {
+      this.#sessionToken = null;
+      throw new PasskeyUnavailableError();
+    }
     return publicKey;
   }
 }

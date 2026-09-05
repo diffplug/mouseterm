@@ -59,6 +59,7 @@ import {
   type RelayToBurrowFrame,
 } from 'remote-lib-common';
 import type { BurrowEnrollment } from './enrollment';
+import { createSerialQueue } from '../../host/remote/serial-queue';
 import { realTimer, type RemoteTimer, type RemoteWebSocket } from '../ws';
 import { loadBurrowAcl } from './acl';
 import type { PendingPairing } from './pairing-approval';
@@ -89,6 +90,11 @@ export { MAX_RELAY_TO_BURROW_FRAME_LENGTH } from 'remote-lib-common';
  * rather than on a human's deliberation.
  */
 export const MAX_PENDING_CONNECTION_HANDSHAKES = 8;
+
+/** Waiting relay work, before any asynchronous ceremony or crypto admission. */
+export const MAX_QUEUED_RELAY_FRAMES = 128;
+/** UTF-16 code units of the received JSON, including fields the guard ignores. */
+export const MAX_QUEUED_RELAY_FRAME_CHARS = 4 * 1024 * 1024;
 
 /**
  * What one invitation is doing, as the QR panel renders it.
@@ -175,6 +181,8 @@ interface PendingPairingSession {
   readonly clientStaticPublicKey: string;
   readonly requestedAt: number;
   readonly expiresAt: number;
+  /** Local consent is final while its durable write is in flight. */
+  committing?: boolean;
   /** Set once the first control message verified; until then there is no code. */
   approval?: {
     readonly code: string;
@@ -244,7 +252,7 @@ export interface BurrowOptions {
    * next restart.
    */
   loadAcl: (burrowId: string) => BurrowAclRecord[];
-  saveAcl: (burrowId: string, records: readonly BurrowAclRecord[]) => void;
+  saveAcl: (burrowId: string, records: readonly BurrowAclRecord[]) => void | Promise<void>;
   /** Surface a pairing request for local approval. */
   requestApproval: (pending: PendingPairing) => void;
   /** Dismiss a surfaced request once resolved. */
@@ -281,12 +289,13 @@ const MAX_BACKOFF_MS = 30_000;
 export class BurrowRuntime {
   readonly #enrollment: BurrowEnrollment;
   readonly #policy: ConnectionPolicy;
-  readonly #acl: BurrowAcl;
+  #acl: BurrowAcl;
+  readonly #saveApproval = createSerialQueue();
   readonly #challenges: ChallengeIssuer;
 
   readonly #createWebSocket: (url: string) => WebSocketLike;
   readonly #createSession?: BurrowOptions['createSession'];
-  readonly #saveAcl: (burrowId: string, records: readonly BurrowAclRecord[]) => void;
+  readonly #saveAcl: BurrowOptions['saveAcl'];
   readonly #requestApproval: (pending: PendingPairing) => void;
   readonly #dismissApproval: (clientId: string) => void;
   readonly #onInvitationChanged: NonNullable<BurrowOptions['onInvitationChanged']>;
@@ -334,7 +343,11 @@ export class BurrowRuntime {
    * WebCrypto, so unchained handlers would let a pipelined `transport` overtake
    * the `init` that has to create its session.
    */
-  #chain: Promise<void> = Promise.resolve();
+  readonly #frames: Array<{ frame: RelayToBurrowFrame; chars: number }> = [];
+  #frameChars = 0;
+  // Kept across socket teardown: repeated reconnects must not accumulate
+  // in-flight crypto operations while an old one is still awaiting WebCrypto.
+  #drainingFrames = false;
 
   /**
    * Bumped by every teardown ({@link BurrowRuntime.#dropTransientState}).
@@ -345,9 +358,9 @@ export class BurrowRuntime {
    * stays synchronous deliberately — the service clears its mirrored pairing
    * queue the instant `stop()` returns, and a deferred teardown would write to
    * that queue afterwards, possibly past a replacement Burrow — so
-   * {@link BurrowRuntime.#enqueue} stamps each step with the epoch it was queued
-   * under instead. Without it a handshake finishing after teardown reserves an
-   * invitation that was just retired and allocates a client entry nothing will
+   * {@link BurrowRuntime.#drainFrames} captures the epoch before each step and
+   * teardown clears the waiting FIFO. Without it a handshake finishing after
+   * teardown reserves an invitation that was just retired and allocates a client entry nothing will
    * ever remove: after `stop()` there is no later close to clean it up.
    */
   #epoch = 0;
@@ -458,9 +471,7 @@ export class BurrowRuntime {
    * and only the *earlier* of the two reaches the QR — an advisory value that
    * over-promised would send a phone into a handshake this Burrow will refuse.
    *
-   * Prunes on insert, since nothing else sweeps this map, and evicts its own
-   * oldest at the cap: the code longest on screen is the one whose scanner has
-   * most likely given up.
+   * Reaps before insertion and evicts the oldest invitation at the cap.
    *
    * **Everything that decides what this Burrow holds runs after the keygen, on
    * one synchronous stretch.** `generateNoiseKeyPair` is the only await here,
@@ -468,7 +479,7 @@ export class BurrowRuntime {
    * pre-await size and then both insert — leaving `MAX_TOKENS_PER_BURROW + 1`
    * live invitations, which is the cap the Relay's own setup-token bound is
    * shared with. A teardown in that same window is the other half, and it is
-   * guarded by the epoch {@link BurrowRuntime.#enqueue} uses rather than by
+   * guarded by the epoch {@link BurrowRuntime.#drainFrames} uses rather than by
    * `#stopped`: invitations go with the socket, so a close — not only a
    * `stop()` — retires them, and inserting afterwards would re-arm the reaper
    * and return a QR the panel paints `live` over a relay socket that is gone.
@@ -803,6 +814,8 @@ export class BurrowRuntime {
   #dropTransientState(): void {
     // First, so a ceremony step already awaiting sees it the moment it resumes.
     this.#epoch += 1;
+    this.#frames.length = 0;
+    this.#frameChars = 0;
     for (const clientId of [...this.#clients.keys()]) this.#disposeClient(clientId);
     for (const inviteId of [...this.#invitations.keys()]) this.#retireInvitation(inviteId);
     this.#armReaper();
@@ -879,9 +892,7 @@ export class BurrowRuntime {
       // them would find nothing to dispose and then watch the resumed step
       // reserve an invitation and allocate a client entry for a peer the relay
       // has already forgotten — one nothing would ever remove.
-      this.#enqueue(() => {
-        this.#onClientGone(frame.clientId);
-      });
+      this.#enqueue(frame, raw.length);
       return;
     }
     if (frame.t !== 'e2e') return;
@@ -889,30 +900,57 @@ export class BurrowRuntime {
     // the ciphertext scan — and this Burrow runs it rather than trusting the relay
     // to have (`docs/specs/relay.md` → "Routing").
     if (!isE2eRelayToBurrowFrame(frame)) return;
-    const e2e = frame;
-    this.#enqueue((epoch) => this.#onE2e(e2e, epoch));
+    this.#enqueue(frame, raw.length);
   }
 
   /**
-   * Run `step` after everything already queued for this socket, in arrival
-   * order. Every frame that touches the client map goes through here.
-   *
-   * The {@link BurrowRuntime.#epoch} is captured **here**, not when the step runs:
-   * a step is queued on the microtask queue, so a `stop()` on the very next
-   * line tears down before it has begun. A step whose epoch is already stale
-   * never runs at all; one that goes stale mid-flight is handed its epoch so it
-   * can refuse to mutate afterwards.
+   * Bound both retained strings and per-frame bookkeeping before queueing.
+   * Overflow ends the whole socket synchronously: skipping a transport frame
+   * would desynchronize its Noise nonce, and waiting for `close` would still
+   * admit buffered messages. The ordinary close policy handles reconnection.
    */
-  #enqueue(step: (epoch: number) => void | Promise<void>): void {
-    const epoch = this.#epoch;
-    this.#chain = this.#chain
-      .then(() => (this.#epoch === epoch ? step(epoch) : undefined))
-      .catch((error: unknown) => {
-      // A ceremony step must never reject into the chain: this Burrow runs in
-      // Node, where an unhandled rejection can take the sidecar or the extension
-      // host down rather than merely logging in a webview.
-        console.warn('[burrow] frame handling failed', error);
-      });
+  #enqueue(frame: RelayToBurrowFrame, chars: number): void {
+    if (
+      this.#frames.length >= MAX_QUEUED_RELAY_FRAMES ||
+      this.#frameChars + chars > MAX_QUEUED_RELAY_FRAME_CHARS
+    ) {
+      const ws = this.#ws;
+      this.#ws = null;
+      this.#onClose(undefined);
+      try {
+        ws?.close();
+      } catch {
+        // Already closing; its handlers are detached by the generation guard.
+      }
+      return;
+    }
+    this.#frames.push({ frame, chars });
+    this.#frameChars += chars;
+    if (this.#drainingFrames) return;
+    this.#drainingFrames = true;
+    // Defer the first step too, so synchronous stop() clears queued work before
+    // it can start. Teardown clears the FIFO, never this sole drain's latch.
+    void Promise.resolve().then(() => this.#drainFrames());
+  }
+
+  async #drainFrames(): Promise<void> {
+    try {
+      while (this.#frames.length > 0) {
+        const { frame, chars } = this.#frames.shift()!;
+        this.#frameChars -= chars;
+        const epoch = this.#epoch;
+        try {
+          if (frame.t === 'client-gone') this.#onClientGone(frame.clientId);
+          else await this.#onE2e(frame, epoch);
+        } catch (error) {
+          // Rejections must not escape into Node or prevent the next frame
+          // from draining. In-flight ceremonies check their epoch after awaits.
+          console.warn('[burrow] frame handling failed', error);
+        }
+      }
+    } finally {
+      this.#drainingFrames = false;
+    }
   }
 
   async #onE2e(frame: E2eRelayToBurrowFrame, epoch: number): Promise<void> {
@@ -1070,7 +1108,7 @@ export class BurrowRuntime {
    * attempt is spent *before* the comparison, so no throw can leave a retry
    * behind.
    */
-  #approvePairing(clientId: string, pairingId: string, code: string): void {
+  #approvePairing(clientId: string, pairingId: string, code: string): void | Promise<void> {
     const pending = this.#clients.get(clientId)?.pairing;
     if (!pending || pending.pairingId !== pairingId || !pending.approval) return;
     if (pending.attempted) return;
@@ -1094,33 +1132,56 @@ export class BurrowRuntime {
       this.#finishPairing(clientId, 'confirmation-mismatch');
       return;
     }
-    const deliveryId = randomBase64Url(DELIVERY_ID_BYTE_LENGTH);
-    const record = this.#acl.approve({
-      accountId: pending.approval.accountId,
-      passkeyCredentialId: pending.approval.passkeyCredentialId,
-      passkeyPublicKeyHash: pending.approval.passkeyPublicKeyHash,
-      clientStaticPublicKey: pending.clientStaticPublicKey,
-      deliveryId,
-      approvedBy: 'burrow-user',
-      label: pending.approval.label,
+    const approval = pending.approval;
+    // Serialize snapshot creation as well as persistence: overlapping approvals
+    // must not overwrite each other, and a failed save must not grant access in
+    // memory or revoke an existing pairing. Only the committed copy is live.
+    return this.#saveApproval(async () => {
+      if (this.#clients.get(clientId)?.pairing !== pending) return;
+      if (pending.expiresAt <= this.#now()) {
+        this.#finishPairing(clientId, 'invitation-expired');
+        return;
+      }
+      try {
+        const next = BurrowAcl.fromRecords(this.#acl.burrowId, this.#acl.records(), { now: this.#now });
+        const record = next.approve({
+          accountId: approval.accountId,
+          passkeyCredentialId: approval.passkeyCredentialId,
+          passkeyPublicKeyHash: approval.passkeyPublicKeyHash,
+          clientStaticPublicKey: pending.clientStaticPublicKey,
+          deliveryId: randomBase64Url(DELIVERY_ID_BYTE_LENGTH),
+          approvedBy: 'burrow-user',
+          label: approval.label,
+        });
+        pending.committing = true;
+        await this.#saveAcl(this.#enrollment.burrowId, next.records());
+        this.#acl = next;
+        // Consent already happened, so a successful save stays committed even
+        // after transport loss. Never answer on a retired or replacement pipe.
+        if (this.#clients.get(clientId)?.pairing !== pending) return;
+        this.#sendPairingOutcome(clientId, pending, {
+          ok: true,
+          burrowStaticPublicKey,
+          burrowLabel: boundedBurrowLabel(this.#enrollment.label),
+          accountId: record.accountId,
+          passkeyCredentialId: record.passkeyCredentialId,
+          passkeyPublicKeyHash: record.passkeyPublicKeyHash,
+          deliveryId: record.deliveryId,
+        });
+        this.#disposePairing(clientId, 'paired');
+      } catch (error) {
+        console.warn('[burrow] could not persist the ACL', error);
+        if (this.#clients.get(clientId)?.pairing !== pending) return;
+        pending.committing = false;
+        this.#finishPairing(clientId, 'burrow-error');
+      }
+      this.#reap();
     });
-    this.#saveAcl(this.#enrollment.burrowId, this.#acl.records());
-    this.#sendPairingOutcome(clientId, pending, {
-      ok: true,
-      burrowStaticPublicKey,
-      burrowLabel: boundedBurrowLabel(this.#enrollment.label),
-      accountId: record.accountId,
-      passkeyCredentialId: record.passkeyCredentialId,
-      passkeyPublicKeyHash: record.passkeyPublicKeyHash,
-      deliveryId,
-    });
-    this.#disposePairing(clientId, 'paired');
-    this.#reap();
   }
 
   #denyPairing(clientId: string, pairingId: string): void {
     const pending = this.#clients.get(clientId)?.pairing;
-    if (!pending || pending.pairingId !== pairingId) return;
+    if (!pending || pending.pairingId !== pairingId || pending.attempted) return;
     this.#finishPairing(clientId, 'user-denied');
     this.#reap();
   }
@@ -1129,6 +1190,13 @@ export class BurrowRuntime {
   #finishPairing(clientId: string, code: PairingDenialCode): void {
     const pending = this.#clients.get(clientId)?.pairing;
     if (!pending) return;
+    // A write already authorized locally cannot be cancelled by timeout or a
+    // Relay replacement. Drop its pipe without falsely announcing a denial;
+    // the Client reports unavailable if the durable outcome cannot reach it.
+    if (pending.committing) {
+      this.#disposePairing(clientId);
+      return;
+    }
     this.#sendPairingOutcome(clientId, pending, { ok: false, code });
     this.#disposePairing(clientId, PAIRING_OUTCOME_FOR_DENIAL[code]);
   }

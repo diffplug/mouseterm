@@ -162,6 +162,38 @@ describe('terminal semantic state store command input fallback', () => {
     expect(getTerminalPaneState('pane').currentCommand?.displayCommand).toBe('lazygit');
   });
 
+  it.each(['\x1b[?1049', '\x1b[?1047', '\x9b?47', '\x1b[?25;1049'])('keeps long chunked alternate-screen output out of the prompt heuristic (%s)', (mode) => {
+    submit('pane', 'lazygit');
+    // Split the mode sequence itself, then force its introducer out of the
+    // old 1024-character window before drawing a prompt-shaped TUI line.
+    for (const char of `${mode}h`) recordTerminalOutput('pane', char);
+    recordTerminalOutput('pane', 'x'.repeat(2_000));
+    recordTerminalOutput('pane', `\r\n${PROMPT}`);
+    expect(getTerminalPaneState('pane').currentCommand?.displayCommand).toBe('lazygit');
+    for (const char of `${mode}l`) recordTerminalOutput('pane', char);
+    recordTerminalOutput('pane', `\r\n${PROMPT}`);
+    expect(getTerminalPaneState('pane').currentCommand).toBeNull();
+  });
+
+  it('recognizes a returned prompt after RIS resets the alternate screen', () => {
+    submit('pane', 'lazygit');
+    recordTerminalOutput('pane', '\x1b[?1049h');
+    recordTerminalOutput('pane', '\x1b');
+    recordTerminalOutput('pane', `c${PROMPT}`);
+    expect(getTerminalPaneState('pane').currentCommand).toBeNull();
+  });
+
+  it('seeds alternate-screen state on replay and clears it on reset', () => {
+    seedPromptShapeFromScrollback('pane', `\x1b[?1049h${'x'.repeat(2_000)}\r\n${PROMPT}`);
+    seedLaunchedCommand('pane', 'lazygit');
+    recordTerminalOutput('pane', `\r\n${PROMPT}`);
+    expect(getTerminalPaneState('pane').currentCommand?.displayCommand).toBe('lazygit');
+    resetTerminalPaneState('pane');
+    submit('pane', 'echo restored');
+    recordTerminalOutput('pane', `\r\n${PROMPT}`);
+    expect(getTerminalPaneState('pane').currentCommand).toBeNull();
+  });
+
   it('does not resurrect a disposed pane when a late process CWD arrives', () => {
     fillTerminalProcessCwd('pane', '/Users/me/project');
     expect(getTerminalPaneStateSnapshot().has('pane')).toBe(false);

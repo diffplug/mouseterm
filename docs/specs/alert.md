@@ -1,6 +1,6 @@
 # Alert Spec
 
-> See `docs/specs/glossary.md` for Session / Pane / Door vocabulary. This spec uses it throughout.
+> See `docs/specs/glossary.md` for Session / Pane / Door vocabulary.
 >
 > Owns the Session Activity layer — the three alert tracks, attention, TODO, notification text and its sanitization, the two alarm sinks, and the Workspace union projection. `docs/specs/layout.md` defers here for all alert/TODO behavior and owns placement and sizing.
 
@@ -153,13 +153,13 @@ Source of truth: `awaitCompletion` in `lib/src/lib/alert-manager.ts`; `alertAwai
 Rules:
 
 - The key is `commandArgv0(rawCommandLine)`: everything before the first pipeline/compound boundary, skipping leading `VAR=value` assignments and a leading `env`, then argv[0] reduced to its basename minus any launcher suffix (`docs/specs/terminal-state.md`). So `foo | claude` keys on `foo`, matching what bash's `DEBUG` trap reports. Pinned by `lib/src/lib/watched-commands.test.ts`.
-- **Every command boundary resets the detector** — `commandStart`, `commandFinish`, `promptStart`, `promptEnd`, and PTY exit — so one command's output history can never leak into the next one's reading.
+- **Every command boundary resets the detector** — `commandStart`, `commandFinish`, `promptStart`, `promptEnd`, and PTY exit — even without a command watch. Pinned by `resets unwatched output history on %s without a command watch` in `lib/src/lib/alert-manager.test.ts`.
 - **Editing the rule set re-derives WATCHING across every live Session immediately**, so a mid-command enable shows what that command is doing *right now* rather than a fresh `NOTHING_TO_SHOW` (rationale).
-- **A WATCHING ring outlives the command that raised it.** Watching switches off the moment the watched command exits — usually the moment the ring was raised — so the ring and its originating command key are held in the Session entry (`watchingRingingCommand`).
-- **Removing a rule is the one thing that silences a WATCHING ring**; the latched originating key makes that work after the command has exited and watching is already off. A command merely ending never clears the ring.
+- **A WATCHING ring outlives the command that raised it.** Watching switches off when the watched command exits; its ring and originating command key remain in `watchingRingingCommand`.
+- **Removing a rule silences its WATCHING rings**, even after the command has exited; other dismissal paths follow Clearing And TODO. A command merely ending never clears the ring.
 - **The rule set is app-global and persisted** (`dormouse:watched-commands`), starting empty, so WATCHING is off everywhere until the user turns it on. **In VS Code the shared extension host is authoritative**, so a stale webview can neither replace unrelated rules nor keep reporting an obsolete list; the seed/mutation/broadcast wire contract is `docs/specs/transport.md`.
 
-**Limitation:** WATCHING needs the shell to report command boundaries (`OSC 633` / `OSC 133`). Shells without integration — `cmd.exe`, `fish`, or any where injection did not take (`docs/specs/terminal-escapes.md`) — never report a command name, so WATCHING never engages there and the bell reports "nothing is running"; the other two tracks are unaffected. Accepted rather than worked around: **never route the keystroke fallback in `docs/specs/terminal-state.md` into the `AlertManager`** (rationale).
+**Limitation:** WATCHING needs the shell to report command boundaries (`OSC 633` / `OSC 133`). Shells without integration (`docs/specs/terminal-escapes.md`) never report a command name, so WATCHING never engages and the bell reports "nothing is running". Terminal reports still work; command-exit alerting also requires semantic command boundaries. **Never route the keystroke fallback in `docs/specs/terminal-state.md` into the `AlertManager`** (rationale).
 
 | State | Meaning |
 |---|---|
@@ -183,7 +183,7 @@ Source of truth: `commandArgv0` in `lib/src/lib/terminal-state.ts`; `QuiesceDete
 
 ## Terminal reports
 
-**Terminal notifications are independent of WATCHING** and are explicit requests for attention: one rings immediately, but only when the Session lacks attention; an attended one is suppressed and unrelated protocol progress left alone. A ring sets `todo = true`, stores the latest sanitized `ActivityNotification`, and sets `protocolStatus = ALERT_RINGING`; clearing returns it to `IDLE` and public status falls back to the other tracks.
+**Terminal notifications are independent of WATCHING** and follow the deferral policy in Completion events. **Never ring an attended Session**; suppression leaves unrelated protocol progress alone. A ring sets `todo = true`, stores the latest sanitized `ActivityNotification`, and sets `protocolStatus = ALERT_RINGING`; clearing returns it to `IDLE` and public status falls back to the other tracks.
 
 Sequence syntax lives in `docs/specs/terminal-escapes.md`; what each means here:
 
@@ -232,7 +232,7 @@ Clearing behavior:
 - Attending a ringing Session clears active rings on all three tracks, sets `todo = true`, and sets `attentionDismissedRing = true`.
 - Dismissing the ring from the bell or `a` (Pane Header) sets `todo = true` and opens the alert/TODO dialog.
 - Marking TODO clears any active ring and leaves the WATCHING rule in place for future cycles.
-- Clearing TODO sets `todo = false`, clears `notification`, and clears active rings.
+- **Must clear notification and active rings when clearing TODO, even if `todo` is already false.** Pinned by `clears a WATCHING ring before it has created a TODO` in `lib/src/lib/alert-manager.test.ts`.
 - Passthrough `Enter` typed into the Session clears TODO. Command-mode `Enter` that only enters passthrough does not.
 - Removing a WATCHING rule turns watching off wherever it matched and silences the WATCHING rings it raised. It does not stop the detector, nor clear protocol progress, command-exit arms, TODO, or notification detail.
 - Destroying the Session clears all alert, TODO, notification, attention, protocol, and command-exit state.
@@ -282,12 +282,12 @@ Source of truth: `AlertSettings` in `lib/src/lib/alert-settings.ts` (renderer mi
 ### Spoken alarms
 
 - **The label must be sanitized before it reaches the engine** (`toSpokenText`): all Unicode punctuation, symbols, and `Other` characters (including controls, bidi controls, and zero-width formats) become spaces, except apostrophes, which are elided so contractions survive; letters, numbers, and their combining marks from every script remain. Whitespace collapses, the result is capped in code points, and an empty result falls back to `terminal`. **Security, not tidiness:** WebKit wedges its synthesizer on angle brackets, and terminal-supplied text reaches Pane labels (rationale).
-- **Delivery state follows actual engine callbacks, not queue admission.** `AlertSpeechState` is a renderer-local `speaking | spoken` map keyed by Session: `start` publishes `speaking`; `end`, or `error` after a real start, publishes `spoken`; an utterance that never starts publishes neither. Each utterance carries an opaque generation token, so a late callback from a resolved or older ring cannot overwrite a newer ring or resurrect a cleared marker.
+- **Delivery state follows actual engine callbacks, not queue admission.** `AlertSpeechState` is a renderer-local `speaking | spoken` map keyed by Session: `start` publishes `speaking`; `end`, or `error` after a real start, publishes `spoken`; an utterance that never starts publishes neither. **Must check delivery identity before accepting `start` or completion**, including after redispatch, eviction, or teardown. Pinned by `ignores an older ring starting after a newer ring has begun speaking` and `bounds tracked utterances when the engine never calls back` in `lib/src/lib/alert-speech.test.ts`.
 - **Nothing in the settle path may assume the callback arrives after `speak()` returns** — an engine may dispatch `start` then `end`/`error` *synchronously* inside `speechSynthesis.speak()` (rationale). Handlers therefore close over the utterance itself and registration happens before dispatch. A dispatch the engine refuses outright settles too.
 - **Attending mid-sentence cuts the utterance off** — silence the engine, not merely un-render the overlay. "Mid-sentence" is the sink's own record that an utterance started — its generation token — never the rendered `speaking` state.
 - Web Speech has no per-utterance stop, so `cancel()` empties the whole queue. **Re-dispatch every still-ringing Session whose current-ring utterance was accepted but never started**, because attending one Pane must not silence another's alarm, and hold each re-dispatch to the same gates as the first (attended meanwhile, or the setting switched off, drops out). **Prune a queued entry as soon as its ring resolves**, so a later unrelated `cancel()` cannot re-dispatch a stale one, bypass the new ring's delay, and speak twice. **Never cut a Session that is only queued** — cutting it would take the Pane that *is* talking with it.
 - **Teardown must `cancel()` the engine, not just detach the callbacks** — a webview that unmounts mid-alarm would otherwise keep reading Pane names aloud with no UI left to stop it.
-- **In-flight tracking is bounded.** A dropped utterance never fires a callback to retire itself, so the tracking set and the Session-keyed queued index evict their oldest entry past a small shared cap. An evicted utterance that does still fire settles normally; it is only no longer eligible for collateral re-dispatch.
+- **In-flight tracking is bounded.** The utterance set and queued index evict their oldest entry past a shared cap. Delivery identities retain one token per ringing Session until the ring resolves. An evicted utterance that still fires settles normally; it is no longer eligible for collateral re-dispatch.
 - `speaking` / `spoken` remains only while the originating Session is still `ALERT_RINGING`: any action that resolves the ring (Clearing And TODO) clears it, killing the Session included, while visibility, hover, and command-mode selection do not. **Never persist it or send it to the host**, so restore/reconnect cannot recreate it.
 
 Source of truth: `toSpokenText` in `lib/src/lib/alert-speech.ts`, armed by `lib/src/components/wall/use-alert-speech.ts`; label derivation in `lib/src/lib/session-label.ts`; `AlertSpeechState` in `lib/src/lib/alert-speech-state.ts`.
@@ -324,9 +324,19 @@ Source of truth: `lib/src/components/SettingsDialog.tsx`; `SettingsPreview` in `
 
 ## Workspace union
 
-> `docs/specs/glossary.md` defines the Workspace / Window containers and the three union fields (`ringing`, `todo`, `count`).
+**Must derive these fields from member Surface Activity:**
 
-The projection is a pure function — `computeWorkspaceUnion(surfaceIds, activitySnapshot)` in `lib/src/lib/workspace-union.ts`. **Display-only:** it never enters the Activity state machine and never fires a ring of its own, mirroring whichever per-Session rings survive attention suppression. A Surface with no activity entry contributes nothing, and one that is both ringing and TODO counts once. Callers **must include** minimized (`Doored`) Surfaces — and, once Workspaces are more than one, the Surfaces of inactive (unmounted) Workspaces — because Activity survives minimize and unmount (glossary I2/I3) and a browser Surface's `todo` survives in its persisted `alert` blob.
+| Field | Meaning |
+|---|---|
+| `ringing` | Any member Session is `ALERT_RINGING`. |
+| `todo` | Any member Surface has `todo === true`. |
+| `count` | Number of members ringing or TODO; each Surface counts once. |
+
+**Must keep the projection display-only:** it never enters the Activity machine or fires its own ring. A Surface with no activity entry contributes nothing. Callers **must include** minimized (`Doored`) Surfaces.
+
+Reserved: **Must include inactive Workspaces' Surfaces when projecting their unions** (`docs/specs/layout.md` → Future, workspaces-rollout).
+
+Source of truth: `computeWorkspaceUnion` in `lib/src/lib/workspace-union.ts`; `lib/src/lib/workspace-union.test.ts`.
 
 Where it surfaces is host-specific:
 

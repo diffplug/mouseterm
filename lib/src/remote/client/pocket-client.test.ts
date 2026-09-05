@@ -1407,6 +1407,7 @@ describe('the presence proof', () => {
     await emptied.signin();
 
     await expect(emptied.pair(invitation, 'iPhone')).rejects.toThrow(PASSKEY_UNAVAILABLE_MESSAGE);
+    expect(emptied.sessionToken).toBeNull();
     expect(harness.approvals).toEqual([]);
   });
 

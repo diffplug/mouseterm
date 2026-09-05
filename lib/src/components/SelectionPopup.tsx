@@ -1,19 +1,24 @@
 import { useContext, useLayoutEffect, useState, useEffect, useSyncExternalStore, type CSSProperties } from 'react';
 import {
   DEFAULT_MOUSE_SELECTION_STATE,
-  flashCopy,
   getMouseSelectionSnapshot,
   getRenderTick,
   setSelection,
   subscribeToMouseSelection,
   subscribeToRenderTick,
 } from '../lib/mouse-selection';
-import { copyRaw, copyRewrapped } from '../lib/clipboard';
+import { copySelection } from '../lib/copy-selection';
 import { CheckIcon } from '@phosphor-icons/react';
 import { IS_MAC } from '../lib/platform';
 import { getTerminalOverlayDims } from '../lib/terminal-registry';
 import { PopupButtonRow, popupButton, Shortcut } from './design';
 import { TouchUiContext } from './touch-ui-context';
+
+interface Anchor {
+  left: number;
+  top?: number;
+  bottom?: number;
+}
 
 interface Props {
   terminalId: string;
@@ -26,13 +31,13 @@ interface Props {
 export function SelectionPopup({ terminalId }: Props) {
   const touchUi = useContext(TouchUiContext);
   const states = useSyncExternalStore(subscribeToMouseSelection, getMouseSelectionSnapshot);
-  useSyncExternalStore(subscribeToRenderTick, getRenderTick);
+  const renderTick = useSyncExternalStore(subscribeToRenderTick, getRenderTick);
 
   const state = states.get(terminalId) ?? DEFAULT_MOUSE_SELECTION_STATE;
   const selection = state.selection;
   const shouldRender = (!!selection && !selection.dragging) || !!state.copyFlash;
 
-  const [anchor, setAnchor] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const [anchor, setAnchor] = useState<Anchor | null>(null);
 
   useLayoutEffect(() => {
     if (!shouldRender || !selection) {
@@ -54,25 +59,31 @@ export function SelectionPopup({ terminalId }: Props) {
     // selection than the hint did on drag-up.
     const draggedDown = selection.endRow >= selection.startRow;
     const left = Math.min(dims.elementWidth - 300, Math.max(0, gridLeft + selection.endCol * cellWidth));
+    let next: Anchor;
     if (touchUi) {
       // Mobile: always sit above the selection so the dragging thumb (which ends
       // at the selection's lower edge) never covers the copy buttons.
       const topRow = Math.max(0, Math.min(dims.rows - 1, Math.min(selection.startRow, selection.endRow) - dims.viewportY));
       const y = Math.max(gridTop + (topRow - 1) * cellHeight - 4, 28);
-      setAnchor({ left, bottom: dims.elementHeight - y });
+      next = { left, bottom: dims.elementHeight - y };
     } else if (draggedDown) {
       const top = Math.min(
         gridTop + (endRow + 2) * cellHeight + 4,
         dims.elementHeight - 24,
       );
-      setAnchor({ left, top });
+      next = { left, top };
     } else {
       // Bottom-anchored one full cell above the selection — symmetric with
       // the drag-down +2-row offset on the top-anchored side.
       const y = Math.max(gridTop + (endRow - 1) * cellHeight - 4, 28);
-      setAnchor({ left, bottom: dims.elementHeight - y });
+      next = { left, bottom: dims.elementHeight - y };
     }
-  }, [terminalId, shouldRender, selection, touchUi]);
+    // The render tick fires for every pane at up to 60 Hz, so keep the previous
+    // object when the position is unchanged and let React bail out of the render.
+    setAnchor((prev) => (prev && prev.left === next.left && prev.top === next.top && prev.bottom === next.bottom)
+      ? prev
+      : next);
+  }, [terminalId, shouldRender, selection, touchUi, renderTick]);
 
   useEffect(() => {
     if (!shouldRender) return;
@@ -114,14 +125,7 @@ export function SelectionPopup({ terminalId }: Props) {
     zIndex: 20,
   };
 
-  const onCopy = async (rewrapped: boolean) => {
-    if (rewrapped) {
-      await copyRewrapped(terminalId);
-    } else {
-      await copyRaw(terminalId);
-    }
-    flashCopy(terminalId, rewrapped ? 'rewrapped' : 'raw');
-  };
+  const onCopy = (rewrapped: boolean) => copySelection(terminalId, rewrapped);
 
   const flashed = (kind: 'raw' | 'rewrapped') => state.copyFlash === kind;
   const buttonClass = (kind: 'raw' | 'rewrapped') => popupButton({ flashed: flashed(kind) });

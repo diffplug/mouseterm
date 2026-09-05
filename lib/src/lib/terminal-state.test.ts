@@ -8,6 +8,8 @@ import {
   cwdFromManualPath,
   cwdFromOsc7,
   cwdFromOsc633,
+  cwdFromOsc1337,
+  cwdFromProcessPath,
   cwdFromOsc9_9,
   cwdIdentity,
   MAX_CWD_LENGTH,
@@ -50,6 +52,12 @@ describe('terminal CWD normalization', () => {
       source: 'osc7',
       updatedAt: 100,
     });
+  });
+
+  it.each([cwdFromManualPath, cwdFromProcessPath, cwdFromOsc633, cwdFromOsc1337, cwdFromOsc9_9])('preserves literal percent escapes and whitespace in native CWDs (%s)', (parse) => {
+    expect(parse('/repo/literal%20name  ')?.path).toBe('/repo/literal%20name  ');
+    expect(parse('/repo/%2F%25%07')?.path).toBe('/repo/%2F%25%07');
+    expect(parse('  relative path  ')?.path).toBe('  relative path  ');
   });
 
   it('marks OSC 9;9 Windows paths and leaves other paths unknown', () => {
@@ -487,6 +495,13 @@ describe('header and grouping derivation', () => {
     })).toEqual({
       primary: 'npm run build',
     });
+  });
+
+  it.each(['osc99', 'osc777'] as const)('keeps %s diagnostics out of command-start fallbacks', (source) => {
+    const pane = createTerminalPaneState({ title: { title: 'Finished tests', source, updatedAt: 1 } });
+    const running = reduceTerminalState(pane, { type: 'commandStart', source: 'osc133_boundaries' }, { now: () => 2 });
+    expect(running.currentCommand?.displayCommand).toBe('shell');
+    expect(deriveHeader(running, [running]).primary).toBe('shell');
   });
 
   it('does not use rich notification titles as tab title overrides', () => {

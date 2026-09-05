@@ -68,11 +68,15 @@ export class RemotePtyAdapter implements PlatformAdapter {
   /** Memoized directory.watch start; also the "started" guard. */
   #watchPromise: Promise<void> | null = null;
   #directorySubId: string | null = null;
+  #disposed = false;
 
   /** The one attached surface (v1: one attachment per session), or null. */
   #attached: Attachment | null = null;
   /** Bumped on every setActivePane so a superseded async attach can bail. */
   #activeGeneration = 0;
+  // A stale detach is keyed by surfaceId on the wire: finish it before another
+  // attachment to that same surface can start (rapid A → B → A switching).
+  #attachQueue: Promise<void> = Promise.resolve();
   /** Last size seen, so a re-attach can reuse it if the caller omits one. */
   #lastSize: Size = DEFAULT_SIZE;
 
@@ -94,6 +98,7 @@ export class RemotePtyAdapter implements PlatformAdapter {
 
   /** Detach the live surface and stop watching the directory. */
   async dispose(): Promise<void> {
+    this.#disposed = true;
     const attached = this.#attached;
     this.#attached = null;
     this.#activeGeneration++;
@@ -114,7 +119,8 @@ export class RemotePtyAdapter implements PlatformAdapter {
   // --- Directory (onPtyList + adapter-specific getters) --------------------
 
   requestInit(): void {
-    void this.#ensureDirectoryWatch();
+    if (this.#disposed) return;
+    void this.#ensureDirectoryWatch().catch(() => {});
     // Give a resuming UI the latest known list immediately.
     if (this.#entries.length > 0) this.#emitPtyList();
   }
@@ -146,17 +152,24 @@ export class RemotePtyAdapter implements PlatformAdapter {
   }
 
   #ensureDirectoryWatch(): Promise<void> {
+    if (this.#disposed) return Promise.resolve();
     if (!this.#watchPromise) {
       this.#watchPromise = this.#client
         .watchDirectory((entries) => this.#onSnapshot(entries))
         .then((subId) => {
-          this.#directorySubId = subId;
+          if (this.#disposed) this.#client.unsubscribe(subId);
+          else this.#directorySubId = subId;
+        })
+        .catch((error: unknown) => {
+          this.#watchPromise = null;
+          throw error;
         });
     }
     return this.#watchPromise;
   }
 
   #onSnapshot(entries: DirectoryEntry[]): void {
+    if (this.#disposed) return;
     this.#entries = entries;
     this.#emitPtyList();
     for (const listener of this.#directoryListeners) listener(entries);
@@ -181,16 +194,24 @@ export class RemotePtyAdapter implements PlatformAdapter {
    * `onPtyData`, `terminal.closed` becomes `onPtyExit`.
    */
   async setActivePane(id: string, cols?: number, rows?: number): Promise<void> {
+    if (this.#disposed) return;
     const size = normalizeSize(cols, rows, this.#lastSize);
     this.#lastSize = size;
+    const generation = ++this.#activeGeneration;
+    const activation = this.#attachQueue.then(() => this.#activatePane(id, size, generation));
+    this.#attachQueue = activation.catch(() => {});
+    await activation;
+  }
+
+  async #activatePane(id: string, size: Size, generation: number): Promise<void> {
+    if (generation !== this.#activeGeneration) return;
 
     if (this.#attached?.surfaceId === id) {
       // Already the active surface — a size change is just a resize.
-      void this.#client.resize(id, size.cols, size.rows);
+      await this.#client.resize(id, size.cols, size.rows);
       return;
     }
 
-    const generation = ++this.#activeGeneration;
     const prev = this.#attached;
     this.#attached = null;
     if (prev) {
@@ -202,15 +223,19 @@ export class RemotePtyAdapter implements PlatformAdapter {
     }
     if (generation !== this.#activeGeneration) return; // superseded mid-detach
 
+    let closed = false;
     const handlers: TerminalHandlers = {
-      onData: (event) => this.#emitData(id, event),
-      onClosed: (exitCode) => this.#emitExit(id, exitCode),
+      onData: (event) => { if (!closed) this.#emitData(id, event); },
+      onClosed: (exitCode) => {
+        closed = true;
+        this.#emitExit(id, exitCode);
+      },
     };
     const { subId } = await this.#client.attach(id, size.cols, size.rows, handlers);
-    if (generation !== this.#activeGeneration) {
-      // A newer setActivePane won the race — undo this stale attach.
+    if (closed || generation !== this.#activeGeneration) {
+      // Superseded or closed before its response: never resurrect this attach.
       this.#client.unsubscribe(subId);
-      void this.#client.detach(id, subId).catch(() => {});
+      await this.#client.detach(id, subId).catch(() => {});
       return;
     }
     this.#attached = { surfaceId: id, subId };
@@ -228,13 +253,14 @@ export class RemotePtyAdapter implements PlatformAdapter {
     // The Burrow discards these anyway (remote-api.md -> "Terminal surfaces"), so
     // don't spend the relay on them.
     if (inputIsReplayTerminalReport(data)) return;
-    void this.#client.write(id, toBase64Url(utf8Encode(data)));
+    void this.#client.write(id, toBase64Url(utf8Encode(data))).catch(() => {});
   }
 
   resizePty(id: string, cols: number, rows: number): void {
     if (this.#attached?.surfaceId !== id) return;
-    this.#lastSize = { cols, rows };
-    void this.#client.resize(id, cols, rows);
+    const size = normalizeSize(cols, rows, this.#lastSize);
+    this.#lastSize = size;
+    void this.#client.resize(id, size.cols, size.rows).catch(() => {});
   }
 
   // Panes are Burrow-owned: the phone never spawns or kills them.
@@ -258,6 +284,7 @@ export class RemotePtyAdapter implements PlatformAdapter {
   }
 
   #emitData(id: string, event: TerminalDataEvent): void {
+    if (this.#disposed) return;
     let data: string;
     let textData: string | undefined;
     try {
@@ -273,6 +300,7 @@ export class RemotePtyAdapter implements PlatformAdapter {
   }
 
   #emitExit(id: string, exitCode?: number): void {
+    if (this.#disposed) return;
     if (this.#attached?.surfaceId === id) this.#attached = null;
     // An absent exitCode is an UNKNOWN termination (signal-only, killed, or a
     // non-selfhost Burrow that never reports one) — not a clean exit. Coercing it

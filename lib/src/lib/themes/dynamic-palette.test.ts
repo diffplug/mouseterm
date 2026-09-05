@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickAlarmColor, pickDynamicPalette, type Rgb } from './dynamic-palette';
+import { computeDynamicPalette, pickAlarmColor, pickDynamicPalette, type Rgb } from './dynamic-palette';
 
 function hexToRgb(color: string): Rgb | null {
   const match = /^#([0-9a-f]{6})$/i.exec(color.trim());
@@ -21,6 +21,32 @@ const baseValues = {
   headerActiveBg: '#0060c0',
   focusBorder: '#ff0000',
 };
+
+describe('computeDynamicPalette', () => {
+  it.each([
+    { app: '#ffffff', panel: '#eeeeee', terminal: '#000000', stale: '#ffffff', source: '--color-terminal-bg', tint: '#ffffff' },
+    { app: '#000000', panel: '#ffffff', terminal: '#111111', stale: '#000000', source: '--color-header-inactive-bg', tint: '#000000' },
+  ])('derives the Door alarm tint from its new $source in the first pass', ({ app, panel, terminal, stale, source, tint }) => {
+    const vars: Record<string, string> = {
+      '--color-app-bg': app,
+      '--color-header-inactive-bg': panel,
+      '--color-terminal-bg': terminal,
+      '--color-door-bg': stale,
+    };
+    const canvas = {
+      fillStyle: '#000000',
+      fillRect() {},
+      getImageData() { return { data: [...hexToRgb(this.fillStyle)!, 255] }; },
+    };
+    const palette = computeDynamicPalette(
+      { getPropertyValue: (name) => vars[name] ?? '' },
+      canvas as unknown as CanvasRenderingContext2D,
+    );
+
+    expect(palette['--color-door-bg']).toBe(`var(${source})`);
+    expect(palette['--color-alarm-vs-door']).toBe(tint);
+  });
+});
 
 describe('pickDynamicPalette', () => {
   it('chooses the door pair with the stronger OKLab distance from app background', () => {

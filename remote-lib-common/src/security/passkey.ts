@@ -86,7 +86,22 @@ export async function verifyPasskeyAssertion(
   assertion: PasskeyAssertion,
   passkeyPublicKey: string,
   expected: PasskeyAssertionExpectations,
-  crypto: WebCryptoLike = getWebCrypto(),
+  crypto?: WebCryptoLike,
+): Promise<PasskeyAssertionResult> {
+  try {
+    return await verifyAssertion(assertion, passkeyPublicKey, expected, crypto ?? getWebCrypto());
+  } catch {
+    // Runtime failures (including missing WebCrypto and rejected digests) are
+    // denials too; callers must never retain a pending ceremony on rejection.
+    return { ok: false, reason: 'signature-invalid' };
+  }
+}
+
+async function verifyAssertion(
+  assertion: PasskeyAssertion,
+  passkeyPublicKey: string,
+  expected: PasskeyAssertionExpectations,
+  crypto: WebCryptoLike,
 ): Promise<PasskeyAssertionResult> {
   let clientData: { type?: unknown; challenge?: unknown; origin?: unknown };
   let clientDataBytes: Uint8Array;

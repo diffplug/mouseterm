@@ -29,27 +29,33 @@ export function handleEditableClipboard(e: KeyboardEvent): boolean {
 }
 
 async function pasteIntoField(el: TextField): Promise<void> {
+  const snapshot = fieldSnapshot(el);
   const text = await readTextFromClipboard();
   if (!text) return;
-  replaceSelection(el, text);
+  replaceSelection(el, text, snapshot);
 }
 
 async function copyFromField(el: TextField, cut: boolean): Promise<void> {
   const start = el.selectionStart ?? 0;
   const end = el.selectionEnd ?? 0;
   if (start === end) return;
-  await writeTextToClipboard(el.value.slice(start, end));
-  if (cut) replaceSelection(el, '');
+  const snapshot = fieldSnapshot(el);
+  const copied = await writeTextToClipboard(el.value.slice(start, end));
+  if (cut && copied) replaceSelection(el, '', snapshot);
 }
 
-function replaceSelection(el: TextField, text: string): void {
+function fieldSnapshot(el: TextField) {
+  return { value: el.value, start: el.selectionStart, end: el.selectionEnd };
+}
+
+function replaceSelection(el: TextField, text: string, snapshot: ReturnType<typeof fieldSnapshot>): void {
   // Both callers await the clipboard first — an IPC roundtrip on the standalone
   // host — and the field can unmount in that window (Escape, or the blur that
   // commits a rename). `execCommand` edits whatever is focused *now*, which by
   // then is often xterm's helper textarea, so an unguarded edit would type the
   // clipboard into the shell.
-  if (!el.isConnected) return;
-  el.focus();
+  if (!el.isConnected || document.activeElement !== el || el.readOnly || el.disabled
+    || el.value !== snapshot.value || el.selectionStart !== snapshot.start || el.selectionEnd !== snapshot.end) return;
   // `insertText` is the only edit that also lands in the native undo stack, but
   // it is deprecated and absent in some environments — fall through to the
   // manual edit when it is unavailable or refuses.

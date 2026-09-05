@@ -96,9 +96,8 @@ export function createAskSurfaceProvider(
         get rows() {
           return rows;
         },
-        // The owner is the only one that can read the pane back, so remember
-        // what it reported; a resize nobody answered leaves the last known size
-        // standing.
+        // Only an owner response proves the resize happened. A vanished owner
+        // must fail the request rather than acknowledge its cached dimensions.
         resize: async (nextCols, nextRows) => {
           const [settled] = (await ask(
             'surfaceOp',
@@ -110,10 +109,9 @@ export function createAskSurfaceProvider(
             },
             owner.ptyId,
           )) as PeerSurfaceResult[];
-          if (settled) {
-            cols = settled.cols;
-            rows = settled.rows;
-          }
+          if (!settled) throw new Error('surface owner unavailable');
+          cols = settled.cols;
+          rows = settled.rows;
           return { cols, rows };
         },
       };

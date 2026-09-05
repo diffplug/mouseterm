@@ -99,6 +99,15 @@ describe('applyTheme', () => {
     expect(document.body.style.getPropertyValue('--vscode-terminal-background')).toBe('#221a0f');
   });
 
+  it('repairs native-control polarity when reapplying an otherwise visible theme', () => {
+    const theme = getTheme(KIMBIE_DARK)!;
+    applyTheme(theme);
+    document.body.style.removeProperty('color-scheme');
+
+    applyTheme(theme);
+    expect(document.body.style.colorScheme).toBe('dark');
+  });
+
   // The gap this default closed: the picker's uninstall and the store dialog's
   // Remove both re-resolve the active theme, from different depths. When the
   // fallback was a prop the picker held, Remove reached `restoreActiveTheme()`
@@ -123,9 +132,8 @@ describe('applyTheme', () => {
     expect(restoreActiveTheme()?.id).toBe(getBundledThemes()[0]?.id);
   });
 
-  // `getInstalledThemes()` re-parses its JSON on every call, so an installed
-  // theme is a *different object* each time even though it is the same theme.
-  // An identity check here reported every restore as a fresh user choice.
+  // A changed storage serialization can produce fresh objects for the same id;
+  // repeated restoration still must not count as a fresh user choice.
   it('does not notify when an already-active installed theme is re-restored', () => {
     addInstalledTheme(INSTALLED_THEME);
     setActiveThemeId(INSTALLED_THEME.id);
@@ -133,6 +141,7 @@ describe('applyTheme', () => {
 
     const listener = vi.fn();
     const unsubscribe = subscribeToActiveTheme(listener);
+    addInstalledTheme({ ...INSTALLED_THEME, id: 'store.other-theme' });
     restoreActiveTheme();
     restoreActiveTheme();
     unsubscribe();

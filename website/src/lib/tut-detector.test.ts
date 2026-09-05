@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { DEFAULT_MOUSE_SELECTION_STATE, type MouseSelectionState } from "dormouse-lib/lib/mouse-selection";
 import type { ActivityState } from "dormouse-lib/lib/terminal-registry";
 import { TutDetector } from "./tut-detector";
@@ -9,7 +9,7 @@ function activity(
   todo = false,
   watchingEnabled = status !== "WATCHING_DISABLED",
 ): ActivityState {
-  return { status, watchingEnabled, todo, notification: null };
+  return { status, watchingEnabled, todo, notification: null, awaited: false, ringSeq: 0 };
 }
 
 function makeDetectorHarness(initialActivitySnapshot = new Map<string, ActivityState>()) {
@@ -18,6 +18,7 @@ function makeDetectorHarness(initialActivitySnapshot = new Map<string, ActivityS
   let mouseListener: (() => void) | null = null;
   let activitySnapshot = initialActivitySnapshot;
   let watchedCommands: string[] = [];
+  const runningCommands = new Map<string, string>();
   let mouseSnapshot = new Map<string, MouseSelectionState>();
   let themeListener: (() => void) | null = null;
   let activeThemeId = "vscode.theme-defaults.dark_vs";
@@ -33,6 +34,7 @@ function makeDetectorHarness(initialActivitySnapshot = new Map<string, ActivityS
         };
       },
       getWatchedCommands: () => watchedCommands,
+      getRunningCommandArgv0: (id) => runningCommands.get(id) ?? null,
       subscribeToWatchedCommands: (listener) => {
         watchedListener = listener;
         return () => {
@@ -65,6 +67,7 @@ function makeDetectorHarness(initialActivitySnapshot = new Map<string, ActivityS
   return {
     state,
     detector,
+    setRunningCommand: (id: string, command: string) => runningCommands.set(id, command),
     setActivitySnapshot: (snapshot: Map<string, ActivityState>) => {
       activitySnapshot = snapshot;
       activityListener?.();
@@ -189,8 +192,10 @@ describe("TutDetector", () => {
     expect(state.isComplete("al-watch-cmd")).toBe(true);
   });
 
-  it("credits al-spreads only when a second pane lights up from the same rule", () => {
-    const { state, setActivitySnapshot } = makeDetectorHarness();
+  it("credits al-spreads only when a second pane lights up from the same rule", async () => {
+    const { state, setActivitySnapshot, setRunningCommand } = makeDetectorHarness();
+    setRunningCommand("pane-a", "longtask");
+    setRunningCommand("pane-b", "longtask");
 
     setActivitySnapshot(new Map([
       ["pane-a", activity("WATCHING_DISABLED", false, false)],
@@ -200,15 +205,52 @@ describe("TutDetector", () => {
       ["pane-a", activity("NOTHING_TO_SHOW", false, true)],
       ["pane-b", activity("WATCHING_DISABLED", false, false)],
     ]));
+    await Promise.resolve();
     expect(state.isComplete("al-spreads")).toBe(false);
 
     setActivitySnapshot(new Map([
       ["pane-a", activity("NOTHING_TO_SHOW", false, true)],
       ["pane-b", activity("NOTHING_TO_SHOW", false, true)],
     ]));
+    await Promise.resolve();
     expect(state.isComplete("al-spreads")).toBe(true);
   });
 
+
+  it("does not credit different watched commands, including a command updated after Activity", async () => {
+    const { state, setActivitySnapshot, setRunningCommand } = makeDetectorHarness();
+    setRunningCommand("pane-a", "longtask");
+    setRunningCommand("pane-b", "longtask");
+    setActivitySnapshot(new Map([
+      ["pane-a", activity("NOTHING_TO_SHOW")],
+      ["pane-b", activity("WATCHING_DISABLED")],
+    ]));
+    setActivitySnapshot(new Map([
+      ["pane-a", activity("NOTHING_TO_SHOW")],
+      ["pane-b", activity("NOTHING_TO_SHOW")],
+    ]));
+    // The fake adapter announces WATCHING before the new command's semantic state.
+    setRunningCommand("pane-b", "other-task");
+    await Promise.resolve();
+    expect(state.isComplete("al-spreads")).toBe(false);
+  });
+
+  it("does not credit a queued spread after disposal", async () => {
+    const { state, detector, setActivitySnapshot, setRunningCommand } = makeDetectorHarness();
+    setRunningCommand("pane-a", "longtask");
+    setRunningCommand("pane-b", "longtask");
+    setActivitySnapshot(new Map([
+      ["pane-a", activity("NOTHING_TO_SHOW")],
+      ["pane-b", activity("WATCHING_DISABLED")],
+    ]));
+    setActivitySnapshot(new Map([
+      ["pane-a", activity("NOTHING_TO_SHOW")],
+      ["pane-b", activity("NOTHING_TO_SHOW")],
+    ]));
+    detector.dispose();
+    await Promise.resolve();
+    expect(state.isComplete("al-spreads")).toBe(false);
+  });
 
   it("credits al-notif for a program-sent notification and al-cmd-exit for a command exit", () => {
     const { state, setActivitySnapshot } = makeDetectorHarness();
@@ -249,6 +291,17 @@ describe("TutDetector", () => {
 
     setActiveThemeId("vscode.theme-kimbie-dark.kimbie-dark");
     expect(state.isComplete("th-theme")).toBe(true);
+  });
+
+  it("credits a return to the startup theme after reset, but ignores duplicate notifications", () => {
+    const { state, setActiveThemeId, detector } = makeDetectorHarness();
+    setActiveThemeId("vscode.theme-kimbie-dark.kimbie-dark");
+    state.reset();
+    setActiveThemeId("vscode.theme-kimbie-dark.kimbie-dark");
+    expect(state.isComplete("th-theme")).toBe(false);
+    setActiveThemeId("vscode.theme-defaults.dark_vs");
+    expect(state.isComplete("th-theme")).toBe(true);
+    detector.dispose();
   });
 
 

@@ -1,4 +1,5 @@
 import type { DormouseTheme } from './types';
+import { isRecord } from '../is-record';
 import { getStorage } from '../local-json-store';
 // JSON import types are inferred too narrowly — cast at the boundary.
 import _bundledThemes from './bundled.json';
@@ -25,12 +26,28 @@ export function getBundledThemes(): DormouseTheme[] {
  */
 let installedCache: { raw: string; themes: DormouseTheme[] } | null = null;
 
+// Storage is untyped: validate every field used by restoration and picker UI,
+// including variable values before the resolver calls String.trim on them.
+function isInstalledTheme(value: unknown): value is DormouseTheme {
+  if (!isRecord(value)) return false;
+  return typeof value.id === 'string'
+    && typeof value.label === 'string'
+    && (value.type === 'dark' || value.type === 'light')
+    && typeof value.swatch === 'string'
+    && typeof value.accent === 'string'
+    && isRecord(value.vars)
+    && Object.values(value.vars).every((color) => typeof color === 'string')
+    && isRecord(value.origin)
+    && value.origin.kind === 'installed'
+    && typeof value.origin.extensionId === 'string'
+    && typeof value.origin.installedAt === 'string';
+}
+
 export function getInstalledThemes(): DormouseTheme[] {
   try {
     const raw = getStorage()?.getItem(INSTALLED_KEY);
     if (!raw) return [];
-    // A fresh array over cached elements: identity matters per theme, and no
-    // caller should be able to reach in and mutate the cache.
+    // Keep theme identities stable without exposing the cached array itself.
     if (installedCache?.raw === raw) return [...installedCache.themes];
     // Guard against valid-but-wrong-shaped JSON (corrupted or externally
     // tampered storage): a non-array value, or an array with malformed
@@ -40,10 +57,7 @@ export function getInstalledThemes(): DormouseTheme[] {
     // Drop only the malformed entries so well-formed themes still load.
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    const themes = parsed.filter(
-      (t): t is DormouseTheme =>
-        typeof t === 'object' && t !== null && typeof (t as { id?: unknown }).id === 'string',
-    );
+    const themes = parsed.filter(isInstalledTheme);
     installedCache = { raw, themes };
     return [...themes];
   } catch {

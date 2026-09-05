@@ -25,7 +25,7 @@ export interface PendingPairing {
   label: string;
   requestedAt: number;
   /** Confirm with the digits the phone is showing — the only path that writes the ACL. */
-  approve: (code: string) => void;
+  approve: (code: string) => void | Promise<void>;
   /** Deny locally — the ACL is untouched. */
   deny: () => void;
 }

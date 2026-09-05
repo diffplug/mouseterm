@@ -28,11 +28,6 @@ import type { BurrowSurfaceProvider, SurfaceHandle } from './burrow-surface-prov
 
 /** Coalesce window for directory re-snapshots (remote-api.md: "Burrow coalesces"). */
 const DIRECTORY_DEBOUNCE_MS = 150;
-/**
- * When an attach requests the size the PTY already has, `terminal.resize` is a
- * no-op, so we bounce the PTY's rows to force one SIGWINCH-driven repaint.
- */
-const FORCE_REPAINT_BOUNCE_MS = 60;
 
 interface Attachment {
   surfaceId: string;
@@ -45,8 +40,6 @@ interface Attachment {
   subId: string;
   /** Unsubscribes this attachment's PTY stream; nobody else holds it. */
   stopStream: () => void;
-  /** Pending same-size repaint bounce (see FORCE_REPAINT_BOUNCE_MS), if any. */
-  bounceTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface RemoteApiSessionOptions {
@@ -242,7 +235,7 @@ export class RemoteApiSession {
 
   #attach(request: RemoteRequest): void {
     const params = request.params as AttachParams | undefined;
-    if (!params?.surfaceId) {
+    if (typeof params?.surfaceId !== 'string' || !params.surfaceId) {
       this.#fail(request, `no such surface: ${params?.surfaceId ?? '(none)'}`);
       return;
     }
@@ -337,8 +330,7 @@ export class RemoteApiSession {
         // instead of touching the now-dead PTY / disposed xterm.
         // Teardown unsubscribes this stream mid-callback, which is safe — the
         // subscription is this attachment's alone, so nothing is left to fire —
-        // and nulls #attachment so #requireAttached fails and the bounce timer
-        // is cleared.
+        // and nulls #attachment so #requireAttached fails.
         emitOrBuffer(REMOTE_EVENTS.terminalClosed, { exitCode });
         if (attachment && this.#attachment === attachment) {
           this.#teardownAttachment();
@@ -362,7 +354,6 @@ export class RemoteApiSession {
       handle,
       subId,
       stopStream: stream.stop,
-      bounceTimer: null,
     };
     this.#attachment = attachment;
     const installedAttachment = attachment;
@@ -424,27 +415,15 @@ export class RemoteApiSession {
         return;
       }
 
-      // Same size: force one repaint with a quick rows bounce on the PTY only,
-      // leaving the already-correct local xterm buffer untouched. Bounce away
-      // from `rows` in whichever direction stays >= 1 (a 1-row surface must
-      // bounce up, since rows-1 would be an identical no-op that fires no
-      // SIGWINCH and so never repaints).
-      const bounced = rows > 1 ? rows - 1 : rows + 1;
-      this.#provider.resizePty(ptyId, cols, bounced);
-      // The restore runs ~60ms later, so the client may detach, re-attach at a
-      // different size, or dispose the session first. Cancel on teardown and,
-      // as a backstop, re-check this is still the current attachment before
-      // touching the PTY — a stale restore would clobber the newer size owner
-      // (last-attach-wins) or resize a detached/exited PTY.
-      installedAttachment.bounceTimer = setTimeout(() => {
-        installedAttachment.bounceTimer = null;
-        if (this.#attachment !== installedAttachment) return;
-        this.#provider.resizePty(ptyId, cols, rows);
-      }, FORCE_REPAINT_BOUNCE_MS);
+      // The PTY owner sees every local/remote resize, so only it can restore
+      // a same-size repaint without overwriting a later size writer.
+      this.#provider.resizePty(ptyId, cols, rows, true);
       finish({ cols: handle.cols, rows: handle.rows });
     };
 
-    void stream.ready.then(beginResize, (error) => {
+    // Catch failures from readiness *and* from starting the resize: providers
+    // may throw synchronously even though readiness itself fulfilled.
+    void stream.ready.then(beginResize).catch((error) => {
       if (this.#disposed) return;
       const closed = this.#attachment !== installedAttachment;
       if (this.#attachment === installedAttachment) this.#teardownAttachment();
@@ -514,10 +493,6 @@ export class RemoteApiSession {
 
   #teardownAttachment(): void {
     if (!this.#attachment) return;
-    if (this.#attachment.bounceTimer) {
-      clearTimeout(this.#attachment.bounceTimer);
-      this.#attachment.bounceTimer = null;
-    }
     this.#attachment.stopStream();
     this.#attachment = null;
   }

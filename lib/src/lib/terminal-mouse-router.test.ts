@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { attachTerminalMouseRouter } from './terminal-mouse-router';
 import {
   __resetMouseSelectionForTests,
+  beginDrag,
+  endDrag,
   getMouseSelectionState,
   setMouseReporting,
   setOverride,
@@ -90,7 +92,7 @@ function createHarness(windowHost: ListenerHost) {
     focus: vi.fn(),
     buffer: {
       active: {
-        getLine: vi.fn(() => ({ translateToString: () => '' })),
+        getLine: vi.fn(() => ({ length: 0, translateToString: () => '' })),
       },
     },
   };
@@ -252,6 +254,18 @@ describe('terminal-mouse-router: override suppression', () => {
       shape: 'block',
       dragging: true,
     });
+    // A hardware keyboard event must not unlatch the touch gesture's shape.
+    windowHost.emit('keydown', mouseEvent({ altKey: false }));
+    expect(getMouseSelectionState('t1').selection?.shape).toBe('block');
+    cleanup();
+  });
+
+  it('clears a finalized selection as soon as a new touch starts, before movement', () => {
+    const { cleanup, element } = createHarness(windowHost);
+    beginDrag('t1', { row: 0, col: 0, altKey: false, startedInScrollback: false });
+    endDrag('t1');
+    element.emit('pointerdown', pointerEvent());
+    expect(getMouseSelectionState('t1').selection).toBeNull();
     cleanup();
   });
 

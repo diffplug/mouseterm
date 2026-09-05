@@ -21,7 +21,6 @@ import Hosted, { HOSTED_TOC } from "../pages/Hosted";
 import AgentSkillDocs from "../pages/AgentSkillDocs";
 import DorDocs from "../pages/DorDocs";
 import security from "../data/docs.security.json";
-import selfhost from "../data/docs.selfhost.json";
 import skill from "../data/docs.skill.json";
 import cli from "../data/docs.cli.json";
 

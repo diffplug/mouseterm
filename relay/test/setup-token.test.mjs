@@ -11,7 +11,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { API_ROUTES, SETUP_TOKEN_INVALID_ERROR, UNAUTHORIZED_ERROR } from 'remote-lib-common';
@@ -131,6 +131,17 @@ test('the minted token carries the shared TTL', async () => {
   const clock = makeClock();
   const { expiresAt } = await appWithToken({ now: clock.now });
   assert.equal(expiresAt, clock.now() + SETUP_TOKEN_TTL_MS);
+});
+
+test('a failed Burrow-state read restores a consumed setup token', async () => {
+  const { app, stateDir, token } = await appWithToken();
+  const path = join(stateDir, 'burrows.json');
+  const original = await readFile(path, 'utf8');
+  await writeFile(path, '[unfinished hand edit');
+
+  assert.equal((await post(app, API_ROUTES.setupFinish, { setupToken: token })).status, 500);
+  await writeFile(path, original);
+  assert.equal((await begin(app, { setupToken: token })).status, 200);
 });
 
 test('a scanned token registers a passkey without the setup password', async () => {

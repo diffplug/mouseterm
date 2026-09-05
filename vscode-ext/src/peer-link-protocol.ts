@@ -17,7 +17,7 @@ export type PeerLinkRequest =
   | { kind: 'subscribe'; id: string; ptyId: string }
   | { kind: 'unsubscribe'; ptyId: string }
   | { kind: 'write'; ptyId: string; data: string }
-  | { kind: 'resizePty'; ptyId: string; cols: number; rows: number }
+  | { kind: 'resizePty'; ptyId: string; cols: number; rows: number; repaint?: boolean }
   | { kind: 'commandResult'; payload: BurrowResult }
   | { kind: 'uiEvent'; payload: unknown };
 

@@ -56,26 +56,37 @@ export async function connectPortToDefaultBrowser({
 
   // 'open' is on the host's subcommand allowlist; the CLI boots the daemon/browser
   // if it isn't already running.
-  const opened = await platform.agentBrowserCommand(session, ['open', url], binaryPath);
+  const binding = { session, ...(binaryPath !== undefined ? { binaryPath } : {}) };
+  let opened;
+  try {
+    opened = await platform.agentBrowserCommand(session, ['open', url], binaryPath);
+  } catch (error) {
+    refreshSurface(eager.value.surfaceId, binding);
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
   if (opened.exitCode !== 0) {
     // The pane stays; hand it the session so its placeholder names the session
     // instead of sitting sessionless.
-    refreshSurface(eager.value.surfaceId, { session });
+    refreshSurface(eager.value.surfaceId, binding);
     return { ok: false, message: opened.stderr.trim() || `agent-browser open exited ${opened.exitCode}` };
   }
   // Best-effort stream port so the panel connects straight to the live screencast;
   // if it's absent or stale the panel recovers it later, so a miss is non-fatal.
   let wsPort: number | undefined;
   if (platform.agentBrowserStreamStatus) {
-    const status = await platform.agentBrowserStreamStatus(session, binaryPath);
-    if (status.ok) wsPort = status.wsPort;
+    try {
+      const status = await platform.agentBrowserStreamStatus(session, binaryPath);
+      if (status.ok) wsPort = status.wsPort;
+    } catch {
+      // An adapter timeout is as non-fatal as a negative status result. Always
+      // bind the eager pane so its controller can recover the stream itself.
+    }
   }
   // One params write reconciles the session-less pane: setting `session` connects
   // the controller (the daemon is up now, so its recovery is safe to run).
   refreshSurface(eager.value.surfaceId, {
-    session,
+    ...binding,
     ...(wsPort !== undefined ? { wsPort } : {}),
-    ...(binaryPath !== undefined ? { binaryPath } : {}),
   });
   return { ok: true };
 }

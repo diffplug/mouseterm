@@ -88,8 +88,10 @@ export function computeDynamicPalette(
 
   const panelLab = labOf('--color-header-inactive-bg');
   const termLab = labOf('--color-terminal-bg');
+  let doorBg = '--color-door-bg';
   if (panelLab && termLab) {
     const choice = pickDoorPair(panelLab, termLab, oApp);
+    doorBg = choice.bg;
     result['--color-door-bg'] = `var(${choice.bg})`;
     result['--color-door-fg'] = `var(${choice.fg})`;
   }
@@ -111,8 +113,9 @@ export function computeDynamicPalette(
   if (headerInactiveRgb) {
     result['--color-alarm-vs-header-inactive'] = pickAlarmColor(headerInactiveRgb);
   }
-  // Door bg is computed in this pass; the observer's next pass corrects its tint.
-  const doorRgb = rgbOfVar('--color-door-bg');
+  // Read the chosen source directly: the published Door variable still holds
+  // the previous choice, and initial publication precedes observer installation.
+  const doorRgb = rgbOfVar(doorBg);
   if (doorRgb) {
     result['--color-alarm-vs-door'] = pickAlarmColor(doorRgb);
   }

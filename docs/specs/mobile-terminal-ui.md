@@ -42,10 +42,9 @@ Chrome rules:
   radius. Order: title, alert bell, secondary detail, TODO pill, minimize, kill
   (suppressed by `showKillButton={false}`, as Pocket does). Both consumers wire
   minimize to the Sessions reserve, not a desktop Door.
-* **`MobileTerminalUi` publishes the shared dynamic palette itself**
-  (`useDynamicPalette`, `docs/specs/theme.md`) before rendering gesture UI that
-  needs those tokens, `--color-focus-ring` included — it never mounts the
-  desktop `Wall`.
+* **Must install `useDynamicPalette` in `MobileTerminalUi`** for gesture tokens;
+  it never mounts the desktop `Wall`. `docs/specs/theme.md` owns publication
+  and the CSS baselines available before the effect runs.
 * `MobileTerminalUi` provides `TouchUiContext` = true, so shared selection UI
   omits physical-keyboard shortcut hints (`docs/specs/mouse-and-clipboard.md`).
 
@@ -91,10 +90,13 @@ Event routing, by mode:
   alone so it still reaches the terminal, and real mouse pointers fall through
   untouched. (rationale)
 
+**Must release a tracked Mouse-mode press on pointerup or cancel even after
+leaving Mouse mode.** Cancellation releases on the last target.
+
 Gesture mode also consumes primary mouse/trackpad clicks (rationale): the click
 starts radial gesture handling, `preventDefault()`s, stops propagation, captures
-the pointer, and **must never reach the embedded `Wall`, xterm, or the tiling
-engine** for focus, selection, or pane interaction. **Non-primary mouse buttons
+the pointer, and **must never reach xterm or the pane** for focus, selection,
+or pane interaction. **Non-primary mouse buttons
 are ignored**, so their browser or host behavior continues.
 
 Source of truth: `TOUCH_MODES` in `lib/src/components/MobileTerminalUi.tsx`;
@@ -234,11 +236,10 @@ same rule as the touch selector.
 Default input mode is **Type**. Recent and Draft are placeholder-only today and
 say so in the reserve — the real features are staged (see [Future](#future)).
 
-**Tapping the Type selector must focus the hidden input synchronously inside the
-tap/click handler** — a deferred focus may be refused as not user-initiated,
-leaving the keyboard closed (rationale). A follow-up effect re-asserts focus via
-rAF and staggered timers as best effort. **Switching away from Type blurs the
-hidden input**, so the app keyboard UI returns.
+**Must focus the hidden input synchronously inside the Type selector's tap/click
+handler** (rationale). A follow-up effect retries via rAF and staggered timers
+as best effort. **Switching away from Type blurs the
+hidden input**, including consumer-controlled switches.
 
 Source of truth: `KEYBOARD_MODES` and `RESERVE_COPY` in
 `lib/src/components/MobileTerminalUi.tsx`.
@@ -251,8 +252,10 @@ false, `inputmode="text"`, `enterkeyhint="enter"`.
 
 * Normal characters go to the active terminal immediately; Enter sends terminal
   Enter, Backspace works, and physical `Ctrl+C` sends `\x03`.
-* **Composed text is buffered until `compositionend`** — the path must not
-  depend only on `keydown`, or IME and mobile keyboard behavior breaks.
+* **Must buffer composed text until `compositionend` and leave composing
+  keydowns to the IME**, including its editing and confirmation keys.
+* **Must handle software-keyboard Enter and Backspace through `beforeinput`
+  when no `keydown` occurs**, including deletion from the empty hidden input.
 
 ## Keyboard focus invariant
 
@@ -265,6 +268,9 @@ starts there. **That blur repeats across a rAF and staggered timers, and the
 pending retries are cancelled on unmount** (rationale). **The only mobile UI
 surfaces that may open the native keyboard are the Type selector and the Type
 reserve area.**
+
+**Must cancel pending focus retries when pane interaction dismisses the keyboard,
+and pending blur retries when Type explicitly focuses it.**
 
 Source of truth: the non-keyboard-target and blur plumbing is in
 `lib/src/components/MobileTerminalUi.tsx`, the session composition in

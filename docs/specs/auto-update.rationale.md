@@ -4,7 +4,7 @@
 
 ## Quit-time install
 
-**Why install runs last.** A Windows NSIS install force-kills the app the moment it starts; run it before the graceful terminal teardown and the durable final session save, and the kill lands mid-teardown, losing the freshest scrollback — what the user was looking at when they quit.
+**Why install runs last.** A Windows NSIS install force-kills the app the moment it starts, so starting it early interrupts teardown. This ordering originally protected persisted scrollback; standalone now persists no Session state. The retained save/drain hooks and their completion semantics are explained in `docs/specs/standalone.rationale.md` → Quit flow.
 
 **Why Vite dev mode skips `install()`.** The updater resolves its replacement target from the current executable path, which in dev is the dev executable's directory, not a packaged bundle.
 

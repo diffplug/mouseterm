@@ -245,19 +245,26 @@ function waitForTerminalState(
   id: string,
   predicate: (state: TerminalPaneState) => boolean,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
   if (predicate(getTerminalPaneState(id))) return Promise.resolve(true);
   return new Promise((resolve) => {
     let elapsed = 0;
+    const finish = (ready: boolean) => {
+      clearInterval(timer);
+      signal?.removeEventListener('abort', cancel);
+      resolve(ready);
+    };
+    const cancel = () => finish(false);
     const timer = setInterval(() => {
       if (predicate(getTerminalPaneState(id))) {
-        clearInterval(timer);
-        resolve(true);
+        finish(true);
       } else if ((elapsed += RESTART_POLL_INTERVAL_MS) >= timeoutMs) {
-        clearInterval(timer);
-        resolve(false);
+        finish(false);
       }
     }, RESTART_POLL_INTERVAL_MS);
+    signal?.addEventListener('abort', cancel, { once: true });
   });
 }
 
@@ -267,7 +274,8 @@ function waitForTerminalState(
  * for it to go live. Drives the live PTY directly, so it works for minimized
  * doors too (their PTY keeps running). Returns a message on failure.
  */
-async function restartSurfaceInPlace(id: string, command: string, cwd: string): Promise<ParseResult<undefined>> {
+async function restartSurfaceInPlace(id: string, command: string, cwd: string, signal?: AbortSignal): Promise<ParseResult<undefined>> {
+  if (signal?.aborted) return { ok: false, message: 'restart was cancelled' };
   // A match is by construction OSC-driven (surfaceRunsCommand only matches a
   // shell that reports its command), so this never fires on the real path — but
   // it guarantees we never fire Ctrl+C into a non-integration shell (e.g. cmd.exe
@@ -279,14 +287,18 @@ async function restartSurfaceInPlace(id: string, command: string, cwd: string): 
     id,
     (state) => state.currentCommand === null,
     RESTART_INTERRUPT_TIMEOUT_MS,
+    signal,
   );
+  if (signal?.aborted) return { ok: false, message: 'restart was cancelled' };
   if (!interrupted) return { ok: false, message: 'did not return to a prompt after interrupt' };
   platform.writePty(id, `${command}\r`);
   const restarted = await waitForTerminalState(
     id,
     (state) => surfaceRunsCommand(state, command, cwd),
     RESTART_START_TIMEOUT_MS,
+    signal,
   );
+  if (signal?.aborted) return { ok: false, message: 'restart was cancelled' };
   if (!restarted) return { ok: false, message: 'command did not restart' };
   return { ok: true, value: undefined };
 }
@@ -323,9 +335,9 @@ function parseDorSplitDirection(value: unknown): DorSplitDirection | null {
 }
 
 /**
- * Quote a raw argv into a single command string for the target pane's shell.
- * This is the one place the command is quoted; the CLI sends argv unquoted
- * precisely because only the webview knows which shell will run it.
+ * Quote raw argv for the configured default shell, which new splits launch.
+ * The same string is used for ensure matching and restart; the CLI sends argv
+ * unquoted because the shell defaults live in the webview.
  */
 function dorCommandString(args: string[] | undefined): string | undefined {
   if (!args || args.join('').trim() === '') return undefined;
@@ -705,6 +717,10 @@ export function useDorControl({
       }
 
       if (detail.method === SURFACE_CONTROL_METHODS.ensure) {
+        if (detail.signal?.aborted) {
+          detail.respond({ ok: false, error: 'ensure was cancelled' });
+          return;
+        }
         const command = dorCommandString(stringArrayParam(params.command));
         if (!command) {
           detail.respond({ ok: false, error: 'command cannot be empty' });
@@ -719,7 +735,7 @@ export function useDorControl({
         if (existingId) {
           const minimized = doorsRef.current.some((door) => door.id === existingId);
           if (booleanParam(params.restart)) {
-            const restarted = await restartSurfaceInPlace(existingId, command, cwd);
+            const restarted = await restartSurfaceInPlace(existingId, command, cwd, detail.signal);
             if (!restarted.ok) {
               detail.respond({ ok: false, error: `surface '${surfaceRefForId(existingId)}' ${restarted.message}` });
               return;
@@ -787,6 +803,7 @@ export function useDorControl({
           result.value.id,
           () => isPaneOscDriven(result.value.id),
           INTEGRATION_DETECT_TIMEOUT_MS,
+          detail.signal,
         );
         if (!integrated) {
           // Tear down the throwaway split. The focus-neutral create never selected
@@ -795,7 +812,7 @@ export function useDorControl({
           // killPaneImmediately tears the door down too — disposing the session and
           // removing it from the baseboard.
           killPaneImmediately(result.value.id);
-          detail.respond({ ok: false, error: missingIntegrationError(ensureShell) });
+          detail.respond({ ok: false, error: detail.signal?.aborted ? 'ensure was cancelled' : missingIntegrationError(ensureShell) });
           return;
         }
         detail.respond({

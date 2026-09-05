@@ -27,6 +27,41 @@ test('a well-formed assertion verifies', async () => {
   assert.deepEqual(result, { ok: true, userPresent: true, userVerified: true, signCount: 1 });
 });
 
+test('WebCrypto digest failures are ordinary denials', async () => {
+  const { authenticator, assertion } = await makeAssertion();
+  const real = globalThis.crypto;
+  for (const failingDigest of [1, 2]) {
+    let calls = 0;
+    const crypto = {
+      subtle: {
+        digest(...args) {
+          if (++calls === failingDigest) return Promise.reject(new Error('digest unavailable'));
+          return real.subtle.digest(...args);
+        },
+        importKey: (...args) => real.subtle.importKey(...args),
+        verify: (...args) => real.subtle.verify(...args),
+      },
+    };
+    assert.deepEqual(await verifyPasskeyAssertion(assertion, authenticator.publicKey, EXPECTED, crypto), {
+      ok: false, reason: 'signature-invalid',
+    });
+    assert.equal(calls, failingDigest);
+  }
+});
+
+test('missing WebCrypto is an ordinary denial', async () => {
+  const { authenticator, assertion } = await makeAssertion();
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: undefined });
+  try {
+    assert.deepEqual(await verifyPasskeyAssertion(assertion, authenticator.publicKey, EXPECTED), {
+      ok: false, reason: 'signature-invalid',
+    });
+  } finally {
+    Object.defineProperty(globalThis, 'crypto', descriptor);
+  }
+});
+
 test('signCount reflects successive assertions', async () => {
   const authenticator = await SimAuthenticator.create({ rpId: RP_ID });
   await authenticator.assert({ challenge: CHALLENGE, origin: ORIGIN });

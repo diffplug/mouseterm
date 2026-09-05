@@ -753,6 +753,49 @@ describe('pairing queue', () => {
     expect(queueEvents().at(-1)!.queue).toEqual([]);
   });
 
+  it('waits for the host store before completing approval and reports a failed save', async () => {
+    const socket = await running();
+    const { item, session, invitation, code } = await pair(socket, 'c1');
+    const write = Promise.withResolvers<void>();
+    const save = vi.spyOn(store, 'saveAcl').mockImplementation(() => write.promise);
+    const framesBefore = socket.sent.length;
+    let completed = false;
+    const approval = command('approve', { clientId: 'c1', pairingId: item.pairingId, code })
+      .then(() => { completed = true; });
+    await settle();
+    expect(save).toHaveBeenCalledOnce();
+    expect(completed).toBe(false);
+    expect(socket.sent).toHaveLength(framesBefore);
+    write.reject(new Error('disk full'));
+    await approval;
+    expect(await readOutcome(socket, session, 'pairing', invitation.inviteId)).toEqual({
+      ok: false, code: 'burrow-error',
+    });
+    expect(store.acl[BURROW_ID]).toBeUndefined();
+    expect(queueEvents().at(-1)!.queue).toEqual([]);
+  });
+
+  it('restarts only after an approved ACL write finishes, retaining the new pairing', async () => {
+    const socket = await running();
+    const { item, invitation, session, code } = await pair(socket, 'c1');
+    const write = Promise.withResolvers<void>();
+    const persist = store.saveAcl.bind(store);
+    vi.spyOn(store, 'saveAcl').mockImplementation(async (burrowId, records) => {
+      await write.promise;
+      await persist(burrowId, records);
+    });
+    const approval = command('approve', { clientId: 'c1', pairingId: item.pairingId, code });
+    await settle();
+    let restarted = false;
+    const restart = service.start().then(() => { restarted = true; });
+    await settle();
+    expect(restarted).toBe(false);
+    write.resolve();
+    await Promise.all([approval, restart]);
+    expect(await readOutcome(socket, session, 'pairing', invitation.inviteId)).toMatchObject({ ok: true });
+    expect((await command('status')).result).toMatchObject({ pairedClients: 1 });
+  });
+
   it('a mistyped code denies, writes nothing, and spends the one attempt', async () => {
     const socket = await running();
     const { item, session, invitation, code } = await pair(socket, 'c1', { code: '13' });

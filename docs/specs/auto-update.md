@@ -6,7 +6,7 @@ The standalone app checks for updates on launch and prompts in the Baseboard. **
 
 ## How it works
 
-**Launch.** Read and clear any post-install marker (§localStorage) and show its banner; **a failure marker stops there — no update check this launch**, since re-prompting for the version that just failed would unmount an open debug dialog. Otherwise wait 5 seconds, then `check(endpoint)`: no update is silent, an update raises the approval prompt. **Only approval starts the background `download()`**; a failed one is logged and the prompt returns.
+**Must read and clear the post-install marker on launch** (§localStorage) and show its banner; a reported failure suppresses this launch's check. Otherwise wait 5 seconds, then `check()`: no update is silent, an update raises the approval prompt. Version-lookup and check failures are logged. **Only approval starts the background `download()`**; a failed one is logged and the prompt returns.
 
 **A failed download leaves the *available* update in place** so a second approval retries rather than no-ops; only a successful `download()` promotes `check()`'s in-memory *available* `Update` to *pending*.
 
@@ -14,13 +14,13 @@ The standalone app checks for updates on launch and prompts in the Baseboard. **
 
 ### Quit-time install
 
-**The updater owns no quit interception** — the install is the quit orchestrator's last step, strictly after the graceful terminal teardown and the durable final session save (`docs/specs/standalone.md` §Quit flow) (rationale), and runs only when `hasPendingUpdate()` is true. `installPendingUpdate()` writes the success marker *before* `install()` (§localStorage), and on Windows first kills the sidecar and waits for it to fully exit (§Sidecar teardown on Windows). **It never closes the window itself** — exiting the process is `quit_proceed`'s job, after this returns.
+**The updater owns no quit interception** — install runs only when `hasPendingUpdate()` is true, after the quit orchestrator's teardown and save/drain steps (`docs/specs/standalone.md` §Quit flow) (rationale). `installPendingUpdate()` writes the success marker *before* `install()` (§localStorage), and on Windows first awaits bounded sidecar teardown (§Sidecar teardown on Windows). **It never closes the window itself** — exiting the process is `quit_proceed`'s job, after this returns.
 
 **In Vite dev mode (`pnpm dev:standalone`) `installPendingUpdate()` drops the pending update and skips `install()`** (rationale), so install must be tested from a packaged app; **`MODE === 'test'` lifts the skip** for `standalone/src/updater.test.ts`.
 
 ## Sidecar teardown on Windows
 
-**On Windows `installPendingUpdate()` must await `kill_sidecar_now` before `install()`** so NSIS can replace the sidecar's loaded node-pty modules and ConPTY children (rationale). The Rust command calls `start_kill()`, then polls `try_wait` every 20 ms under a ~5 s cap, so a wedged sidecar cannot stall quit. **Never use the job-object `wait()`**, whose completion message may already have been consumed (rationale). macOS and Linux skip the step — they replace open files.
+**On Windows `installPendingUpdate()` must await `kill_sidecar_now` before `install()`** so NSIS can replace the sidecar's loaded node-pty modules and ConPTY children (rationale). Rust calls `start_kill()`, then polls `try_wait` every 20 ms under a ~5 s cap; timeout or wait error is logged and installation proceeds without confirmed exit. **Never use the job-object `wait()`**, whose completion message may already have been consumed (rationale). macOS and Linux skip the step — they replace open files.
 
 ## Update notice in the Baseboard
 
@@ -69,7 +69,7 @@ Single key: `dormouse:update-result`
 | Successful install | `{ "from": "0.4.0", "to": "0.5.0" }` | On next launch, after reading |
 | Failed install | `{ "failed": true, "version": "0.5.0", "error": "..." }` | On next launch, after reading |
 
-**Write the success marker *before* `install()`** — Windows NSIS force-kills the process, so a later write would never persist. **A throwing `install()` overwrites it with a failure entry.** An update found but never approved writes no marker, and **a corrupt marker is swallowed and read as no marker**.
+**Must write the success marker *before* `install()`** — Windows NSIS force-kills the process. **Must confirm its target against the running app version on next launch**; a mismatch becomes a failure notice and suppresses the update check. **A throwing `install()` overwrites it with a failure entry.** An unapproved update writes nothing. **Must ignore corrupt markers**, including invalid field types. `standalone/src/updater.test.ts` pins marker validation and confirmation.
 
 ## Files
 

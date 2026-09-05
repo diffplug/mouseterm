@@ -35,7 +35,7 @@ export type BlockNode =
   | { type: "heading"; depth: number; id: string; text: string; children: InlineNode[] }
   | { type: "paragraph"; tight?: boolean; children: InlineNode[] }
   | { type: "code"; lang: string | null; value: string }
-  | { type: "list"; ordered: boolean; items: { type: "listItem"; children: BlockNode[] }[] }
+  | { type: "list"; ordered: boolean; start?: number; items: { type: "listItem"; children: BlockNode[] }[] }
   | { type: "table"; align: (string | null)[]; header: InlineNode[][]; rows: InlineNode[][][] }
   | { type: "blockquote"; children: BlockNode[] }
   | { type: "thematicBreak" };
@@ -206,7 +206,7 @@ function Block({ node }: { node: BlockNode }): ReactNode {
     case "list": {
       const Tag = node.ordered ? "ol" : "ul";
       return (
-        <Tag className={`mb-4 space-y-2 pl-6 text-lg ${MUTED_TEXT_CLASS} ${node.ordered ? "list-decimal" : "list-disc"}`}>
+        <Tag start={node.ordered ? node.start : undefined} className={`mb-4 space-y-2 pl-6 text-lg ${MUTED_TEXT_CLASS} ${node.ordered ? "list-decimal" : "list-disc"}`}>
           {node.items.map((item, i) => (
             <li key={i} className="leading-relaxed">
               <Blocks nodes={item.children} />
