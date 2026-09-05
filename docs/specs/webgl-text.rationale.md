@@ -12,6 +12,9 @@ from; only the tarball's `peerDependencies['@xterm/xterm']` names a full
 version. Fork releases carry that field as of `0.20.0-sdf301.1`;
 `scripts/xterm-lint.mjs` check 1 reads it. The tag/filename check is cheaper,
 catching only a URL whose three parts disagree.
+The bump command formerly chose the newest release line sharing that counter,
+which could repin an old fork onto unrelated core internals. Reading the released
+manifest also catches missing releases before any workspace is rewritten.
 
 **Why release assets rather than a registry.** GitHub Packages requires auth
 even for public reads; release assets do not, so a tarball URL installs with no
