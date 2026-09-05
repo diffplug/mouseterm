@@ -1,14 +1,16 @@
-import { useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { TerminalPane } from '../TerminalPane';
 import { TerminalContextView, type ContextScan } from './TerminalContextView';
 import { TerminalContextContext, WallActionsContext } from './wall-context';
-import { abbreviatedDirectory, disposeHelper, getHelper, helperRevision, openHelper, subscribeHelpers } from '../../lib/helper-terminal';
+import { disposeHelper, getHelper, helperRevision, openHelper, subscribeHelpers } from '../../lib/helper-terminal';
 import { getPlatform, IS_MAC, IS_WINDOWS } from '../../lib/platform';
-import { buildAppTitleResolver, commandArgv0, createTerminalPaneState, deriveSurfaceLabel, explainTerminalTitle } from '../../lib/terminal-state';
+import { buildAppTitleResolver, commandArgv0, createTerminalPaneState, cwdDisplay, deriveSurfaceLabel, explainTerminalTitle, type CwdState } from '../../lib/terminal-state';
 import { focusSession, getActivitySnapshot, getTerminalPaneStateSnapshot, isCommandWatched, setCommandWatched, subscribeToActivity, subscribeToTerminalPaneState, subscribeToWatchedCommands, getWatchedCommandsSnapshot, toggleSessionTodo } from '../../lib/terminal-registry';
 import { writeTextToClipboard } from '../../lib/clipboard';
 import { listenerUrlsByPort } from './port-url';
-import { registry } from '../../lib/terminal-store';
+import { DEFAULT_HELPER_COMMAND } from '../../lib/terminal-context-types';
+
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export function TerminalContext({ id, title }: { id: string; title?: string }) {
   const context = useContext(TerminalContextContext);
@@ -19,22 +21,23 @@ export function TerminalContext({ id, title }: { id: string; title?: string }) {
   useSyncExternalStore(subscribeToWatchedCommands, getWatchedCommandsSnapshot);
   const [scan, setScan] = useState<ContextScan>({ status: 'scanning' });
   const [home, setHome] = useState('');
-  const [defaultCommand, setDefaultCommand] = useState('git status');
-  const [error, setError] = useState('');
+  const [defaultCommand, setDefaultCommand] = useState(DEFAULT_HELPER_COMMAND);
+  const [helperError, setHelperError] = useState('');
   const wrapper = useRef<HTMLDivElement>(null);
   const platform = getPlatform();
   const helper = getHelper(id);
   const state = states.get(id) ?? createTerminalPaneState();
+  const cwd = state.cwd?.path ? state.cwd : undefined;
   const helperState = helper ? states.get(helper.id) : undefined;
-  const cwd = state.cwd?.path ?? '';
-  const helperCwd = helperState?.cwd?.path;
+  const helperCwd = helperState?.cwd?.path ? helperState.cwd : undefined;
   const argv0 = state.currentCommand?.rawCommandLine ? commandArgv0(state.currentCommand.rawCommandLine) : null;
-  const appTitleForPane = buildAppTitleResolver(states, activities);
-  const run = (operation: Promise<unknown>) => { setError(''); void operation.catch(e => setError(e instanceof Error ? e.message : String(e))); };
+  const appTitleForPane = useMemo(() => buildAppTitleResolver(states, activities), [states, activities]);
+  const titleSources = useMemo(() => explainTerminalTitle(state, { appTitleForPane }), [state, appTitleForPane]);
+  const display = (location: CwdState) => cwdDisplay(location, { style: 'full', homePath: home });
   useEffect(() => {
     let cancelled = false;
-    void openHelper(id).catch(e => { if (!cancelled) setError(String(e instanceof Error ? e.message : e)); });
-    void platform.terminalContext?.({ op: 'settings' }).then(info => { if (!cancelled) { setHome(info.home); setDefaultCommand(info.command); } }).catch(() => {});
+    void openHelper(id).catch(e => { if (!cancelled) setHelperError(errorText(e)); });
+    void platform.terminalContext?.({ op: 'settings' }).then(info => { if (!cancelled) { setHome(info.home ?? ''); setDefaultCommand(info.command ?? DEFAULT_HELPER_COMMAND); } }).catch(() => {});
     void platform.getOpenPorts(id).then(ports => { if (!cancelled) setScan({ status: 'loaded', entries: listenerUrlsByPort(ports) }); }, () => { if (!cancelled) setScan({ status: 'failed' }); });
     wrapper.current?.querySelector<HTMLElement>('[data-terminal-context]')?.focus({ preventScroll: true });
     return () => { cancelled = true; };
@@ -45,18 +48,19 @@ export function TerminalContext({ id, title }: { id: string; title?: string }) {
     return () => document.removeEventListener('pointerdown', outside, true);
   }, [context]);
   const copy = async (value: string) => { if (!await writeTextToClipboard(value)) throw new Error('Could not copy to clipboard'); };
+  const mismatch = !!helper && !!cwd && !!helperCwd && (cwd.path !== helperCwd.path || cwd.isRemote !== helperCwd.isRemote || (cwd.isRemote && cwd.host !== helperCwd.host));
+  const warning = context.warning ?? (helperError || (helper && helper.status !== 'waiting' && (!cwd || !helperCwd) ? 'Directory comparison unavailable: a terminal has not reported its directory.' : undefined));
   return <div ref={wrapper} onMouseDown={e => e.stopPropagation()}>
     <TerminalContextView title={deriveSurfaceLabel(state, appTitleForPane, title ?? id)} surfaceRef={actions.resolveSurfaceRef(id)}
-      titleSources={explainTerminalTitle(state, { appTitleForPane })} cwd={abbreviatedDirectory(cwd, home) || 'Directory unknown'} helperCwd={helperCwd ? abbreviatedDirectory(helperCwd, home) : 'Directory unknown'}
-      mismatch={!!helper && !!cwd && !!helperCwd && (cwd !== helperCwd || state.cwd?.isRemote !== helperState?.cwd?.isRemote || (state.cwd?.isRemote && state.cwd.host !== helperState?.cwd?.host))}
+      titleSources={titleSources} cwd={cwd ? display(cwd) : 'Directory unknown'} helperCwd={helperCwd && display(helperCwd)} mismatch={mismatch}
       scan={scan} argv0={argv0} watching={!!argv0 && isCommandWatched(argv0)} todo={activities.get(id)?.todo === true} notification={activities.get(id)?.notification}
-      status={helper && registry.get(helper.id)?.exited ? 'exited' : helper && !registry.get(helper.id)?.untouched ? 'preserved' : helper?.status ?? 'waiting'} command={helper?.command ?? defaultCommand} defaultCommand={defaultCommand} error={error} warning={context.warning ?? (helper && helper.status !== 'waiting' && (!cwd || !helperCwd) ? 'Directory comparison unavailable: a terminal has not reported its directory.' : undefined)}
-      explorerLabel={IS_MAC ? 'Open in Finder' : IS_WINDOWS ? 'Open in Explorer' : 'Open folder'} canExplore={!!platform.terminalContext && !!cwd && !state.cwd?.isRemote}
-      canAgent={!!platform.agentBrowserOpen} canPopout={!!platform.agentBrowserPopOut} canIframe={!!platform.createIframeProxyUrl}
-      onClose={() => { context.close(); focusSession(id, true); }} onCopyRef={() => run(copy(actions.resolveSurfaceRef(id)))} onCopyPath={() => run(copy(cwd))}
-      onExplore={() => { if (platform.terminalContext) run(platform.terminalContext({ op: 'openDirectory', id, path: cwd })); }}
+      status={helper?.status ?? 'waiting'} command={helper?.command ?? defaultCommand} defaultCommand={defaultCommand} warning={warning}
+      explorerLabel={IS_MAC ? 'Open in Finder' : IS_WINDOWS ? 'Open in Explorer' : 'Open folder'} canExplore={!!platform.terminalContext && !!cwd && !cwd.isRemote}
+      canAgent={!!platform.agentBrowserOpen} canIframe={!!platform.createIframeProxyUrl}
+      onClose={() => { context.close(); focusSession(id, true); }} onCopyRef={() => copy(actions.resolveSurfaceRef(id))} onCopyPath={() => copy(cwd?.path ?? '')}
+      onExplore={async () => { if (platform.terminalContext && cwd) await platform.terminalContext({ op: 'openDirectory', id, path: cwd.path }); }}
       onWatch={() => { if (argv0) setCommandWatched(argv0, !isCommandWatched(argv0)); }} onTodo={() => toggleSessionTodo(id)}
-      onPort={(entry, mode) => run(context.openPort(id, entry, mode))}
+      onPort={(entry, mode) => context.openPort(id, entry, mode)}
       onModify={async command => { await platform.terminalContext?.({ op: 'settings', command }); setDefaultCommand(command); }}
       onReset={async () => { disposeHelper(id); await openHelper(id); }} onPromote={() => context.promote(id)}>
       {helper && <div data-helper-terminal={helper.id} className="h-full px-3 py-2" onMouseDown={() => focusSession(helper.id, true)} onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}><TerminalPane key={helper.id} id={helper.id} isFocused={false} /></div>}

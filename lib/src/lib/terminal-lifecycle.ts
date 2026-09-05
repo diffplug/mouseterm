@@ -301,8 +301,8 @@ function wireXtermHandlers(
     if (!isSyntheticTerminalReport) {
       recordTerminalUserInput(id, input, makePromptLineReader(terminal));
       const hadTodo = getActivity(id).todo;
-      if (!registry.get(id)?.helper) getPlatform().alertAttend(id);
-      if (!registry.get(id)?.helper && hadTodo && inputContainsEnter(input)) {
+      getPlatform().alertAttend(id);
+      if (hadTodo && inputContainsEnter(input)) {
         getPlatform().alertClearTodo(id);
       }
     }
@@ -311,7 +311,7 @@ function wireXtermHandlers(
   });
 
   const resizeDisposable = terminal.onResize(({ cols, rows }) => {
-    if (!registry.get(id)?.helper) getPlatform().alertResize(id);
+    getPlatform().alertResize(id);
     getPlatform().resizePty(id, cols, rows);
     bumpRenderTick();
     if (getMouseSelectionState(id).selection) setMouseSelection(id, null);
@@ -704,6 +704,6 @@ export function focusSession(id: string, focused: boolean): void {
     entry.terminal.focus();
   } else {
     entry.terminal.blur();
-    if (!registry.get(id)?.helper) getPlatform().alertClearAttention(id);
+    getPlatform().alertClearAttention(id);
   }
 }

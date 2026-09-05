@@ -753,10 +753,14 @@ function isRemoteFileHost(host: string | undefined): boolean {
 }
 
 function formatFullPath(path: string, homePath?: string): string {
-  if (homePath && (path === homePath || path.startsWith(`${homePath}/`))) {
-    return `~${path.slice(homePath.length)}`;
-  }
-  return path;
+  if (!homePath) return path;
+  // Windows homes compare case-insensitively with either separator; a sibling
+  // such as `/home/username` never abbreviates under `/home/user`.
+  const windows = isWindowsPath(homePath);
+  const normalize = (value: string) => (windows ? value.replace(/\\/g, '/').toLowerCase() : value);
+  const home = normalize(homePath).replace(/\/$/, '');
+  const candidate = normalize(path);
+  return candidate === home || candidate.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }
 
 function formatTrailingPath(path: string, kind: PathKind, depth: number): string {

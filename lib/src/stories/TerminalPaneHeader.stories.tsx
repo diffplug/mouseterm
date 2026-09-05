@@ -31,7 +31,6 @@ const noopActions: WallActions = {
   onCancelRename: () => {},
   onSwapRenderMode: () => {},
   resolveSurfaceRef: (id) => id,
-  onConnectPort: () => {},
 };
 
 function actionsRejecting(reason: 'empty' | 'reserved'): WallActions {

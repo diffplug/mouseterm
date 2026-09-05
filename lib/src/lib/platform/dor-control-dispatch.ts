@@ -1,4 +1,4 @@
-import { registry } from '../terminal-store';
+import { isHelperSession } from '../terminal-store';
 import type { DorControlRequestPayload, DorControlResult } from 'dor/protocol';
 
 /**
@@ -33,7 +33,7 @@ export function dispatchDorControlRequest(
   payload: DorControlRequestPayload,
   respond: (response: DorControlResult) => void,
 ): void {
-  if (payload.surfaceId && registry.get(payload.surfaceId)?.helper) {
+  if (payload.surfaceId && isHelperSession(payload.surfaceId)) {
     respond({ ok: false, error: 'Helper terminals do not support dor' });
     return;
   }

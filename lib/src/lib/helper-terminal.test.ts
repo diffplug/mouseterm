@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registry, pendingShellOpts, type TerminalEntry } from './terminal-store';
 import { applyTerminalSemanticEvents, resetTerminalPaneState, removeTerminalPaneState } from './terminal-state-store';
-import { abbreviatedDirectory, disposeHelper, getHelper, helperHasWork, openHelper, restoreHelper } from './helper-terminal';
+import { disposeHelper, getHelper, helperHasWork, openHelper, restoreHelper } from './helper-terminal';
 
 const host = vi.hoisted(() => ({ writePty: vi.fn(), terminalContext: vi.fn() }));
 vi.mock('./platform', () => ({ getPlatform: () => host }));
@@ -75,10 +75,5 @@ describe('helper lifecycle', () => {
     host.terminalContext.mockResolvedValue({ busy: true });
     await vi.advanceTimersByTimeAsync(2000);
     expect(registry.get(helper.id)?.helperBusy).toBe(true);
-  });
-  it('distinguishes the home directory from a similarly named sibling', () => {
-    expect(abbreviatedDirectory('/home/user/project', '/home/user')).toBe('~/project');
-    expect(abbreviatedDirectory('/home/username', '/home/user')).toBe('/home/username');
-    expect(abbreviatedDirectory('C:\\Users\\Me\\project', 'c:\\users\\me')).toBe('~\\project');
   });
 });

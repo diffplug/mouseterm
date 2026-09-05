@@ -134,7 +134,6 @@ export function restoreBrowserSurfaceTodo(pane: Pick<PersistedPane, 'id' | 'surf
 }
 
 function handleAlertState({ id, ...state }: AlertStateDetail): void {
-  if (registry.get(id)?.helper) return;
   setTerminalActivity(id, state);
 }
 

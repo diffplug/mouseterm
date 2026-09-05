@@ -69,7 +69,6 @@ Every key not claimed above forwards to the embedded page while a screencast pan
 | `Enter` | Confirm rename | Save the new name while renaming a pane; blur commits too. |
 | `Tab` / `Shift+Tab` | Focus cycle | Cycle popover/dialog controls. In terminal context, navigate controls into the helper; once helper xterm has focus, Tab belongs to its program. |
 | Prompted letter | Confirm kill | Type the letter shown to confirm; other keys reaching the prompt cancel (see layout's dispatch order). |
-| `a` / `t` (alert dialog open) | Toggle alert / todo | Same as command-mode `a` / `t`, for the dialog's Session. |
 
 ## VS Code host
 
@@ -89,7 +88,7 @@ The standalone host contributes no chords; `docs/specs/standalone.md` owns its n
 - `lib/src/components/wall/keyboard/` — one module per dispatch branch: `handle-dual-tap.ts`, `handle-editable-clipboard.ts`, `handle-mouse-selection-keys.ts`, `handle-kill-confirm.ts`, `handle-pane-shortcuts.ts`, `handle-pane-navigation.ts`; platform modifiers in `chords.ts`
 - `lib/src/lib/vscode-keybindings.ts` — the workbench mirror allowlist
 - `lib/src/lib/terminal-mouse-router.ts` — live Alt tracking during a drag
-- `lib/src/components/SelectionPopup.tsx`, `lib/src/components/wall/TerminalContextView.tsx`, `lib/src/components/TodoAlertDialog.tsx`, `lib/src/components/wall/InlineEditInput.tsx`, `lib/src/components/use-popover-focus-trap.ts` — the popover/dialog handlers
+- `lib/src/components/SelectionPopup.tsx`, `lib/src/components/wall/TerminalContextView.tsx`, `lib/src/components/wall/InlineEditInput.tsx`, `lib/src/components/use-popover-focus-trap.ts` — the popover/dialog handlers
 - `lib/src/components/wall/agent-browser-surface-controller.ts` — browser key forwarding and the edit-chord bridge
 
 ## Future

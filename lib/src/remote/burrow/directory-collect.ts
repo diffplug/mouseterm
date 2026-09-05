@@ -15,7 +15,7 @@ import {
   getTerminalPaneStateSnapshot,
   resolveDisplayPrimary,
 } from '../../lib/terminal-registry';
-import { registry } from '../../lib/terminal-store';
+import { isHelperSession, registry } from '../../lib/terminal-store';
 import { buildDirectorySnapshot, type DirectoryPaneInput } from './directory';
 
 export function collectDirectorySnapshot(): DirectoryEntry[] {
@@ -23,7 +23,7 @@ export function collectDirectorySnapshot(): DirectoryEntry[] {
   const activityStates = getActivitySnapshot();
   const appTitleForPane = buildAppTitleResolver(paneStates, activityStates);
 
-  const ids = [...registry.keys()].filter(id => !registry.get(id)?.helper);
+  const ids = [...registry.keys()].filter((id) => !isHelperSession(id));
   // Reuse these per-pane states in the map below rather than re-fetching (each
   // miss would allocate a fresh default twice).
   const allPanes = ids.map((id) => getTerminalPaneState(id));

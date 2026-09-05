@@ -1,4 +1,4 @@
-import { registry } from '../../lib/terminal-store';
+import { isHelperSession } from '../../lib/terminal-store';
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { tv } from 'tailwind-variants';
@@ -97,7 +97,7 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
   const actions = useContext(WallActionsContext);
   const activity = activityStates.get(id) ?? DEFAULT_ACTIVITY_STATE;
   const paneState = terminalStates.get(id) ?? createTerminalPaneState();
-  const allPaneStates = useMemo(() => [...terminalStates].filter(([surfaceId]) => !registry.get(surfaceId)?.helper).map(([, state]) => state), [terminalStates]);
+  const allPaneStates = useMemo(() => [...terminalStates].filter(([surfaceId]) => !isHelperSession(surfaceId)).map(([, state]) => state), [terminalStates]);
   const visiblePaneStates = allPaneStates.length > 0 ? allPaneStates : [paneState];
   const appTitleForPane = useMemo(
     () => buildAppTitleResolver(terminalStates, activityStates),

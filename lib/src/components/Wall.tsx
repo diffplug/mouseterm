@@ -1,8 +1,8 @@
 import { TerminalContextContext } from './wall/wall-context';
 import type { PortMode } from './wall/TerminalContextView';
 import type { PortUrlEntry } from './wall/port-url';
-import { disposeHelper, forgetHelper, getHelper, helperHasWork } from '../lib/helper-terminal';
-import { registry as terminalRegistry } from '../lib/terminal-store';
+import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHelper, helperHasWork, type HelperTerminal } from '../lib/helper-terminal';
+import { isHelperSession } from '../lib/terminal-store';
 import { useRef, useState, useEffect, useCallback, useMemo, useSyncExternalStore, lazy, Suspense, type ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { Baseboard } from './Baseboard';
@@ -226,6 +226,10 @@ function ShellSpawnNotice({
 }
 
 // --- Main component ---
+
+/** A blank shell may be replaced in place; one that owns a helper is not blank
+ *  (docs/specs/terminal-context.md → Helper lifecycle). */
+const isReplaceableShell = (id: string): boolean => isUntouched(id) && !getHelper(id);
 
 export function Wall({
   initialPaneIds,
@@ -522,32 +526,39 @@ export function Wall({
     }, 1500);
   }, []);
 
+  /** Resolves true when the helper's running work (or a failed inspection)
+   *  blocks closing its source; the source is then revealed with the reason
+   *  (docs/specs/terminal-context.md → Promotion and source closure). */
+  const helperBlocksClose = useCallback(async (id: string, helper: HelperTerminal): Promise<boolean> => {
+    let warning: string;
+    try {
+      if (!await helperHasWork(helper)) return false;
+      warning = 'Helper has running work. Stop it in the helper, then close this terminal again.';
+    } catch (error) {
+      warning = `Could not inspect helper processes: ${String(error)}`;
+    }
+    // A helper replaced or promoted mid-inspection is re-gated by the caller.
+    if (getHelper(id) !== helper) return false;
+    const door = doorsRef.current.find(item => item.id === id);
+    if (door) handleReattachRef.current(door);
+    setConfirmKill(null);
+    setTerminalContext({ id, warning });
+    return true;
+  }, []);
+
   const killPaneImmediately = useCallback((id: string): void | boolean | Promise<void | boolean> => {
     const helper = getHelper(id);
     if (helper) {
       if (pendingHelperCloses.current.has(id)) return false;
       pendingHelperCloses.current.add(id);
-      return helperHasWork(helper).then(busy => {
+      return helperBlocksClose(id, helper).then(blocked => {
         pendingHelperCloses.current.delete(id);
-        if (getHelper(id) !== helper) return;
-        if (busy) {
-          const door = doorsRef.current.find(item => item.id === id);
-          if (door) handleReattachRef.current(door);
-          setConfirmKill(null);
-          setTerminalContext({ id, warning: 'Helper has running work. Stop it in the helper, then close this terminal again.' });
-          return false;
-        } else {
+        if (blocked) return false;
+        if (getHelper(id) === helper) {
           disposeHelper(id);
           setTerminalContext(current => current?.id === id ? null : current);
-          return killPaneImmediately(id);
         }
-      }).catch(error => {
-        pendingHelperCloses.current.delete(id);
-        const door = doorsRef.current.find(item => item.id === id);
-        if (door) handleReattachRef.current(door);
-        setConfirmKill(null);
-        setTerminalContext({ id, warning: `Could not inspect helper processes: ${String(error)}` });
-        return false;
+        return killPaneImmediately(id);
       });
     }
     // A second kill for a pane already mid-fade is a no-op (idempotent) — it must
@@ -617,7 +628,7 @@ export function Wall({
     }, lath.exitMs);
     clearLocalSurfaceActivity(id);
     fireEvent({ type: 'kill', id });
-  }, [fireEvent, forgetSurfaceRef, selectPane, lath, nav]);
+  }, [fireEvent, forgetSurfaceRef, selectPane, lath, nav, helperBlocksClose]);
 
   const acceptKill = useCallback(() => {
     const ck = confirmKillRef.current;
@@ -873,8 +884,8 @@ export function Wall({
   const handleReattachRef = useRef(handleReattach);
   handleReattachRef.current = handleReattach;
 
-  /** Focus a surface for the human half of `connectPort`: activating a port row
-   *  is an explicit request to look at and control that browser. A visible pane
+  /** Focus a surface for the human half of the context's port actions: activating
+   *  a port row is an explicit request to look at and control that browser. A visible pane
    *  enters passthrough in place; a minimized one reattaches on the same terms
    *  as clicking its Door chip. This is deliberately unlike `dor ab`, whose
    *  agent-initiated control path remains focus-neutral. */
@@ -1106,7 +1117,7 @@ export function Wall({
     // Replace-in-place is reserved for a reference with no browser — a blank
     // untouched shell. Anything holding web content (a browser surface today, a
     // tool that has both later) must split beside it instead of being destroyed.
-    const replaceUntouchedShell = !preserveSource && !getHelper(reference.id) && !hasBrowser(reference.kind) && isUntouched(reference.id);
+    const replaceUntouchedShell = !preserveSource && !hasBrowser(reference.kind) && isReplaceableShell(reference.id);
 
     if (replaceUntouchedShell) {
       // Whether the user's current selection sits on the pane being replaced.
@@ -1191,8 +1202,7 @@ export function Wall({
       const shouldReplaceUntouched =
         detail.replaceUntouched === true &&
         selectedPaneVisible &&
-        !getHelper(selectedPaneId!) &&
-        isUntouched(selectedPaneId!);
+        isReplaceableShell(selectedPaneId!);
       const shellName = detail.name?.trim() || 'terminal';
 
       if (shouldReplaceUntouched) {
@@ -1206,7 +1216,7 @@ export function Wall({
         return;
       }
 
-      if (detail.replaceUntouched === true && selectedDoor && !getHelper(selectedDoor.id) && isUntouched(selectedDoor.id)) {
+      if (detail.replaceUntouched === true && selectedDoor && isReplaceableShell(selectedDoor.id)) {
         handleReattachRef.current(selectedDoor, {
           enterPassthrough: false,
           afterRestore: {
@@ -1236,7 +1246,7 @@ export function Wall({
   }, [generatePaneId, surfaceRefForId, forgetSurfaceRef, selectPane, enterTerminalMode, showShellSpawnNotice, lath, nav]);
 
   // --- dor control plane (the `dor` CLI's webview handler) ---
-  const { connectPort, updateSurfaceParams } = useDorControl({
+  const { updateSurfaceParams } = useDorControl({
     lath,
     nav,
     doorsRef,
@@ -1246,7 +1256,6 @@ export function Wall({
     createSplitSurface,
     createContentSurface,
     killPaneImmediately,
-    revealSurface,
     lastAgentBrowserBinaryPathRef,
   });
 
@@ -1294,20 +1303,7 @@ export function Wall({
       };
       const helper = getHelper(id);
       if (!helper) { confirmSource(); return; }
-      void helperHasWork(helper).then(busy => {
-        if (getHelper(id) !== helper) return;
-        if (busy) {
-          const door = doorsRef.current.find(item => item.id === id);
-          if (door) handleReattachRef.current(door);
-          setConfirmKill(null);
-          setTerminalContext({ id, warning: 'Helper has running work. Stop it in the helper, then close this terminal again.' });
-        } else confirmSource();
-      }).catch(error => {
-        const door = doorsRef.current.find(item => item.id === id);
-        if (door) handleReattachRef.current(door);
-        setConfirmKill(null);
-        setTerminalContext({ id, warning: `Could not inspect helper processes: ${String(error)}` });
-      });
+      void helperBlocksClose(id, helper).then(blocked => { if (!blocked) confirmSource(); });
     },
     onAlertButton: (id: string, displayedStatus: SessionStatus) => {
       return dismissOrToggleAlert(id, displayedStatus);
@@ -1486,9 +1482,7 @@ export function Wall({
       });
     },
     resolveSurfaceRef: surfaceRefForId,
-    // The pane context menu's "connect a port" action: act like `dor ab open`.
-    onConnectPort: connectPort,
-  }), [addSplitPanel, minimizePane, enterTerminalMode, exitTerminalMode, killPaneImmediately, replaceSurface, buildDorSurfaces, createContentSurface, surfaceRefForId, connectPort, updateSurfaceParams, lath, nav]);
+  }), [addSplitPanel, minimizePane, enterTerminalMode, exitTerminalMode, killPaneImmediately, helperBlocksClose, replaceSurface, buildDorSurfaces, createContentSurface, surfaceRefForId, updateSurfaceParams, lath, nav]);
   const contextPortLaunches = useRef(new Map<string, Promise<void>>());
   const openContextPort = useCallback(async (id: string, entry: PortUrlEntry, mode: PortMode): Promise<void> => {
     const platform = getPlatform();
@@ -1523,6 +1517,7 @@ export function Wall({
         killPaneImmediately(created.value.id);
         throw new Error(result.error ?? 'Could not open agent browser');
       }
+      if (result.binaryPath) lastAgentBrowserBinaryPathRef.current = result.binaryPath;
       const binding = { session: result.session, wsPort: result.wsPort, binaryPath: result.binaryPath };
       if (!lath.getMeta(created.value.id) || lath.isDying(created.value.id)) { closeAgentBrowserSession({ renderMode: mode, ...binding }); return; }
       updateSurfaceParams(created.value.id, binding);
@@ -1532,28 +1527,17 @@ export function Wall({
   }, [buildDorSurfaces, buildDorSurfaceList, createContentSurface, enterTerminalMode, killPaneImmediately, lath, revealSurface, updateSurfaceParams]);
   const contextActions = useMemo(() => ({
     id: terminalContext?.id ?? null, warning: terminalContext?.warning,
-    open: (id: string, warning?: string) => { if (terminalRegistry.get(id)?.helper) return; setTerminalContext({ id, warning }); },
+    open: (id: string, warning?: string) => { if (isHelperSession(id)) return; setTerminalContext({ id, warning }); },
     close: () => setTerminalContext(null),
     promote: async (id: string) => {
-      const helper = getHelper(id);
-      if (!helper || !nav.hasPane(id)) throw new Error('Helper cannot be placed beside this terminal');
-      // Cancel launch injection before asynchronous ownership transfer.
-      clearInterval(helper.timer);
-      helper.promoting = true;
-      helper.status = 'preserved';
-      const entry = terminalRegistry.get(helper.id);
-      if (entry) entry.untouched = false;
-      try { await getPlatform().terminalContext?.({ op: 'promote', id: helper.id }); }
-      catch (error) { helper.promoting = false; throw error; }
-      const edge = lath.store.autoEdgeFor(id);
-      const placed = lath.store.addLeaf(helper.id, terminalLeafMeta(), { refId: id, edge });
+      if (!getHelper(id) || !nav.hasPane(id)) throw new Error('Helper cannot be placed beside this terminal');
+      const helper = await beginPromotion(id);
+      const placed = lath.store.addLeaf(helper.id, terminalLeafMeta(), { refId: id, edge: lath.store.autoEdgeFor(id) });
       if (!placed.ok) {
-        await getPlatform().terminalContext?.({ op: 'promote', id: helper.id, restore: { parentId: id, command: helper.command } });
-        helper.promoting = false;
+        await cancelPromotion(id);
         throw new Error('Could not split the source pane');
       }
-      if (entry) { entry.helper = undefined; entry.untouched = false; }
-      forgetHelper(id);
+      finishPromotion(id);
       surfaceRefForId(helper.id);
       setTerminalContext(null);
       enterTerminalMode(helper.id);

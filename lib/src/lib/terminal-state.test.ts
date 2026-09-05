@@ -111,6 +111,12 @@ describe('terminal CWD normalization', () => {
     expect(labels.get(cwdIdentity(share))).toBe('\\\\server\\share\\repo\\app');
     expect(labels.get(cwdIdentity(otherShare))).toBe('\\\\server\\other\\repo\\app');
   });
+
+  it('abbreviates the home directory in full labels without matching a sibling', () => {
+    expect(cwdDisplay(cwd('/home/user/project'), { style: 'full', homePath: '/home/user' })).toBe('~/project');
+    expect(cwdDisplay(cwd('/home/username'), { style: 'full', homePath: '/home/user' })).toBe('/home/username');
+    expect(cwdDisplay(cwd('C:\\Users\\Me\\project'), { style: 'full', homePath: 'c:\\users\\me' })).toBe('~\\project');
+  });
 });
 
 describe('terminal command state reducer', () => {

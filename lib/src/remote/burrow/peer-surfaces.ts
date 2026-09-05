@@ -8,7 +8,7 @@ import { clampTerminalDimension, type DirectoryEntry } from 'remote-lib-common';
 import { getPlatform } from '../../lib/platform';
 import type { BurrowLink } from '../../lib/platform/types';
 import { subscribeToActivity } from '../../lib/session-activity-store';
-import { registry } from '../../lib/terminal-store';
+import { isHelperSession, registry } from '../../lib/terminal-store';
 import { subscribeToTerminalPaneState } from '../../lib/terminal-state-store';
 import { collectDirectorySnapshot } from './directory-collect';
 import { armWhileEnrolled } from './enrolled-gate';
@@ -75,8 +75,7 @@ function driveOwnSurface({
   cols,
   rows,
 }: PeerSurfaceParams): PeerSurfaceResult[] {
-  const candidate = registry.get(surfaceId);
-  const entry = candidate?.helper ? undefined : candidate;
+  const entry = isHelperSession(surfaceId) ? undefined : registry.get(surfaceId);
   if (!entry) return [];
 
   const term = entry.terminal;

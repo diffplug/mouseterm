@@ -3,10 +3,13 @@ import { registry } from './terminal-store';
 import { disposeSession, getOrCreateTerminal, setPendingShellOpts, unmountElement } from './terminal-lifecycle';
 import { getDefaultShellOpts } from './shell-defaults';
 import { getTerminalPaneState, isPaneOscDriven, seedLaunchedCommand } from './terminal-state-store';
-import type { HelperIdentity } from './terminal-context-types';
+import { DEFAULT_HELPER_COMMAND, type HelperIdentity } from './terminal-context-types';
 
 export type HelperStatus = 'waiting' | 'running' | 'completed' | 'preserved' | 'off' | 'unsupported' | 'exited';
 export interface HelperTerminal extends HelperIdentity { id: string; status: HelperStatus; promoting?: boolean; timer?: ReturnType<typeof setInterval> }
+const STATUS_POLL_MS = 100;
+const READINESS_TIMEOUT_MS = 8000;
+const WORK_INSPECTION_MS = 2000;
 const helpers = new Map<string, HelperTerminal>();
 const pending = new Map<string, Promise<HelperTerminal>>();
 const listeners = new Set<() => void>();
@@ -16,18 +19,42 @@ export const subscribeHelpers = (listener: () => void) => { listeners.add(listen
 export const helperRevision = () => revision;
 export const getHelper = (parentId: string) => helpers.get(parentId);
 
+const atPrompt = (id: string) => {
+  const state = getTerminalPaneState(id);
+  return (state.activity.kind === 'prompt' || state.activity.kind === 'editing') && !state.currentCommand;
+};
+
+/** One poll per helper advances its status and, once settled, refreshes the host work inspection. */
+function watchHelper(helper: HelperTerminal, launchCwd?: string): void {
+  const started = Date.now();
+  let lastInspection = 0;
+  let inspecting = false;
+  helper.timer = setInterval(() => {
+    const entry = registry.get(helper.id);
+    if (!entry || helpers.get(helper.parentId) !== helper) { clearInterval(helper.timer); return; }
+    let status = helper.status;
+    if (entry.exited) status = 'exited';
+    else if (!entry.untouched) status = 'preserved';
+    else if (helper.status === 'waiting') {
+      if (isPaneOscDriven(helper.id) && atPrompt(helper.id)) {
+        status = 'running';
+        seedLaunchedCommand(helper.id, helper.command, launchCwd);
+        getPlatform().writePty(helper.id, `${helper.command}\r`);
+      } else if (Date.now() - started >= READINESS_TIMEOUT_MS) status = 'unsupported';
+    } else if (helper.status === 'running' && atPrompt(helper.id)) status = 'completed';
+    if (status !== helper.status) { helper.status = status; notifyHelpers(); }
+    if (status === 'exited') { clearInterval(helper.timer); return; }
+    if (status === 'waiting' || status === 'running' || inspecting || Date.now() - lastInspection < WORK_INSPECTION_MS) return;
+    inspecting = true; lastInspection = Date.now();
+    void helperHasWork(helper).catch(() => { entry.helperBusy = true; }).finally(() => { inspecting = false; });
+  }, STATUS_POLL_MS);
+}
+
 export function restoreHelper(id: string, identity: HelperIdentity): void {
   // Replays do not prove absence of user input. Recovery always disarms autorun.
   const helper: HelperTerminal = { ...identity, id, status: 'preserved' };
   helpers.set(identity.parentId, helper);
-  let inspecting = false;
-  helper.timer = setInterval(() => {
-    const entry = registry.get(id);
-    if (!entry || entry.exited || helpers.get(identity.parentId) !== helper) { clearInterval(helper.timer); return; }
-    if (inspecting) return;
-    inspecting = true;
-    void helperHasWork(helper).catch(() => { entry.helperBusy = true; }).finally(() => { inspecting = false; });
-  }, 2000);
+  watchHelper(helper);
   unmountElement(id);
   notifyHelpers();
 }
@@ -77,49 +104,49 @@ export async function openHelper(parentId: string): Promise<HelperTerminal> {
     if (!registry.has(parentId)) throw new Error('The parent terminal has closed');
     const id = `helper-${crypto.randomUUID()}`;
     const cwd = getTerminalPaneState(parentId).cwd;
-    const command = settings.command;
+    const command = settings.command ?? DEFAULT_HELPER_COMMAND;
     const helper: HelperTerminal = { id, parentId, command, status: command ? 'waiting' : 'off' };
     helpers.set(parentId, helper);
     setPendingShellOpts(id, { ...getDefaultShellOpts(), cwd: cwd && !cwd.isRemote ? cwd.path : undefined, helper: { parentId, command } });
     getOrCreateTerminal(id);
     unmountElement(id);
     notifyHelpers();
-    const started = Date.now();
-    let lastInspection = 0;
-    let inspecting = false;
-    helper.timer = setInterval(() => {
-      const entry = registry.get(id);
-      if (!entry || helpers.get(parentId) !== helper) { clearInterval(helper.timer); return; }
-      let status = helper.status;
-      if (entry.exited) status = 'exited';
-      else if (!entry.untouched) status = 'preserved';
-      else if (helper.status === 'waiting') {
-        if (isPaneOscDriven(id) && ['prompt', 'editing'].includes(getTerminalPaneState(id).activity.kind) && !getTerminalPaneState(id).currentCommand) {
-          status = 'running';
-          seedLaunchedCommand(id, command, cwd?.path);
-          platform.writePty(id, `${command}\r`);
-        } else if (Date.now() - started >= 8000) status = 'unsupported';
-      } else if (helper.status === 'running' && ['prompt', 'editing'].includes(getTerminalPaneState(id).activity.kind) && !getTerminalPaneState(id).currentCommand) status = 'completed';
-      if (status !== helper.status) { helper.status = status; notifyHelpers(); }
-      if (status === 'completed' || status === 'off' || status === 'preserved' || status === 'unsupported') {
-        if (Date.now() - lastInspection >= 2000 && !inspecting) {
-          inspecting = true; lastInspection = Date.now();
-          void helperHasWork(helper).catch(() => { entry.helperBusy = true; }).finally(() => { inspecting = false; });
-        }
-      }
-      if (status === 'exited') clearInterval(helper.timer);
-    }, 100);
+    watchHelper(helper, cwd?.path);
     return helper;
   })();
   pending.set(parentId, operation);
   try { return await operation; } finally { pending.delete(parentId); }
 }
 
-export function abbreviatedDirectory(path: string, home: string): string {
-  if (!home) return path;
-  const windows = /^[a-z]:[\\/]/i.test(home);
-  const normalize = (value: string) => windows ? value.replace(/\\/g, '/').toLowerCase() : value;
-  const base = normalize(home).replace(/\/$/, '');
-  const candidate = normalize(path);
-  return candidate === base || candidate.startsWith(`${base}/`) ? `~${path.slice(base.length)}` : path;
+/** Hands the helper to the caller for placement: autorun is cancelled and the host stops treating the PTY as auxiliary. */
+export async function beginPromotion(parentId: string): Promise<HelperTerminal> {
+  const helper = helpers.get(parentId);
+  if (!helper) throw new Error('This terminal has no helper');
+  // Cancel launch injection before asynchronous ownership transfer.
+  clearInterval(helper.timer);
+  helper.promoting = true;
+  helper.status = 'preserved';
+  const entry = registry.get(helper.id);
+  if (entry) entry.untouched = false;
+  try { await getPlatform().terminalContext?.({ op: 'promote', id: helper.id }); }
+  catch (error) { helper.promoting = false; watchHelper(helper); throw error; }
+  return helper;
+}
+
+/** Placement failed: the host resumes auxiliary ownership and inspection continues. */
+export async function cancelPromotion(parentId: string): Promise<void> {
+  const helper = helpers.get(parentId);
+  if (!helper) return;
+  await getPlatform().terminalContext?.({ op: 'promote', id: helper.id, restore: { parentId, command: helper.command } });
+  helper.promoting = false;
+  watchHelper(helper);
+}
+
+/** The placed helper is now an ordinary Session. */
+export function finishPromotion(parentId: string): void {
+  const helper = helpers.get(parentId);
+  if (!helper) return;
+  const entry = registry.get(helper.id);
+  if (entry) { entry.helper = undefined; entry.untouched = false; }
+  forgetHelper(parentId);
 }

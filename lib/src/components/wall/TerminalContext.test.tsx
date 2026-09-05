@@ -21,7 +21,7 @@ beforeEach(() => {
   setPlatform(new FakePtyAdapter()); ensureResizeObserver();
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
   props = { title: 'pnpm dev', surfaceRef: 'surface:3', cwd: '~/repo', titleSources: [{ source: 'OSC 2', value: 'pnpm dev', note: 'Used' }], scan: { status: 'loaded', entries: [port(5173)] },
-    argv0: 'pnpm', watching: false, todo: false, status: 'completed', command: 'git status', explorerLabel: 'Open in Finder', canExplore: true, canAgent: true, canPopout: true, canIframe: true,
+    argv0: 'pnpm', watching: false, todo: false, status: 'completed', command: 'git status', explorerLabel: 'Open in Finder', canExplore: true, canAgent: true, canIframe: true,
     onClose: vi.fn(), onCopyRef: vi.fn(), onCopyPath: vi.fn(), onExplore: vi.fn(), onWatch: vi.fn(), onTodo: vi.fn(), onPort: vi.fn(), onModify: vi.fn(async () => {}), onReset: vi.fn(async () => {}), onPromote: vi.fn(async () => {}),
     children: <div data-helper-terminal="helper"><textarea aria-label="Helper input" /></div> };
 });
@@ -49,7 +49,7 @@ it.each(['scanning', 'failed', 'empty'] as const)('distinguishes %s ports', stat
   expect(button('Open in system browser')).toBeNull();
 });
 it('disables unsupported host capabilities with an explanation', () => {
-  props.canAgent = false; props.canPopout = false; props.canExplore = false; render();
+  props.canAgent = false; props.canExplore = false; render();
   expect(button('Agent browser unavailable on this host').disabled).toBe(true);
   expect(button('Popout unavailable on this host').disabled).toBe(true);
   expect(button('Directory unavailable on this host').disabled).toBe(true);

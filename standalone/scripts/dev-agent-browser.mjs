@@ -338,5 +338,5 @@ await startHostServer();
 startSidecar();
 startVite();
 await waitForVite();
-if (process.env.DORMOUSE_BROWSER_DEV_SKIP_OPEN !== '1') await openAgentBrowser();
+await openAgentBrowser();
 log('running; Ctrl-C to stop');
