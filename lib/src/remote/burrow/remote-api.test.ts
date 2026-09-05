@@ -40,6 +40,7 @@ class FakeProvider implements BurrowSurfaceProvider {
 
   /** `resizePty` — the PTY-only path used by the same-size repaint bounce. */
   readonly ptyResizes: Array<[string, number, number]> = [];
+  readonly repaintRequests: Array<[string, number, number]> = [];
   /** `handle.resize` — the through-the-owner path an attach/resize takes. */
   readonly handleResizes: Array<[string, number, number]> = [];
   readonly writes: Array<[string, string]> = [];
@@ -97,8 +98,9 @@ class FakeProvider implements BurrowSurfaceProvider {
     this.writes.push([ptyId, data]);
   };
 
-  resizePty = (ptyId: string, cols: number, rows: number): void => {
+  resizePty = (ptyId: string, cols: number, rows: number, repaint?: boolean): void => {
     this.ptyResizes.push([ptyId, cols, rows]);
+    if (repaint) this.repaintRequests.push([ptyId, cols, rows]);
     this.emitData(ptyId, `pty-resize:${cols}x${rows}`);
   };
 
@@ -524,31 +526,20 @@ describe('RemoteApiSession surface.attach', () => {
     expect(reply(sent, 'attach-1').result).toEqual({ cols: 120, rows: 24 });
   });
 
-  it('keeps the synchronous repaint data from the same-size PTY bounce', async () => {
-    vi.useFakeTimers();
+  it('requests owner-managed repaint and retains synchronous data at the same size', async () => {
     const provider = new FakeProvider();
     provider.addSurface('surface-1', 'pty-1', 80, 24);
     const { session, sent } = makeSession(provider);
 
     await attach(session, 80, 24);
 
-    // The size is already right, so the owner is left alone and only the PTY
-    // is bounced — that SIGWINCH is the whole point.
     expect(provider.handleResizes).toEqual([]);
-    expect(provider.ptyResizes).toEqual([['pty-1', 80, 23]]);
+    expect(provider.repaintRequests).toEqual([['pty-1', 80, 24]]);
     expect(sent[0]).toMatchObject({
-      requestId: 'attach-1',
-      ok: true,
-      result: { cols: 80, rows: 24 },
+      requestId: 'attach-1', ok: true, result: { cols: 80, rows: 24 },
     });
     expect(sent[1]).toMatchObject({ subId: 'attach-1', event: REMOTE_EVENTS.terminalData });
-    expect(decodeTerminalData(sent[1]!)).toBe('pty-resize:80x23');
-
-    vi.advanceTimersByTime(60);
-    expect(provider.ptyResizes).toEqual([
-      ['pty-1', 80, 23],
-      ['pty-1', 80, 24],
-    ]);
+    expect(decodeTerminalData(sent[1]!)).toBe('pty-resize:80x24');
   });
 
   it('answers and unwinds a synchronous repaint failure after stream readiness', async () => {
@@ -577,70 +568,6 @@ describe('RemoteApiSession surface.attach', () => {
     await settle();
     expect(reply(sent, 'invalid').ok).toBe(false);
     expect(provider.resolved).toEqual([]);
-  });
-
-  it('bounces a one-row surface upward, where a bounce is not a no-op', async () => {
-    vi.useFakeTimers();
-    const provider = new FakeProvider();
-    provider.addSurface('surface-1', 'pty-1', 80, 1);
-    const { session } = makeSession(provider);
-
-    await attach(session, 80, 1);
-
-    // rows-1 would be 0 — clamped back to the same size, so no SIGWINCH and no
-    // repaint at all.
-    expect(provider.ptyResizes).toEqual([['pty-1', 80, 2]]);
-    vi.advanceTimersByTime(60);
-    expect(provider.ptyResizes.at(-1)).toEqual(['pty-1', 80, 1]);
-  });
-
-  it('does not fire the same-size bounce restore after detaching', async () => {
-    vi.useFakeTimers();
-    const provider = new FakeProvider();
-    provider.addSurface('surface-1', 'pty-1', 80, 24);
-    const { session } = makeSession(provider);
-
-    await attach(session, 80, 24);
-
-    // The synchronous bounce away from `rows` has fired; the restore is pending.
-    expect(provider.ptyResizes).toEqual([['pty-1', 80, 23]]);
-
-    // Detach inside the ~60ms window, before the restore fires.
-    session.handle({
-      requestId: 'detach',
-      method: REMOTE_METHODS.surfaceDetach,
-      params: { surfaceId: 'surface-1' },
-    });
-    vi.advanceTimersByTime(60);
-
-    // The stale restore must never touch the now-detached PTY.
-    expect(provider.ptyResizes).toEqual([['pty-1', 80, 23]]);
-  });
-
-  it('does not let a stale bounce restore clobber a newer attachment', async () => {
-    vi.useFakeTimers();
-    const provider = new FakeProvider();
-    provider.addSurface('surface-1', 'pty-1', 80, 24);
-    provider.addSurface('surface-2', 'pty-2', 80, 24);
-    const { session } = makeSession(provider);
-
-    // First attach schedules a restore bounce for pty-1.
-    await attach(session, 80, 24, 'surface-1');
-    expect(provider.ptyResizes).toEqual([['pty-1', 80, 23]]);
-
-    // Re-attaching to a different surface replaces the attachment
-    // (last-attach-wins) and must cancel the prior pty-1 restore.
-    await attach(session, 80, 24, 'surface-2', 'attach-2');
-    expect(provider.ptyResizes.at(-1)).toEqual(['pty-2', 80, 23]);
-
-    vi.advanceTimersByTime(60);
-
-    // Only the current attachment's restore fires.
-    expect(provider.ptyResizes).toEqual([
-      ['pty-1', 80, 23],
-      ['pty-2', 80, 23],
-      ['pty-2', 80, 24],
-    ]);
   });
 
   it('replaces the previous attachment, unsubscribing its stream', async () => {
@@ -778,7 +705,7 @@ describe('RemoteApiSession surface.attach', () => {
 });
 
 describe('RemoteApiSession terminal input', () => {
-  it.each([[100, 30], [80, 24]])('finishes the repaint bounce before resizing to %ix%i', async (cols, rows) => {
+  it.each([[100, 30], [80, 24]])('leaves repaint restoration to the owner after resizing to %ix%i', async (cols, rows) => {
     vi.useFakeTimers();
     const provider = new FakeProvider();
     provider.addSurface('surface-1', 'pty-1');
@@ -791,7 +718,7 @@ describe('RemoteApiSession terminal input', () => {
     });
     await settle();
     expect(reply(sent, 'resize').result).toEqual({ cols, rows });
-    expect(provider.ptyResizes).toEqual([['pty-1', 80, 23], ['pty-1', 80, 24]]);
+    expect(provider.repaintRequests).toEqual([['pty-1', 80, 24]]);
     expect(provider.handleResizes).toEqual([['pty-1', cols, rows]]);
 
     provider.ptyResizes.length = 0;
@@ -1210,20 +1137,6 @@ describe('RemoteApiSession teardown', () => {
       false,
     );
     expect(provider.unstreamed).toEqual(['pty-1']);
-  });
-
-  it('cancels a pending bounce when the attached PTY exits inside the window', async () => {
-    vi.useFakeTimers();
-    const provider = new FakeProvider();
-    provider.addSurface('surface-1', 'pty-1', 80, 24);
-    const { session } = makeSession(provider);
-
-    await attach(session, 80, 24);
-    provider.emitExit('pty-1', 1);
-    vi.advanceTimersByTime(60);
-
-    // Restoring the rows of a PTY that is gone is at best pointless.
-    expect(provider.ptyResizes).toEqual([['pty-1', 80, 23]]);
   });
 
   it('dispose stops the stream and ignores later requests', async () => {

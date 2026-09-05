@@ -48,7 +48,6 @@ Source of truth: `BurrowSurfaceProvider` in `lib/src/remote/burrow/burrow-surfac
 A Surface is named on the wire by `surfaceId`; the picker lists Panes, so attaching to a Pane means attaching to its selected Surface. Remote-only vocabulary:
 
 * **Viewer** — one connected Client session. Multiple viewers may coexist.
-* **Window** — the Burrow's full layout tree plus geometry, consumed only by VR ([Future](#future)). **Wall** is the glossary's name for one Workspace's renderer, so this is the *Window*.
 
 Source of truth: the surface model the wire shapes reuse — `dor/src/protocol.ts`, `dor/src/commands/types.ts`.
 
@@ -116,9 +115,11 @@ Source of truth: `TerminalDataEvent` in `remote-lib-common/src/remote/wire.ts`, 
 
 1. Client attaches with `{ cols, rows }`.
 2. Burrow resizes through the owning xterm's resize path (last-attach-wins); the resulting `SIGWINCH` repaint is what fills the client's screen. (rationale)
-3. **If the requested size equals the current size**, that resize would be a no-op, so the Burrow bounces rows on the **PTY only** — the owning xterm is already correct — and restores them `FORCE_REPAINT_BOUNCE_MS` later. The bounce goes down, except from a 1-row surface, where `rows - 1` would itself be a no-op firing no `SIGWINCH`.
+3. **If the requested size equals the current size**, the Burrow requests an owner-managed **PTY-only** repaint. The owner bounces rows down (up from one row), then restores them after 60ms (`FORCE_REPAINT_BOUNCE_MS`); the xterm stays at the requested size.
 
-**Must finish a pending bounce before this attachment's next `terminal.resize`**, including a same-size request, and cancel its delayed restore.
+**Must cancel restoration on every later PTY resize or repaint, exit, kill, or replacement.** Local and other-Viewer size writers share that owner. Detach/disposal leave restoration running. (rationale)
+
+Source of truth: `resize` in `standalone/sidecar/pty-core.js`, shared by both hosts and pinned by `standalone/sidecar/pty-core.test.js`; the Burrow→owner `repaint` flag travels through `lib/src/host/remote/sidecar-entry.ts` or `vscode-ext/src/burrow.ts` → `vscode-ext/src/peer-link.ts` → `vscode-ext/src/pty-manager.ts` → `vscode-ext/src/pty-host.js`.
 
 **Normal-screen history does not regenerate on resize** and is absent from the shipped protocol (see [Future](#future): in-flight replay, then semantic scrollback).
 
@@ -239,10 +240,11 @@ Layered so "the Burrow is the final authority" holds at every step:
 
 VR does not stream the desktop; it *is* the desktop — the headset runs the same web UI (`lib`) against remote data sources instead of local ones.
 
-`window.watch` subscribes to the Burrow Window's layout tree plus geometry. One session, one Burrow, hence one Window, so the snapshot follows the glossary containment directly (`Window ⊃ Workspace ⊃ Pane ⊃ Surface`):
+`window.watch { windowRef }` subscribes to one Window's layout tree plus geometry. One authorized session addresses one Burrow, which may expose several Windows (VS Code). Window discovery and selection precede the watch; its target and every snapshot carry an explicit Burrow-scoped Window identity. Each snapshot follows the glossary containment (`Window ⊃ Workspace ⊃ Pane ⊃ Surface`):
 
 ```ts
 interface WindowSnapshot {
+  windowRef: string;
   workspaces: Array<{
     ref: string; name: string;
     panes: Array<{
@@ -273,7 +275,7 @@ surface.kill     surface.read      surface.focus
 
 These are the methods the dor CLI speaks today; the remote API reuses their request/response shapes so one Burrow handler dispatches both.
 
-**Window lease.** A VR session may request `window.lease`, declaring itself the primary display. Sizing needs no lease — last-attach-wins already hands VR the panes it displays — so the lease is presentational: the Burrow UI tethers wholesale instead of pane by pane, and panes created on the Burrow while the lease is held open tethered to the leaseholder. One lease at a time; the Burrow user can always reclaim it locally. Phones never need it.
+**Window lease.** A VR session may request `window.lease { windowRef }`, declaring itself that Window's primary display. Sizing needs no lease — last-attach-wins already hands VR the panes it displays — so the lease is presentational: that Window tethers wholesale instead of pane by pane, and panes created in it while the lease is held open tethered to the leaseholder. One lease per Window; the Burrow user can always reclaim it locally. Phones never need it.
 
 ### 8. WebRTC rendezvous
 

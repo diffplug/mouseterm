@@ -460,8 +460,8 @@ export function write(id: string, data: string): void {
   sendToChild({ type: 'input', id, data });
 }
 
-export function resize(id: string, cols: number, rows: number): void {
-  sendToChild({ type: 'resize', id, cols, rows });
+export function resize(id: string, cols: number, rows: number, repaint?: boolean): void {
+  sendToChild({ type: 'resize', id, cols, rows, repaint });
 }
 
 export function kill(id: string): void {

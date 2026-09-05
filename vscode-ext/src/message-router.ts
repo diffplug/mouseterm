@@ -81,7 +81,7 @@ configurePeerLink({
   invalidateDirectory: notifyDirectoryChanged,
   streamPty: processedPtyStreams.streamPty,
   writePty: (ptyId, data) => ptyManager.write(ptyId, data),
-  resizePty: (ptyId, cols, rows) => ptyManager.resize(ptyId, cols, rows),
+  resizePty: (ptyId, cols, rows, repaint) => ptyManager.resize(ptyId, cols, rows, repaint),
   // Peer PTYs use generated provider-local route handles. Keep those handles
   // outside this window's real PTY namespace so local ids always fall through
   // to the manager that owns them.
@@ -100,7 +100,7 @@ configureBurrow({
   broadcastToWebviews,
   streamPty: processedPtyStreams.streamPty,
   writePty: (ptyId, data) => ptyManager.write(ptyId, data),
-  resizePty: (ptyId, cols, rows) => ptyManager.resize(ptyId, cols, rows),
+  resizePty: (ptyId, cols, rows, repaint) => ptyManager.resize(ptyId, cols, rows, repaint),
 });
 
 /**

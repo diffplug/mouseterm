@@ -40,6 +40,14 @@ describe('PTY manager lifetime and buffers', () => {
     expect(manager.getScrollbackSince('pane-a', data.length)).toBe('end');
   });
 
+  it('forwards a Burrow repaint to the PTY child that owns all size writers', async () => {
+    const { manager, child } = await startManager();
+    manager.resize('pane-a', 80, 24, true);
+    expect(child.send).toHaveBeenLastCalledWith({
+      type: 'resize', id: 'pane-a', cols: 80, rows: 24, repaint: true,
+    });
+  });
+
   it('marks live PTYs exited after child failure while retaining transcripts and prior exits', async () => {
     const { manager, child } = await startManager();
     const onExit = vi.fn();
