@@ -114,6 +114,8 @@ runs.
 against a process running as the same user, and nothing in the table claims it does — a
 same-user compromise already reads the terminals.
 
+**Why ownership accompanies permissions.** A private directory owned by another account still gives that owner control. macOS previously checked only modes; Windows checked ACE identities but omitted the owner. Both now compare the current account, using numeric UIDs on macOS and [GetOwner(SecurityIdentifier)](https://learn.microsoft.com/en-us/dotnet/api/system.security.accesscontrol.objectsecurity.getowner) on Windows. Windows also rejects an empty ACE enumeration: a [NULL DACL](https://learn.microsoft.com/en-us/windows/win32/secauthz/null-dacls-and-empty-dacls) grants everyone full access, while the installer always supplies an owner entry. Unix checks execute in extracted-helper tests; Windows changes remain structurally tested without native PowerShell execution (September 2026).
+
 **Why `manage verify` walks `state/` on Windows.** `relay/src/state.ts`'s `0o600` is a
 no-op there, so the files are covered only by what they inherit from the directory. An
 enumeration that fails has to fail verify, because a directory the walk could not read
@@ -165,6 +167,9 @@ no cookie still lets a foreign page read what a stolen bearer provokes. Auditing
 apart is how a future route reintroduces one on the reasoning that the other is absent.
 
 ## Network posture (self-hosted)
+
+**Why configuration readers use the last assignment.** The service wrappers overwrite each environment key while scanning `relay.env`; the old inspectors returned its first occurrence, and unix bind guards accepted any matching line. Appending `DORMOUSE_BIND_HOST=0.0.0.0` after the installer-generated loopback line therefore passed preflight but changed the listener. Origin and port had the same mismatch. Inspectors now use the wrapper's last-assignment and matched-quote behavior; the unix regression tests run the actual wrapper parser beside the inspector.
+
 
 **Why the deploy lint carries a self-test.** A textual rule's characteristic failure is
 passing for the wrong reason: review of the first version found three rules satisfied

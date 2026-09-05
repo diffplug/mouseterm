@@ -281,8 +281,18 @@ function Test-OwnerOnly {
   param([Parameter(Mandatory)][string]$Path)
   if (-not (Test-Path -LiteralPath $Path)) { return [pscustomobject]@{ Ok = $false; Reason = 'missing' } }
   $acl = Get-Acl -LiteralPath $Path
+  $ownerSid = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+  if ($ownerSid -ne $script:CurrentUserSid) {
+    return [pscustomobject]@{ Ok = $false; Reason = "owned by $ownerSid, expected $script:CurrentUserSid" }
+  }
   $others = @()
-  foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+  $rules = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
+  # A NULL DACL also enumerates no ACEs but grants everybody full access.
+  # Neither it nor an empty DACL is the usable owner-only ACL we install.
+  if ($rules.Count -eq 0) {
+    return [pscustomobject]@{ Ok = $false; Reason = 'DACL has no access rules' }
+  }
+  foreach ($rule in $rules) {
     if ($rule.IdentityReference.Value -ne $script:CurrentUserSid) {
       $others += $rule.IdentityReference.Value
     }
@@ -327,6 +337,7 @@ function Get-FailureTail {
 function Get-EnvFileValue {
   param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Key)
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+  $lastValue = $null
   foreach ($line in [IO.File]::ReadAllLines($Path)) {
     $t = $line.Trim()
     if ($t.Length -eq 0 -or $t.StartsWith('#')) { continue }
@@ -337,9 +348,9 @@ function Get-EnvFileValue {
     if ($value.Length -ge 2 -and $value.StartsWith('"') -and $value.EndsWith('"')) {
       $value = $value.Substring(1, $value.Length - 2)
     }
-    return $value
+    $lastValue = $value
   }
-  return $null
+  return $lastValue
 }
 
 # Every process belonging to an installation at $Root.
@@ -428,10 +439,11 @@ function Test-Health {
 }
 
 function Wait-Health {
-  param([Parameter(Mandatory)][string]$Url, [int]$Seconds = 30)
+  param([Parameter(Mandatory)][string]$Url, [int]$Seconds = 30, [string]$ExpectedRelease = '')
   $deadline = (Get-Date).AddSeconds($Seconds)
   while ((Get-Date) -lt $deadline) {
-    if (Test-Health -Url $Url -TimeoutSec 2) { return $true }
+    if ((Test-Health -Url $Url -TimeoutSec 2) -and
+        (-not $ExpectedRelease -or (Get-ListeningRelease) -eq $ExpectedRelease)) { return $true }
     Start-Sleep -Milliseconds 500
   }
   return $false
@@ -784,7 +796,10 @@ try {
   if ($GIT_DIRTY -eq 'true') { $RELEASE_ID = "$RELEASE_ID-dirty" }
   $STAGE = Join-Path $RELEASES_DIR $RELEASE_ID
 
-  Remove-Tree $STAGE
+  # mkdirSync fails atomically if a timestamp collision names an existing
+  # release. Never remove that path: it may be the release serving right now.
+  $r = Invoke-NodeScript -NodeBin $NODE_BIN -Script 'require("fs").mkdirSync(process.argv[2]);' -Arguments @($STAGE)
+  if ($r.ExitCode -ne 0) { Die "could not create a new release directory: $STAGE (existing releases are never overwritten)." }
   New-Directory (Join-Path $STAGE 'lib')
   New-Directory (Join-Path $STAGE 'runtime')
 
@@ -1092,6 +1107,7 @@ function Warn { param([string]$T) Write-Host "  $C_YEL!$C_OFF $T" }
 function Get-EnvValue {
   param([Parameter(Mandatory)][string]$Key)
   if (-not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) { return $null }
+  $lastValue = $null
   foreach ($line in [IO.File]::ReadAllLines($EnvFile)) {
     $t = $line.Trim()
     if ($t.Length -eq 0 -or $t.StartsWith('#')) { continue }
@@ -1102,9 +1118,9 @@ function Get-EnvValue {
     if ($value.Length -ge 2 -and $value.StartsWith('"') -and $value.EndsWith('"')) {
       $value = $value.Substring(1, $value.Length - 2)
     }
-    return $value
+    $lastValue = $value
   }
-  return $null
+  return $lastValue
 }
 
 $PORT = Get-EnvValue 'PORT'
@@ -1302,10 +1318,11 @@ function Test-Health {
 # Takes -Url like the installer's copy: two functions of the same name with
 # different signatures is how these two scripts drift apart.
 function Wait-Health {
-  param([Parameter(Mandatory)][string]$Url, [int]$Seconds = 30)
+  param([Parameter(Mandatory)][string]$Url, [int]$Seconds = 30, [string]$ExpectedRelease = '')
   $deadline = (Get-Date).AddSeconds($Seconds)
   while ((Get-Date) -lt $deadline) {
-    if (Test-Health -Url $Url -TimeoutSec 2) { return $true }
+    if ((Test-Health -Url $Url -TimeoutSec 2) -and
+        (-not $ExpectedRelease -or (Get-ListeningRelease) -eq $ExpectedRelease)) { return $true }
     Start-Sleep -Milliseconds 500
   }
   return $false
@@ -1360,8 +1377,18 @@ function Test-OwnerOnly {
   # domain controller on a domain-joined PC, once for every ACE of every state
   # file this checks.
   $acl = Get-Acl -LiteralPath $Path
+  $ownerSid = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+  if ($ownerSid -ne $script:CurrentUserSid) {
+    return [pscustomobject]@{ Ok = $false; Reason = "owned by $ownerSid, expected $script:CurrentUserSid" }
+  }
   $others = @()
-  foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+  $rules = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
+  # A NULL DACL also enumerates no ACEs but grants everybody full access.
+  # Neither it nor an empty DACL is the usable owner-only ACL we install.
+  if ($rules.Count -eq 0) {
+    return [pscustomobject]@{ Ok = $false; Reason = 'DACL has no access rules' }
+  }
+  foreach ($rule in $rules) {
     if ($rule.IdentityReference.Value -ne $script:CurrentUserSid) {
       $others += $rule.IdentityReference.Value
     }
@@ -1727,9 +1754,11 @@ function Invoke-Logs {
 function Invoke-Restart {
   $task = Get-Task
   if (-not $task) { Write-Host "Scheduled Task $TASK_PATH$LABEL is not registered"; return 1 }
+  $expected = Get-CurrentRelease
+  if (-not $expected) { Write-Host 'current release pointer is missing'; return 1 }
   Restart-DormouseTask
   Write-Host "restarted; waiting for health..."
-  if (Wait-Health -Url "http://127.0.0.1:$PORT/api/hello" -Seconds 40) {
+  if (Wait-Health -Url "http://127.0.0.1:$PORT/api/hello" -Seconds 40 -ExpectedRelease $expected) {
     Write-Host "${C_GRN}healthy$C_OFF"
     return 0
   }
@@ -1808,7 +1837,7 @@ function Invoke-Rollback {
     return 1
   }
   Restart-DormouseTask
-  if (Wait-Health -Url "http://127.0.0.1:$PORT/api/hello" -Seconds 40) {
+  if (Wait-Health -Url "http://127.0.0.1:$PORT/api/hello" -Seconds 40 -ExpectedRelease $prev) {
     # A 200 says only that SOMETHING answers, and this is the one command whose
     # entire contract is which release serves. Every kill in Stop-DormouseProcess
     # is best-effort and Start-ScheduledTask runs -ErrorAction SilentlyContinue,

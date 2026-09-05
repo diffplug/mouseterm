@@ -51,7 +51,7 @@ last column means nothing cheaper does.
 | **Merging to `main` and creating a tag are admin-only**, and every workflow this repository authors pins its actions by commit. | [GitHub Actions Policies](./security-ci.md#github-actions-policies) | audit |
 | **The bot maintainer cannot merge, tag, or read a release secret**, and its token never enters its own environment. | [Automated Maintainer (tend)](./security-ci.md#automated-maintainer-tend) | `.github/workflows/workflow-audit.yaml`, nightly |
 | **Publishing the extension takes a second human's approval.** | [VS Code Extension Releases](./security-ci.md#vs-code-extension-releases) | audit |
-| **Desktop binaries are signed offline.** CI never holds a signing or updater key, and the signing script verifies CI's attestations and hashes first. | [Desktop Releases](./security-ci.md#desktop-releases) | audit |
+| **Desktop binaries are signed locally.** CI never holds production signing or updater keys, and the signing script verifies CI's attestations and hashes first. | [Desktop Releases](./security-ci.md#desktop-releases) | audit |
 
 ## What is not defended
 
@@ -111,9 +111,6 @@ Gaps rather than accepted risks: we intend to close them.
   ([Revocation and the audit trail](./security-remote.md#revocation-and-the-audit-trail)).
 - **There is no audit trail.** Nothing records connects, attaches, denials, or
   writes ([same](./security-remote.md#revocation-and-the-audit-trail)).
-- **Owner checks are uneven across installers.** Linux verifies mode and owner
-  on every credential path; macOS verifies modes only, and Windows the DACL but
-  never the owner ([Credentials at rest](./security-remote.md#credentials-at-rest)).
 - **The workflow audit's window has two evasions**: a backdated committer date,
   and a branch pushed, run, and deleted before the nightly fetch
   ([Automated Maintainer](./security-ci.md#automated-maintainer-tend)).
