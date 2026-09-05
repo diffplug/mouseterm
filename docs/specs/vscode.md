@@ -249,7 +249,7 @@ Source of truth: `getWebviewHtml` in `vscode-ext/src/webview-html.ts`, `CSP_NONC
 
 **Never swap the token for an `event.source` / `event.origin` check, and never reuse the CSP nonce as the token** (rationale). **The guard fails closed both ways**: a webview served without the global accepts nothing, a host send without a token delivers nothing, and framed content cannot read the parent's globals cross-origin.
 
-Messages from proxied iframes are guarded by origin instead (`docs/specs/dor-browser.md`) and are unaffected by the token, which covers only the adapter's host channel. **Scope is VS Code**: the standalone adapters receive the equivalent events over Tauri's `listen()` IPC and the dev harness's host WebSocket (`docs/specs/standalone.md`), never `window.postMessage`, so they have no forgeable inbox to guard.
+Messages from proxied iframes are guarded by origin instead (`docs/specs/dor-browser.md`) and are unaffected by the token, which covers only the adapter's host channel. **Scope is VS Code**: standalone receives equivalent events over Tauri's `listen()` IPC or the browser-dev HTTP/SSE bridge (`docs/specs/transport.md` → "Standalone browser-dev harness"), never `window.postMessage`.
 
 Source of truth: `isHostMessage` in `lib/src/lib/vscode-message-token.ts`, `WebviewChannel` / `serveWebview` in `vscode-ext/src/webview-messaging.ts`, `getWebviewHtml` in `vscode-ext/src/webview-html.ts`, `VSCodeAdapter` in `lib/src/lib/platform/vscode-adapter.ts`; pinned by the `host message authentication` block in `lib/src/lib/platform/vscode-adapter.test.ts`.
 

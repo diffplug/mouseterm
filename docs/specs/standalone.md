@@ -477,8 +477,7 @@ native handler never fires. Behavior and status:
 Windows release builds use the GUI subsystem, so nothing streams to a launching
 terminal. The Rust backend appends sidecar stderr, malformed stdout diagnostics,
 and its own diagnostics to a log file: `%LOCALAPPDATA%\Dormouse Terminal\dormouse.log` on
-Windows, `$TMPDIR/dormouse.log` elsewhere, overridable via `DORMOUSE_LOG_FILE`
-(`docs/specs/deploy.md`, Packaged app logging).
+Windows, `$TMPDIR/dormouse.log` elsewhere, overridable via `DORMOUSE_LOG_FILE`.
 
 **Must bound updater debug-log reads to the final 10,000 bytes**, dropping a
 leading partial UTF-8 character. `read_update_log` runs off the main thread. The

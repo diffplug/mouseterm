@@ -125,7 +125,7 @@ Two macOS packaging edge cases the script enforces; each would ship a release th
 
 ### Packaged app logging
 
-Windows release builds use the GUI subsystem, so a terminal-launched `dormouse.exe` returns immediately, streaming nothing. The Tauri backend writes sidecar diagnostics to `%LOCALAPPDATA%\Dormouse Terminal\dormouse.log` on Windows and `$TMPDIR/dormouse.log` elsewhere; **`DORMOUSE_LOG_FILE` overrides both on every platform**.
+Packaged-app log paths and `DORMOUSE_LOG_FILE` follow `docs/specs/standalone.md` → Logging.
 
 ## Artifact filenames
 

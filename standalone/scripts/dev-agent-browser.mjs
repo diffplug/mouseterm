@@ -126,7 +126,7 @@ const invokeMap = {
     // The sidecar now returns a temp-file PATH (bytes stay off the stdio pipe).
     // Production reads that file in Rust; this dev bridge has no Rust, so read it
     // in Node and re-encode to the base64 the browser-sidecar adapter expects —
-    // base64 over the dev WebSocket is fine.
+    // the base64 travels in the HTTP invoke response, outside the event stream.
     if (result && result.ok && typeof result.path === 'string') {
       const bytes = await readFile(result.path);
       return { ok: true, mime: result.mime, bytesBase64: bytes.toString('base64') };

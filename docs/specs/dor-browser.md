@@ -456,7 +456,7 @@ The proxy instruments any `http://` upstream, loopback and remote alike:
   range-checking, so `0xA9FEA9FE` and `::ffff:169.254.169.254` are caught too;
   pinned by `lib/src/host/iframe-proxy-rewrite.test.ts`.
 
-What is rewritten, exactly:
+Header rewriting:
 
 | Direction | Header | Treatment |
 | --- | --- | --- |
@@ -464,13 +464,14 @@ What is rewritten, exactly:
 | request | `Origin` | upstream origin **only** when it is the proxy's own; else forwarded untouched (absent stays absent) |
 | request | `Referer` | proxy origin replaced with the upstream origin |
 | request | `Accept-Encoding` | deleted, so HTML comes back identity for rewriting |
-| response | `X-Frame-Options`, `Content-Security-Policy`, `Content-Security-Policy-Report-Only` | replaced **whole** by `frame-ancestors 'self' <validated chain>` (rationale) |
+| request | `Cookie` | dropped, including WebSocket handshakes |
+| response | `Set-Cookie` | dropped, including successful and refused WebSocket handshakes |
+| response | `X-Frame-Options`, `Content-Security-Policy`, `Content-Security-Policy-Report-Only` | with validated chain, replaced **whole** by `frame-ancestors 'self' <validated chain>` (rationale) |
 | response | hop-by-hop (RFC 7230 §6.1) | dropped |
 | response | `Location` | upstream origin rewritten back to the proxy origin, so a redirect stays inside the proxy |
 | response body | `<meta http-equiv="content-security-policy">` | removed, like the header |
 
-**Must update** this table and `FRAMING_RESPONSE_HEADERS` /
-`HOP_BY_HOP_RESPONSE_HEADERS` together for every new stripped response header.
+**Must update this table whenever header rewriting changes.**
 
 **One dedicated `127.0.0.1:0` server per grant, with no token in the path** — the
 origin itself is the grant boundary (rationale). Grants have a sliding idle TTL
@@ -506,8 +507,8 @@ Leader messages feed the same Wall command-mode exit path as in-document
 dual-tap; `IframePanel` maps proxy-origin `location` URLs back to upstream URLs
 for chrome/history without reloading the frame.
 
-New-tab requests show an overlay prompt — accept opens a browser pane beside the
-current one, cancel drops it; neither switches the pane to agent-browser.
+New-tab requests show an overlay: accept opens an adjacent browser pane; cancel drops it.
+Neither switches to agent-browser.
 
 Source of truth: `lib/src/host/iframe-proxy-rewrite.ts` (`iframeShim`),
 `lib/src/components/wall/browser-url.ts` (`browserSurfaceUrl`),

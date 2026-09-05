@@ -14,7 +14,7 @@ The standalone app checks for updates on launch and prompts in the Baseboard. **
 
 ### Quit-time install
 
-**The updater owns no quit interception** — the install is the quit orchestrator's last step, strictly after the graceful terminal teardown and the durable final session save (`docs/specs/standalone.md` §Quit flow) (rationale), and runs only when `hasPendingUpdate()` is true. `installPendingUpdate()` writes the success marker *before* `install()` (§localStorage), and on Windows first awaits bounded sidecar teardown (§Sidecar teardown on Windows). **It never closes the window itself** — exiting the process is `quit_proceed`'s job, after this returns.
+**The updater owns no quit interception** — install runs only when `hasPendingUpdate()` is true, after the quit orchestrator's teardown and save/drain steps (`docs/specs/standalone.md` §Quit flow) (rationale). `installPendingUpdate()` writes the success marker *before* `install()` (§localStorage), and on Windows first awaits bounded sidecar teardown (§Sidecar teardown on Windows). **It never closes the window itself** — exiting the process is `quit_proceed`'s job, after this returns.
 
 **In Vite dev mode (`pnpm dev:standalone`) `installPendingUpdate()` drops the pending update and skips `install()`** (rationale), so install must be tested from a packaged app; **`MODE === 'test'` lifts the skip** for `standalone/src/updater.test.ts`.
 

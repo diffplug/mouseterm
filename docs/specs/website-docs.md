@@ -96,7 +96,6 @@ The extension-root README is the packaged listing body, so the canonical guide
 stays within Marketplace-compatible Markdown:
 
 - It does not depend on React, JavaScript, custom CSS, or website-only layout.
-- README image URLs use HTTPS.
 - User-provided SVG images are not allowed; content uses raster media or an
   approved badge provider.
 - Media is **repo-relative local files under `vscode-ext/images/`**, referenced

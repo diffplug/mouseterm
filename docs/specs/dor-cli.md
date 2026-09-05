@@ -285,9 +285,10 @@ Invariants:
   Surface refs never collide with it; the flag and the commands consuming it are
   staged — see [Future](#future). The webview handler already rejects any
   workspace/window target other than the singleton `workspace:1` / `window:1`.
-  Stable Surface ids are globally unique, but cross-Workspace id routing is
-  staged with Workspace-aware listing/targeting; today's handler resolves ids in
-  the mounted Workspace.
+  Today's handler resolves stable Surface ids within the mounted Workspace;
+  cross-Workspace routing is staged with Workspace-aware listing/targeting.
+  Cross-window duplicate ids follow `docs/specs/vscode.md` → "Peer surfaces
+  across windows".
 
 Source of truth: `dor/src/commands/shared.ts`, `dor/src/commands/types.ts`, and
 `surfaceRefForId` / `transferSurfaceRef` in `lib/src/components/Wall.tsx`.
