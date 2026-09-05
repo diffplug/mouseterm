@@ -106,7 +106,7 @@ A Wall is always in exactly one input mode; `docs/specs/layout.md` owns the swit
 
 | Mode | Meaning |
 |---|---|
-| **passthrough** | Keyboard input routes to the selected Session's terminal. Only copy/paste and the mode-switch gesture are intercepted. |
+| **passthrough** | Keyboard input routes to the selected Surface; `docs/specs/layout.md` → Modes owns interception. |
 | **command** | Keyboard input drives navigation and layout commands; the Session receives nothing. |
 
 **Never introduce aliases** — "terminal mode", "normal mode", and "navigation mode" all mean one of the two names above.

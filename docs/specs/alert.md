@@ -183,7 +183,7 @@ Source of truth: `commandArgv0` in `lib/src/lib/terminal-state.ts`; `QuiesceDete
 
 ## Terminal reports
 
-**Terminal notifications are independent of WATCHING** and are explicit requests for attention: one rings immediately, but only when the Session lacks attention; an attended one is suppressed and unrelated protocol progress left alone. A ring sets `todo = true`, stores the latest sanitized `ActivityNotification`, and sets `protocolStatus = ALERT_RINGING`; clearing returns it to `IDLE` and public status falls back to the other tracks.
+**Terminal notifications are independent of WATCHING** and follow the deferral policy in Completion events. **Never ring an attended Session**; suppression leaves unrelated protocol progress alone. A ring sets `todo = true`, stores the latest sanitized `ActivityNotification`, and sets `protocolStatus = ALERT_RINGING`; clearing returns it to `IDLE` and public status falls back to the other tracks.
 
 Sequence syntax lives in `docs/specs/terminal-escapes.md`; what each means here:
 

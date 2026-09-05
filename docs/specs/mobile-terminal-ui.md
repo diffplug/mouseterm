@@ -42,10 +42,9 @@ Chrome rules:
   radius. Order: title, alert bell, secondary detail, TODO pill, minimize, kill
   (suppressed by `showKillButton={false}`, as Pocket does). Both consumers wire
   minimize to the Sessions reserve, not a desktop Door.
-* **`MobileTerminalUi` publishes the shared dynamic palette itself**
-  (`useDynamicPalette`, `docs/specs/theme.md`) before rendering gesture UI that
-  needs those tokens, `--color-focus-ring` included — it never mounts the
-  desktop `Wall`.
+* **Must install `useDynamicPalette` in `MobileTerminalUi`** for gesture tokens;
+  it never mounts the desktop `Wall`. `docs/specs/theme.md` owns publication
+  and the CSS baselines available before the effect runs.
 * `MobileTerminalUi` provides `TouchUiContext` = true, so shared selection UI
   omits physical-keyboard shortcut hints (`docs/specs/mouse-and-clipboard.md`).
 

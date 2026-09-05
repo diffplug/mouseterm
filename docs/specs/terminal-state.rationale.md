@@ -24,7 +24,7 @@ Native path payloads are not URLs: decoding `%20` or trimming edge spaces change
 
 **Why the command is read off the screen, not reconstructed from keystrokes.** The rendered line is correct however the command arrived — typed, recalled from history, or pasted — and is independent of the race between shell output and idle detection.
 
-**Why the shape is pre-seeded from restored scrollback.** On reconnect to a live PTY the shell will not re-emit its prompt, leaving the first command after a restore no shape to strip against — untitled until the next prompt. The scrollback ends at whatever was on screen: an idle prompt teaches a shape, anything else no-ops.
+**Why the shape is pre-seeded from replay.** On resume over a live PTY the shell will not re-emit its prompt, leaving the first command no shape to strip against — untitled until the next prompt. The replay ends at whatever was on screen: an idle prompt teaches a shape, anything else no-ops.
 
 **Why synthesis is scoped to `user_input` while shape learning is not.** Shape learning is harmless for every shell and useful the moment integration is lost, but synthesizing finish/start transitions for a shell that emits its own boundaries would fight the authentic ones.
 
@@ -32,7 +32,7 @@ Native path payloads are not URLs: decoding `%20` or trimming edge spaces change
 
 **Why the heuristic reads `textData` rather than filtering for itself.** The protocol parser has already framed every string control on that chunk, so a separate scanner in front of the prompt detector re-derived a classification the parser threw away — and did it per character over 100% of PTY output, which measured 5.9 ms/MB on plain text. Projecting the answer the parser already has costs nothing on the wire (the field is omitted when it would equal `data`) and leaves one classifier instead of three.
 
-**Why replay seeding still filters locally.** `pty:replay` reaches the webview as `visibleData`, which still carries the string controls the parser forwards, and it is one bounded pass at restore rather than the live stream — so a one-shot `TerminalControlStreamFilter` over a 64 KiB tail is proportionate there. The 1,024-character window is cut from its output; 64 KiB is ample runway to resync the control state.
+**Why replay seeding still filters locally.** `pty:replay` reaches the webview as `visibleData`, which still carries the string controls the parser forwards, and it is one bounded pass during resume rather than the live stream — so a one-shot `TerminalControlStreamFilter` over a 64 KiB tail is proportionate there. The 1,024-character window is cut from its output; 64 KiB is ample runway to resync the control state.
 
 **Why boundary mode is needed, and why its trailing boundary must be trimmed.** Deleting a redraw's cursor move welds text never adjacent on screen: `building...\x1b[1;1HC:\Users\me>` reads as one line starting with `building`, which no anchored shape matches. But a boundary is not a real line break. A genuine trailing newline means nothing is painted on the current line yet — no prompt, and reading one as a prompt flips a running command back to idle. A trailing *boundary* means only that a control closed the line, which is what a prompt clearing to end-of-line after painting itself emits (`C:\Users\me>\x1b[K`); reading it as an empty last line would hide every such prompt.
 
