@@ -27,10 +27,11 @@ const SCENARIOS: { id: Scenario; label: string }[] = [
 const PARENT_DIR = '~/projects/dormouse';
 const HELPER_DIR = '~/projects/dormouse-fix';
 const noop = () => {};
+const ACTION_COLOR_CLASS = 'text-[color:color-mix(in_srgb,var(--color-link)_35%,var(--color-muted))] hover:text-link focus-visible:text-link';
 
-function Action({ children, label, onClick }: { children: ReactNode; label: string; onClick?: () => void }) {
+function Action({ children, label, onClick, muted = false }: { children: ReactNode; label: string; onClick?: () => void; muted?: boolean }) {
   return <button type="button" title={label} aria-label={label} onClick={onClick}
-    className="inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 hover:bg-foreground/10 focus-visible:outline focus-visible:outline-focus-ring">
+    className={`inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 hover:bg-current/10 focus-visible:outline focus-visible:outline-focus-ring ${muted ? 'text-muted' : ACTION_COLOR_CLASS}`}>
     {children}
   </button>;
 }
@@ -115,34 +116,32 @@ function ContextPrototype({ scenario, initialDetail = null, paneWidth }: { scena
           <span className="text-muted">Title</span>
           <div className="flex h-6 min-w-0 items-center gap-1.5">
             <span className="truncate">pnpm dev</span>
-            <Action label="Explain this title" onClick={() => setDetail(detail === 'title' ? null : 'title')}><BugBeetleIcon size={15} /></Action>
+            <Action label="Explain this title" onClick={() => setDetail(detail === 'title' ? null : 'title')}><BugBeetleIcon size={15} />Explain</Action>
             <div className="ml-auto flex shrink-0 items-center gap-2 text-muted">
-              <Action label="Copy surface identifier"><span>surface:3</span><CopyIcon size={12} /></Action>
-              <Action label="Close terminal context"><XIcon size={15} /></Action>
+              <Action label="Copy surface identifier"><span className="text-muted">surface:3</span><CopyIcon size={12} /></Action>
+              <Action label="Close terminal context" muted><XIcon size={15} /></Action>
             </div>
           </div>
           <span className="text-muted">Dir</span>
-          <div className="flex h-6 items-center gap-1.5"><span title="/Users/ntwigg/projects/dormouse">{PARENT_DIR}</span><Action label="Open directory in Finder"><ArrowSquareOutIcon size={15} /></Action><Action label="Copy absolute path: /Users/ntwigg/projects/dormouse"><CopyIcon size={14} /></Action></div>
+          <div className="flex h-6 items-center gap-1.5"><span title="/Users/ntwigg/projects/dormouse">{PARENT_DIR}</span><Action label="Open directory in Finder"><ArrowSquareOutIcon size={15} />Open in Finder</Action><Action label="Copy absolute path: /Users/ntwigg/projects/dormouse"><CopyIcon size={14} />Copy path</Action></div>
           <span className="text-muted">Ports</span>
-          <div className="flex h-7 items-center gap-2">
+          <div className="flex min-h-7 flex-wrap items-center gap-2">
             {scenario === 'noPorts' ? <span className="text-muted">No listening ports</span>
               : scenario === 'scanFailed' ? <span className="flex items-center gap-1.5 text-error"><WarningIcon size={14} />Port scan failed <span className="text-muted">· Reopen to try again</span></span>
               : <>
-                {scenario === 'multiplePorts' ? <select aria-label="Port" value={port} onChange={event => setPort(event.target.value)} className="h-6 rounded border border-input-border bg-input-bg px-1 text-foreground">
+                {scenario === 'multiplePorts' ? <div className="inline-flex shrink-0 items-center gap-2"><select aria-label="Port" value={port} onChange={event => setPort(event.target.value)} className="h-6 w-52 rounded border border-input-border bg-input-bg px-1 text-foreground">
                   <option value="5173">localhost:5173 · vite</option><option value="6006">localhost:6006 · storybook</option><option value="9229">localhost:9229 · node inspector</option>
-                </select> : <><span>localhost:5173</span><span className="text-muted">vite</span></>}
-                <div className="ml-1 inline-flex items-center gap-1 border-l border-border pl-2">
-                  <Action label="Open in system browser"><ArrowSquareOutIcon size={15} /></Action>
-                  <Action label="Open in iframe embed"><FrameCornersIcon size={15} /></Action>
-                  <Action label="Open in agent-browser screencast"><AgentRobotIcon size={17} /></Action>
-                  <Action label="Open in agent-browser popout"><AgentRobotIcon size={17} /><ArrowSquareOutIcon size={13} /></Action>
+                </select><span className="text-muted">3 ports</span></div> : <><span>localhost:5173</span><span className="text-muted">vite</span></>}
+                <div className="ml-1 inline-flex shrink-0 items-center gap-1 border-l border-border pl-2">
+                  <Action label="Open in system browser"><ArrowSquareOutIcon size={15} />System browser</Action>
+                  <Action label="Open in iframe embed"><FrameCornersIcon size={15} />Iframe</Action>
+                  <Action label="Open in agent-browser screencast"><AgentRobotIcon size={17} />Agent browser</Action>
+                  <Action label="Open in agent-browser popout"><AgentRobotIcon size={17} /><ArrowSquareOutIcon size={13} />Popout</Action>
                 </div>
-                {scenario === 'multiplePorts' && <span className="text-muted">3 ports</span>}
               </>}
           </div>
           <span className="text-muted">Alerts</span>
           <div className="flex h-6 items-center gap-2">
-            <BellIcon size={14} />
             <span>{notification ? 'Tests complete' : 'Watch all pnpm commands'}</span>
             {!notification && <OnOffSwitch on={false} onEnable={noop} onDisable={noop} label="Watch all pnpm commands" />}
             <span className="mx-1 h-3 border-l border-border" />
@@ -159,11 +158,11 @@ function ContextPrototype({ scenario, initialDetail = null, paneWidth }: { scena
         <div aria-label="Helper terminal status" className="flex h-9 shrink-0 items-center gap-3 whitespace-nowrap px-3">
           <span className="hidden shrink-0 items-center gap-2 font-semibold @[48rem]:flex"><TerminalIcon size={15} />Helper terminal</span>
           <div className="flex min-w-0 items-center gap-2 text-muted">
-          {preserved ? <><PauseIcon size={13} className="shrink-0" /><span className="truncate">Autorun paused to preserve your session</span><button type="button" onClick={() => setDetail('reset')} className="inline-flex shrink-0 items-center gap-1 text-link hover:underline"><ArrowCounterClockwiseIcon size={12} />Reset…</button></>
+          {preserved ? <><PauseIcon size={13} className="shrink-0" /><span className="truncate">Autorun paused to preserve your session</span><button type="button" onClick={() => setDetail('reset')} className={`inline-flex shrink-0 items-center gap-1 hover:underline ${ACTION_COLOR_CLASS}`}><ArrowCounterClockwiseIcon size={12} />Reset…</button></>
             : <>
               {scenario === 'running' ? <CircleNotchIcon size={13} className="shrink-0" /> : scenario === 'autorunOff' ? <PauseIcon size={13} className="shrink-0" /> : <CheckIcon size={13} className="shrink-0" />}
               <span className="truncate">{scenario === 'autorunOff' ? 'Autorun off' : scenario === 'running' ? <>Running <span className="text-foreground">git status</span> automatically</> : <>Automatically ran <span className="text-foreground">git status</span></>}</span>
-              <button type="button" onClick={() => setDetail('modify')} className="shrink-0 text-link hover:underline">Modify</button>
+              <button type="button" onClick={() => setDetail('modify')} className={`shrink-0 hover:underline ${ACTION_COLOR_CLASS}`}>Modify</button>
             </>}
           </div>
           <div className="ml-auto shrink-0"><Action label="Move this terminal into a new pane"><ArrowLineUpIcon size={15} />Promote</Action></div>
@@ -177,7 +176,7 @@ function ContextPrototype({ scenario, initialDetail = null, paneWidth }: { scena
 
       {detail && <div className="absolute inset-0 z-10 bg-app-bg/35" onClick={() => setDetail(null)}>
         <div role="dialog" aria-label={detail === 'title' ? 'Title sources' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal'} className={`${POPUP_SURFACE_CLASS} absolute left-3 right-3 ${detail === 'title' ? 'top-9' : 'top-40'} p-4`} onClick={event => event.stopPropagation()}>
-          <div className="mb-3 flex items-center justify-between font-semibold"><span>{detail === 'title' ? 'Why this title?' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal?'}</span><Action label="Close details" onClick={() => setDetail(null)}><XIcon size={14} /></Action></div>
+          <div className="mb-3 flex items-center justify-between font-semibold"><span>{detail === 'title' ? 'Why this title?' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal?'}</span><Action label="Close details" muted onClick={() => setDetail(null)}><XIcon size={14} /></Action></div>
           {detail === 'title' ? <>
             <div className="mb-3 text-muted">Current title: <span className="text-foreground">pnpm dev</span></div>
             <div className="grid grid-cols-[8rem_1fr_7rem] gap-x-3 gap-y-2">
