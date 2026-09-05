@@ -53,7 +53,7 @@ export function handlePaneShortcuts(
   if (isArrowKey(e.key) && (e.metaKey || e.ctrlKey)) {
     e.preventDefault();
     e.stopPropagation();
-    if (!sid) return true;
+    if (!sid || ctx.selectedTypeRef.current !== 'pane') return true;
 
     const dir = e.key;
     const hist = navHistory.current;

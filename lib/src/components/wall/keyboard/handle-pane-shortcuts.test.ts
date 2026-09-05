@@ -133,6 +133,24 @@ describe('handlePaneShortcuts kill behavior', () => {
 });
 
 describe('handlePaneShortcuts Cmd-Arrow swap (nav seam)', () => {
+  it.each(['metaKey', 'ctrlKey'] as const)('does not swap a selected Door through a stale breadcrumb (%s)', (modifier) => {
+    const ctx = makeCtx({
+      selectedTypeRef: { current: 'door' },
+      nav: makeNav({ hasPane: () => true }),
+    });
+    const event = new KeyboardEvent('keydown', {
+      key: 'ArrowLeft', [modifier]: true, bubbles: true, cancelable: true,
+    });
+    const history = { current: { direction: 'ArrowRight' as const, fromId: 'pane-b' } };
+
+    expect(handlePaneShortcuts(event, ctx, history)).toBe(true);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(ctx.swapWithNeighbor).not.toHaveBeenCalled();
+    expect(ctx.selectPane).not.toHaveBeenCalled();
+    expect(ctx.fireEvent).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => vi.clearAllMocks());
 
   it('swaps with the nav-resolved neighbor, fires move, and keeps selection on the moved pane', () => {
