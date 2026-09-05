@@ -122,7 +122,7 @@ export function openIssueSearch(error: string): void {
 
 export function startUpdateCheck(): void {
   if (BROWSER_DEV_HOST) return;
-  void runUpdateCheck();
+  void runUpdateCheck().catch((e) => console.error('[updater] Startup failed:', e));
 }
 
 async function runUpdateCheck(): Promise<void> {
@@ -135,21 +135,39 @@ async function runUpdateCheck(): Promise<void> {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       localStorage.removeItem(STORAGE_KEY);
-      const marker = JSON.parse(raw);
-      if (marker.failed) {
+      const marker: unknown = JSON.parse(raw);
+      if (!marker || typeof marker !== 'object' || Array.isArray(marker)) {
+        throw new Error('Invalid update marker');
+      }
+      if ('failed' in marker && marker.failed === true
+        && 'version' in marker && typeof marker.version === 'string' && marker.version
+        && (!('error' in marker) || typeof marker.error === 'string')) {
         setState({
           status: 'post-update-failure',
           version: marker.version,
-          error: marker.error,
+          error: 'error' in marker ? marker.error as string : undefined,
         });
         hadFailureMarker = true;
-      } else if (marker.from && marker.to) {
-        setState({ status: 'post-update-success', from: marker.from, to: marker.to });
-        setTimeout(() => {
-          if (state.status === 'post-update-success') {
-            setState({ status: 'idle' });
-          }
-        }, 10_000);
+      } else if (!('failed' in marker)
+        && 'from' in marker && typeof marker.from === 'string' && marker.from
+        && 'to' in marker && typeof marker.to === 'string' && marker.to) {
+        // The marker precedes install because Windows kills this process. Only
+        // the version running on the next launch confirms installation worked.
+        if (marker.to !== currentVersion) {
+          setState({
+            status: 'post-update-failure',
+            version: marker.to,
+            error: `Expected version ${marker.to} after update, but running ${currentVersion}.`,
+          });
+          hadFailureMarker = true;
+        } else {
+          setState({ status: 'post-update-success', from: marker.from, to: marker.to });
+          setTimeout(() => {
+            if (state.status === 'post-update-success') {
+              setState({ status: 'idle' });
+            }
+          }, 10_000);
+        }
       }
     }
   } catch {
