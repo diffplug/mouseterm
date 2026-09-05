@@ -378,6 +378,14 @@ A store commit that empties the tree (last pane killed or minimized) triggers th
 5. **Door keeps selection through the auto-spawn refill** ([Auto-spawn refill](#auto-spawn-refill)). Explicit user selection of a pane — a click, a drag, or an embed focusing itself — still moves selection off a door.
 6. **Focus-neutral surface creation (`dor ensure` / `dor iframe` / `dor ab`)**: unlike `dor split`, these open in the background without moving focus off the caller (`docs/specs/dor-cli.md`, `docs/specs/dor-browser.md`). An add never re-parents the caller's subtree or steals activation, and the create does not call `selectPane` (`settleAddSelection` returns false for a focus-neutral, non-selection-replacing add). **The one exception**: `dor iframe` / `dor ab` replacing the pane the user is *currently selected on* moves selection to the replacement, else it would dangle on the removed leaf; any other pane, or a door selection, is left untouched. A throwaway that never reports OSC 633 integration is torn down with `killPaneImmediately`, whose live selection check leaves the caller's selection intact (a `--minimize` throwaway is already a door, disposed directly).
 
+## Terminal context prototype
+
+**Must keep the Terminal context layout prototype isolated to Storybook.** It uses static terminal output and local presentation state; its controls open visual examples without spawning helpers or changing production menus.
+
+**Must keep the prototype's helper header on one line**, hiding its name at narrow widths. Notification details appear directly when present; the outer header has no terminal clipboard actions.
+
+Source of truth: `TerminalContextStory` in `lib/src/stories/TerminalContext.stories.tsx`.
+
 ## Future
 
 **Scope: workspaces-rollout** — the remaining stages of the multi-Workspace feature. The model, container verbs, Window persistence (behind `dormouse.flags.workspaces`), and union projection are implemented but unwired ([Workspaces](#workspaces); persisted containers in `docs/specs/transport.md`, union projection in `docs/specs/alert.md`). This ledger is the single home for what remains; other specs link here rather than restating it.
