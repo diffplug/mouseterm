@@ -39,7 +39,13 @@ describe('AlertManager in isolation', () => {
     manager.onData('helper');
     applyTerminalProtocolEvents(manager, 'helper', [{ type: 'notification', notification: { title: 'done', body: null } }]);
     manager.attend('helper');
+    manager.toggleTodo('helper');
+    manager.markTodo('helper');
+    manager.seed('helper', { todo: true });
     manager.clearTodo('helper');
+    manager.onExit('helper', 0);
+    manager.onResize('helper');
+    applyTerminalProtocolEvents(manager, 'helper', [{ type: 'notification', notification: { title: 'late output', body: null } }]);
     vi.advanceTimersByTime(10_000);
     expect(states).toEqual([]);
     expect(manager.getState('helper')).toEqual(DEFAULT_ALERT_STATE);

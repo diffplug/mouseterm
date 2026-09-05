@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registry, pendingShellOpts, type TerminalEntry } from './terminal-store';
 import { applyTerminalSemanticEvents, resetTerminalPaneState, removeTerminalPaneState } from './terminal-state-store';
-import { disposeHelper, getHelper, helperHasWork, openHelper, restoreHelper } from './helper-terminal';
+import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHelper, helperHasWork, openHelper, restoreHelper } from './helper-terminal';
 
 const host = vi.hoisted(() => ({ writePty: vi.fn(), terminalContext: vi.fn() }));
 vi.mock('./platform', () => ({ getPlatform: () => host }));
@@ -21,6 +21,37 @@ afterEach(() => { disposeHelper('parent'); registry.clear(); pendingShellOpts.cl
 const prompt = (id: string) => applyTerminalSemanticEvents(id, [{ type: 'promptStart' }, { type: 'promptEnd' }]);
 
 describe('helper lifecycle', () => {
+  it('keeps ownership stable when a reopened menu resets or promotes during promotion', async () => {
+    const helper = await openHelper('parent');
+    const entry = registry.get(helper.id);
+    let resolve!: (value: unknown) => void;
+    host.terminalContext.mockImplementationOnce(() => new Promise(r => { resolve = r; }));
+    const promotion = beginPromotion('parent');
+    try {
+      expect(await openHelper('parent')).toBe(helper);
+      expect(() => disposeHelper('parent')).toThrow(/promotion/i);
+      await expect(beginPromotion('parent')).rejects.toThrow(/promotion/i);
+      expect(await helperHasWork(helper)).toBe(true);
+    } finally {
+      resolve({});
+      await promotion;
+      finishPromotion('parent');
+    }
+    expect(registry.get(helper.id)).toBe(entry);
+    expect(entry?.helper).toBeUndefined();
+    expect(getHelper('parent')).toBeUndefined();
+  });
+  it('allows a retry and resumes inspection after a failed promotion rollback', async () => {
+    const helper = await openHelper('parent');
+    await beginPromotion('parent');
+    host.terminalContext.mockRejectedValueOnce(new Error('Host unavailable'));
+    await expect(cancelPromotion('parent')).rejects.toThrow('Host unavailable');
+    expect(helper.promoting).toBe(false);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(registry.get(helper.id)?.helperBusy).toBe(false);
+    await beginPromotion('parent');
+    finishPromotion('parent');
+  });
   it('deduplicates opening and runs once only after a real prompt', async () => {
     const [first, second] = await Promise.all([openHelper('parent'), openHelper('parent')]);
     expect(first).toBe(second);

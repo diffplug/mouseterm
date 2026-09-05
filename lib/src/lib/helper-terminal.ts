@@ -81,6 +81,7 @@ export function forgetHelper(parentId: string): void {
 export function disposeHelper(parentId: string): void {
   const helper = helpers.get(parentId);
   if (!helper) return;
+  if (helper.promoting) throw new Error('Helper promotion is in progress');
   forgetHelper(parentId);
   disposeSession(helper.id);
 }
@@ -122,6 +123,7 @@ export async function openHelper(parentId: string): Promise<HelperTerminal> {
 export async function beginPromotion(parentId: string): Promise<HelperTerminal> {
   const helper = helpers.get(parentId);
   if (!helper) throw new Error('This terminal has no helper');
+  if (helper.promoting) throw new Error('Helper promotion is in progress');
   // Cancel launch injection before asynchronous ownership transfer.
   clearInterval(helper.timer);
   helper.promoting = true;
@@ -137,9 +139,12 @@ export async function beginPromotion(parentId: string): Promise<HelperTerminal> 
 export async function cancelPromotion(parentId: string): Promise<void> {
   const helper = helpers.get(parentId);
   if (!helper) return;
-  await getPlatform().terminalContext?.({ op: 'promote', id: helper.id, restore: { parentId, command: helper.command } });
-  helper.promoting = false;
-  watchHelper(helper);
+  try {
+    await getPlatform().terminalContext?.({ op: 'promote', id: helper.id, restore: { parentId, command: helper.command } });
+  } finally {
+    helper.promoting = false;
+    watchHelper(helper);
+  }
 }
 
 /** The placed helper is now an ordinary Session. */

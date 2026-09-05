@@ -637,7 +637,7 @@ module.exports.parsePsPairs = parsePsPairs;
 
 function getDescendantPids(rootPid, runtime = {}) {
   const pairs = readProcessTable(runtime);
-  if (pairs) return [...buildDescendantSet(pairs, rootPid)];
+  if (pairs && (!runtime.strict || pairs.some(([pid]) => pid === rootPid))) return [...buildDescendantSet(pairs, rootPid)];
   // Port discovery tolerates a failed scan; helper work inspection must not
   // mistake one for idle (docs/specs/terminal-context.md).
   if (runtime.strict) throw new Error('Unable to inspect terminal processes');

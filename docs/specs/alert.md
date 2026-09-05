@@ -361,7 +361,7 @@ Bell interactions — one transition table, in `dismissOrToggleAlert`:
 - Pressing `a` on the selected Pane in command mode uses the same action. Right-click always opens the context.
 - Pressing `t` toggles TODO.
 
-**Must keep context alert controls scoped to the source**, with TODO, running-command WATCHING, and notification detail. Settings owns the global watched-command list. **Must suppress helper alerting until promotion**, including bell/notification protocols, watched commands, TODO, speech, push, and attention projections; semantic command/readiness state remains active. Promotion starts ordinary alert behavior without replaying suppressed events.
+**Must keep context alert controls scoped to the source**, with TODO, running-command WATCHING, and notification detail. Settings owns the global watched-command list. **Must suppress helper alerting until promotion, including after exit**, covering bell/notification protocols, watched commands, TODO, speech, push, and attention projections; semantic command/readiness state remains active. Promotion starts ordinary alert behavior without replaying suppressed events.
 
 Source of truth: `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `setHelper` in `lib/src/lib/alert-manager.ts`, which every host calls at helper spawn, listing, and promotion.
 
