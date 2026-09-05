@@ -2,6 +2,8 @@
 // op builds through. Pure data — no DOM, React, or timing. See
 // docs/specs/tiling-engine.md ("Core model") for the contract this implements.
 
+import { isRecord } from '../is-record';
+
 export type LeafId = string;
 
 /** `'left'` / `'right'` split on the x axis (a `'row'` split); `'top'` / `'bottom'`
@@ -118,9 +120,7 @@ export function nodeAtPath(tree: LathTree, path: number[]): LathNode | null {
  *  sum to 1 (tolerance 1e-6) within each split; leaf ids are unique. */
 export function validate(tree: unknown): string[] {
   const errors: string[] = [];
-  const record = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
-  if (!record(tree) || !('root' in tree)) return ['tree must have a root'];
+  if (!isRecord(tree) || !('root' in tree)) return ['tree must have a root'];
   const pending: Array<{ node: unknown; path: number[]; parentDir?: unknown }> =
     tree.root === null ? [] : [{ node: tree.root, path: [] }];
   const seenIds = new Set<string>();
@@ -130,7 +130,7 @@ export function validate(tree: unknown): string[] {
   while (pending.length) {
     const { node, path, parentDir } = pending.pop()!;
     const at = `[${path.join(',')}]`;
-    if (!record(node) || seenNodes.has(node)) {
+    if (!isRecord(node) || seenNodes.has(node)) {
       errors.push(`invalid or repeated node at path ${at}`);
       continue;
     }
@@ -151,7 +151,7 @@ export function validate(tree: unknown): string[] {
     if (node.children.length < 2) errors.push(`split at ${at} has ${node.children.length} children (< 2)`);
     let sum = 0;
     node.children.forEach((child: unknown, i: number) => {
-      if (!record(child)) {
+      if (!isRecord(child)) {
         errors.push(`invalid child ${i} of split at ${at}`);
         return;
       }

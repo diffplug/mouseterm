@@ -1,3 +1,4 @@
+import { isRecord } from './is-record';
 import type { SessionStatus } from './alert-manager';
 import { ACTIVITY_NOTIFICATION_SOURCES, type ActivityNotification, type TodoState } from './alert-manager';
 
@@ -113,10 +114,6 @@ interface PersistedSessionV3Input {
 }
 
 // --- Validation guards (reject untrusted blobs) ---
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
 
 function isPersistedAlertShape(value: unknown): boolean {
   if (value === null) return true;

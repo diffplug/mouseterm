@@ -6,6 +6,7 @@
 // `serializeLayout`/`seed`, which call through here.
 
 import { type LathTree, leaves, validate } from './model';
+import { isRecord } from '../is-record';
 
 /** Per-leaf presentation metadata, keyed by leaf id — the Pane props contract's
  *  "read side", owned live by the wall store's `leafMeta` map and serialized
@@ -48,13 +49,11 @@ export function lathLayoutFromStore(snapshot: {
 
 /** Validate the whole layout at the read boundary, before typed tree traversal. */
 export function isLathPersistedLayout(blob: unknown): blob is LathPersistedLayout {
-  const record = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
-  if (!record(blob) || blob.version !== 1 || validate(blob.tree).length > 0 || !record(blob.leafMeta)) return false;
+  if (!isRecord(blob) || blob.version !== 1 || validate(blob.tree).length > 0 || !isRecord(blob.leafMeta)) return false;
   const ids = new Set(leaves(blob.tree as LathTree));
   const entries = Object.entries(blob.leafMeta);
   if (entries.length !== ids.size) return false;
-  return entries.every(([id, meta]) => ids.has(id) && record(meta)
+  return entries.every(([id, meta]) => ids.has(id) && isRecord(meta)
     && typeof meta.component === 'string' && typeof meta.tabComponent === 'string'
-    && typeof meta.title === 'string' && (meta.params === undefined || record(meta.params)));
+    && typeof meta.title === 'string' && (meta.params === undefined || isRecord(meta.params)));
 }

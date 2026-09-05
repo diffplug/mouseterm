@@ -1,4 +1,5 @@
 import type { DormouseTheme } from './types';
+import { isRecord } from '../is-record';
 import { getStorage } from '../local-json-store';
 // JSON import types are inferred too narrowly — cast at the boundary.
 import _bundledThemes from './bundled.json';
@@ -24,10 +25,6 @@ export function getBundledThemes(): DormouseTheme[] {
  * happens as it should.
  */
 let installedCache: { raw: string; themes: DormouseTheme[] } | null = null;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 // Storage is untyped: validate every field used by restoration and picker UI,
 // including variable values before the resolver calls String.trim on them.
