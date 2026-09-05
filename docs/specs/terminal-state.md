@@ -157,4 +157,4 @@ Source of truth: `groupTerminalPanes` / `TerminalGroupingMode` / `cwdIdentity` /
 
 **Must abbreviate home only at a complete path boundary**, retaining the absolute path for copying and native directory operations. Compare helper and source host identity as well as directory paths.
 
-Source of truth: `explainTerminalTitle` in `lib/src/lib/terminal-state.ts`; `abbreviatedDirectory` in `lib/src/lib/helper-terminal.ts`; `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`.
+Source of truth: `explainTerminalTitle` / `cwdDisplay` in `lib/src/lib/terminal-state.ts`; `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`.

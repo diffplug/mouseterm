@@ -363,7 +363,7 @@ Bell interactions — one transition table, in `dismissOrToggleAlert`:
 
 **Must keep context alert controls scoped to the source**, with TODO, running-command WATCHING, and notification detail. Settings owns the global watched-command list. **Must suppress helper alerting until promotion**, including bell/notification protocols, watched commands, TODO, speech, push, and attention projections; semantic command/readiness state remains active. Promotion starts ordinary alert behavior without replaying suppressed events.
 
-Source of truth: `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `createOwnerPtyStream` in `vscode-ext/src/message-router.ts`; `TauriAdapter` in `standalone/src/tauri-adapter.ts`; `FakePtyAdapter` in `lib/src/lib/platform/fake-adapter.ts`.
+Source of truth: `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `setHelper` in `lib/src/lib/alert-manager.ts`, which every host calls at helper spawn, listing, and promotion.
 
 The TODO pill always displays `TODO`; remote notification text belongs in preview/detail surfaces, not inside the pill. Clicking the pill clears TODO, and on clear the pill briefly shows the success flourish before unmounting.
 

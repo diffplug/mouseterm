@@ -40,7 +40,7 @@ Source of truth: `openHelper` / `helperHasWork` / `disposeHelper` in `lib/src/li
 
 **Must include hidden helper work in shutdown checks.** The helper's host inspection also detects background descendants; unresolved inspection counts conservatively as work. Minimizing the source hides its context and retains the helper.
 
-Source of truth: `killPaneImmediately` / `contextActions` in `lib/src/components/Wall.tsx`; `countRunningSessions` in `lib/src/lib/terminal-state-store.ts`; `helperHasWork` in `lib/src/lib/helper-terminal.ts`.
+Source of truth: `beginPromotion` / `cancelPromotion` / `finishPromotion` / `helperHasWork` in `lib/src/lib/helper-terminal.ts`; `helperBlocksClose` / `contextActions` in `lib/src/components/Wall.tsx`; `countRunningSessions` in `lib/src/lib/terminal-state-store.ts`.
 
 ## Global autorun setting
 
