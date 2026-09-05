@@ -137,9 +137,24 @@ test('a socket that stops answering the heartbeat is closed; a live one is not',
   // Past the idle timeout with nothing heard from it since.
   clock.advance(10 * 60 * 1000);
   assert.equal(created.sweepRelaySockets().idle, 1);
+  assert.equal(created.hub.onlineBurrowIds().length, 0, 'teardown precedes the close handshake');
 
   const closed = await socket.closed;
   assert.equal(closed.code, 1001);
+});
+
+test('an idle Client releases its slot before the close handshake finishes', async (t) => {
+  const clock = makeClock();
+  const created = await freshApp({ now: clock.now });
+  const server = await startRelay(created);
+  t.after(() => server.close());
+  const { socket } = await connectClient(created.app, server);
+  assert.equal(created.hub.clientCount, 1);
+
+  clock.advance(10 * 60 * 1000);
+  assert.equal(created.sweepRelaySockets().idle, 1);
+  assert.equal(created.hub.clientCount, 0, 'teardown precedes the close handshake');
+  assert.equal((await socket.closed).code, 1001);
 });
 
 test('the expiry sweep tells a Burrow client-gone exactly once', async () => {

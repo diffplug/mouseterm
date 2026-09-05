@@ -64,7 +64,7 @@
 
 **Why the log carries the service's reason body.** A status alone does not separate a bad subject from a bad key from a bad payload, and the service's own explanation is visible nowhere else — the route answers 200 either way and the Burrow sees only a `failed` count.
 
-**The outer deadline protects the handler, not the socket.** `web-push` accepts no `AbortSignal`: a request that loses the race keeps running under its own inactivity timeout. The route-level deadline stops a wedged push service from holding the handler open while successive alarms stack sends behind it, and catches what socket inactivity cannot — trickled bytes or a stall mid-handshake reset that timer forever. Every send in a fan-out starts at once, so one wall-clock bound covers the route at any device count.
+**The outer deadline protects delivery waiting, not the socket.** `web-push` accepts no `AbortSignal`: a request that loses the race keeps running under its own inactivity timeout. The route-level deadline stops a wedged push service from holding the handler open while successive alarms stack sends behind it, and catches what socket inactivity cannot — trickled bytes or a stall mid-handshake reset that timer forever. Every send in a fan-out starts at once, so one wall-clock bound covers delivery waiting at any device count; state reads and pruning writes remain outside it.
 
 **Why a stale-VAPID row is hidden rather than reported.** Such an endpoint cannot receive a send signed by the current key, so listing it would let the Burrow name and retry an unreachable device; omitting it surfaces Pocket's re-registration action instead.
 
