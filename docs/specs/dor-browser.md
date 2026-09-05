@@ -69,10 +69,9 @@ the pane the user is currently selected on moves selection to the replacement
 
 Surface lifetime owns backing resources:
 
-- **Minimizing parks the pane** — mounted and connected but invisible, with
-  `useSurfaceVisibility` reporting it hidden, so a doored `ab-screencast` stops
-  pulling frames while its daemon and socket stay up. **Killing a doored pane
-  unparks it first**, so the parked DOM dies with the Surface.
+- **Must retain the mounted DOM when minimizing.** Agent-browser connection
+  parking follows [Agent-Browser Connection](#agent-browser-connection).
+  **Must unpark a doored pane before killing it**, so its DOM dies with the Surface.
 - **Killing an agent-browser-rendered pane — or swapping away from that renderer
   — must mark the session closed, run `agent-browser close` through
   `closeAgentBrowserSession`, then dispose the surface controller**
@@ -169,9 +168,10 @@ pane appears **before** `agent-browser open` runs (rationale).
   `Connecting to browser session…` placeholder rather than the idle
   `run dor ab open <url>` line (rationale).
 - `agent-browser open <url>` runs, then a best-effort `stream status`.
-- The pane receives `{session, wsPort, binaryPath}` as **one** params refresh
-  (rationale). A failed `open` still hands over the `session` so the placeholder
-  names it, and logs rather than reporting into the closed menu.
+- **Must hand over `{session, wsPort, binaryPath}` in one params refresh**
+  (rationale). Failed or rejected `open` still hands over session and binary;
+  a rejected stream-status lookup omits only the port. Failures log into the
+  console after the menu closes. Pinned by `connect-port.test.ts`.
 
 The lookup reuses before it creates: (a) a surface bound to the default session,
 else (b) a still-booting session-less `key: 'default'` pane, so a double-click
@@ -209,7 +209,7 @@ size landed**, so a resize transient is not read as an external override.
 | From -> To | Behavior |
 | --- | --- |
 | `iframe` -> `ab-screencast` / `ab-popout` | **The pane swaps at once** to a session-less agent-browser pane — inert, so it cannot race the boot (rationale) — while the host spawns a fresh `gui-<hex>` session at the current URL via `agentBrowserOpen` and hands over `{session, wsPort, binaryPath}` as **one** params refresh. `ab-popout` spawns headed in one shot, so the surface mounts already popped out. A spawn that rejects or yields no session restores the iframe; a Surface minimized meanwhile receives either outcome through its Door, while one killed meanwhile closes a spawned session. Hidden/inert without that capability. |
-| `ab-screencast` <-> `ab-popout` | Same session, headed/headless relaunch in `AgentBrowserPanel`; preserves only the active URL. |
+| `ab-screencast` <-> `ab-popout` | Same Surface id and session, headed/headless relaunch in the surface controller; preserves only the active URL. |
 | `ab-*` -> `iframe` | Uses canonical `params.url`; with multiple tabs, requires the user to press `c` in the warning overlay, because only the active tab survives. |
 
 Source of truth: `lib/src/components/wall/AgentBrowserScreenModal.tsx`,
@@ -263,9 +263,9 @@ Source of truth: `dor/src/commands/agent-browser.ts`, `dor/src/commands/types.ts
 A surface-id-keyed controller registry (mirroring `terminal-lifecycle.ts`) owns
 one `AgentBrowserConnection` for `{ session, streamPort, binaryPath }` plus its
 screenshot loop. **The controller is Surface-scoped, not panel-scoped** — it
-survives panel unmount (minimize, layout churn, StrictMode), so the
-daemon/session stays alive and reattaches from persisted params, and client
-resources are released only at pane kill or a render swap away.
+survives panel unmount (layout churn, StrictMode). **Must keep the daemon/session
+alive while parked**, releasing viewer resources as specified below; killing
+or swapping away disposes the controller too.
 
 **A controller whose params carry no `session` must stay inert** — no connection,
 no `stream status`, and **never derive the session from `key`**, which is what
@@ -313,9 +313,9 @@ Rules that keep the two paths honest:
   decode; a provisional paint during an in-flight capture marks it stale.
 - **No capture may start inside the provisional window** (rationale) — one
   settled shot at its end, and continued pointer input pushes the window out.
-- **A capture dropped as stale must leave the loop dirty** (rationale); an
-  unpainted pulse alone must not suppress a crisp draw, so idle animated pages
-  still update.
+- **Must leave the loop dirty when capture or bitmap decode becomes stale**
+  (rationale); an unpainted pulse alone must not suppress a crisp draw.
+  Pinned by `agent-browser-screenshot-loop.test.ts`.
 - Byte-identical heartbeat frames and crisp captures are dropped before drawing.
   **That dedup assumes the crisp loop is the only canvas writer, so any other
   painter must bump the draw generation** in its key — re-attach and every
@@ -462,7 +462,7 @@ What is rewritten, exactly:
 | --- | --- | --- |
 | request | `Host` | upstream host |
 | request | `Origin` | upstream origin **only** when it is the proxy's own; else forwarded untouched (absent stays absent) |
-| request | `Referer` | proxy origin substituted for the upstream origin |
+| request | `Referer` | proxy origin replaced with the upstream origin |
 | request | `Accept-Encoding` | deleted, so HTML comes back identity for rewriting |
 | response | `X-Frame-Options`, `Content-Security-Policy`, `Content-Security-Policy-Report-Only` | replaced **whole** by `frame-ancestors 'self' <validated chain>` (rationale) |
 | response | hop-by-hop (RFC 7230 §6.1) | dropped |
