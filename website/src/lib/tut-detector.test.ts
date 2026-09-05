@@ -251,5 +251,16 @@ describe("TutDetector", () => {
     expect(state.isComplete("th-theme")).toBe(true);
   });
 
+  it("credits a return to the startup theme after reset, but ignores duplicate notifications", () => {
+    const { state, setActiveThemeId, detector } = makeDetectorHarness();
+    setActiveThemeId("vscode.theme-kimbie-dark.kimbie-dark");
+    state.reset();
+    setActiveThemeId("vscode.theme-kimbie-dark.kimbie-dark");
+    expect(state.isComplete("th-theme")).toBe(false);
+    setActiveThemeId("vscode.theme-defaults.dark_vs");
+    expect(state.isComplete("th-theme")).toBe(true);
+    detector.dispose();
+  });
+
 
 });

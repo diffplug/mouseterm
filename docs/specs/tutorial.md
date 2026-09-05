@@ -2,7 +2,7 @@
 
 > See `docs/specs/glossary.md` for Session / Pane vocabulary, used here for the playground's pane layout and detection wiring.
 
-Canonical device-specific routes (`website/src/routes.ts`):
+Device routes (`website/src/routes.ts`):
 
 - **`/playground`** — dispatcher: Pocket for coarse pointers or narrow viewports, Desktop otherwise, then **replaces** the history entry, preserving search + hash (query in `website/src/lib/playground-routing.ts`).
 - **`/playground/desktop`** — desktop tiling tutorial; where the dispatcher would pick Pocket, a "screen too small" link to `/playground/pocket` instead of `Wall`.
@@ -13,16 +13,16 @@ Canonical device-specific routes (`website/src/routes.ts`):
 
 ## Profiles
 
-Two `tut` profiles in `website/src/lib/tut-items.ts`, each opening directly inside its `initialSectionId`:
+Both `tut` profiles open inside their `initialSectionId`:
 
 - **`DESKTOP_TUTORIAL_PROFILE`** — Make it yours, Keyboard navigation, Alerts and attention, Copy paste; the first is one item, change the theme, and is auto-opened (rationale). Its alert section covers all three `docs/specs/alert.md` tracks: command-keyed WATCHING and its spread across panes, program-sent reports, and a command exiting while the user was away.
 - **`POCKET_TUTORIAL_PROFILE`** — Gesture navigation, Copy paste (desktop's minus `cp-override`).
 
-Copy lives in `website/src/lib/tut-items.ts` (sections, items, hints) and `website/src/lib/tut-runner.ts` (menu, Flappy Term, star). **Item ids are stable** — they are the localStorage payload entries ([Storage](#storage)). Items start pending; a section's first incomplete one is active, and turns green-check when the detector observes its action.
+**Item ids are stable** — they are the localStorage payload entries ([Storage](#storage)). Items start pending; the first incomplete in each section is active, turning green-check when detected.
 
 ## Architecture
 
-Four browser-side pieces in `website/src/lib/`, mirroring `website/src/lib/ascii-splash-runner.ts` — xterm alt-screen behind the `FakePtyAdapter` boundary, **never Node `terminal-kit`**.
+Browser-side xterm alt-screen behind `FakePtyAdapter`, **never Node `terminal-kit`**:
 
 - **`tut-runner.ts`** (`TutRunner`) — profile-aware alt-screen TUI; subscribes to `TutorialState`, re-renders on progress, takes input from `TutorialShell`.
 - **`tut-detector.ts`** (`TutDetector`) — wires app events to `TutorialState.markComplete(id)` and **must never touch the tiling engine**. `start()` seeds its prev-state maps and subscribes to `subscribeToActivity` + `subscribeToWatchedCommands` (`dormouse-lib/lib/terminal-registry`), `subscribeToMouseSelection` (`dormouse-lib/lib/mouse-selection`), `subscribeToActiveTheme` (`dormouse-lib/lib/themes`); everything else arrives on the `WallEvent` stream (`handleWallEvent`). **A keyboard split is credited before the split's automatic passthrough transition** (rationale), and **the `kb-arrows` hint that follows must tell the user to re-enter command mode** — the split left them in passthrough. **`kb-arrows` is credited from `selectionChange`** — to a distinct pane, in command mode — so an arrow key *or* a click counts. Per-item detail — which transition credits which id, the Cmd/Ctrl+Arrow `move` consume-first guard, the guards against crediting restored or spawned state — lives in that file's comments.
@@ -31,17 +31,17 @@ Four browser-side pieces in `website/src/lib/`, mirroring `website/src/lib/ascii
 
 ## Layout
 
-- `SiteHeader` at top, `themeAware` so `--vscode-*` variables drive its chrome, **carrying no controls**: **the page must restore its own theme** with `useRestoredTheme(POCKET_THEME_ID)` (`lib/src/lib/themes/use-restored-theme.ts`), which also declares the host fallback the Settings picker re-resolves through (rationale). `th-theme` walks the user to the Wall's Settings dialog (`docs/specs/theme.md` → "Where the user picks a theme"); baseboard-less Pocket surfaces render the `compact` picker.
+- Desktop `SiteHeader` at top, `themeAware` so `--vscode-*` variables drive its chrome, **carrying no controls**: **the page must restore its own theme** with `useRestoredTheme(POCKET_THEME_ID)` (`lib/src/lib/themes/use-restored-theme.ts`), which also declares the host fallback the Settings picker re-resolves through (rationale). `th-theme` walks the user to the Wall's Settings dialog (`docs/specs/theme.md` → "Where the user picks a theme"); Pocket renders the `compact` picker over the mobile terminal or in the desktop marketing header.
 - `<main>` is a flex container so Wall's `flex-1 min-h-0` root gets a real height.
 - `/playground/desktop` runs `Wall` (`FakePtyAdapter`, `initialMode="passthrough"`). **Must seed its three-pane L-shape as an explicit Lath snapshot** — `restoredLathLayout` from `DESKTOP_PLAYGROUND_LAYOUT` (`website/src/lib/playground-desktop-layout.ts`) — never the synchronous `initialPaneIds` path (rationale). Seeds: **`tut-main`** (left ~50%, "tutorial", `TutRunner`); **`tut-boxed`** (right-top ~25%, "changelog", `ChangelogRunner`, and the Copy Rewrapped + `cp-override` target); **`tut-splash`** (right-bottom ~25%, "ascii-splash", `AsciiSplashRunner`). **Titles are seeded as pending shell opts** (`setPendingShellOpts(id, { title })`) before the Wall mounts; the lib pins each at first spawn, after the pane's state reset, and a user-pin outranks the engine fallback (`docs/specs/terminal-state.md` → "Header Derivation").
 
-Every visible pane gets a `TutorialShell` via `PlaygroundShellRegistry`. **`ensureShell` must stay idempotent** — `paneAdded` covers every pane that becomes visible, and `FakePtyAdapter.onPtySpawn` covers the seed panes again, auto-launching each seed's command exactly once (rationale). The shell dispatches by command name to the page's `startProgram` factory: `tut` → `TutRunner`, `ascii-splash`/`splash` → `AsciiSplashRunner`, `changelog` → `ChangelogRunner`. **Spawned terminals use `SCENARIO_SHELL_PROMPT`; seed panes get an empty scenario**, so no delayed `user@dormouse:~$` write lands inside a runner's alt-screen.
+Every visible pane gets a `TutorialShell` via `PlaygroundShellRegistry`. **`ensureShell` must stay idempotent** — `paneAdded` covers every pane that becomes visible, and `FakePtyAdapter.onPtySpawn` covers the seed panes again, auto-launching each seed's command exactly once (rationale). The page’s `startProgram` factory dispatches: `tut` → `TutRunner`, `ascii-splash`/`splash` → `AsciiSplashRunner`, `changelog` → `ChangelogRunner`. **Spawned terminals use `SCENARIO_SHELL_PROMPT`; seed panes get an empty scenario**, so no delayed `user@dormouse:~$` write lands inside a runner's alt-screen.
 
 `/playground/pocket` runs `MobileWall` with **`pocket-tut`** ("tutorial", active, `TutRunner` on `POCKET_TUTORIAL_PROFILE`) and **`pocket-changelog`** ("changelog", `ChangelogRunner`), and starts a `TutDetector` over the same shared stores. Pocket gesture detections are wired in `website/src/components/PocketTerminalExperience.tsx`: `gn-touch-mode` needs a Select → Gestures round trip (not any mode change), and `MobileTerminalUi.onGestureInput` completes `gn-arrows`/`gn-enter`/`gn-esc` only for radial-menu-generated inputs.
 
 ## Menu and navigation behavior
 
-Esc / `q` pop back one screen (section → menu → exit); Ctrl+C exits the runner from any screen; re-running `tut` re-enters. The menu shows `[N/M complete]` per section; drilling in lists that section's items, each `✓` complete, `●` active, or `·` later. **`Reset progress` requires the user type `reset`**, then clears all three storage keys and returns to the profile's initial screen.
+Esc / `q` pop back one screen (section → menu → exit); Ctrl+C exits the runner from any screen; re-running `tut` re-enters. **Must consume unsupported CSI/SS3 key sequences without treating their prefix as Esc**; arrows accept CSI and application-mode SS3. Pinned by `website/src/lib/tut-runner.test.ts`. The menu shows `[N/M complete]` per section; drilling in lists that section's items, each `✓` complete, `●` active, or `·` later. **`Reset progress` requires the user type `reset`**, then clears all three storage keys and returns to the profile's initial screen.
 
 Below the sections: `Starred on GitHub` (persisted separately, `onOpenGithub`), `🐭 FlappyTerm 🐭`, `Reset progress` — **none of the three ever counts toward `N/M`**. Flappy stays `[LOCKED N/M]` until every section checklist item is complete, then shows `[High score: N]` and unlocks a runner-local mini-game whose game-over screen cross-links the other surface (desktop `p` → `onOpenPocket`; Pocket `n` → `onNotifyPocket` → `/hosted/#remote-control`, wired by the pages).
 
@@ -79,19 +79,19 @@ Pocket reuses `cp-select` / `cp-raw` / `cp-rewrap` but drops `cp-override`: Sele
 - `dormouse-tut-star-v1` — `"true"` after `Starred on GitHub`.
 - `dormouse-flappy-high-v1` — high score.
 
-All three are removed on `TutorialState.reset()`. Legacy `dormouse-tutorial-step-N` / `dormouse-tut-v2-*` keys are never read.
+**Must remove all three on `TutorialState.reset()`, even when rejected stored values left progress empty.** Legacy `dormouse-tutorial-step-N` / `dormouse-tut-v2-*` keys are never read.
 
 ## Lib hooks backing the tutorial
 
 Hooks in `dormouse-lib` / `MobileTerminalUi` that exist for tutorial observability:
 
-- **`WallEvent.kill` / `move` / `paneAdded`** — discriminants on the `WallEvent` union. `kill` fires from `killPaneImmediately`, so every kill path (confirm dialog, tmux `x`, door kill, `dor kill`) credits `kb-kill`. **`move` must fire from both** the Cmd/Ctrl-Arrow swap in `lib/src/components/wall/keyboard/handle-pane-shortcuts.ts` **and** the center-drop swap in `Wall.onProposeMove` (rationale). **`paneAdded` fires once per pane that becomes visible** — seed ids, splits, dor surfaces, restores, auto-spawn — via the Lath store-subscription leaf-id diff, with seed ids announced explicitly.
+- **`WallEvent.kill` / `move` / `paneAdded`** — discriminants on the `WallEvent` union. `kill` fires from `killPaneImmediately`, so every kill path (confirm dialog, tmux `x`, door kill, `dor kill`) credits `kb-kill`. **`move` must fire from both** the Cmd/Ctrl-Arrow swap in `lib/src/components/wall/keyboard/handle-pane-shortcuts.ts` **and** the center-drop swap in `Wall.onProposeMove` (rationale). **`paneAdded` fires once per pane that becomes visible** — seed ids, splits, dor surfaces, restores, auto-spawn — via Lath’s leaf-id diff, with seeds announced explicitly.
 - **`FakePtyAdapter.pumpActivity(id, durationMs, intervalMs)`** — drives the alert manager for a fixed duration with no data output (the `s` demo). Returns a cancel handle; stops on its own if the pty dies mid-duration.
 - **`FakePtyAdapter.sendOutput(id, data, { skipActivity })`** — pushes data through the real protocol parser as if the PTY produced it — `alertManager.onData()` for visible bytes, the notification/semantic-event paths for OSCs (rationale). **Unlike `writePty` it is not suppressed while a scenario is playing.** `TutRunner` passes `skipActivity: true` for every frame, so redrawing the TUI never tilts its own pane's bell.
 - **`FakePtyAdapter.onPtySpawn`** — fires synchronously inside `spawnPty`, before the scenario plays, so a page attaches a shell without racing `TerminalPane`'s mount.
 - **`subscribeToWatchedCommands` / `getWatchedCommands`** (`lib/src/lib/watched-commands.ts`, re-exported from `terminal-registry`) — the WATCHING rule set, watched to credit `al-watch-cmd`.
 - **`MobileTerminalUi.onGestureInput(input, data)`** — optional, fired only for radial-menu actions, so Pocket credits gesture items without mistaking native keyboard input for a gesture.
-- **`subscribeToActiveTheme` / `getActiveThemeId`** (`lib/src/lib/themes/`) — the active theme, watched to credit `th-theme`. **It fires only on a change to a *different* theme, and the detector additionally seeds the id at `start()`**, so a boot-time theme restore cannot grant the item (rationale).
+- **`subscribeToActiveTheme` / `getActiveThemeId`** (`lib/src/lib/themes/`) — the active theme, watched to credit `th-theme`. **Must seed the detector’s previous theme at `start()` and compare consecutive ids**, so boot-time restore cannot grant the item and choosing the startup theme after a reset still can. Pinned by `website/src/lib/tut-detector.test.ts` (rationale).
 
 ## Mouse and Clipboard Feature Coverage
 

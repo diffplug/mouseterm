@@ -326,10 +326,18 @@ export class TutRunner implements InteractiveProgram {
       }
       if (ch === "\x1b") {
         const tail = data.slice(i);
-        const csi = tail.match(/^\x1b\[([ABCD])/);
+        // Consume complete key sequences, including unsupported Home/Delete
+        // and modified arrows, without mistaking their prefix for a bare Esc.
+        const csi = tail.match(/^\x1b\[([0-?]*)([ -/]*)([@-~])/);
         if (csi) {
-          this.handleArrow(csi[1]);
+          if (csi[1] === "" && csi[2] === "") this.handleArrow(csi[3]);
           i += csi[0].length;
+          continue;
+        }
+        const ss3 = tail.match(/^\x1bO([@-~])/);
+        if (ss3) {
+          this.handleArrow(ss3[1]);
+          i += ss3[0].length;
           continue;
         }
         // Bare Esc — back / exit

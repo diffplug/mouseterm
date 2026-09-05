@@ -91,6 +91,25 @@ function mountRunner(
 }
 
 describe("TutRunner snapshots", () => {
+  it("ignores unsupported terminal keys without navigating back or corrupting reset input", () => {
+    const { sendKeys, lastFrame, exitCount, dispose } = mountRunner();
+    const unsupportedKeys = "\x1b[H\x1b[3~\x1b[1;5A";
+    sendKeys(unsupportedKeys);
+    expect(lastFrame()).toContain("Make it yours");
+    expect(exitCount()).toBe(0);
+    sendKeys(extraRow("reset") + ENTER + "re" + unsupportedKeys + "set" + ENTER);
+    expect(lastFrame()).toContain("Make it yours");
+    expect(lastFrame()).not.toContain("didn't match");
+    dispose();
+  });
+
+  it("accepts application-mode arrow keys in the menu", () => {
+    const { sendKeys, lastFrame, dispose } = mountRunner();
+    sendKeys(ESC + "\x1bOB" + ENTER);
+    expect(lastFrame()).toContain("Keyboard navigation");
+    dispose();
+  });
+
   // The desktop profile opens inside its first section (`initialSectionId`), so
   // every menu-driven test below pops out with a leading Esc first.
   it("starts the desktop tutorial inside Make it yours", () => {

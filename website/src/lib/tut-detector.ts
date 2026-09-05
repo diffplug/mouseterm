@@ -51,7 +51,7 @@ export class TutDetector {
   private pendingMoveClearTimer: ReturnType<typeof setTimeout> | null = null;
   private prevActivity = new Map<string, ActivityState>();
   private prevMouse = new Map<string, MouseSelectionState>();
-  private startThemeId = '';
+  private previousThemeId = '';
   private disposables: (() => void)[] = [];
 
   constructor({ state, activityStore, mouseStore, themeStore }: TutDetectorOptions) {
@@ -80,7 +80,7 @@ export class TutDetector {
     }
     // Same guard, one value wide: the page restores a persisted theme at boot,
     // which must not read as the user having picked one.
-    this.startThemeId = this.themeStore.getActiveThemeId();
+    this.previousThemeId = this.themeStore.getActiveThemeId();
 
     this.disposables.push(
       this.activityStore.subscribeToActivity(() => this.processActivity()),
@@ -177,12 +177,13 @@ export class TutDetector {
     }
   }
 
-  /** The active theme moved off whatever was restored at start. The picker
-   *  lives in the Settings dialog and has no keyboard shortcut, so any change
-   *  here is a mouse interaction. */
+  /** Compare consecutive themes so choosing the startup theme after a progress
+   *  reset still counts, while duplicate notifications never do. */
   private processTheme(): void {
     const current = this.themeStore.getActiveThemeId();
-    if (current !== this.startThemeId) this.state.markComplete("th-theme");
+    const changed = current !== this.previousThemeId;
+    this.previousThemeId = current;
+    if (changed) this.state.markComplete("th-theme");
   }
 
   /** A rule exists at all — the user turned alerts on for a command name. */

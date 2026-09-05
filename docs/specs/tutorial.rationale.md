@@ -38,7 +38,7 @@
 
 **What `sendOutput` is for.** The only way the alert demos can fake shell integration and a program-sent notification with no real shell behind the pane.
 
-**Why the theme subscription is the tutorial's mouse-only signal.** The theme picker has no keyboard shortcut, so a change observed through `subscribeToActiveTheme` is necessarily a mouse interaction — the property that makes `th-theme` usable as the opening ask ([Profiles](#profiles)).
+**Why the theme subscription backs the opening ask.** Picking a theme needs no command-mode vocabulary ([Profiles](#profiles)); the picker remains operable through ordinary keyboard focus. Comparing consecutive theme ids also keeps the achievement repeatable after progress is reset.
 
 ## Mouse and Clipboard Feature Coverage
 

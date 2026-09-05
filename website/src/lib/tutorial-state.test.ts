@@ -54,6 +54,20 @@ describe("tutorial persistence", () => {
     completeAndReset(new TutorialState());
   });
 
+  it("reset removes rejected storage values even when progress is already empty", () => {
+    const { values } = installStorage(new Map([
+      ["dormouse-tut-v3", '["retired-item"]'],
+      ["dormouse-tut-star-v1", '"true"'],
+      ["dormouse-flappy-high-v1", "-12"],
+    ]));
+    const state = new TutorialState();
+    const listener = vi.fn();
+    state.subscribe(listener);
+    state.reset();
+    expect(values.size).toBe(0);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it("works when storage methods are denied", () => {
     const { storage } = installStorage();
     for (const method of ["getItem", "setItem", "removeItem"] as const) {
