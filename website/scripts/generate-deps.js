@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertWorkspaceCoverage, getDependencyNames } from "./dependency-workspaces.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "../..");
@@ -15,7 +16,7 @@ const themeExtensionsPath = resolve(repoRoot, "lib/src/lib/themes/bundled-extens
 // A package belongs here if its dependencies reach a user's disk, however they
 // get there: `dormouse-sidecar` ships as a Tauri bundle resource
 // (`standalone/src-tauri/tauri.conf.json` -> `bundle.resources`), node_modules
-// and all, and `server` is installed and run by a selfhoster (SELF_HOST.md) —
+// and all, and `relay` is installed and run by a selfhoster (SELF_HOST.md) —
 // `web-push` in particular signs with a private key and makes outbound
 // requests. See docs/specs/security-supply-chain.md -> "Disclosure".
 const productDependencyFilters = [
@@ -26,6 +27,9 @@ const productDependencyFilters = [
   "dormouse-sidecar",
   "relay",
 ];
+// Neither package installs an artifact on a user's disk. Any new workspace
+// requires classification here or a runtime edge from a product root.
+const excludedWorkspacePackages = ["canopy", "dormouse-website"];
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf-8"));
@@ -56,13 +60,6 @@ function getWorkspacePackages() {
       pkg: readJson(resolve(absoluteDir, "package.json")),
     };
   });
-}
-
-function getDependencyNames(pkg) {
-  return [
-    ...Object.keys(pkg.dependencies ?? {}),
-    ...Object.keys(pkg.optionalDependencies ?? {}),
-  ];
 }
 
 function getPackageJsonPath(fromDir, packageName) {
@@ -104,6 +101,7 @@ function getHomepage(pkg) {
 }
 
 const workspacePackages = getWorkspacePackages();
+assertWorkspaceCoverage(workspacePackages, productDependencyFilters, excludedWorkspacePackages);
 const workspacePackagesByName = new Map(workspacePackages.map((workspacePackage) => [
   workspacePackage.pkg.name,
   workspacePackage,
