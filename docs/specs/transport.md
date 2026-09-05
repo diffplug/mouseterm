@@ -4,7 +4,7 @@
 
 ## Adapter model
 
-Each adapter wraps a PTY-spawning runtime and a transport channel between webview and host process. The webview is a thin view layer; PTYs and `AlertManager` live on the platform side. Source of truth: `PlatformAdapter` in `lib/src/lib/platform/types.ts`.
+Each adapter wraps a PTY-spawning runtime and a transport channel between webview and host process. Source of truth: `PlatformAdapter` in `lib/src/lib/platform/types.ts`.
 
 | Adapter | Host runtime | Transport |
 |---|---|---|
@@ -16,7 +16,7 @@ Each adapter wraps a PTY-spawning runtime and a transport channel between webvie
 
 **A host that cannot do something must say so by absence, never by the UI branching on host identity.** `RemotePtyAdapter` implements only the PTY core (list/data/write/resize/exit) and no-ops or omits the rest.
 
-Three optional members are plain booleans, not methods:
+Optional booleans:
 
 | Member | Absent reads | Set by | Effect when set |
 |---|---|---|---|
@@ -67,10 +67,11 @@ Platform host (always running while the adapter is active)
 - **A naturally exited PTY may stay mounted as an exited pane**; frontend semantic state — CWD, title candidates, last command — is retained until the Session is disposed.
 - **Must keep explicitly killed PTYs non-resumable.** VS Code tombstones their ids (`Process: Tombstoned`) in `pty-manager.ts` so late child-process output cannot recreate a buffer; the shared `pty-core.js` drops its live record and retains no output.
 - **Each host instance gets its own pty-host child process** (e.g. one per VS Code window).
+- **Must mark live VS Code PTYs exited and notify their owners when the child process exits unexpectedly**, retaining transcripts and already-recorded exits. **Must ignore retired-child output and exit events after replacement**; pinned by `vscode-ext/test/pty-manager.test.ts`.
 
 ### PTY buffering
 
-VS Code's `pty-manager` keeps two buffers plus one counter per PTY. Both buffers are capped at 1M chars, trimming the oldest chunks at the cap.
+VS Code's `pty-manager` keeps two buffers plus one counter per PTY. **Must cap each buffer at 1,000,000 characters**, dropping oldest chunks and truncating an oversized final chunk; pinned by `vscode-ext/test/pty-manager.test.ts`.
 
 - **replayChunks** — cleared on first consume; used for resume (webview hidden then shown).
 - **scrollbackChunks** — never cleared short of `kill`/`killAll`; used for repeat resumes (a re-serving router's replay buffer is already spent) and for recovery capture at teardown. Host-side only — no adapter exposes it to the renderer.
@@ -110,7 +111,7 @@ Each host maps those calls onto its own transport:
 | VS Code | `burrow:command { payload }` | `burrow:result { payload }`, `burrow:event { payload }` (both broadcast to every webview in the window) | `peer:ask { requestId, op, params }` | `peer:answer { requestId, results }`, `peer:notify` |
 | Standalone (Tauri + browser-dev harness) | `burrow_command(payload)` → sidecar stdin `burrow:command` | sidecar stdout `burrow:result` / `burrow:event` | sidecar stdout `burrow:ask { burrowRequestId, op, params }` | the same command channel, as `cmd: 'answer' \| 'notify'` |
 
-Two rules the table encodes:
+Transport constraints:
 
 - **VS Code broadcasts results**, safe because a `burrowRequestId` carries a per-adapter random tag and is globally unique, so only the adapter that asked can settle one (rationale; `docs/specs/vscode.md` → "Peer surfaces across windows").
 - **Standalone's correlation field is `burrowRequestId`, never `requestId`** — Rust swallows any sidecar line whose `data.requestId` matches a pending invoke (`docs/specs/standalone.md` → "Burrow service").
@@ -143,21 +144,21 @@ OSC parsing/stripping rules for those rows, and the rule that **only the process
 
 **Workspace-scoped dor refs.** A `PersistedSession` may record `surfaceRefs` — stable Surface id → Workspace-local `dor` short ref (`surface:N`) — plus `surfaceRefsNext`, the next number to hand out. The map belongs to the Workspace session, not the layout: every layout move and every browser render swap preserves the ref. **A retired `surface:N` is never reused for a different Surface** — a killed Surface's entry is dropped, `surfaceRefsNext` is persisted independently rather than derived from the map, and on load the counter is clamped above the map's highest ref, so a target naming a retired ref fails instead of resolving to the wrong pane (`docs/specs/dor-cli.md` → Handle Model). Old snapshots without the fields allocate refs from the restored Surfaces on first mount.
 
-**Surface kinds in the snapshot.** Each `PersistedPane` records a `surfaceType` (`docs/specs/glossary.md`): `'terminal'` — the default, **omitted from the row** so terminal snapshots stay byte-identical — or `'browser'`. It routes restore/resume, and **a pane lacking it reads as `'terminal'`**. `restoreSession` skips terminal restoration for a browser pane rather than minting a stray PTY + xterm per browser pane id, and the resume plan keeps browser panes and minimized browser doors despite their having no live PTY, so the saved layout's leaf set still matches and is not discarded. A browser pane rebuilds from the persisted layout (visible) or `PersistedDoor.params` (minimized) — its render params (`renderMode`, `url`, agent-browser `session`) live there, not in `PersistedPane`.
+**Surface kinds in the snapshot.** Each `PersistedPane` records a `surfaceType` (`docs/specs/glossary.md`): `'terminal'` — the default, **omitted from the row** so terminal snapshots stay byte-identical — or `'browser'`. It routes restore/resume, and **a pane lacking it reads as `'terminal'`**. `restoreSession` skips terminal restoration for a browser pane rather than minting a stray PTY + xterm per browser pane id, and the resume plan keeps browser panes and minimized browser doors despite their having no live PTY, so the saved layout's leaf set still matches and is not discarded. A browser pane rebuilds from the persisted layout (visible) or `PersistedDoor.params` (minimized) — its render params (`renderMode`, `url`, agent-browser `session`) live there, not in `PersistedPane`. **Must reject a layout whose leaves differ from the visible pane set during restore or resume, and omit visible browser ids from the terminal fallback.** Browser doors retain their independent render params; pinned by `lib/src/lib/session-restore.test.ts` and `lib/src/lib/reconnect.test.ts`.
 
-**Workspace/Window containers (implemented, dormant behind the `dormouse.flags.workspaces` flag; rollout ledger in `docs/specs/layout.md` `## Future`).** A `PersistedWorkspace` is a `WorkspaceId`, a user-facing `name`, and that Workspace's `PersistedSession`. The standalone Window's top-level snapshot is a `PersistedWindow` (its own `version: 1`) wrapping v3 sessions: the ordered `PersistedWorkspace` list plus the active `WorkspaceId`. **VS Code does not use it** — each webview persists one bare `PersistedSession`, its single Workspace, through its own per-surface state API (`docs/specs/vscode.md`).
+**Workspace/Window container helpers are implemented but dormant while standalone disables Session persistence**, regardless of `dormouse.flags.workspaces` (rollout ledger in `docs/specs/layout.md` `## Future`). A `PersistedWorkspace` is a `WorkspaceId`, a user-facing `name`, and that Workspace's `PersistedSession`. The helper's top-level snapshot is a `PersistedWindow` (its own `version: 1`) wrapping v3 sessions: the ordered `PersistedWorkspace` list plus the active `WorkspaceId`. **VS Code does not use it** — each webview persists one bare `PersistedSession`, its single Workspace, through its own per-surface state API (`docs/specs/vscode.md`).
 
-**The wrapping lives at the standalone adapter boundary, never in the shared save/restore code.** `window-persistence.ts` translates between the host's stored top-level blob and the bare `PersistedSession` that `reconnect.ts` / `session-save.ts` operate on; `tauri-adapter.ts` / `browser-sidecar-adapter.ts` route `getState` / `saveState` through its `loadSessionState` / `saveSessionState`. The blob round-trips through a `SessionKeyValueStore` — one synchronous slot the host persists natively (`localStorage` in the browser-dev harness, a Rust-backed per-window file store in the real adapter; `docs/specs/standalone.md` → Persistence), **never WebKit `localStorage`**. Flag **off** (the default): identity passthroughs. Flag **on**: load returns the active Workspace's session, save merges it back and preserves the others.
+**The wrapping lives at the standalone adapter boundary, never in the shared save/restore code.** `window-persistence.ts` translates between the host's stored top-level blob and the bare `PersistedSession` that `reconnect.ts` / `session-save.ts` operate on; both standalone adapters gate `getState` / `saveState` before reaching its `loadSessionState` / `saveSessionState`. The helpers accept a `SessionKeyValueStore` synchronous slot (`docs/specs/standalone.md` → Persistence). When called directly, flag **off** (the default) passes bare sessions through; flag **on** loads the active Workspace's session and merges saves while preserving the others.
 
 **A corrupt save must never block startup.** Every read goes through `readPersistedSession()` / `readPersistedWindow()`, which accept the canonical parsed object *or* a JSON-stringified blob (host state APIs may hand back the inner serialized string) and log-and-discard anything present but unreadable. `readPersistedWindow` additionally drops Workspaces whose inner session is unreadable and repairs a dangling `activeWorkspaceId` to the first Workspace.
 
-**The recovery command.** One agent resume invocation per surface (`claude --resume <id>`, `claude --continue`, `codex resume <id>`) — the only thing that survives a teardown.
+**The recovery command.** One agent resume invocation per surface (`claude --resume <id>`, `claude --continue`, `codex resume <id>`) survives teardown alongside the persisted structure.
 
-*It is not part of the persisted session.* `PersistedPane` carries no `resumeCommand`, and `normalizeSessionV3` strips one out of a pre-upgrade blob as it strips a transcript. **Host-owned and single-use, it travels out of band**: the host puts `surfaceId -> invocation` on the webview's boot payload, the renderer reads it through `PlatformAdapter.getRecoveryCommands()`, and an adapter whose host captures nothing omits the method. Keeping it off the session shape is what makes the one-shot guarantee structural (rationale).
+*It is not part of the persisted session.* `PersistedPane` carries no `resumeCommand`, and `normalizeSessionV3` strips one out of a pre-upgrade blob as it strips a transcript. **Host-owned and single-use, it travels out of band**: the host puts `surfaceId -> invocation` on the webview's boot payload, the renderer reads it through `PlatformAdapter.getRecoveryCommands()`, and an adapter whose host captures nothing omits the method (rationale).
 
 *Exactly one writer, exactly one read.* The writer is the VS Code host's teardown (`docs/specs/vscode.md` → "Capturing agent recovery"); the renderer save path never derives it and standalone writes it never. **Cold restore is the one reader — resume never reads it**, the agent there still being Live. `takeRecoveryCommands` reads and unlinks on the first call of an activation, **destructively even on a parse failure**, so the durable copy is gone before any webview is served; within that activation **each webview claims only the entries matching its own saved pane ids** (rationale). **A record older than 7 days is discarded unread.**
 
-*Detection.* Because this string is executed, four rules are load-bearing:
+*Detection.* Executable-string constraints:
 
 - **Only a known invocation plus an opaque id.** The command is *rebuilt* as label + captured id, never sliced from the buffer; the id grammar is alphanumeric/hyphen/underscore only, so shell punctuation cannot enter executable state. Anything trailing the id is dropped. The invocation must be followed by a word break (`claude --continuex` is not an offer to continue) but nothing stronger (rationale).
 - **The scan window is stripped as a whole, in one pass, and an unterminated control swallows the rest of it** — the string controls (OSC, DCS, SOS, PM, APC) **in either introducer form, `ESC` or bare C1**, and equally a CSI the window was cut off *inside* (rationale). "Terminated" tracks what the renderer honours rather than ECMA-48 alone: ST in both forms (`\x1b\\`, `\x9c`), BEL for OSC, plus CAN/SUB and a bare ESC. **Match every escape by its full ECMA-48 shape** — ESC, intermediates, one final byte — never by the Fe range (rationale). **One implementation**: `stripTerminalControls` removes string controls by running `TerminalControlStreamFilter`, so the batch and streaming readers cannot disagree.
@@ -174,7 +175,7 @@ Structure only: panes (id, cwd, title, `untouched`, `surfaceType`, TODO/alert bl
 
 ### Retiring the transcripts already on disk
 
-Ignoring the field is not enough — the bytes have to go (rationale). Three rules:
+**Must remove legacy transcript bytes from disk** (rationale).
 
 - **`readPersistedSession` drops `scrollback` when present**, along with any `resumeCommand`, and does not *require* it, so a snapshot written without it stays readable. A transcript can be read out of a legacy blob but never survives into a parsed Session, so nothing downstream can persist it forward.
 - **The first save after upgrade rewrites each store without transcripts.** Standalone, which stops reading its store entirely, **clears the slot outright at boot** rather than waiting for a save that may never come — including an orphaned sibling temp file from a crash before atomic rename, invisible to `load_session` but still holding the bytes.

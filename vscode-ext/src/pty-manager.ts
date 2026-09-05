@@ -50,6 +50,10 @@ function trimChunks(chunks: string[], totalChars: number): number {
     const removed = chunks.shift()!;
     totalChars -= removed.length;
   }
+  if (totalChars > MAX_BUFFER_CHARS) {
+    chunks[0] = chunks[0].slice(-MAX_BUFFER_CHARS);
+    totalChars = MAX_BUFFER_CHARS;
+  }
   return totalChars;
 }
 
@@ -170,10 +174,10 @@ export function getScrollbackSince(id: string, mark: number): string {
   let held = 0;
   for (let i = entry.scrollbackChunks.length - 1; i >= 0 && held < wanted; i--) {
     const chunk = entry.scrollbackChunks[i];
-    tail.unshift(chunk);
+    tail.push(chunk);
     held += chunk.length;
   }
-  const joined = tail.join('');
+  const joined = tail.reverse().join('');
   return held > wanted ? joined.slice(held - wanted) : joined;
 }
 
@@ -256,8 +260,11 @@ function ensureChild(extensionPath: string): ChildProcess {
   });
 
   childReady = false;
+  const launchedChild = child;
 
   child.on('message', (msg: any) => {
+    // A retired child's queued output must not enter a replacement's buffers.
+    if (child !== launchedChild) return;
     if (msg.type === 'ready') {
       log.info('pty-host ready');
       childReady = true;
@@ -291,11 +298,27 @@ function ensureChild(extensionPath: string): ChildProcess {
   });
 
   child.on('exit', (code) => {
+    if (child !== launchedChild) return;
     log.error(`pty-host exited unexpectedly (code ${code})`);
     child = null;
     childReady = false;
     pendingMessages = [];
     shellsCache = null;
+    // No PTY in this child can still be live. Retain its transcript for resume,
+    // and report exit just as if the child had delivered each PTY's final event.
+    const exitedIds: string[] = [];
+    const exitCode = code ?? 1;
+    for (const [id, entry] of ptyBuffers) {
+      if (!entry.alive) continue;
+      entry.alive = false;
+      entry.exitCode = exitCode;
+      exitedIds.push(id);
+    }
+    // Callbacks may synchronously spawn a replacement. Finish retiring this
+    // generation before notifying, and never iterate its replacement's buffers.
+    for (const id of exitedIds) {
+      for (const cb of callbackSet) cb.onExit(id, exitCode);
+    }
   });
 
   child.stderr?.on('data', (data: Buffer) => {
