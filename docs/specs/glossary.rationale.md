@@ -10,4 +10,4 @@
 
 ## Invariants
 
-**Why a render-mode swap keeps the `surface:N` ref but not the id.** The swap is a replacement — `replaceSurface` puts a new Surface in the slot rather than mutating the old one — so the Lath leaf id, and with it the raw Surface id, cannot survive (`docs/specs/dor-browser.md` → Placement And Lifetime). Carrying the CLI ref across the replacement means a script that addressed the Surface before the swap still addresses it after; one that captured the raw id does not.
+**Why replacement keeps the `surface:N` ref but not the id.** `replaceSurface` replaces the Lath leaf, so its raw Surface id changes while the CLI ref continues addressing the replacement. Agent-browser headed/headless relaunches keep the same leaf and id; a minimized failed-connect rollback can also change render mode through a params update. Thus render mode alone cannot determine identity continuity.
