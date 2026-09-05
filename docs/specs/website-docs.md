@@ -546,6 +546,10 @@ as shipped behavior.
 
 ## Public-doc validation
 
+**Must typecheck the website before its tests.** `website/package.json` runs
+`tsc --noEmit` before Vitest, including the playground adapters and generated-doc
+consumers.
+
 `scripts/public-docs-lint.mjs`, invoked by root `pnpm test` after the spec lint,
 verifies:
 
