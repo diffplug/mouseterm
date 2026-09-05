@@ -2,6 +2,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import MarkdownDocument, { type BlockNode } from "./MarkdownDocument";
 
+it("renders authored step numbers when a list resumes after prose", () => {
+  const blocks: BlockNode[] = [{
+    type: "list", ordered: true, start: 3,
+    items: [{ type: "listItem", children: [{ type: "paragraph", children: [{ type: "text", value: "third" }] }] }],
+  }];
+  const markup = renderToStaticMarkup(<MarkdownDocument blocks={blocks} />);
+  expect(markup).toMatch(/<ol start="3"/);
+});
+
 describe("MarkdownDocument headings", () => {
   it("preserves every supported Markdown heading depth", () => {
     for (let depth = 1; depth <= 6; depth += 1) {

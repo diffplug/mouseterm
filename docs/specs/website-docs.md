@@ -33,9 +33,6 @@ that once rendered it at `/docs` is retained and still runs (see
 | `/docs/security` | What Dormouse guarantees and how it is checked | Every section of `docs/specs/security.md`, minus title and front matter; its rows split across three pages |
 | GitHub root | Repository overview and contributor entry point | Root `README.md` |
 
-The guide reaches readers through the Marketplace, Open VSX, and GitHub rows of
-that table. It has no row of its own on this site.
-
 Internal specs remain maintainer references, the one exception being the
 security spec, published whole. Public docs are otherwise written from shipped
 behavior above each spec's fold and do not expose host plumbing, internal state
@@ -89,8 +86,7 @@ checkable and by review otherwise:
   future renderers.
 - VS Code command names in getting started exist in `vscode-ext/package.json`.
 - Detailed CLI behavior links to `/docs/dor`; the complete agent operating guide
-  links to `/docs/agent-skill`. Those two are the only site pages the guide may
-  send a reader to for documentation.
+  links to `/docs/agent-skill`; the hosted-services preview links to `/hosted`.
 - The guide contains no `TODO:` placeholders and no copied internal future
   design.
 
@@ -148,7 +144,7 @@ builds a VSIX from source, rather than letting either infer a base (rationale);
 republish.
 
 **Never** write to `public/guide/` from anything but the generator, which
-deletes it wholesale each build (rationale). Hand-authored assets stay at
+replaces its `images/` directory each build (rationale). Hand-authored assets stay at
 `public/` root, where git tracks them.
 - The same content renders usefully in Open VSX and GitHub Markdown.
 
@@ -171,16 +167,22 @@ general parser would. The public-doc lint turns that error into a build
 failure, which is what makes a hand-rolled parser safe as the guide grows.
 
 Raw HTML is disabled except for a narrow `<img>` allowlist carrying only `src`,
-`alt`, `width`, `height`, and `title`, with an `https:` source. Every other tag,
+`alt`, `width`, `height`, and `title`, with a relative or `https:` source. Every other tag,
 and every other attribute on `<img>`, is rejected outright. The exception exists
 because the guide's inline 22px alert-state icons need sizing and portable
 Markdown has no syntax for it; it is not a general licence for HTML.
 
-Heading ids come from one slugger that mirrors `github-slugger`, including
+**Must assign unique heading ids**, reserving authored and generated numeric
+suffixes alike. Heading ids come from one GitHub-style slugger, including
 replacing each space individually rather than collapsing runs — so a heading
 whose punctuation sits between two spaces yields a double hyphen exactly as on
-GitHub. That is what keeps `/docs` anchors identical to the same heading's
-anchor on GitHub.
+GitHub. `website/scripts/docs-parser.test.js` pins slug collisions.
+
+**Must retain ordered-list starts and blank-separated paragraphs within their
+own list item.** `website/scripts/generate-docs.test.js` pins the published
+first-run setup sequence; `website/src/components/MarkdownDocument.test.tsx`
+pins resumed numbering. **Must interpret backslash escapes only before ASCII
+punctuation**, preserving ordinary characters in paths.
 
 ## Markdown rendering contract
 
@@ -322,8 +324,8 @@ WCAG AA against the surface carrying it; never dim text with opacity**
 the base and every registered tinted surface composition across bundled themes;
 `checkNoDimmedDocsText` pins the call sites, allowlisting what is not text.
 
-**A reader is prompted to pick a theme until they answer.** Picking one and
-closing the prompt both count — a reader who declined has seen the offer.
+**Must prompt a reader to pick a theme until they answer, and dismiss both
+responsive placements together.** Picking one and closing the prompt both count.
 Keyed on the website's own `dormouse:docs-theme-prompt-dismissed`, because
 `dormouse:active-theme` cannot answer it: restoring writes that key too.
 
@@ -397,31 +399,19 @@ nothing renders it, and a copy of the generator's own input proves nothing about
 the generator. A test instead re-parses the file independently and compares the
 resulting heading inventory and ids.
 
-The web rendering adds contextual reference links beside matching skill
-headings. Command rules match on a backticked token inside the heading, since
-skill headings carry descriptive suffixes; the two prose rules match the
-heading's opening words.
-
-| Skill section | CLI target |
-| --- | --- |
-| Targeting | `/docs/dor#targeting` |
-| Surface handles | `/docs/dor#surface-handles` |
-| `dor list` | `/docs/dor#list` |
-| `dor split` | `/docs/dor#split` |
-| `dor ensure` | `/docs/dor#ensure` |
-| `dor send` | `/docs/dor#send` |
-| `dor read` | `/docs/dor#read` |
-| `dor kill` | `/docs/dor#kill` |
-| `dor ab` / `dor agent-browser` | `/docs/dor#agent-browser` |
-| `dor iframe` | `/docs/dor#iframe` |
+**Must derive contextual CLI links from skill headings.** A backticked
+`dor <command>` token links to that command's anchor; headings naming aliases
+use the first token with a matching CLI section and label it with the first
+authored spelling. Targeting and Surface handles match by heading prefix and
+link to the corresponding CLI introductions.
 
 These links are presentation adjacent to the skill body. Website URLs are never
 injected into `dor/skill.md`: an older installed CLI must remain self-contained
 and version-matched rather than directing its instructions to the latest
 website reference.
 
-Generation fails when a mapped skill heading is missing or ambiguous, or when
-its target anchor does not exist in the generated CLI reference.
+Generation fails when an introduction heading is missing or ambiguous, or a
+command heading names no anchor in the generated CLI reference.
 
 ## `/docs/self-host` runbook
 

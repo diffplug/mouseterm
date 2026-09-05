@@ -55,7 +55,7 @@ const dataDir = join(__dirname, '..', 'src', 'data');
  * build, which would delete anything committed there.
  *
  * The published copy gets `public/guide/` to itself, and `syncGuideMedia`
- * deletes that directory wholesale on every build. Nothing else may write
+ * replaces its `images/` directory on every build. Nothing else may write
  * there; hand-authored site assets stay at `public/` root, where they are
  * tracked by git rather than swept away.
  *

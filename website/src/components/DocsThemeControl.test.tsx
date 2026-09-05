@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { act } from "react";
-import { hydrateRoot, type Root } from "react-dom/client";
+import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getBundledThemes, setActiveThemeId } from "dormouse-lib/lib/themes";
@@ -47,6 +47,22 @@ async function hydrate(markup: string): Promise<HTMLDivElement> {
 }
 
 describe("DocsThemeControl hydration", () => {
+  it("dismisses both responsive placements when either prompt is closed", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    await act(async () => {
+      root = createRoot(container!);
+      root.render(<><DocsThemeControl variant="inline" /><DocsThemeControl /></>);
+    });
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(2);
+
+    await act(async () => {
+      container!.querySelector<HTMLButtonElement>('[aria-label="Dismiss theme prompt"]')!.click();
+    });
+
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(0);
+  });
+
   it("does not flash or mismatch a prompt the reader already dismissed", async () => {
     dismissThemePrompt();
     const markup = prerender();
