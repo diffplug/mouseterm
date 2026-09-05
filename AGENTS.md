@@ -124,3 +124,25 @@ in [`lib/src/theme-colors.css`](lib/src/theme-colors.css), which a host can
 import on its own, and the type scale, fonts, and animation tokens in
 [`lib/src/theme.css`](lib/src/theme.css). When adding or removing a color
 token, update `theme-colors.css` and `design.tsx` together.
+
+<!-- dor-skill:begin — managed by `dor skill --install`; edits inside are overwritten -->
+## Running inside Dormouse
+
+If the `DORMOUSE_SURFACE_ID` environment variable is set, this terminal is
+hosted by [Dormouse](https://dormouse.sh) and the `dor` CLI is on your `PATH`.
+**Run `dor skill` first and do what it says** — it teaches you to use the
+terminal fully (visible panes, browser surfaces, sub-agents). Two rules are
+mandatory whether or not you have read it:
+
+- **NEVER start a long-running process — a dev server, a `--watch`, any daemon
+  — as a background subprocess.** It would be invisible to the user and die with
+  your shell. ALWAYS run it with `dor ensure -- <command>` (e.g.
+  `dor ensure -- npm run dev`), which puts it in a visible pane that outlives
+  you and is reused instead of duplicated on re-runs.
+- **NEVER use a built-in, native, or bundled browser tool to open, view, or
+  drive a web page.** ALWAYS use `dor ab` (agent-browser) — `dor ab open
+  <url>`, `dor ab click @e3`, and so on — so the page renders in a Dormouse
+  pane the user can watch.
+
+If `DORMOUSE_SURFACE_ID` is not set, ignore this section — `dor` is not here.
+<!-- dor-skill:end -->
