@@ -174,14 +174,15 @@ describe('resolveSurface', () => {
     expect([handle.cols, handle.rows]).toEqual([100, 28]);
   });
 
-  it('leaves the last known size standing when nobody answers a resize', async () => {
+  it('fails when nobody answers a resize and retains only the cached dimensions', async () => {
     const attach = bridge.provider.resolveSurface('s1', {});
     answer(asks()[0]!, [{ ptyId: 'pty-1', cols: 80, rows: 24 }]);
     const handle = (await attach)!;
 
     const pending = handle.resize(100, 30);
     answer(asks()[1]!, []);
-    expect(await pending).toEqual({ cols: 80, rows: 24 });
+    await expect(pending).rejects.toThrow('surface owner unavailable');
+    expect([handle.cols, handle.rows]).toEqual([80, 24]);
   });
 });
 

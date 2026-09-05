@@ -551,6 +551,34 @@ describe('RemoteApiSession surface.attach', () => {
     ]);
   });
 
+  it('answers and unwinds a synchronous repaint failure after stream readiness', async () => {
+    const provider = new FakeProvider();
+    provider.addSurface('surface-1', 'pty-1');
+    vi.spyOn(provider, 'resizePty').mockImplementation(() => {
+      throw new Error('PTY unavailable');
+    });
+    const { session, sent } = makeSession(provider);
+
+    await attach(session, 80, 24);
+
+    expect(reply(sent, 'attach-1')).toEqual({
+      requestId: 'attach-1', ok: false, error: 'surface attach failed: PTY unavailable',
+    });
+    expect(provider.unstreamed).toEqual(['pty-1']);
+  });
+
+  it('rejects a non-string surface id before resolving it', async () => {
+    const provider = new FakeProvider();
+    const { session, sent } = makeSession(provider);
+    session.handle({
+      requestId: 'invalid', method: REMOTE_METHODS.surfaceAttach,
+      params: { surfaceId: 123, cols: 80, rows: 24 },
+    });
+    await settle();
+    expect(reply(sent, 'invalid').ok).toBe(false);
+    expect(provider.resolved).toEqual([]);
+  });
+
   it('bounces a one-row surface upward, where a bounce is not a no-op', async () => {
     vi.useFakeTimers();
     const provider = new FakeProvider();
@@ -750,6 +778,28 @@ describe('RemoteApiSession surface.attach', () => {
 });
 
 describe('RemoteApiSession terminal input', () => {
+  it.each([[100, 30], [80, 24]])('finishes the repaint bounce before resizing to %ix%i', async (cols, rows) => {
+    vi.useFakeTimers();
+    const provider = new FakeProvider();
+    provider.addSurface('surface-1', 'pty-1');
+    const { session, sent } = makeSession(provider);
+    await attach(session, 80, 24);
+
+    session.handle({
+      requestId: 'resize', method: REMOTE_METHODS.terminalResize,
+      params: { surfaceId: 'surface-1', cols, rows },
+    });
+    await settle();
+    expect(reply(sent, 'resize').result).toEqual({ cols, rows });
+    expect(provider.ptyResizes).toEqual([['pty-1', 80, 23], ['pty-1', 80, 24]]);
+    expect(provider.handleResizes).toEqual([['pty-1', cols, rows]]);
+
+    provider.ptyResizes.length = 0;
+    vi.advanceTimersByTime(60);
+    expect(provider.ptyResizes).toEqual([]);
+    session.dispose();
+  });
+
   it('rejects write and resize unless the surface is the current attachment', async () => {
     const provider = new FakeProvider();
     provider.addSurface('surface-1', 'pty-1', 80, 24);

@@ -118,6 +118,8 @@ Source of truth: `TerminalDataEvent` in `remote-lib-common/src/remote/wire.ts`, 
 2. Burrow resizes through the owning xterm's resize path (last-attach-wins); the resulting `SIGWINCH` repaint is what fills the client's screen. (rationale)
 3. **If the requested size equals the current size**, that resize would be a no-op, so the Burrow bounces rows on the **PTY only** — the owning xterm is already correct — and restores them `FORCE_REPAINT_BOUNCE_MS` later. The bounce goes down, except from a 1-row surface, where `rows - 1` would itself be a no-op firing no `SIGWINCH`.
 
+**Must finish a pending bounce before this attachment's next `terminal.resize`**, including a same-size request, and cancel its delayed restore.
+
 **Normal-screen history does not regenerate on resize** and is absent from the shipped protocol (see [Future](#future): in-flight replay, then semantic scrollback).
 
 Payloads: `AttachParams`, `TerminalAttachResult`, `TerminalDataEvent`, `TerminalClosedEvent`, `TerminalWriteParams`, `TerminalResizeParams`. PTY bytes are base64url.
@@ -131,7 +133,7 @@ Payloads: `AttachParams`, `TerminalAttachResult`, `TerminalDataEvent`, `Terminal
 * **Exit drops the attachment.** The Burrow emits `terminal.closed` and *then* drops it, so a later write/resize is rejected ("surface is not attached") rather than reaching the disposed terminal.
 * **A late resolution never becomes an attachment.** Disposing the Viewer, and any newer `surface.attach`, invalidate an in-flight resolution; a handle arriving afterwards is ignored without subscribing or replacing the current attachment. (rationale)
 * **Every attach is answered** — a superseded one with an error, never left pending, since the Client holds the request and its event subscription open until answered. Sole exception: a disposed session has no transport to answer on.
-* **The result promises a size already applied**: no acknowledgement until the required resize settles, since resolution and resize cross process/window boundaries. **Rejected resolution, attach resize, and `terminal.resize` are protocol errors**, contained inside the session rather than unhandled Burrow-process rejections.
+* **Must acknowledge only a size the owner reports applied.** Missing resize answers, rejected resolution or resize, and synchronous attach-start failures are protocol errors contained inside the session.
 * **Subscription and liveness are atomic.** The stream is subscribed before the resize settles (some PTYs repaint synchronously), so **a PTY that died while `resolveSurface` was in flight must still be observed**: every production provider replays the recorded exit before the subscription is usable — local ones synchronously, a VS Code peer by acknowledging on the same ordered socket *after* any replay, which the session awaits before resizing or answering. The attachment is then torn down first, the attach answered `surface closed while attaching`, and the buffered `terminal.closed` dropped rather than flushed — the Client never gets the subscription it would have arrived on.
 
 Source of truth: `RemoteApiSession.#attach` / `#beginAttach` in `lib/src/remote/burrow/remote-api.ts`, pinned by `lib/src/remote/burrow/remote-api.test.ts`; the peer `subscribe` / `subscribed` frames in `vscode-ext/src/peer-link.ts`.

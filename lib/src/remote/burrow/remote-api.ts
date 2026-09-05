@@ -242,7 +242,7 @@ export class RemoteApiSession {
 
   #attach(request: RemoteRequest): void {
     const params = request.params as AttachParams | undefined;
-    if (!params?.surfaceId) {
+    if (typeof params?.surfaceId !== 'string' || !params.surfaceId) {
       this.#fail(request, `no such surface: ${params?.surfaceId ?? '(none)'}`);
       return;
     }
@@ -444,7 +444,9 @@ export class RemoteApiSession {
       finish({ cols: handle.cols, rows: handle.rows });
     };
 
-    void stream.ready.then(beginResize, (error) => {
+    // Catch failures from readiness *and* from starting the resize: providers
+    // may throw synchronously even though readiness itself fulfilled.
+    void stream.ready.then(beginResize).catch((error) => {
       if (this.#disposed) return;
       const closed = this.#attachment !== installedAttachment;
       if (this.#attachment === installedAttachment) this.#teardownAttachment();
@@ -495,6 +497,14 @@ export class RemoteApiSession {
     const handle = attachment.handle;
     const cols = clampTerminalDimension(params.cols, handle.cols);
     const rows = clampTerminalDimension(params.rows, handle.rows);
+
+    if (attachment.bounceTimer) {
+      clearTimeout(attachment.bounceTimer);
+      attachment.bounceTimer = null;
+      // Restore before the next size writer, including a same-size request
+      // whose xterm resize is a no-op. The old timer must not undo that writer.
+      this.#provider.resizePty(handle.ptyId, handle.cols, handle.rows);
+    }
 
     void handle.resize(cols, rows).then(
       (size) => {
