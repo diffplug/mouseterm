@@ -427,6 +427,31 @@ function dispatchMouseFromPointer(
   target.dispatchEvent(mouseEvent);
 }
 
+/**
+ * A rAF plus a set of delayed retries, cancelled as one. Focus and blur each
+ * own one because each supersedes the other's pending retries.
+ */
+class RetrySchedule {
+  private timers: number[] = [];
+  private frame: number | null = null;
+
+  run(action: () => void, delays: number[]): void {
+    this.cancel();
+    this.frame = window.requestAnimationFrame(action);
+    this.timers = delays.map((delay) => window.setTimeout(action, delay));
+  }
+
+  // Bound so it can be handed straight to an effect cleanup.
+  cancel = (): void => {
+    for (const timer of this.timers) window.clearTimeout(timer);
+    this.timers = [];
+    if (this.frame !== null) {
+      window.cancelAnimationFrame(this.frame);
+      this.frame = null;
+    }
+  };
+}
+
 export function MobileTerminalUi({
   terminal,
   activeSection,
@@ -465,11 +490,9 @@ export function MobileTerminalUi({
   const gestureCompletionTimerRef = useRef<number | null>(null);
   const cursorPointerIdRef = useRef<number | null>(null);
   const cursorPointerTargetRef = useRef<EventTarget | null>(null);
-  // Cancel delayed blur retries on unmount, including after test DOM teardown.
-  const blurRetryTimersRef = useRef<number[]>([]);
-  const blurRetryFrameRef = useRef<number | null>(null);
-  const focusRetryTimersRef = useRef<number[]>([]);
-  const focusRetryFrameRef = useRef<number | null>(null);
+  // Cancelled on unmount, including after test DOM teardown.
+  const [blurRetries] = useState(() => new RetrySchedule());
+  const [focusRetries] = useState(() => new RetrySchedule());
   const [gestureState, setGestureState] = useState<MobileGestureTrackingState>(MOBILE_GESTURE_IDLE_STATE);
   const [pendingGestureConfirmation, setPendingGestureConfirmation] = useState<MobileGestureConfirmationAction | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -490,24 +513,6 @@ export function MobileTerminalUi({
     gestureCompletionTimerRef.current = null;
   }, []);
 
-  const cancelBlurRetries = useCallback(() => {
-    for (const timer of blurRetryTimersRef.current) window.clearTimeout(timer);
-    blurRetryTimersRef.current = [];
-    if (blurRetryFrameRef.current !== null) {
-      window.cancelAnimationFrame(blurRetryFrameRef.current);
-      blurRetryFrameRef.current = null;
-    }
-  }, []);
-
-  const cancelFocusRetries = useCallback(() => {
-    for (const timer of focusRetryTimersRef.current) window.clearTimeout(timer);
-    focusRetryTimersRef.current = [];
-    if (focusRetryFrameRef.current !== null) {
-      window.cancelAnimationFrame(focusRetryFrameRef.current);
-      focusRetryFrameRef.current = null;
-    }
-  }, []);
-
   const scheduleGestureCompletionClear = useCallback(() => {
     clearGestureCompletionTimer();
     gestureCompletionTimerRef.current = window.setTimeout(() => {
@@ -518,15 +523,15 @@ export function MobileTerminalUi({
 
   const focusInput = useCallback(() => {
     if (!interactive) return;
-    cancelBlurRetries();
+    blurRetries.cancel();
     onFocusInput?.();
     inputRef.current?.focus({ preventScroll: true });
-  }, [cancelBlurRetries, interactive, onFocusInput]);
+  }, [blurRetries, interactive, onFocusInput]);
 
   const blurInput = useCallback(() => {
-    cancelFocusRetries();
+    focusRetries.cancel();
     inputRef.current?.blur();
-  }, [cancelFocusRetries]);
+  }, [focusRetries]);
 
   const configurePaneTextInputs = useCallback(() => {
     const host = terminalHostRef.current;
@@ -551,14 +556,10 @@ export function MobileTerminalUi({
     };
     // Wall can restore xterm focus in rAF; retry across its focus window. A new
     // blur supersedes the old retries. See mobile-terminal-ui.md.
-    cancelFocusRetries();
-    cancelBlurRetries();
+    focusRetries.cancel();
     blurActivePaneInput();
-    for (const delay of [0, 50, 200]) {
-      blurRetryTimersRef.current.push(window.setTimeout(blurActivePaneInput, delay));
-    }
-    blurRetryFrameRef.current = window.requestAnimationFrame(blurActivePaneInput);
-  }, [cancelBlurRetries, cancelFocusRetries, configurePaneTextInputs]);
+    blurRetries.run(blurActivePaneInput, [0, 50, 200]);
+  }, [blurRetries, configurePaneTextInputs, focusRetries]);
 
   const setKeyboardMode = useCallback((nextMode: MobileTerminalKeyboardMode) => {
     if (activeKeyboardMode === undefined && activeSection === undefined) {
@@ -638,10 +639,9 @@ export function MobileTerminalUi({
       blurInput();
       return;
     }
-    focusRetryFrameRef.current = window.requestAnimationFrame(focusInput);
-    focusRetryTimersRef.current = [120, 500].map((delay) => window.setTimeout(focusInput, delay));
-    return cancelFocusRetries;
-  }, [blurInput, cancelFocusRetries, focusInput, interactive, keyboardMode]);
+    focusRetries.run(focusInput, [120, 500]);
+    return focusRetries.cancel;
+  }, [blurInput, focusInput, focusRetries, interactive, keyboardMode]);
 
   useEffect(() => {
     if (touchMode === 'cursor' && !cursorTouchAvailable) {
@@ -695,7 +695,7 @@ export function MobileTerminalUi({
 
   useEffect(() => clearGestureCompletionTimer, [clearGestureCompletionTimer]);
 
-  useEffect(() => cancelBlurRetries, [cancelBlurRetries]);
+  useEffect(() => blurRetries.cancel, [blurRetries]);
 
   const handlePanePointerDownCapture = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (isGestureDialogTarget(event.target)) return;
