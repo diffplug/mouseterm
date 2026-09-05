@@ -511,7 +511,8 @@ describe('TerminalProtocolParser', () => {
   });
 
   it('orders semantic events across PTY reads when the clock stalls or moves backward', () => {
-    const now = vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000);
+    const epoch = Date.now();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(epoch);
     try {
       const parser = new TerminalProtocolParser();
       let pane = createTerminalPaneState();
@@ -523,7 +524,7 @@ describe('TerminalProtocolParser', () => {
         for (const event of collectTerminalSemanticEvents(parser.process(chunk).events)) {
           pane = reduceTerminalState(pane, event);
         }
-        now.mockReturnValue(1_999_999_999_999);
+        now.mockReturnValue(epoch - 1);
       }
       expect(pane.lastCommand?.finalTerminalTitle?.title).toBe('vitest');
       expect(deriveHeader(pane, [pane]).primary).toBe('<idle> vitest');
