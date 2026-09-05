@@ -15,6 +15,7 @@
 - **Must hide a retained helper without terminating its PTY**, parking its xterm element in the document. Revealing or promoting reuses the same element; cleanup from an older mount cannot detach a newer mount.
 - **Must keep a preserved helper's directory independent of its source**, showing both locations prominently when they differ. Unknown directory state is not evidence of a match.
 - **Must retain exited output**, offer Reset, and avoid automatic restart loops.
+- **Must pause status and process-inspection polling while the context is hidden**, invalidating cached idle results. Reopening resumes status from current terminal state; source closure inspects work on demand.
 
 | State | Status and action |
 |---|---|
@@ -49,6 +50,8 @@ Source of truth: `beginPromotion` / `cancelPromotion` / `finishPromotion` / `hel
 **Must default to `git status`; an empty command disables autorun.** An explicit Modify edit applies to new and reset helpers, never a retained one. Its status describes the command captured at creation, even when the global default changes.
 
 **Must accept only a single command line of at most 4096 characters**, excluding CR, LF, and NUL. The host persists only this preference in `~/.dormouse/helper-terminal.json`, using atomic replacement with private file permissions. All desktop renderers read that shared preference through the host; the fake adapter keeps a deterministic in-memory setting.
+
+**Must enforce command validity at the host.** A rejected edit keeps the prior preference and displays the error in Modify.
 
 Source of truth: `context` in `standalone/sidecar/pty-core.js`; `terminalContext` in `lib/src/lib/platform/fake-adapter.ts`; `TerminalContextRequest` in `lib/src/lib/terminal-context-types.ts`.
 

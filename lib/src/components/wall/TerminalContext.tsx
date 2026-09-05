@@ -2,7 +2,7 @@ import { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore 
 import { TerminalPane } from '../TerminalPane';
 import { TerminalContextView, type ContextScan } from './TerminalContextView';
 import { TerminalContextContext, WallActionsContext } from './wall-context';
-import { disposeHelper, getHelper, helperRevision, openHelper, subscribeHelpers } from '../../lib/helper-terminal';
+import { disposeHelper, getHelper, helperRevision, openHelper, setHelperVisible, subscribeHelpers } from '../../lib/helper-terminal';
 import { getPlatform, IS_MAC, IS_WINDOWS } from '../../lib/platform';
 import { buildAppTitleResolver, commandArgv0, createTerminalPaneState, cwdDisplay, deriveSurfaceLabel, explainTerminalTitle, type CwdState } from '../../lib/terminal-state';
 import { focusSession, getActivitySnapshot, getTerminalPaneStateSnapshot, isCommandWatched, setCommandWatched, subscribeToActivity, subscribeToTerminalPaneState, subscribeToWatchedCommands, getWatchedCommandsSnapshot, toggleSessionTodo } from '../../lib/terminal-registry';
@@ -36,11 +36,12 @@ export function TerminalContext({ id, title }: { id: string; title?: string }) {
   const display = (location: CwdState) => cwdDisplay(location, { style: 'full', homePath: home });
   useEffect(() => {
     let cancelled = false;
+    setHelperVisible(id, true);
     void openHelper(id).catch(e => { if (!cancelled) setHelperError(errorText(e)); });
     void platform.terminalContext?.({ op: 'settings' }).then(info => { if (!cancelled) { setHome(info.home ?? ''); setDefaultCommand(info.command ?? DEFAULT_HELPER_COMMAND); } }).catch(() => {});
     void platform.getOpenPorts(id).then(ports => { if (!cancelled) setScan({ status: 'loaded', entries: listenerUrlsByPort(ports) }); }, () => { if (!cancelled) setScan({ status: 'failed' }); });
     wrapper.current?.querySelector<HTMLElement>('[data-terminal-context]')?.focus({ preventScroll: true });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; setHelperVisible(id, false); };
   }, [id, platform]);
   useEffect(() => {
     const outside = (e: PointerEvent) => { if (!wrapper.current?.contains(e.target as Node)) context.close(); };

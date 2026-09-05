@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registry, pendingShellOpts, type TerminalEntry } from './terminal-store';
 import { applyTerminalSemanticEvents, resetTerminalPaneState, removeTerminalPaneState } from './terminal-state-store';
-import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHelper, helperHasWork, openHelper, restoreHelper } from './helper-terminal';
+import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHelper, helperHasWork, openHelper, restoreHelper, setHelperVisible } from './helper-terminal';
 
 const host = vi.hoisted(() => ({ writePty: vi.fn(), terminalContext: vi.fn() }));
 vi.mock('./platform', () => ({ getPlatform: () => host }));
@@ -16,11 +16,46 @@ beforeEach(() => {
   vi.useFakeTimers(); host.writePty.mockReset(); host.terminalContext.mockReset();
   host.terminalContext.mockResolvedValue({ home: '/home/user', command: 'git status', busy: false });
   registry.set('parent', { untouched: true } as TerminalEntry); resetTerminalPaneState('parent');
+  setHelperVisible('parent', true);
 });
-afterEach(() => { disposeHelper('parent'); registry.clear(); pendingShellOpts.clear(); removeTerminalPaneState('parent'); vi.useRealTimers(); });
+afterEach(() => { setHelperVisible('parent', false); disposeHelper('parent'); registry.clear(); pendingShellOpts.clear(); removeTerminalPaneState('parent'); vi.useRealTimers(); });
 const prompt = (id: string) => applyTerminalSemanticEvents(id, [{ type: 'promptStart' }, { type: 'promptEnd' }]);
 
 describe('helper lifecycle', () => {
+  it('stops hidden polling, invalidates idle, and still checks running work on demand', async () => {
+    const helper = await openHelper('parent');
+    registry.get(helper.id)!.untouched = false;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(registry.get(helper.id)?.helperBusy).toBe(false);
+    setHelperVisible('parent', false);
+    host.terminalContext.mockClear();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(host.terminalContext).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(registry.get(helper.id)?.helperBusy).toBeUndefined();
+    host.terminalContext.mockResolvedValue({ busy: true });
+    expect(await helperHasWork(helper)).toBe(true);
+    setHelperVisible('parent', true);
+    expect(await openHelper('parent')).toBe(helper);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(host.terminalContext.mock.calls.length).toBeGreaterThan(1);
+  });
+  it('does not start a polling loop when creation completes after the menu closes', async () => {
+    let resolve!: (value: unknown) => void;
+    host.terminalContext.mockImplementationOnce(() => new Promise(r => { resolve = r; }));
+    const opening = openHelper('parent');
+    setHelperVisible('parent', false);
+    resolve({ command: 'git status' });
+    const helper = await opening;
+    prompt(helper.id);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(host.writePty).not.toHaveBeenCalled();
+    setHelperVisible('parent', true);
+    await openHelper('parent');
+    await vi.advanceTimersByTimeAsync(100);
+    expect(host.writePty).toHaveBeenCalledExactlyOnceWith(helper.id, 'git status\r');
+  });
   it('keeps ownership stable when a reopened menu resets or promotes during promotion', async () => {
     const helper = await openHelper('parent');
     const entry = registry.get(helper.id);

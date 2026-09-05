@@ -12,12 +12,27 @@ const READINESS_TIMEOUT_MS = 8000;
 const WORK_INSPECTION_MS = 2000;
 const helpers = new Map<string, HelperTerminal>();
 const pending = new Map<string, Promise<HelperTerminal>>();
+const visibleParents = new Set<string>();
 const listeners = new Set<() => void>();
 let revision = 0;
 export function notifyHelpers(): void { revision++; for (const listener of listeners) listener(); }
 export const subscribeHelpers = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 export const helperRevision = () => revision;
 export const getHelper = (parentId: string) => helpers.get(parentId);
+
+export function setHelperVisible(parentId: string, visible: boolean): void {
+  if (visible) visibleParents.add(parentId);
+  else visibleParents.delete(parentId);
+  const helper = helpers.get(parentId);
+  if (!helper) return;
+  if (visible) watchHelper(helper);
+  else {
+    clearInterval(helper.timer);
+    // An old idle result cannot prove a hidden helper is still idle at quit.
+    const entry = registry.get(helper.id);
+    if (entry) entry.helperBusy = undefined;
+  }
+}
 
 const atPrompt = (id: string) => {
   const state = getTerminalPaneState(id);
@@ -26,6 +41,8 @@ const atPrompt = (id: string) => {
 
 /** One poll per helper advances its status and, once settled, refreshes the host work inspection. */
 function watchHelper(helper: HelperTerminal, launchCwd?: string): void {
+  clearInterval(helper.timer);
+  if (!visibleParents.has(helper.parentId) || helper.promoting) return;
   const started = Date.now();
   let lastInspection = 0;
   let inspecting = false;
@@ -46,7 +63,10 @@ function watchHelper(helper: HelperTerminal, launchCwd?: string): void {
     if (status === 'exited') { clearInterval(helper.timer); return; }
     if (status === 'waiting' || status === 'running' || inspecting || Date.now() - lastInspection < WORK_INSPECTION_MS) return;
     inspecting = true; lastInspection = Date.now();
-    void helperHasWork(helper).catch(() => { entry.helperBusy = true; }).finally(() => { inspecting = false; });
+    void helperHasWork(helper).catch(() => { entry.helperBusy = true; }).finally(() => {
+      inspecting = false;
+      if (!visibleParents.has(helper.parentId)) entry.helperBusy = undefined;
+    });
   }, STATUS_POLL_MS);
 }
 
@@ -94,6 +114,9 @@ export async function openHelper(parentId: string): Promise<HelperTerminal> {
     const previous = helpers.get(parentId);
     if (previous) {
       const entry = registry.get(previous.id);
+      if (entry?.exited) previous.status = 'exited';
+      else if (!entry?.untouched) previous.status = 'preserved';
+      else if (previous.status === 'running' && atPrompt(previous.id)) previous.status = 'completed';
       if (!entry?.untouched || (previous.status !== 'completed' && previous.status !== 'off') || await helperHasWork(previous)) return previous;
       // Input or ownership can change during process inspection.
       if (helpers.get(parentId) !== previous || !entry.untouched) return helpers.get(parentId) ?? previous;

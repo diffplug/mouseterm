@@ -1291,8 +1291,8 @@ export function Wall({
 
   const wallActions: WallActions = useMemo(() => ({
     onKill: (id: string) => {
+      exitTerminalMode();
       const confirmSource = () => {
-        exitTerminalMode();
         const door = doorsRef.current.find(item => item.id === id);
         if (door) {
           handleReattachRef.current(door, { enterPassthrough: false, afterRestore: isUntouched(id) ? 'kill-immediately' : 'confirm-kill' });

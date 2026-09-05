@@ -253,4 +253,6 @@ Source of truth: `getScrollbackReceived` / `getScrollbackSince` in `vscode-ext/s
 
 **Must expose terminal context operations through correlated host requests**, reporting errors and timeouts. The VS Code router checks Workspace ownership for per-terminal operations and helper parent metadata.
 
+**Must acknowledge Windows directory opening when Explorer starts**, reporting process-launch errors without waiting for its exit. macOS and Linux retain opener exit-error reporting.
+
 Source of truth: `TerminalContextRequest` in `lib/src/lib/terminal-context-types.ts`; `PtyInfo` in `lib/src/lib/platform/types.ts`; `resumeOrRestore` in `lib/src/lib/reconnect.ts`; `context` in `standalone/sidecar/pty-core.js`; `attachRouter` in `vscode-ext/src/message-router.ts`.

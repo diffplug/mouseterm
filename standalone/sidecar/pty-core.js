@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFile, execFileSync } = require('node:child_process');
+const { execFile, execFileSync, spawn } = require('node:child_process');
 
 function safeResolve(resolver) {
   try {
@@ -1030,6 +1030,23 @@ function getOpenPortsForPid(rootPid, runtime = {}) {
 
 module.exports.getOpenPortsForPid = getOpenPortsForPid;
 
+/** Directory validation belongs to context(); this only launches the native UI. */
+function openNativeDirectory(nativePath, done, runtime = {}) {
+  const platform = runtime.platform || process.platform;
+  if (platform === 'win32') {
+    // Explorer is a shell UI: acknowledge process launch, not its lifetime or
+    // exit status. Keep OS-level launch errors visible to the caller.
+    const child = (runtime.spawn || spawn)('explorer.exe', [nativePath], { windowsHide: true, stdio: 'ignore' });
+    let settled = false;
+    const finish = error => { if (!settled) { settled = true; done(error); } };
+    child.once('error', finish);
+    child.once('spawn', () => { child.unref(); finish(null); });
+  } else {
+    (runtime.execFile || execFile)(platform === 'darwin' ? 'open' : 'xdg-open', [nativePath], { windowsHide: true }, done);
+  }
+}
+module.exports.openNativeDirectory = openNativeDirectory;
+
 /**
  * Shared PTY manager — the single place where node-pty processes are managed.
  *
@@ -1125,8 +1142,8 @@ module.exports.create = function create(send, ptyModule, { replay = false } = {}
         session.chunks.push(data);
         session.chars += data.length;
         // Drop whole chunks off the front, then trim the head: O(chunk) per write.
-        while (session.chars > REPLAY_CHARS && session.chunks.length > 1) session.chars -= session.chunks.shift().length;
-        if (session.chars > REPLAY_CHARS) { session.chunks[0] = session.chunks[0].slice(-REPLAY_CHARS); session.chars = REPLAY_CHARS; }
+        while (session.chunks.length > 1 && session.chars - session.chunks[0].length >= REPLAY_CHARS) session.chars -= session.chunks.shift().length;
+        if (session.chars > REPLAY_CHARS) { session.chunks[0] = session.chunks[0].slice(session.chars - REPLAY_CHARS); session.chars = REPLAY_CHARS; }
       }
       send('data', { id, data });
     });
@@ -1254,9 +1271,8 @@ module.exports.create = function create(send, ptyModule, { replay = false } = {}
       } else if (request.op === 'openDirectory') {
         if (typeof request.path !== 'string' || !path.isAbsolute(request.path) || request.path.includes('\0') || !directoryExists(request.path)) throw new Error('Directory is unavailable');
         const nativePath = fs.realpathSync(request.path);
-        const exe = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer.exe' : 'xdg-open';
         // Absolute canonical path is one argument; no shell interprets OSC text.
-        execFile(exe, [nativePath], { windowsHide: true }, (error) => {
+        openNativeDirectory(nativePath, (error) => {
           send('context', { ...result, ...(error ? { error: error.message } : {}) });
         });
         return;
