@@ -102,7 +102,10 @@ test('redactor failure removes every published sink', (t) => {
   for (const sink of sinks) assert.equal(existsSync(join(dir, sink)), false, sink);
 });
 
-for (const [verdict, cliExit, expected] of [['PASS', 0, 0], ['FAIL', 0, 1], ['INCONCLUSIVE', 0, 1], ['PASS extra', 0, 1], ['PASS', 7, 1]]) {
+// 'FAIL \u2014 explained' pins the grammar against CI's: an appended explanation is
+// still a finding, not an unreadable fragment. Status alone cannot tell the two
+// apart (both exit 1), so that row also checks the message.
+for (const [verdict, cliExit, expected] of [['PASS', 0, 0], ['FAIL', 0, 1], ['FAIL \u2014 explained', 0, 1], ['INCONCLUSIVE', 0, 1], ['PASS extra', 0, 1], ['PASS', 7, 1]]) {
   test(`local runner: ${verdict}, CLI exit ${cliExit}`, (t) => {
     const { dir, env } = fixture(t);
     copyFileSync(join(repo, 'scripts/security-audit-local.sh'), join(dir, 'scripts/security-audit-local.sh'));
@@ -121,6 +124,9 @@ for (const [verdict, cliExit, expected] of [['PASS', 0, 0], ['FAIL', 0, 1], ['IN
     // errexit inside it, so a failed CLI needs an explicit return.
     const result = spawnSync('bash', ['scripts/security-audit-local.sh'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(result.status, expected, result.stderr);
+    if (verdict.startsWith('FAIL')) {
+      assert.ok(!result.stderr.includes('no readable verdict'), result.stderr);
+    }
     for (const fragment of fragments) assert.ok(existsSync(join(dir, fragment)), fragment);
   });
 }

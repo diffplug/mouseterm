@@ -73,9 +73,14 @@ run_domain() {
   fi
   if [ -s "$out" ]; then
     echo "==> wrote $out"
+    # The same grammar CI applies in .github/workflows/security-audit.yaml, and
+    # for the same reason: a failure with an appended explanation is still a
+    # finding, so only the PASS arm matches exactly. Drifting from CI here would
+    # report a dissenting fragment as unreadable.
     case "$(head -n1 "$out")" in
       'VERDICT: PASS') return 0 ;;
-      'VERDICT: FAIL'|'VERDICT: INCONCLUSIVE') return 1 ;;
+      'VERDICT: FAIL'*) echo "==> $domain reports FAIL" >&2; return 1 ;;
+      'VERDICT: INCONCLUSIVE') return 1 ;;
       *) echo "==> $domain produced no readable verdict" >&2; return 1 ;;
     esac
   else
