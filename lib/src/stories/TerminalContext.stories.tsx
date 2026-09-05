@@ -110,18 +110,17 @@ function ContextPrototype({ scenario, initialDetail = null, paneWidth }: { scena
     </div>
     <pre className="m-0 p-3 leading-6 text-muted">{'~/projects/dormouse ❯ pnpm dev\n\n  VITE v8.0.14  ready in 182 ms\n\n  ➜  Local:   http://localhost:5173/\n  ➜  Network: use --host to expose\n\n12:04:31 [vite] (client) hmr update /src/App.tsx'}</pre>
     <section aria-label="Terminal context" className={`${POPUP_SURFACE_CLASS} absolute bottom-8 left-0 right-8 flex flex-col overflow-hidden`} style={{ top: PANE_HEADER_HEIGHT_PX }}>
-      <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border px-3">
-        <span className="font-semibold">Terminal context</span>
-        <Action label="Copy surface identifier"><span className="text-muted">surface:3</span><CopyIcon size={12} /></Action>
-        <div className="ml-auto flex items-center gap-1 text-muted">
-          <Action label="Close terminal context"><XIcon size={15} /></Action>
-        </div>
-      </div>
-
       <div className="shrink-0 px-3 py-2">
         <div className="grid grid-cols-[4rem_1fr] items-center gap-y-1">
           <span className="text-muted">Title</span>
-          <div className="flex h-6 items-center gap-1.5"><span>pnpm dev</span><Action label="Explain this title" onClick={() => setDetail(detail === 'title' ? null : 'title')}><BugBeetleIcon size={15} /></Action></div>
+          <div className="flex h-6 min-w-0 items-center gap-1.5">
+            <span className="truncate">pnpm dev</span>
+            <Action label="Explain this title" onClick={() => setDetail(detail === 'title' ? null : 'title')}><BugBeetleIcon size={15} /></Action>
+            <div className="ml-auto flex shrink-0 items-center gap-2 text-muted">
+              <Action label="Copy surface identifier"><span>surface:3</span><CopyIcon size={12} /></Action>
+              <Action label="Close terminal context"><XIcon size={15} /></Action>
+            </div>
+          </div>
           <span className="text-muted">Dir</span>
           <div className="flex h-6 items-center gap-1.5"><span title="/Users/ntwigg/projects/dormouse">{PARENT_DIR}</span><Action label="Open directory in Finder"><ArrowSquareOutIcon size={15} /></Action><Action label="Copy absolute path: /Users/ntwigg/projects/dormouse"><CopyIcon size={14} /></Action></div>
           <span className="text-muted">Ports</span>
@@ -177,7 +176,7 @@ function ContextPrototype({ scenario, initialDetail = null, paneWidth }: { scena
       </div>
 
       {detail && <div className="absolute inset-0 z-10 bg-app-bg/35" onClick={() => setDetail(null)}>
-        <div role="dialog" aria-label={detail === 'title' ? 'Title sources' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal'} className={`${POPUP_SURFACE_CLASS} absolute left-3 right-3 ${detail === 'title' ? 'top-[76px]' : 'top-[200px]'} p-4`} onClick={event => event.stopPropagation()}>
+        <div role="dialog" aria-label={detail === 'title' ? 'Title sources' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal'} className={`${POPUP_SURFACE_CLASS} absolute left-3 right-3 ${detail === 'title' ? 'top-9' : 'top-40'} p-4`} onClick={event => event.stopPropagation()}>
           <div className="mb-3 flex items-center justify-between font-semibold"><span>{detail === 'title' ? 'Why this title?' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal?'}</span><Action label="Close details" onClick={() => setDetail(null)}><XIcon size={14} /></Action></div>
           {detail === 'title' ? <>
             <div className="mb-3 text-muted">Current title: <span className="text-foreground">pnpm dev</span></div>

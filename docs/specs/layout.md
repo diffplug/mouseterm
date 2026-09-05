@@ -382,7 +382,9 @@ A store commit that empties the tree (last pane killed or minimized) triggers th
 
 **Must keep the Terminal context layout prototype isolated to Storybook.** It uses static terminal output and local presentation state; its controls open visual examples without spawning helpers or changing production menus.
 
-**Must keep the prototype's helper header on one line**, hiding its name at narrow widths. Notification details appear directly when present; the outer header has no terminal clipboard actions.
+**Must put the prototype's Surface ref and close button at the right of the Title row**, without a separate heading row or terminal clipboard actions.
+
+**Must keep the prototype's helper header on one line**, hiding its name at narrow widths. Notification details appear directly when present.
 
 Source of truth: `TerminalContextStory` in `lib/src/stories/TerminalContext.stories.tsx`.
 
