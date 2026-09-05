@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
+mod log_tail;
 use std::{
     collections::HashMap,
     env,
@@ -264,21 +265,14 @@ fn set_macos_dock_icon() {
 
 fn read_log_tail(max_bytes: usize) -> Result<String, String> {
     let path = log_path();
-    let contents = std::fs::read_to_string(path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
-    if contents.len() <= max_bytes {
-        return Ok(contents);
-    }
-    // Slice on a char boundary so we never split a multi-byte sequence.
-    let start = contents.len() - max_bytes;
-    let start = (start..contents.len())
-        .find(|&i| contents.is_char_boundary(i))
-        .unwrap_or(contents.len());
-    Ok(contents[start..].to_string())
+    File::open(path)
+        .and_then(|mut file| log_tail::read_utf8_tail(&mut file, max_bytes))
+        .map_err(|e| format!("read {}: {e}", path.display()))
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 struct PtySpawnOptions {
+    helper: Option<JsonValue>,
     cols: Option<u16>,
     rows: Option<u16>,
     cwd: Option<String>,
@@ -449,6 +443,11 @@ fn dor_control_response(state: tauri::State<'_, SidecarState>, response: DorCont
         "data": response,
     });
     send_to_sidecar(&state, msg.to_string());
+}
+
+#[tauri::command(async)]
+fn pty_context(state: tauri::State<'_, SidecarState>, request: JsonValue) -> Result<JsonValue, String> {
+    request_from_sidecar_timeout(&state, "pty:context", request, Duration::from_secs(10))
 }
 
 #[tauri::command(async)]
@@ -731,7 +730,7 @@ fn read_clipboard_text(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn read_update_log() -> Result<String, String> {
     read_log_tail(10_000)
 }
@@ -783,21 +782,10 @@ fn read_session_from(dir: &Path, label: &str) -> Result<Option<String>, String> 
     }
 }
 
-/// Tighten a path to owner-only, best-effort.
-///
-/// Session snapshots are `PersistedWindow` blobs carrying terminal
-/// *transcripts* — scrollback, so whatever the user's shells printed:
-/// tokens echoed by a failing curl, a pasted connection string, the contents
-/// of a `.env` someone `cat`ed. Written under the umask they land `0644` in a
-/// `0755` directory, readable by every other account on the machine. The
-/// Burrow's own state file is already `0600` in a `0700` directory for a
-/// strictly *smaller* secret (`lib/src/host/remote/burrow-state-store.ts`), so
-/// this is closing an inconsistency, not inventing a rule.
-///
-/// Failures are reported rather than swallowed, and whether one is tolerable
-/// is the caller's decision: `write_file_atomically` (the session snapshot and
-/// the notepad archive) ignores it — a filesystem without the permission model
-/// it wants must not fail the save — while `burrow_state_dir` logs it.
+/// Tighten a path to owner-only. Session snapshots carry layout and metadata;
+/// legacy snapshots can contain transcripts. The session writer fails before
+/// writing bytes if either the directory or temp-file restriction fails.
+/// Other callers choose whether to propagate or log the error.
 ///
 /// The `mode` is a unix mode and is ignored on Windows, which has no such
 /// concept — there the equivalent is a DACL protected from inheritance carrying
@@ -822,13 +810,8 @@ fn restrict_to_owner(path: &Path, mode: u32) -> Result<(), String> {
 /// Replace `path`'s DACL with a single full-control entry for the current
 /// user, and mark it protected so nothing is inherited from the parent.
 ///
-/// Reports rather than swallowing. Whether a failure is tolerable depends on
-/// the caller, not on this function: `write_file_atomically` runs on the quit
-/// path and would rather keep its file under the ACL Windows gave it than lose it,
-/// while `burrow_state_dir` runs at sidecar start and is — per
-/// `docs/specs/security-remote.md` -> "Credentials at rest" — the *only* thing restricting
-/// `burrowToken` on Windows, so a failure there is a silent downgrade of the one
-/// control and must reach the log.
+/// Reports failures to the caller; snapshot writes require success before bytes
+/// are written, while Burrow state-directory setup logs failures.
 #[cfg(windows)]
 fn restrict_to_owner(path: &Path, _mode: u32) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
@@ -949,16 +932,12 @@ fn temp_write_path(path: &Path) -> PathBuf {
 }
 
 /// The directory `path` is written into, created and tightened to owner-only.
-///
-/// The `restrict_to_owner` failure is deliberately ignored: a filesystem without
-/// the permission model it wants must not fail the write itself — losing the
-/// data is worse than keeping it under the ACL the OS gave it.
 fn ensure_owner_only_parent(path: &Path) -> Result<&Path, String> {
     let dir = path
         .parent()
         .ok_or_else(|| format!("no parent directory for {}", path.display()))?;
     create_dir_all(dir).map_err(|e| format!("create dir {}: {e}", dir.display()))?;
-    let _ = restrict_to_owner(dir, 0o700);
+    restrict_to_owner(dir, 0o700)?;
     Ok(dir)
 }
 
@@ -969,15 +948,25 @@ fn ensure_owner_only_parent(path: &Path) -> Result<&Path, String> {
 /// text and both must survive a crash mid-write
 /// (docs/specs/security-local.md -> "Persisted state").
 fn write_file_atomically(path: &Path, contents: &str) -> Result<(), String> {
-    let dir = ensure_owner_only_parent(path)?;
+    write_file_with_permissions(path, contents, restrict_to_owner)
+}
+
+fn write_file_with_permissions(
+    path: &Path,
+    contents: &str,
+    restrict: impl Fn(&Path, u32) -> Result<(), String>,
+) -> Result<(), String> {
+    let dir = path.parent().ok_or_else(|| "no parent directory".to_string())?;
+    create_dir_all(dir).map_err(|e| format!("create dir: {e}"))?;
+    restrict(dir, 0o700)?;
     let tmp = temp_write_path(path);
     // Atomic replace: write a sibling temp file, fsync it, then rename over the
     // target so a crash mid-write can never truncate the previous good copy.
     {
         let mut f = File::create(&tmp).map_err(|e| format!("open temp: {e}"))?;
         // Before any bytes land: the rename below preserves the temp file's
-        // mode, so tightening here is what makes the final file 0600.
-        let _ = restrict_to_owner(&tmp, 0o600);
+        // mode, so tightening here is what makes the final snapshot 0600.
+        restrict(&tmp, 0o600)?;
         f.write_all(contents.as_bytes())
             .map_err(|e| format!("write temp: {e}"))?;
         f.sync_all().map_err(|e| format!("fsync temp: {e}"))?;
@@ -1000,6 +989,16 @@ fn write_file_atomically(path: &Path, contents: &str) -> Result<(), String> {
 // Owner-only before any bytes are written, and atomic-replace: both live in
 // `write_file_atomically` above (docs/specs/security-local.md -> "Persisted
 // state", docs/specs/standalone.md -> "Persistence").
+#[cfg(test)]
+fn write_session_with_permissions(
+    dir: &Path,
+    label: &str,
+    state: &str,
+    restrict: impl Fn(&Path, u32) -> Result<(), String>,
+) -> Result<(), String> {
+    write_file_with_permissions(&dir.join(session_file_name(label)), state, restrict)
+}
+
 fn write_session_to(dir: &Path, label: &str, state: &str) -> Result<(), String> {
     write_file_atomically(&dir.join(session_file_name(label)), state)
 }
@@ -1898,6 +1897,7 @@ pub fn run() {
             pty_theme_colors,
             pty_kill,
             pty_get_cwd,
+            pty_context,
             pty_get_open_ports,
             pty_graceful_kill_all,
             iframe_create_proxy_url,
@@ -2367,6 +2367,59 @@ mod tests {
         assert_eq!(
             read_session_from(dir.path(), "main").unwrap().as_deref(),
             Some(r#"{"v":2}"#),
+        );
+    }
+
+    #[test]
+    fn session_permission_failures_preserve_previous_snapshot_without_writing_bytes() {
+        for fail_mode in [0o700, 0o600] {
+            let dir = TempDir::new("sessions-permission-failure");
+            write_session_to(dir.path(), "main", "previous").unwrap();
+            let result = super::write_session_with_permissions(
+                dir.path(),
+                "main",
+                "private replacement",
+                |path, mode| {
+                    if mode == fail_mode {
+                        Err("permission denied".to_owned())
+                    } else {
+                        super::restrict_to_owner(path, mode)
+                    }
+                },
+            );
+            assert_eq!(result.unwrap_err(), "permission denied");
+            assert_eq!(
+                read_session_from(dir.path(), "main").unwrap().as_deref(),
+                Some("previous")
+            );
+            let tmp = dir.path().join("main.json.tmp");
+            if tmp.exists() {
+                assert_eq!(fs::metadata(tmp).unwrap().len(), 0);
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn session_write_tightens_directory_and_existing_temp_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new("sessions-permissions");
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        let tmp = dir.path().join("main.json.tmp");
+        fs::write(&tmp, "legacy").unwrap();
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o644)).unwrap();
+        write_session_to(dir.path(), "main", "private").unwrap();
+        assert_eq!(
+            fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(dir.path().join("main.json"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
         );
     }
 

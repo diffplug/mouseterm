@@ -51,7 +51,11 @@ a descendant that continues writing must tolerate a closed output sink.
 
 **Where the 8-byte socket name comes from.** macOS caps `sun_path` near 104 bytes and its `os.tmpdir()` already spends ~50, so the per-uid directory plus a 16-byte random component would not fit. Both spellings then use the same length; only the POSIX one is constrained.
 
-**What the server-speaks-first handshake buys.** Whoever merely bound the path — won a race, squatted a Windows pipe name — learns two nonces and nothing else: no token, and no proof replayable against the real server. The other order would hand a squatter the client's proof before it had shown any of its own.
+**What mutual proof buys.** Whoever merely bound the path receives the client's
+nonce and a client proof tied to the squatter's challenge, but no token or
+Surface request. That proof is not replayable against the real server's fresh
+random challenge. The server proves knowledge of the token before the client
+releases its request; it does not prove itself before receiving the client proof.
 
 **Why a failed handshake gets no reply at all.** A wrong answer and a port scan get the same nothing: any distinguishable response tells a prober a Dormouse control endpoint is at that path, exactly what the random name is spent hiding.
 

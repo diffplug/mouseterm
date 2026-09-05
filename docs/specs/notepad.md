@@ -20,6 +20,15 @@ A notepad is one ordered list of notes per Surface, held in renderer memory for 
 
 Source of truth: `lib/src/lib/notepad/types.ts`; `applyArchiveMutation`, `buildArchiveBatch`, `readNotepadArchive` and `toArchivedNote` in `lib/src/lib/notepad/archive-model.ts`; `pendingBatchId` in `lib/src/lib/notepad/notepad-store.ts`.
 
+## Helper terminals
+
+- **Must share the parent Surface's notepad while a terminal is a Helper**, capturing into the parent's ordered list and editing that same list from the Helper's notepad button.
+- **Never create source pins for Helper captures or show pin actions in the Helper's notepad view**, including for notes captured by the parent. Parent pins remain usable from the parent's ordinary notepad view.
+- **Must retain shared notes on Helper hide, refresh, Reset, and promotion.** Promotion leaves existing notes with the parent; the promoted Session starts with an empty independent notepad and ordinary capture behavior.
+- **Must archive shared notes once under the parent on parent closure**, using the parent's metadata and closing freeze. Helper disposal creates no archive batch.
+
+Source of truth: `addSelectionToNotepad` in `lib/src/lib/notepad/capture.ts`; `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `NotepadPanel` in `lib/src/components/NotepadPanel.tsx`. Tests: `lib/src/lib/notepad/capture.test.ts`, `lib/src/components/NotepadPanel.test.tsx`, `lib/src/components/Wall.test.tsx`.
+
 ## The archive port
 
 `PlatformAdapter.notepadArchive` is the whole host surface of the archive.
@@ -52,7 +61,7 @@ Source of truth: `extractRichRuns` and `captureRichSelection` in `lib/src/lib/no
 
 A pin is the runtime link from a captured note back to the scrollback it came from.
 
-- **Pin a normal-buffer capture with two xterm markers plus the normalized endpoint columns and the raw text.** Markers ride the buffer as it scrolls; the columns and text rebuild and prove the range.
+- **Pin an ordinary Session's normal-buffer capture with two xterm markers plus the normalized endpoint columns and the raw text.** Markers ride the buffer as it scrolls; the columns and text rebuild and prove the range.
 - Clicking a pin runs five steps: close the notepad; reattach a minimized Surface; resolve both markers and rebuild the range from their current lines and the stored columns; read it back and compare **exactly** with the captured raw text; on success scroll it into view and restore the Dormouse selection, outline and finalized popup included, plus the selection baseline a drag would leave — render-tick invalidation applies to a restored selection as to a dragged one.
 - **Column restoration after a resize is best effort**; the raw-text equality is what prevents navigating to the wrong output. Trimmed scrollback is discovered only when a pin is used.
 - **While the alternate buffer is active a pin is temporarily unavailable and kept** — the markers belong to the normal buffer and resolve again once the program exits; the notepad says to exit it.
@@ -109,6 +118,8 @@ Source of truth: `lib/src/components/NotepadArchiveView.tsx`; the Settings entry
 **A terminal Surface's process CWD is refreshed immediately before its batch is built** — every such Surface at once, bounded as one batch at `PROCESS_CWD_REFRESH_MS`, a timeout, refusal, or synchronous lookup error keeping whatever the Session last reported, and **never overriding, or even asking about, a CWD the shell integration reported** — so a shell with no CWD escapes still archives where it was, and no Surface pays for an answer that would be discarded.
 
 **The immediate-teardown primitive is reachable only once the archive question is settled, or from a Surface that cannot have taken a note**: `closeSurface` after its append lands, its own Close anyway branch, and `dor ensure`'s integration-timeout teardown of the throwaway split it just created.
+
+**Must check Helper work before archiving and again before teardown.** If work begins during the write, retain the live notes and pending batch for replacement on retry. The parent's notes stay frozen through both checks. Close anyway discards notes only after the same Helper guard accepts closure.
 
 On a failed archive:
 

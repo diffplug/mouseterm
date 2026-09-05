@@ -26,6 +26,7 @@ const invokeSave: SessionSaveFn = (value) => rawInvoke("save_session", { state: 
  */
 export class TauriSessionStore implements SessionKeyValueStore {
   private cache: string | null = null;
+  private savedValue: string | null = null;
   private saveInFlight = false;
   // Latest value queued behind an in-flight save, or null when nothing is
   // queued. A queued `value` is always a JSON string (never JS null), so null is
@@ -51,6 +52,7 @@ export class TauriSessionStore implements SessionKeyValueStore {
   /** Seed the cache from the host's persisted blob (or null) at boot. */
   hydrate(seed: string | null): void {
     this.cache = seed;
+    this.savedValue = seed;
   }
 
   // One blob per window ⇒ one slot, so the key is ignored: the axis that
@@ -62,9 +64,9 @@ export class TauriSessionStore implements SessionKeyValueStore {
   }
 
   setItem(_key: string, value: string): void {
-    // Backstop under the frontend dirty gate: a byte-identical blob issues no
-    // round-trip. Valid from the first write — `hydrate` boot-seeds the cache.
-    if (value === this.cache) return;
+    // Coalesce identical pending values, but allow retrying an idle failed
+    // write: updating the read cache does not mean the bytes reached disk.
+    if (value === this.cache && (this.saveInFlight || value === this.savedValue)) return;
     this.cache = value;
     if (this.saveInFlight) {
       this.pending = value;
@@ -76,6 +78,7 @@ export class TauriSessionStore implements SessionKeyValueStore {
 
   private flush(value: string): void {
     this.save(value)
+      .then(() => { this.savedValue = value; })
       .catch((err) => console.error("[tauri-session-store] save_session failed:", err))
       .finally(() => {
         if (this.pending !== null) {

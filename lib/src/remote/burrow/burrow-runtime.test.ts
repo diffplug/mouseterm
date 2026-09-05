@@ -111,7 +111,7 @@ describe('BurrowRuntime end-to-end ceremonies', () => {
 
   function makeBurrow(
     loadAcl: () => BurrowAclRecord[] = () => [],
-    options: { withSession?: boolean } = {},
+    options: { withSession?: boolean; saveAcl?: BurrowOptions['saveAcl'] } = {},
   ): BurrowRuntime {
     const withSession = options.withSession ?? true;
     const created = new BurrowRuntime({
@@ -119,9 +119,9 @@ describe('BurrowRuntime end-to-end ceremonies', () => {
       reconnect: false,
       createWebSocket: () => (socket = new FakeSocket()),
       loadAcl,
-      saveAcl: (_burrowId, records) => {
+      saveAcl: options.saveAcl ?? ((_burrowId, records) => {
         savedRecords = [...records];
-      },
+      }),
       requestApproval: (pending) => approvals.push(pending),
       dismissApproval: (clientId) => dismissed.push(clientId),
       onInvitationChanged: recordInvitation,
@@ -186,10 +186,10 @@ describe('BurrowRuntime end-to-end ceremonies', () => {
   async function requestPairing(
     clientId: string,
     authenticator: TestAuthenticator,
-    options: { code?: string; label?: string; invitation?: PairingInvitation } = {},
+    options: { code?: string; label?: string; invitation?: PairingInvitation; clientStatic?: NoiseKeyPair } = {},
   ) {
     const invitation = options.invitation ?? (await mintInvitation());
-    const clientStatic = await generateNoiseKeyPair();
+    const clientStatic = options.clientStatic ?? (await generateNoiseKeyPair());
     const session = await openPairing(clientId, invitation, clientStatic);
     if (!session) throw new Error('the Burrow refused the pairing handshake');
     const code = options.code ?? '42';
@@ -276,6 +276,125 @@ describe('BurrowRuntime end-to-end ceremonies', () => {
     // The invitation is spent by the outcome, whichever way it went.
     expect(burrow.invitationState(invitation.inviteId)).toBe('consumed');
     expect(dismissed).toEqual(['c1']);
+  });
+
+  it('publishes an approval only after its durable write succeeds', async () => {
+    const write = Promise.withResolvers<void>();
+    const saveAcl = vi.fn(() => write.promise);
+    makeBurrow(undefined, { saveAcl });
+    const { invitation, session, code } = await requestPairing('c1', await newAuthenticator());
+    const framesBefore = socket.sent.length;
+    const pending = approvals[0]!;
+    const completed = pending.approve(code);
+    await settle();
+    expect(saveAcl).toHaveBeenCalledOnce();
+    expect(burrow.activeRecords).toEqual([]);
+    expect(socket.sent).toHaveLength(framesBefore);
+    // Consent is spent while saving too: duplicate approval or denial cannot
+    // start a second write or announce an outcome that contradicts this one.
+    pending.approve(code);
+    pending.deny();
+    expect(socket.sent).toHaveLength(framesBefore);
+    write.resolve();
+    await completed;
+    expect(burrow.activeRecords).toHaveLength(1);
+    expect(await outcome(session, 'pairing', invitation.inviteId)).toMatchObject({ ok: true });
+    expect(saveAcl).toHaveBeenCalledOnce();
+  });
+
+  it('denies a failed save without authorizing in memory, then accepts a later approval', async () => {
+    const saveAcl = vi.fn<NonNullable<BurrowOptions['saveAcl']>>()
+      .mockRejectedValueOnce(new Error('disk full'))
+      .mockResolvedValue(undefined);
+    makeBurrow(undefined, { saveAcl });
+    const authenticator = await newAuthenticator();
+    const failed = await requestPairing('c1', authenticator);
+    await approvals[0]!.approve(failed.code);
+    expect(await outcome(failed.session, 'pairing', failed.invitation.inviteId)).toEqual({
+      ok: false, code: 'burrow-error',
+    });
+    expect(burrow.activeRecords).toEqual([]);
+    expect(await attemptConnection('c1', failed.clientStatic, authenticator)).toEqual({
+      ok: false, code: 'pairing-required',
+    });
+    const next = await requestPairing('c2', authenticator);
+    await approvals.at(-1)!.approve(next.code);
+    expect(await outcome(next.session, 'pairing', next.invitation.inviteId)).toMatchObject({ ok: true });
+    expect(burrow.activeRecords).toHaveLength(1);
+    expect(saveAcl.mock.calls[1]![1]).toHaveLength(1);
+  });
+
+  it('serializes concurrent approval snapshots so neither record is lost', async () => {
+    const write = Promise.withResolvers<void>();
+    const saveAcl = vi.fn<NonNullable<BurrowOptions['saveAcl']>>()
+      .mockImplementationOnce(() => write.promise)
+      .mockResolvedValue(undefined);
+    makeBurrow(undefined, { saveAcl });
+    const authenticator = await newAuthenticator();
+    const first = await requestPairing('c1', authenticator);
+    const second = await requestPairing('c2', authenticator);
+    const firstDone = approvals[0]!.approve(first.code);
+    const secondDone = approvals[1]!.approve(second.code);
+    await settle();
+    expect(saveAcl).toHaveBeenCalledOnce();
+    write.resolve();
+    await Promise.all([firstDone, secondDone]);
+    expect(saveAcl.mock.calls.map(([, records]) => records.length)).toEqual([1, 2]);
+    expect(burrow.activeRecords).toHaveLength(2);
+    expect(await outcome(first.session, 'pairing', first.invitation.inviteId)).toMatchObject({ ok: true });
+    expect(await outcome(second.session, 'pairing', second.invitation.inviteId)).toMatchObject({ ok: true });
+  });
+
+  it('preserves the existing pairing when saving its replacement fails', async () => {
+    const saveAcl = vi.fn<NonNullable<BurrowOptions['saveAcl']>>()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('disk full'));
+    makeBurrow(undefined, { saveAcl });
+    const authenticator = await newAuthenticator();
+    const first = await requestPairing('c1', authenticator);
+    await approvals[0]!.approve(first.code);
+    const original = burrow.activeRecords;
+    const replacement = await requestPairing('c2', authenticator, { clientStatic: first.clientStatic });
+    await approvals[1]!.approve(replacement.code);
+    expect(await outcome(replacement.session, 'pairing', replacement.invitation.inviteId)).toEqual({
+      ok: false, code: 'burrow-error',
+    });
+    expect(burrow.activeRecords).toEqual(original);
+    expect(await attemptConnection('c1', first.clientStatic, authenticator)).toMatchObject({ ok: true });
+  });
+
+  it('does not announce denial if expiry races a write already approved locally', async () => {
+    const write = Promise.withResolvers<void>();
+    makeBurrow(undefined, { saveAcl: () => write.promise });
+    const { invitation, code } = await requestPairing('c1', await newAuthenticator());
+    const completed = approvals[0]!.approve(code);
+    await settle();
+    const framesBefore = e2eFrames('pairing', invitation.inviteId).length;
+    clock += DEFAULT_PAIRING_TTL_MS + 1;
+    await mintInvitation(); // Runs the deadline reaper while saving.
+    expect(burrow.trackedClientCount).toBe(0);
+    expect(retirement(invitation)?.outcome).toBeUndefined();
+    write.resolve();
+    await completed;
+    expect(burrow.activeRecords).toHaveLength(1);
+    expect(e2eFrames('pairing', invitation.inviteId)).toHaveLength(framesBefore);
+  });
+
+  it('keeps approved writes after teardown without reviving the retired ceremony', async () => {
+    const write = Promise.withResolvers<void>();
+    const saveAcl = vi.fn(() => write.promise);
+    makeBurrow(undefined, { saveAcl });
+    const { code } = await requestPairing('c1', await newAuthenticator());
+    const completed = approvals[0]!.approve(code);
+    await settle();
+    burrow.stop();
+    const framesBefore = socket.sent.length;
+    write.resolve();
+    await completed;
+    expect(burrow.activeRecords).toHaveLength(1);
+    expect(burrow.trackedClientCount).toBe(0);
+    expect(socket.sent).toHaveLength(framesBefore);
+    expect(invitationEvents.some((event) => event.outcome === 'paired')).toBe(false);
   });
 
   it('gives the confirmation exactly one attempt', async () => {
@@ -703,7 +822,7 @@ describe('BurrowRuntime end-to-end ceremonies', () => {
       ),
     );
     await settle();
-    approvals[approvals.length - 1]!.approve('11');
+    await approvals[approvals.length - 1]!.approve('11');
     expect(savedRecords).toHaveLength(2);
     expect(await attemptConnection('c1', clientStatic, other)).toEqual({
       ok: false,

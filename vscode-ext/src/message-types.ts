@@ -1,3 +1,4 @@
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../../lib/src/lib/terminal-context-types';
 import type {
   AwaitOutcome,
   AwaitUntil,
@@ -13,7 +14,8 @@ import type { VolatileNotepadSnapshot } from '../../lib/src/lib/notepad/types';
 
 // Messages from webview → extension host
 export type WebviewMessage =
-  | { type: 'pty:spawn'; id: string; options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] } }
+  | { type: 'pty:context'; request: TerminalContextRequest; requestId: string }
+  | { type: 'pty:spawn'; id: string; options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[]; helper?: HelperIdentity } }
   | { type: 'pty:input'; id: string; data: string }
   | { type: 'pty:resize'; id: string; cols: number; rows: number }
   | { type: 'pty:kill'; id: string }
@@ -75,6 +77,7 @@ export type WebviewMessage =
   | { type: 'alert:awaitCancel'; requestId: string };
 
 export interface PtyInfo {
+  helper?: HelperIdentity;
   id: string;
   alive: boolean;
   exitCode?: number;
@@ -83,6 +86,7 @@ export interface PtyInfo {
 
 // Messages from extension host → webview
 export type ExtensionMessage =
+  | { type: 'pty:contextResult'; result: TerminalContextInfo; requestId: string }
   // `textData` is the chunk with string-control payloads removed, for the
   // prompt heuristic. Omitted when it would equal `data` — the common case —
   // so this never doubles the bytes on the wire (docs/specs/transport.md).

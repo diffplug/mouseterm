@@ -4,7 +4,8 @@
 import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MobileTerminalUi, type MobileTerminalTouchMode } from './MobileTerminalUi';
+import { MobileTerminalUi, type MobileTerminalTouchMode, type MobileTerminalUiProps } from './MobileTerminalUi';
+import { setNativeFieldValue } from '../lib/dom';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -113,6 +114,109 @@ afterEach(() => {
   document.body.replaceChildren();
   delete (document as Document & { elementFromPoint?: unknown }).elementFromPoint;
   vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+describe('MobileTerminalUi keyboard input', () => {
+  function renderInput(props: Partial<MobileTerminalUiProps> = {}) {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    const renderWith = (nextProps: Partial<MobileTerminalUiProps>) => act(() => root.render(
+      <StrictMode>
+        <MobileTerminalUi terminal={<div data-testid="terminal" />} {...nextProps} />
+      </StrictMode>,
+    ));
+    renderWith(props);
+    return {
+      input: container.querySelector<HTMLTextAreaElement>('textarea')!,
+      terminal: container.querySelector<HTMLDivElement>('[data-testid="terminal"]')!,
+      typeButton: container.querySelector<HTMLButtonElement>('[aria-label="Type input mode"]')!,
+      renderWith,
+    };
+  }
+
+  it('leaves IME editing keys to the composition and sends committed text once', () => {
+    const onSendInput = vi.fn();
+    const { input } = renderInput({ onSendInput });
+    act(() => {
+      input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      setNativeFieldValue(input, '日本');
+    });
+    for (const key of ['Backspace', 'ArrowLeft', 'Enter']) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      act(() => input.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(onSendInput).not.toHaveBeenCalled();
+    expect(input.value).toBe('日本');
+    act(() => input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '日本' })));
+    expect(onSendInput.mock.calls).toEqual([['日本']]);
+    expect(input.value).toBe('');
+  });
+
+  it.each([{ isComposing: true }, { keyCode: 229 }])('ignores IME confirmation keydown with %j', (imeState) => {
+    const onSendInput = vi.fn();
+    const { input } = renderInput({ onSendInput });
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...imeState });
+    act(() => input.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false);
+    expect(onSendInput).not.toHaveBeenCalled();
+  });
+
+  it('sends software-keyboard Backspace and Enter without keydown or a textarea change', () => {
+    const onSendInput = vi.fn();
+    const { input } = renderInput({ onSendInput });
+    for (const inputType of ['deleteContentBackward', 'insertLineBreak', 'insertParagraph']) {
+      const event = new InputEvent('beforeinput', { inputType, bubbles: true, cancelable: true });
+      act(() => input.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(true);
+    }
+    expect(onSendInput.mock.calls).toEqual([['\x7f'], ['\r'], ['\r']]);
+    expect(input.value).toBe('');
+  });
+
+  it('leaves software-keyboard deletion inside an IME composition alone', () => {
+    const onSendInput = vi.fn();
+    const { input } = renderInput({ onSendInput });
+    act(() => input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })));
+    const event = new InputEvent('beforeinput', { inputType: 'deleteContentBackward', bubbles: true, cancelable: true });
+    act(() => input.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false);
+    expect(onSendInput).not.toHaveBeenCalled();
+  });
+
+  it('cancels pending focus when a pane touch dismisses the keyboard', () => {
+    vi.useFakeTimers();
+    const { input, terminal, typeButton } = renderInput();
+    act(() => typeButton.click());
+    expect(document.activeElement).toBe(input);
+    act(() => terminal.dispatchEvent(pointerEvent('pointerdown')));
+    act(() => vi.advanceTimersByTime(600));
+    expect(document.activeElement).not.toBe(input);
+  });
+
+  it('cancels pending pane blur when Type is tapped again', () => {
+    vi.useFakeTimers();
+    const { input, terminal, typeButton } = renderInput();
+    act(() => vi.advanceTimersByTime(600));
+    act(() => terminal.dispatchEvent(pointerEvent('pointerdown')));
+    act(() => typeButton.click());
+    expect(document.activeElement).toBe(input);
+    act(() => vi.advanceTimersByTime(600));
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('blurs when the consumer switches from Type to Sessions', () => {
+    vi.useFakeTimers();
+    const { input, typeButton, renderWith } = renderInput({ activeKeyboardMode: 'type' });
+    act(() => typeButton.click());
+    expect(document.activeElement).toBe(input);
+    renderWith({ activeKeyboardMode: 'sessions' });
+    act(() => vi.advanceTimersByTime(600));
+    expect(document.activeElement).not.toBe(input);
+  });
 });
 
 describe('MobileTerminalUi touch modes', () => {
@@ -188,6 +292,33 @@ describe('MobileTerminalUi touch modes', () => {
     expect(cancel.defaultPrevented).toBe(true);
     expect(releasePointerCapture).toHaveBeenCalledWith(7);
     expect(received).toEqual(['mousedown:1', 'mouseup:0']);
+  });
+
+  it('releases a tracked mouse press even after leaving Mouse mode', () => {
+    const received: string[] = [];
+    const { terminal, setTouchMode } = renderMobileTerminal({
+      touchMode: 'cursor',
+      onMouseEvent: (event) => received.push(event.type),
+    });
+    mockElementFromPoint(terminal);
+    terminal.dispatchEvent(pointerEvent('pointerdown'));
+    setTouchMode('gestures');
+    terminal.dispatchEvent(pointerEvent('pointerup'));
+    expect(received).toEqual(['mousedown', 'mouseup']);
+    expect(releasePointerCapture).toHaveBeenCalledWith(7);
+  });
+
+  it('targets mouse release at the final pointer position without requiring a last move', () => {
+    const { terminal } = renderMobileTerminal({ touchMode: 'cursor', onMouseEvent: () => {} });
+    const other = document.createElement('div');
+    terminal.appendChild(other);
+    const mouseup = vi.fn();
+    other.addEventListener('mouseup', mouseup);
+    mockElementFromPoint(terminal);
+    terminal.dispatchEvent(pointerEvent('pointerdown'));
+    mockElementFromPoint(other);
+    terminal.dispatchEvent(pointerEvent('pointerup', { clientX: 25 }));
+    expect(mouseup).toHaveBeenCalledOnce();
   });
 
   it('suppresses native touch events in Mouse mode', () => {

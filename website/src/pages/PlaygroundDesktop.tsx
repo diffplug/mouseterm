@@ -8,10 +8,8 @@ import { PlaygroundShellRegistry } from "../lib/playground-shells";
 import { TutorialState } from "../lib/tutorial-state";
 import { TutDetector } from "../lib/tut-detector";
 import {
-  BUSY_DEMO_DURATION_MS,
   BUSY_DEMO_INTERVAL_MS,
   TutRunner,
-  WATCH_DEMO_COMMAND_MS,
 } from "../lib/tut-runner";
 import { ChangelogRunner } from "../lib/changelog-runner";
 import { getPreferredPlayground, POCKET_PLAYGROUND_PATH, usePreferredPlayground } from "../lib/playground-routing";
@@ -19,14 +17,12 @@ import {
   DESKTOP_PANES,
   DESKTOP_PLAYGROUND_LAYOUT,
   PANE_BOXED,
-  PANE_MAIN,
   PANE_SPLASH,
   type DesktopPaneSpec,
 } from "../lib/playground-desktop-layout";
 import { SITE_LINK_CLASS } from "../components/site-tokens";
 
 type FakePtyAdapter = import("dormouse-lib/lib/platform/fake-adapter").FakePtyAdapter;
-type TerminalRegistry = typeof import("dormouse-lib/lib/terminal-registry");
 type WallEvent = import("dormouse-lib/components/Wall").WallEvent;
 
 /** The two panes the alert section drives; the third hosts the runner itself. */
@@ -34,7 +30,6 @@ const ALERT_DEMO_PANES = [PANE_BOXED, PANE_SPLASH] as const;
 
 function sendToPane(
   adapter: FakePtyAdapter,
-  registry: TerminalRegistry,
   paneId: string,
   data: string,
 ): void {
@@ -48,19 +43,17 @@ function sendToPane(
  */
 function startFakeCommand(
   adapter: FakePtyAdapter,
-  registry: TerminalRegistry,
   paneId: string,
   commandLine: string,
 ): void {
-  sendToPane(adapter, registry, paneId, `\x1b]633;E;${commandLine}\x07\x1b]633;C\x07`);
+  sendToPane(adapter, paneId, `\x1b]633;E;${commandLine}\x07\x1b]633;C\x07`);
 }
 
 function finishFakeCommand(
   adapter: FakePtyAdapter,
-  registry: TerminalRegistry,
   paneId: string,
 ): void {
-  sendToPane(adapter, registry, paneId, "\x1b]633;D;0\x07");
+  sendToPane(adapter, paneId, "\x1b]633;D;0\x07");
 }
 
 function DesktopPlaygroundUnavailable() {
@@ -135,14 +128,19 @@ function PlaygroundDesktopExperience() {
     async function loadWall() {
       // Phone hydration briefly mounts this desktop prerender before reconciling media.
       if (getPreferredPlayground() === "pocket") return;
-      const platform = await import("dormouse-lib/lib/platform");
-      const registry = await import("dormouse-lib/lib/terminal-registry");
-      const mouseSelection = await import("dormouse-lib/lib/mouse-selection");
-      const themes = await import("dormouse-lib/lib/themes");
-      const wall = await import("dormouse-lib/components/Wall");
-      const scenarios = await import("dormouse-lib/lib/platform/fake-scenarios");
-      const asciiSplash = await import("../lib/ascii-splash-runner");
-      await import("dormouse-lib/index.css");
+      // None of these consumes another, so load the whole bundle at once rather
+      // than paying a round of module resolution each on the boot path.
+      const [platform, registry, mouseSelection, themes, alertSettings, wall, scenarios, asciiSplash] = await Promise.all([
+        import("dormouse-lib/lib/platform"),
+        import("dormouse-lib/lib/terminal-registry"),
+        import("dormouse-lib/lib/mouse-selection"),
+        import("dormouse-lib/lib/themes"),
+        import("dormouse-lib/lib/alert-settings"),
+        import("dormouse-lib/components/Wall"),
+        import("dormouse-lib/lib/platform/fake-scenarios"),
+        import("../lib/ascii-splash-runner"),
+        import("dormouse-lib/index.css"),
+      ]);
       if (cancelled) return;
 
       const adapter = platform.initPlatform("fake");
@@ -181,18 +179,19 @@ function PlaygroundDesktopExperience() {
               terminalId,
               state: tutorialState,
               onExit,
+              getInactivityTimeoutMs: () => alertSettings.getAlertSettings().inactivityTimeoutMs,
               // WATCHING is keyed on the running command, so the demo has to
               // report one through shell integration. Both alert panes run the
               // same fake `longtask`, which is what lets one bell click light
               // up the other pane (docs/specs/alert.md).
-              onTriggerBusyDemo: () => {
+              onTriggerBusyDemo: (durationMs, commandMs) => {
                 busyDemoDisposeRef.current?.();
                 if (busyDemoFinishTimerRef.current !== null) {
                   window.clearTimeout(busyDemoFinishTimerRef.current);
                   busyDemoFinishTimerRef.current = null;
                 }
                 for (const paneId of ALERT_DEMO_PANES) {
-                  startFakeCommand(adapter, registry, paneId, "longtask");
+                  startFakeCommand(adapter, paneId, "longtask");
                 }
                 // Always pump the changelog pane: it is the quiet one, so it can
                 // actually go silent and ring. ascii-splash animates forever, so
@@ -200,39 +199,38 @@ function PlaygroundDesktopExperience() {
                 // it could never reach ALERT_RINGING.
                 busyDemoDisposeRef.current = adapter.pumpActivity(
                   PANE_BOXED,
-                  BUSY_DEMO_DURATION_MS,
+                  durationMs,
                   BUSY_DEMO_INTERVAL_MS,
                 );
                 busyDemoFinishTimerRef.current = window.setTimeout(() => {
                   busyDemoFinishTimerRef.current = null;
                   for (const paneId of ALERT_DEMO_PANES) {
-                    finishFakeCommand(adapter, registry, paneId);
+                    finishFakeCommand(adapter, paneId);
                     // The pane's real program is still drawing, so put its
                     // actual command line back rather than leaving the pane
                     // looking idle.
                     shellRegistryRef.current?.ensureShell(paneId).reportRunningCommand();
                   }
-                }, WATCH_DEMO_COMMAND_MS);
+                }, commandMs);
               },
               // Terminal reports need no rule at all — this is a raw OSC 777
               // notification, parsed by the same code a real PTY feeds.
               onTriggerNotifyDemo: () => {
                 sendToPane(
                   adapter,
-                  registry,
                   PANE_BOXED,
                   "\x1b]777;notify;Build finished;3 packages rebuilt\x07",
                 );
               },
               // An unwatched command, so the command-exit track owns the bell:
               // the user attends the pane, leaves, and the exit rings.
-              onTriggerCommandExitDemo: () => {
-                startFakeCommand(adapter, registry, PANE_SPLASH, "slowbuild");
+              onTriggerCommandExitDemo: (durationMs) => {
+                startFakeCommand(adapter, PANE_SPLASH, "slowbuild");
                 demoTimersRef.current.push(
                   window.setTimeout(() => {
-                    finishFakeCommand(adapter, registry, PANE_SPLASH);
+                    finishFakeCommand(adapter, PANE_SPLASH);
                     shellRegistryRef.current?.ensureShell(PANE_SPLASH).reportRunningCommand();
-                  }, BUSY_DEMO_DURATION_MS),
+                  }, durationMs),
                 );
               },
               onTogglePlaceToPaste: () => setPlaceToPasteOpen((open) => !open),

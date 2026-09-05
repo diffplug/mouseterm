@@ -122,6 +122,78 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe('session flush', () => {
+  it('waits for ordered host writes after the webview acknowledges its flush', async () => {
+    vi.useFakeTimers();
+    const webview = fakeWebview();
+    const finish: (() => void)[] = [];
+    const save = vi.fn(() => new Promise<void>((resolve) => finish.push(resolve)));
+    const disposable = router.attachRouter(webview.channel, { onSaveState: save });
+    try {
+      webview.send({ type: 'dormouse:init' });
+      let flushed = false;
+      const flushing = router.flushAllSessions().then(() => { flushed = true; });
+      const request = webview.posted.find((message) => message.type === 'dormouse:flushSessionSave')!;
+      webview.send({ type: 'dormouse:saveState', state: { revision: 1 } });
+      webview.send({ type: 'dormouse:saveState', state: { revision: 2 } });
+      webview.send({ type: 'dormouse:flushSessionSaveDone', requestId: request.requestId });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(save.mock.calls).toEqual([[{ revision: 1 }]]);
+      expect(flushed).toBe(false);
+
+      finish[0]();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(save.mock.calls).toEqual([[{ revision: 1 }], [{ revision: 2 }]]);
+      expect(flushed).toBe(false);
+
+      finish[1]();
+      await flushing;
+      expect(flushed).toBe(true);
+    } finally {
+      disposable.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it('continues saving after a rejected host write', async () => {
+    const webview = fakeWebview();
+    const save = vi.fn().mockRejectedValueOnce(new Error('write failed')).mockResolvedValue(undefined);
+    const disposable = router.attachRouter(webview.channel, { onSaveState: save });
+    try {
+      webview.send({ type: 'dormouse:init' });
+      const flushing = router.flushAllSessions();
+      const request = webview.posted.find((message) => message.type === 'dormouse:flushSessionSave')!;
+      webview.send({ type: 'dormouse:saveState', state: { revision: 1 } });
+      webview.send({ type: 'dormouse:saveState', state: { revision: 2 } });
+      webview.send({ type: 'dormouse:flushSessionSaveDone', requestId: request.requestId });
+      await flushing;
+      expect(save).toHaveBeenCalledTimes(2);
+    } finally {
+      disposable.dispose();
+    }
+  });
+
+  it('keeps the shutdown deadline when an acknowledged host write stalls', async () => {
+    vi.useFakeTimers();
+    const webview = fakeWebview();
+    const disposable = router.attachRouter(webview.channel, {
+      onSaveState: () => new Promise<void>(() => {}),
+    });
+    try {
+      webview.send({ type: 'dormouse:init' });
+      const flushing = router.flushAllSessions(25);
+      const request = webview.posted.find((message) => message.type === 'dormouse:flushSessionSave')!;
+      webview.send({ type: 'dormouse:saveState', state: {} });
+      webview.send({ type: 'dormouse:flushSessionSaveDone', requestId: request.requestId });
+      await vi.advanceTimersByTimeAsync(25);
+      await flushing;
+    } finally {
+      disposable.dispose();
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('webview fan-out', () => {
   it('counts one answer per webview, however many times it answers', async () => {
     // A duplicate post, or a webview answering after the budget already

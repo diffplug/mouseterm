@@ -26,6 +26,13 @@ export const DOCS_THEME_ID = "vscode.theme-defaults.dark-visual-studio";
  * (docs/specs/theme.md -> Where the user picks a theme).
  */
 const DISMISSED_KEY = "dormouse:docs-theme-prompt-dismissed";
+const dismissalListeners = new Set<() => void>();
+
+/** Both responsive placements dismiss together, including without storage. */
+export function subscribeToThemePromptDismissal(listener: () => void): () => void {
+  dismissalListeners.add(listener);
+  return () => { dismissalListeners.delete(listener); };
+}
 
 /**
  * Storage is absent in prerender and throws outright in some privacy modes;
@@ -38,4 +45,5 @@ export function isThemePromptDismissed(): boolean {
 
 export function dismissThemePrompt(): void {
   saveJson(DISMISSED_KEY, true);
+  for (const listener of dismissalListeners) listener();
 }

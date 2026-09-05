@@ -1,8 +1,12 @@
+import type { HelperIdentity } from './terminal-context-types';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { ShellCommandKind } from 'dor/commands/shell-quote';
 
 export interface TerminalEntry {
+  helper?: HelperIdentity;
+  helperBusy?: boolean;
+  inputVersion?: number;
   /** Parser family of the shell this Session launched. Unlike the app-global
    *  default, this remains stable when the user selects a different shell for
    *  future Sessions. */
@@ -45,6 +49,7 @@ export interface TerminalOverlayDims {
 }
 
 export interface PendingShellOpts {
+  helper?: HelperIdentity;
   shell?: string;
   args?: string[];
   cwd?: string;
@@ -62,6 +67,8 @@ export interface PendingShellOpts {
 }
 
 export const registry = new Map<string, TerminalEntry>();
+/** Helper Sessions are private to their source: excluded from alerts, `dor`, remote projections, and cross-pane derivations. */
+export const isHelperSession = (id: string): boolean => !!registry.get(id)?.helper;
 export const pendingShellOpts = new Map<string, PendingShellOpts>();
 /** Arm render-tick invalidation for a selection some other module just set, so
  *  it is dropped when the text under it changes (a pin's restored range). */

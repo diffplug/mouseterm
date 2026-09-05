@@ -218,6 +218,9 @@ export function createDragController(deps: DragControllerDeps): DragController {
   }
 
   function onUp(): void {
+    // A release can beat the queued rAF (or follow a background tree commit).
+    // Resolve once synchronously so the proposal uses the latest pointer and tree.
+    runHitTest();
     finish(true);
   }
 

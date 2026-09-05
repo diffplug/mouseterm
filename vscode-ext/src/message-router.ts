@@ -94,7 +94,7 @@ configurePeerLink({
   invalidateDirectory: notifyDirectoryChanged,
   streamPty: processedPtyStreams.streamPty,
   writePty: (ptyId, data) => ptyManager.write(ptyId, data),
-  resizePty: (ptyId, cols, rows) => ptyManager.resize(ptyId, cols, rows),
+  resizePty: (ptyId, cols, rows, repaint) => ptyManager.resize(ptyId, cols, rows, repaint),
   // Peer PTYs use generated provider-local route handles. Keep those handles
   // outside this window's real PTY namespace so local ids always fall through
   // to the manager that owns them.
@@ -113,7 +113,7 @@ configureBurrow({
   broadcastToWebviews,
   streamPty: processedPtyStreams.streamPty,
   writePty: (ptyId, data) => ptyManager.write(ptyId, data),
-  resizePty: (ptyId, cols, rows) => ptyManager.resize(ptyId, cols, rows),
+  resizePty: (ptyId, cols, rows, repaint) => ptyManager.resize(ptyId, cols, rows, repaint),
 });
 
 /**
@@ -338,7 +338,7 @@ export function attachRouter(
   options?: {
     reconnect?: boolean;
     killOnDispose?: boolean;
-    onSaveState?: (state: unknown) => void;
+    onSaveState?: (state: unknown) => void | PromiseLike<void>;
     savedSession?: PersistedSession | null;
     getSelectedShell?: () => { shell?: string; args?: string[] } | null;
     // Called with this webview's Workspace union status whenever it changes
@@ -363,6 +363,7 @@ export function attachRouter(
   // Track which PTY IDs were spawned (or reconnected) through this webview
   const ownedPtyIds = new Set<string>();
   const pendingFlushRequests = new Map<string, { resolve: () => void; timeout: ReturnType<typeof setTimeout> }>();
+  let pendingSave = Promise.resolve();
   // `dor await`s this webview has parked in the shared alert manager, keyed by
   // the requestId that will carry the outcome back.
   const pendingAwaits = new Map<string, { handle: AwaitHandle; startedAt: number }>();
@@ -555,7 +556,21 @@ export function attachRouter(
 
   const messageDisposable = channel.onDidReceiveMessage((msg: WebviewMessage) => {
     switch (msg.type) {
+      case 'pty:context': {
+        const request = msg.request;
+        if ((request.op !== 'settings' && !ownedPtyIds.has(request.id)) || (request.op === 'promote' && request.restore && !ownedPtyIds.has(request.restore.parentId))) {
+          post({ type: 'pty:contextResult', requestId: msg.requestId, result: { error: 'Terminal is not owned by this workspace' } });
+          break;
+        }
+        ptyManager.terminalContext(request).then(result => {
+          if (!result.error && request.op === 'promote') alertManager.setHelper(request.id, !!request.restore);
+          post({ type: 'pty:contextResult', requestId: msg.requestId, result });
+        }, error => post({ type: 'pty:contextResult', requestId: msg.requestId, result: { error: String(error) } }));
+        break;
+      }
       case 'pty:spawn': {
+        if (msg.options?.helper && (!ownedPtyIds.has(msg.options.helper.parentId) || ptyManager.helperPtys.has(msg.options.helper.parentId))) break;
+        if (msg.options?.helper) alertManager.setHelper(msg.id, true);
         claim(msg.id);
         // A fresh generation under this id: retire the parser rather than let
         // its half-read sequence splice onto the new PTY's first bytes.
@@ -847,6 +862,7 @@ export function attachRouter(
           type: 'pty:list',
           ptys: Array.from(reconnectable.entries()).map(([id, info]) => ({
             id, alive: info.alive, exitCode: info.exitCode, shell: info.shell,
+            ...(ptyManager.helperPtys.has(id) ? { helper: ptyManager.helperPtys.get(id) } : {}),
           })),
         };
         post(list);
@@ -870,10 +886,16 @@ export function attachRouter(
         break;
       }
       case 'dormouse:flushSessionSaveDone':
-        resolveFlushRequest(msg.requestId);
+        // The webview has sent its snapshot, but workspaceState.update may still
+        // be writing it. Keep the existing deadline while awaiting those writes
+        // so deactivate's subsequent refresh reads the completed snapshot.
+        void pendingSave.then(() => resolveFlushRequest(msg.requestId));
         break;
       case 'dormouse:saveState':
-        options?.onSaveState?.(msg.state);
+        // Preserve snapshot order even when a host persistence callback is async.
+        pendingSave = pendingSave.then(() => options?.onSaveState?.(msg.state)).catch((error) => {
+          log.error('[session] save failed:', String(error));
+        });
         break;
       case 'dor:controlResponse':
         ptyManager.respondDorControl({

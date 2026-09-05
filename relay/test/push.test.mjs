@@ -847,6 +847,25 @@ test('a transient failure leaves the subscription in place', async () => {
   assert.equal((await storedRows(stateDir)).length, 1);
 });
 
+test('a synchronous sender failure preserves subscriptions and the rest of the fan-out', async () => {
+  const pushSender = {
+    send(target) {
+      if (target.endpoint.endsWith('/broken')) throw new Error('sender failed before returning');
+      return Promise.resolve('delivered');
+    },
+  };
+  const { app, stateDir, burrow, sessionToken } = await pushApp({ pushSender });
+  const broken = newDeliveryId();
+  const healthy = newDeliveryId();
+  await subscribe(app, { sessionToken, burrow, deliveryId: broken, sub: subscription('https://push.example.com/broken') });
+  await subscribe(app, { sessionToken, burrow, deliveryId: healthy, sub: subscription('https://push.example.com/healthy') });
+
+  const res = await sendAs(app, burrow.burrowToken, to(broken, healthy));
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { delivered: 1, expired: 0, unknown: 0, failed: 1 });
+  assert.equal((await storedRows(stateDir)).length, 2);
+});
+
 test('a send that never answers is bounded and leaves the subscription in place', async () => {
   // A push service can accept the connection and then go quiet, which resets
   // the socket-inactivity timer forever. Without a wall-clock bound the handler

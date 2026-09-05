@@ -45,7 +45,7 @@ export function NotepadBody({
   dataAttributes?: Record<string, string>;
   sourceNotice: SourceNotice | null;
   onClose: () => void;
-  onRevealSource: (noteId: string) => void;
+  onRevealSource?: (noteId: string) => void;
 }) {
   const notes = useNotes(surfaceId);
   // The Surface's closure has snapshotted these notes and is writing them: the

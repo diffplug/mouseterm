@@ -164,9 +164,8 @@ export function installPocketWorker(scope: WorkerScope, store: KnownBurrowStore)
 
   scope.addEventListener('notificationclick', (event) => {
     event.notification.close();
-    // Pocket has no deep link to an individual Pane, so this focuses the app and
-    // leaves the user on the directory. Opening the right Pane needs a routable
-    // surface ref, which protocol-v1 does not carry.
+    // Preserve an existing window's screen, or start the app at its root.
+    // Push payloads contain no Pane navigation target.
     event.waitUntil(
       scope.clients
         .matchAll({ type: 'window', includeUncontrolled: true })
@@ -227,4 +226,3 @@ export interface WorkerScope {
     showNotification(title: string, options: NotificationOptionsLike): Promise<void>;
   };
 }
-

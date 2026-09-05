@@ -2,6 +2,7 @@
 // Capture). Reached from the selection popup's third button and from the
 // Cmd/Ctrl+N chord, both of which flash and dismiss the selection themselves —
 // a capture never opens the notepad.
+import { registry } from '../terminal-store';
 import { getMouseSelectionState } from '../mouse-selection';
 import { getPlatformOrNull } from '../platform';
 import { getTerminalInstance } from '../terminal-registry';
@@ -29,12 +30,9 @@ export function addSelectionToNotepad(terminalId: string): boolean {
   if (!terminal) return false;
 
   const { runs, rawText } = captureRichSelection(terminal, sel);
-  // `null` on the alternate buffer — a full-screen program's grid is rewritten
-  // in place, so the note simply carries no pin.
-  const source = registerTerminalSource(terminal, terminalId, sel, rawText);
-  // A terminal Surface's Surface id *is* its terminal id (docs/specs/layout.md →
-  // "Session lifecycle"), so the note lands on the Surface holding the selection.
-  // A closing Surface refuses it (and releases the markers) rather than take a
-  // note its closure has already snapshotted past.
-  return addTerminalNote(terminalId, runs, source ?? undefined) !== null;
+  // Helpers capture into the parent's list without ever creating source markers.
+  const parentId = registry.get(terminalId)?.helper?.parentId;
+  const source = parentId ? null : registerTerminalSource(terminal, terminalId, sel, rawText);
+  // The owner's closing freeze also refuses captures from its helper.
+  return addTerminalNote(parentId ?? terminalId, runs, source ?? undefined) !== null;
 }

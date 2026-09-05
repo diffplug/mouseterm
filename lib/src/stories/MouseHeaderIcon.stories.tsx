@@ -34,7 +34,6 @@ const noopActions: WallActions = {
   onCancelRename: () => {},
   onSwapRenderMode: () => {},
   resolveSurfaceRef: (id) => id,
-  onConnectPort: () => {},
 };
 
 function MouseIconStoryFrame({

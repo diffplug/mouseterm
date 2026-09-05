@@ -64,14 +64,13 @@ export class TutorialState {
       this.completed.size > 0 ||
       this.starPromptResolved ||
       this.flappyHighScore > 0;
-    if (!changed) return;
     this.completed.clear();
     this.starPromptResolved = false;
     this.flappyHighScore = 0;
     removeJson(STORAGE_KEY);
     removeJson(STAR_STORAGE_KEY);
     removeJson(FLAPPY_HIGH_SCORE_KEY);
-    this.notify();
+    if (changed) this.notify();
   }
 
   getFlappyHighScore(): number {

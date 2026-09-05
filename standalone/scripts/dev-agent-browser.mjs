@@ -114,6 +114,7 @@ const fireAndForget = {
 const invokeMap = {
   get_available_shells: (_args) => requestSidecar('pty:getShells', {}, 'pty:shells', (data) => data.shells ?? []),
   pty_get_cwd: ({ id }) => requestSidecar('pty:getCwd', { id }, 'pty:cwd', (data) => data.cwd ?? null),
+  pty_context: ({ request }) => requestSidecar('pty:context', request, 'pty:context', data => data),
   pty_get_open_ports: ({ id }) => requestSidecar('pty:getOpenPorts', { id }, 'pty:openPorts', (data) => data.ports ?? []),
   read_clipboard_file_paths: () => requestSidecar('clipboard:readFiles', {}, 'clipboard:files', (data) => data.paths ?? null),
   read_clipboard_image_as_file_path: () => requestSidecar('clipboard:readImage', {}, 'clipboard:image', (data) => data.path ?? null),
@@ -126,7 +127,7 @@ const invokeMap = {
     // The sidecar now returns a temp-file PATH (bytes stay off the stdio pipe).
     // Production reads that file in Rust; this dev bridge has no Rust, so read it
     // in Node and re-encode to the base64 the browser-sidecar adapter expects —
-    // base64 over the dev WebSocket is fine.
+    // the base64 travels in the HTTP invoke response, outside the event stream.
     if (result && result.ok && typeof result.path === 'string') {
       const bytes = await readFile(result.path);
       return { ok: true, mime: result.mime, bytesBase64: bytes.toString('base64') };

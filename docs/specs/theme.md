@@ -3,13 +3,11 @@
 > See `docs/specs/glossary.md` for Pane / Door vocabulary used in the surface hierarchy below.
 > **Defers to `DESIGN.md`:** the named color rules (Bg-Only Chrome, Host-Theme-Only, Inset-Over-Border) and the Don'ts they carry. This spec owns the token plumbing under them.
 
-VS Code supplies `--vscode-*` itself; standalone, website, and Pocket get the
-same variable shape from `applyTheme()` and a bundled or installed theme — Pocket
-before its first paint, auth screens included
+VS Code supplies `--vscode-*`; standalone, website, and Pocket use `applyTheme()`
+with bundled or installed themes — Pocket before first paint, including auth
 ([pocket-app.md](./pocket-app.md#design-system-and-theming) owns its
 browser-chrome sync). **Every path runs the same consumed-token resolver**
-(`lib/src/lib/themes/vscode-color-resolver.ts`), so omitted theme JSON keys
-behave like VSCode registry defaults before Dormouse renders.
+(`lib/src/lib/themes/vscode-color-resolver.ts`) before rendering.
 
 ## Surface hierarchy
 
@@ -39,7 +37,7 @@ derive a hairline from the pair foreground at low alpha or an inset shadow
 
 ### Dynamic picks
 
-`lib/src/theme.css` binds most tokens to a fixed VSCode key. Seven are picked at
+`lib/src/theme-colors.css` binds most tokens to a fixed VSCode key. Seven are picked at
 runtime instead:
 
 | Token | Pick |
@@ -49,9 +47,10 @@ runtime instead:
 | `--color-alarm-vs-{header-active,header-inactive,door,terminal}` | plain white or black, by the OKLab lightness of the background the alert treatment sits on (rationale) |
 
 The terminal alarm tint drives the whole-Pane spoken-alarm overlay.
-`--color-alarm-vs-door` derives from `--color-door-bg` the same pass computes, so
-the pass after a theme change reads the stale door bg; the `MutationObserver`
-re-firing on the pass's own `body.style` write corrects it on the next.
+**Must derive the Door alarm tint from the newly chosen background in the same
+pass.** Pinned by `lib/src/lib/themes/dynamic-palette.test.ts`.
+**Must refresh dynamic picks on `body` or `html` class/style changes and repair
+removed inline values.** Pinned by `lib/src/lib/themes/use-dynamic-palette.test.tsx`.
 
 **Never fork the dynamic picks:** runtime UI and diagnostics must use
 `pickDoorPair()`, `pickFocusRing()`, and `pickAlarmColor()`.
@@ -83,6 +82,9 @@ theme, not the OS. In real VSCode webviews
 `installVscodeThemeVarResolver()` runs before React renders, materializing **only
 the missing** consumed variables on `body.style` and removing stale materialized
 ones once the host provides a real value.
+**Must reveal the host cascade before resolving formerly missing values, and
+cancel queued resolution on disposal.** Pinned by
+`lib/src/lib/themes/vscode-color-observer.test.ts`.
 
 **Selection backgrounds are flattened to opaque.** Theme authors give
 `list.activeSelectionBackground` / `list.inactiveSelectionBackground` alpha;
@@ -90,7 +92,7 @@ Dormouse uses them as solid header/AppBar fills, so `applyTheme()` composites
 them over `sideBar.background` first (rationale).
 
 **A same-theme `applyTheme()` call is a no-op only while the expected inline
-`--vscode-*` variables and the `vscode-light` / `vscode-dark` class are still on
+`--vscode-*` variables, `color-scheme`, and the `vscode-light` / `vscode-dark` class are still on
 `document.body`**, and **ThemePicker re-restores in a layout effect after mount**
 — React Router document hydration can reconcile those writes away (rationale).
 
@@ -168,6 +170,8 @@ supply-chain page publishes ([security-supply-chain.md](./security-supply-chain.
 
 **Must tolerate unreadable storage and failed active-id writes during theme restoration.**
 Pinned by `lib/src/lib/themes/apply.test.ts`.
+**Must discard malformed installed-theme records while retaining valid ones.**
+Pinned by `lib/src/lib/themes/store.test.ts`.
 
 **`subscribeToActiveTheme()` notifies only on a *different* theme, compared by
 id, not object identity** (rationale). It serves the website tutorial's theme step
@@ -195,7 +199,7 @@ playground navbar — carries none**.
   init **and repeats after commit** (hydration again). Pocket passes
   `restorePocketTheme` as its `restore` argument so the browser-chrome sync rides
   the same lifecycle.
-- The two `/playground/pocket` marketing mounts and the docs pages keep the
+- The two `/playground/pocket` marketing mounts and docs pages keep the
   free-floating `compact` picker (rationale), the docs placing it floating at
   `lg` and inline in the mobile bar. **Both variants show the active theme's
   `ThemeSwatch`** — beside its label on the dialog trigger, beside the word
@@ -208,7 +212,7 @@ playground navbar — carries none**.
 - **`onPick` reports the choice, not the change.** `restoreActiveTheme` persists
   the id it resolved, so `dormouse:active-theme` exists whether or not anyone
   chose, and `subscribeToActiveTheme` is silent on a re-pick. Only the picker
-  can answer "has this person chosen yet".
+  reports explicit choices.
 - **The host's fallback theme is module state, not a prop.**
   `setDefaultThemeId()` holds it and `restoreActiveTheme()` takes no argument, so
   every path re-resolving the active theme gets the same answer (rationale).
@@ -221,12 +225,12 @@ playground navbar — carries none**.
 - **`useAnchoredMenu` returns a dropdown's whole geometry; a caller never
   re-implements placement beside it.** Dialog dropdowns take its measured,
   viewport-clamped `fixed` strategy; `compact` takes `absolute`, which measures
-  nothing (rationale). Both prefer the requested `side`, flip to the roomier
+  only the trigger (rationale). Both prefer the requested `side`, flip to the roomier
   side, and recompute their cap when the trigger, menu, or viewport changes.
   **Must clamp and cap against the visual viewport when the browser exposes
   it**, so mobile browser chrome and the on-screen keyboard stay outside the
   menu's usable area.
-  They close on scroll and share dismissal with the Shell row. **The dialog owns
+  They close on ancestor scroll and share dismissal with the Shell row. **The dialog owns
   the open state** so `Escape` closes the menu first, which `ModalFrame`'s
   capture-phase handler would otherwise swallow.
 - **Heights follow the viewport, never a fixed pixel budget**: both surfaces cap
@@ -258,13 +262,13 @@ a renamed or removed bundle cannot leave stories without theme vars.
 
 ## Theme debugger
 
-A diagnostic-only Theme Debugger shared by VSCode, standalone, and the website
-playground. **It never mutates theme storage or terminal colors** — it snapshots
-DOM-visible state: theme metadata, every visible `--vscode-*` tagged
+The Theme Debugger serves VSCode, standalone, and the website
+playground. **Never mutate theme storage or terminal colors** — snapshot
+DOM-visible state: theme metadata, consumed color `--vscode-*` tagged
 host-provided vs Dormouse-materialized with its declaration site and resolver
-trace, the `--color-*` tokens with their bound key, the terminal palette xterm.js
-reads, and the dynamic picks with candidate metrics and a prose reason
-(`ThemeDiagnosticSnapshot` owns the shape). The copied report is a text dump of
+trace, static `--color-*` tokens with their bound key, the terminal palette xterm.js
+reads, and Door/focus-ring picks with candidate metrics and a prose reason
+(`ThemeDiagnosticSnapshot` owns the shape). The copied report dumps
 the same snapshot. **A real VSCode webview shows only the *inferred* theme
 kind**, since VSCode exposes CSS variables and not raw built-in theme JSON.
 

@@ -129,6 +129,10 @@ export function setSelection(id: string, selection: Selection | null): void {
   const s = ensure(id);
   if (s.selection === null && selection === null) return;
   s.selection = selection;
+  if (selection === null) {
+    s.copyFlash = null;
+    s.hintToken = null;
+  }
   notify();
 }
 
@@ -246,11 +250,12 @@ export function setDragAlt(id: string, altKey: boolean): void {
  */
 export function flashCopy(id: string, kind: CopyFlashKind, durationMs = 700): void {
   const s = ensure(id);
+  const selection = s.selection;
   s.copyFlash = kind;
   notify();
   setTimeout(() => {
     const current = states.get(id);
-    if (!current || current.copyFlash !== kind) return;
+    if (current !== s || current.selection !== selection || current.copyFlash !== kind) return;
     current.copyFlash = null;
     current.selection = null;
     notify();

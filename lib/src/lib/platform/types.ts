@@ -1,3 +1,4 @@
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../terminal-context-types';
 import type { AlertState, AwaitHandle, AwaitOptions } from '../alert-manager';
 import type { AlertSettings } from '../alert-settings';
 import type { VSCodeWorkbenchCommand } from '../vscode-keybindings';
@@ -8,6 +9,7 @@ import type { IframeProxyResult } from './iframe-proxy-types';
 import type { NotepadArchivePort } from '../notepad/types';
 
 export interface PtyInfo {
+  helper?: HelperIdentity;
   id: string;
   alive: boolean;
   exitCode?: number;
@@ -187,8 +189,10 @@ export interface PlatformAdapter {
   // Shell detection
   getAvailableShells(): Promise<ShellEntry[]>;
 
+  terminalContext?(request: TerminalContextRequest): Promise<TerminalContextInfo>;
+
   // PTY operations
-  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void;
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[]; helper?: HelperIdentity }): void;
   writePty(id: string, data: string): void;
   resizePty(id: string, cols: number, rows: number): void;
   killPty(id: string): void;

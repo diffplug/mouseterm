@@ -1,3 +1,4 @@
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../../lib/src/lib/terminal-context-types';
 import { fork, ChildProcess, type Serializable } from 'child_process';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -13,6 +14,7 @@ export interface PtyCallbacks {
 }
 
 export interface PtySpawnOptions {
+  helper?: HelperIdentity;
   cols?: number;
   rows?: number;
   cwd?: string;
@@ -49,6 +51,10 @@ function trimChunks(chunks: string[], totalChars: number): number {
   while (totalChars > MAX_BUFFER_CHARS && chunks.length > 1) {
     const removed = chunks.shift()!;
     totalChars -= removed.length;
+  }
+  if (totalChars > MAX_BUFFER_CHARS) {
+    chunks[0] = chunks[0].slice(-MAX_BUFFER_CHARS);
+    totalChars = MAX_BUFFER_CHARS;
   }
   return totalChars;
 }
@@ -170,10 +176,10 @@ export function getScrollbackSince(id: string, mark: number): string {
   let held = 0;
   for (let i = entry.scrollbackChunks.length - 1; i >= 0 && held < wanted; i--) {
     const chunk = entry.scrollbackChunks[i];
-    tail.unshift(chunk);
+    tail.push(chunk);
     held += chunk.length;
   }
-  const joined = tail.join('');
+  const joined = tail.reverse().join('');
   return held > wanted ? joined.slice(held - wanted) : joined;
 }
 
@@ -256,8 +262,11 @@ function ensureChild(extensionPath: string): ChildProcess {
   });
 
   childReady = false;
+  const launchedChild = child;
 
   child.on('message', (msg: any) => {
+    // A retired child's queued output must not enter a replacement's buffers.
+    if (child !== launchedChild) return;
     if (msg.type === 'ready') {
       log.info('pty-host ready');
       childReady = true;
@@ -291,11 +300,27 @@ function ensureChild(extensionPath: string): ChildProcess {
   });
 
   child.on('exit', (code) => {
+    if (child !== launchedChild) return;
     log.error(`pty-host exited unexpectedly (code ${code})`);
     child = null;
     childReady = false;
     pendingMessages = [];
     shellsCache = null;
+    // No PTY in this child can still be live. Retain its transcript for resume,
+    // and report exit just as if the child had delivered each PTY's final event.
+    const exitedIds: string[] = [];
+    const exitCode = code ?? 1;
+    for (const [id, entry] of ptyBuffers) {
+      if (!entry.alive) continue;
+      entry.alive = false;
+      entry.exitCode = exitCode;
+      exitedIds.push(id);
+    }
+    // Callbacks may synchronously spawn a replacement. Finish retiring this
+    // generation before notifying, and never iterate its replacement's buffers.
+    for (const id of exitedIds) {
+      for (const cb of callbackSet) cb.onExit(id, exitCode);
+    }
   });
 
   child.stderr?.on('data', (data: Buffer) => {
@@ -343,7 +368,11 @@ function sendToChild(msg: any): void {
   }
 }
 
+export const helperPtys = new Map<string, HelperIdentity>();
+
 export function spawn(id: string, options?: PtySpawnOptions): void {
+  if (options?.helper) helperPtys.set(id, options.helper);
+  else helperPtys.delete(id);
   killedPtyIds.delete(id);
   ptyBuffers.set(id, createBufferEntry(true, undefined, options?.shell));
   const dorEnv = getDorRuntimeEnv(extensionPath_);
@@ -356,6 +385,7 @@ export function spawn(id: string, options?: PtySpawnOptions): void {
     shell: options?.shell,
     args: options?.args,
     env: dorEnv,
+    helper: options?.helper,
   });
 }
 
@@ -367,27 +397,32 @@ export interface ShellEntry {
 
 let shellsCache: Promise<ShellEntry[]> | null = null;
 
-export function getAvailableShells(): Promise<ShellEntry[]> {
-  if (shellsCache) return shellsCache;
-  const pending = new Promise<ShellEntry[]>((resolve) => {
-    const requestId = `shells-${Date.now()}`;
-    // Ensure the child process is forked before attaching the listener —
-    // otherwise `child` is null on the cold path and the handler is never
-    // registered, causing the timeout to fire with an empty list.
-    sendToChild({ type: 'getShells', requestId });
+/** One correlated round trip to the PTY host child; rejects on timeout. */
+function requestChild<T>(message: Record<string, unknown>, matches: (msg: any) => boolean, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    // Fork the child before attaching the listener: on the cold path `child`
+    // is null until then and the handler would never be registered.
+    ensureChild(extensionPath_);
     const timeout = setTimeout(() => {
       child?.off('message', handler);
-      resolve([]);
-    }, 15000);
+      reject(new Error('PTY host request timed out'));
+    }, timeoutMs);
     const handler = (msg: any) => {
-      if (msg.type === 'shells' && msg.requestId === requestId) {
-        clearTimeout(timeout);
-        child?.off('message', handler);
-        resolve(msg.shells || []);
-      }
+      if (!matches(msg)) return;
+      clearTimeout(timeout);
+      child?.off('message', handler);
+      resolve(msg);
     };
     child?.on('message', handler);
+    sendToChild(message);
   });
+}
+
+export function getAvailableShells(): Promise<ShellEntry[]> {
+  if (shellsCache) return shellsCache;
+  const requestId = `shells-${Date.now()}`;
+  const pending = requestChild<{ shells?: ShellEntry[] }>({ type: 'getShells', requestId }, (msg) => msg.type === 'shells' && msg.requestId === requestId, 15000)
+    .then((msg) => msg.shells || [], () => []);
   shellsCache = pending;
   // Don't pin an empty result in the cache — lets a subsequent call retry
   // if the first one timed out or the child was still warming up.
@@ -397,51 +432,39 @@ export function getAvailableShells(): Promise<ShellEntry[]> {
   return pending;
 }
 
-export function getCwd(id: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    sendToChild({ type: 'getCwd', id });
-    const timeout = setTimeout(() => {
-      child?.off('message', handler);
-      resolve(null);
-    }, 1000);
-    const handler = (msg: any) => {
-      if (msg.type === 'cwd' && msg.id === id) {
-        clearTimeout(timeout);
-        child?.off('message', handler);
-        resolve(msg.cwd);
+let contextSequence = 0;
+export function terminalContext(request: TerminalContextRequest): Promise<TerminalContextInfo> {
+  const requestId = `context-${++contextSequence}`;
+  return requestChild<TerminalContextInfo>({ type: 'context', request, requestId }, (msg) => msg.type === 'context' && msg.requestId === requestId, 10000)
+    .then((result) => {
+      if (!result.error && request.op === 'promote') {
+        if (request.restore) helperPtys.set(request.id, request.restore);
+        else helperPtys.delete(request.id);
       }
-    };
-    child?.on('message', handler);
-  });
+      return result;
+    });
+}
+
+export function getCwd(id: string): Promise<string | null> {
+  return requestChild<{ cwd: string | null }>({ type: 'getCwd', id }, (msg) => msg.type === 'cwd' && msg.id === id, 1000)
+    .then((msg) => msg.cwd, () => null);
 }
 
 export function getOpenPorts(id: string): Promise<OpenPort[]> {
-  return new Promise((resolve) => {
-    sendToChild({ type: 'getOpenPorts', id });
-    const timeout = setTimeout(() => {
-      child?.off('message', handler);
-      resolve([]);
-    }, OPEN_PORT_TIMEOUT_MS);
-    const handler = (msg: any) => {
-      if (msg.type === 'openPorts' && msg.id === id) {
-        clearTimeout(timeout);
-        child?.off('message', handler);
-        resolve(msg.ports || []);
-      }
-    };
-    child?.on('message', handler);
-  });
+  return requestChild<{ ports?: OpenPort[] }>({ type: 'getOpenPorts', id }, (msg) => msg.type === 'openPorts' && msg.id === id, OPEN_PORT_TIMEOUT_MS)
+    .then((msg) => msg.ports || [], () => []);
 }
 
 export function write(id: string, data: string): void {
   sendToChild({ type: 'input', id, data });
 }
 
-export function resize(id: string, cols: number, rows: number): void {
-  sendToChild({ type: 'resize', id, cols, rows });
+export function resize(id: string, cols: number, rows: number, repaint?: boolean): void {
+  sendToChild({ type: 'resize', id, cols, rows, repaint });
 }
 
 export function kill(id: string): void {
+  helperPtys.delete(id);
   killedPtyIds.add(id);
   ptyBuffers.delete(id);
   sendToChild({ type: 'kill', id });

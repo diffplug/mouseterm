@@ -20,6 +20,7 @@ import {
   PocketClient,
   RelayRefusalError,
   SessionExpiredError,
+  PasskeyUnavailableError,
   type ConnectResult,
   type PocketSocket,
 } from '../client/pocket-client';
@@ -297,7 +298,7 @@ export default function App({
         // way, and an installed Pocket has no reload affordance to escape with.
         // Drop to sign-in, where one passkey prompt restores everything —
         // the pinned Burrows and push registration both outlive the session.
-        if (err instanceof SessionExpiredError) {
+        if (err instanceof SessionExpiredError || err instanceof PasskeyUnavailableError) {
           endSession();
           setPhase({ at: 'auth' });
           setError(err.message);
@@ -349,16 +350,16 @@ export default function App({
         if (decision.pairingRequired) await loadBurrows();
         throw new Error(decision.message);
       }
-      await client.hello();
-
-      // Stand up the remote adapter as the platform, prep a clean registry,
-      // then start watching the directory before the wall renders.
-      const adapter = new RemotePtyAdapter(client);
-      adapterRef.current = adapter;
-      setPlatform(adapter);
-      disposeAllSessions();
-      initAlertStateReceiver();
       try {
+        await client.hello();
+
+        // Stand up the remote adapter as the platform, prep a clean registry,
+        // then start watching the directory before the wall renders.
+        const adapter = new RemotePtyAdapter(client);
+        adapterRef.current = adapter;
+        setPlatform(adapter);
+        disposeAllSessions();
+        initAlertStateReceiver();
         await adapter.init();
       } catch (err) {
         // The session is already established, and the throw sends the user back
@@ -376,6 +377,12 @@ export default function App({
   );
 
   const onConnect = (burrow: BurrowView) => run('connect', () => connectTo(burrow));
+
+  const onWallError = useCallback((error: unknown) => {
+    endSession();
+    setError(error instanceof Error ? error.message : String(error));
+    setPhase({ at: 'burrows' });
+  }, [endSession]);
 
   /**
    * A scanned or pasted invitation, from the moment it parses to the moment the
@@ -603,7 +610,7 @@ export default function App({
       // The adapter is stood up before the phase moves, so the ref is set
       // whenever this branch is reachable.
       return adapterRef.current ? (
-        <ConnectedView burrow={phase.burrow} adapter={adapterRef.current} onLeave={leaveWall} />
+        <ConnectedView burrow={phase.burrow} adapter={adapterRef.current} onLeave={leaveWall} onError={onWallError} />
       ) : (
         <Waiting />
       );
@@ -759,10 +766,12 @@ export function ConnectedView({
   burrow,
   adapter,
   onLeave,
+  onError,
 }: {
   burrow: BurrowView;
   adapter: RemotePtyAdapter;
   onLeave: () => void;
+  onError?: (error: unknown) => void;
 }): React.ReactElement {
   return (
     <div className={PK.app}>
@@ -773,7 +782,7 @@ export function ConnectedView({
         <h1 className={PK.headerTitle}>{burrow.label || burrow.burrowId}</h1>
       </header>
       <div className={PK.wallHost}>
-        <PocketWall adapter={adapter} />
+        <PocketWall adapter={adapter} onError={onError} />
       </div>
     </div>
   );

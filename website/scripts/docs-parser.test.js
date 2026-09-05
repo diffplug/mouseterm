@@ -22,6 +22,12 @@ describe('slugger', () => {
     expect(slug('Usage')).toBe('usage-1');
     expect(slug('Usage')).toBe('usage-2');
   });
+
+  it('reserves both authored and generated numeric suffixes', () => {
+    const slug = createSlugger();
+    expect(['Usage', 'Usage', 'Usage-1', 'Usage-2', 'Usage', 'Usage-1'].map(slug))
+      .toEqual(['usage', 'usage-1', 'usage-1-1', 'usage-2', 'usage-3', 'usage-1-2']);
+  });
 });
 
 describe('inline', () => {
@@ -43,6 +49,11 @@ describe('inline', () => {
 
   it('honours backslash escapes', () => {
     expect(inlineToText(parseInline('a \\| b'))).toBe('a | b');
+  });
+
+  it('preserves backslashes before ordinary characters', () => {
+    expect(inlineToText(parseInline('C:\\Users\\name and \\*literal\\*')))
+      .toBe('C:\\Users\\name and *literal*');
   });
 
   it('does not treat snake_case as emphasis', () => {
@@ -221,6 +232,24 @@ describe('blocks', () => {
     const { blocks } = parseMarkdown('1. first\n2. second\n');
     expect(blocks[0]).toMatchObject({ type: 'list', ordered: true });
     expect(blocks[0].items).toHaveLength(2);
+  });
+
+  it('keeps a blank-separated paragraph inside its numbered step', () => {
+    const { blocks } = parseMarkdown('1. first\n2. second\n\n   More about step two.\n\n3. third\n');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].items).toHaveLength(3);
+    expect(blocks[0].items[1].children).toHaveLength(2);
+    expect(inlineToText(blocks[0].items[1].children[1].children)).toBe('More about step two.');
+  });
+
+  it('preserves an ordered list starting after step one', () => {
+    expect(parseMarkdown('3. third\n4. fourth\n').blocks[0])
+      .toMatchObject({ type: 'list', ordered: true, start: 3 });
+  });
+
+  it('starts a separate list when the marker changes between bullets and numbers', () => {
+    expect(parseMarkdown('- bullet\n1. first\n').blocks.map((block) => block.ordered))
+      .toEqual([false, true]);
   });
 
   it('keeps a list item with an inline img', () => {

@@ -232,6 +232,36 @@ ensure_version() {
     echo "$version" > "$version_file"
 }
 
+validate_version() {
+    [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
+        || error "Expected a release version X.Y.Z, got: $1"
+}
+
+verify_cached_release() {
+    local requested="${1:-}"
+    [[ -f "$WORK_DIR/.version" ]] || error "No cached release. Run all first."
+    local version
+    version=$(cat "$WORK_DIR/.version")
+    validate_version "$version"
+    [[ -z "$requested" || "$requested" == "$version" ]] \
+        || error "Cached release is $version, not $requested. Run all to start another version."
+    check_command gh "brew install gh"
+    check_gh_attestation_support
+    local tag_sha
+    tag_sha=$(resolve_tag_sha "v$version")
+    verify_downloaded_artifacts "v$version" "$tag_sha"
+    require_successful_release_run "v$version" "$tag_sha" >/dev/null
+}
+
+require_stage() {
+    [[ -f "$SIGN_DIR/.completed-$1" ]] || error "Release stage '$1' has not completed. Re-run that stage first."
+}
+
+invalidate_updates() {
+    rm -f "$SIGN_DIR/.completed-sign-updates"
+    rm -rf "$WORK_DIR/release-assets"
+}
+
 check_git_clean() {
     log "Checking git status..."
 
@@ -266,11 +296,28 @@ prepare_sign_dir() {
     rm -rf "$SIGN_DIR"
     mkdir -p "$SIGN_DIR"
     # Copy only the artifact directories (not marker files)
+    invalidate_updates
     for name in "${ARTIFACT_NAMES[@]}"; do
-        if [[ -d "$DOWNLOAD_DIR/$name" ]]; then
-            cp -R "$DOWNLOAD_DIR/$name" "$SIGN_DIR/$name"
-        fi
+        prepare_artifact "$name"
     done
+}
+
+prepare_artifact() {
+    local name="$1"
+    [[ -d "$DOWNLOAD_DIR/$name" ]] || error "Missing downloaded artifact: $name"
+    invalidate_updates
+    case "$name" in
+        standalone-mac-aarch64)
+            rm -f "$SIGN_DIR/.completed-sign-mac" "$SIGN_DIR/.completed-notarize" "$SIGN_DIR/$FNAME_MAC" ;;
+        standalone-win-x64)
+            rm -f "$SIGN_DIR/.completed-sign-win" ;;
+    esac
+    mkdir -p "$SIGN_DIR"
+    rm -rf "$SIGN_DIR/$name"
+    cp -R "$DOWNLOAD_DIR/$name" "$SIGN_DIR/$name"
+    if [[ "$name" == standalone-* ]]; then
+        node "$SCRIPT_DIR/release-artifact.mjs" restore "$SIGN_DIR/$name"
+    fi
 }
 
 rebuild_windows_installer() {
@@ -332,26 +379,21 @@ find_release_run_id() {
         --repo "$GITHUB_REPO" \
         --workflow release.yml \
         --event push \
+        --branch "$tag" \
         --commit "$tag_sha" \
         --limit 5 \
-        --json databaseId,displayTitle,headSha \
-        --jq ".[] | select(.displayTitle == \"$tag\" or .headSha == \"$tag_sha\") | .databaseId" \
-        | head -1
+        --json databaseId,headSha \
+        --jq "[.[] | select(.headSha == \"$tag_sha\")][0].databaseId // empty"
 }
 
-validate_sha256_manifest_paths() {
-    local manifest="$1"
-
-    awk '
-        NF < 2 { exit 1 }
-        {
-            path = $0
-            sub(/^[0-9a-fA-F]+[[:space:]]+[* ]?/, "", path)
-            if (path == "" || path ~ /^\// || path ~ /(^|\/)\.\.($|\/)/) {
-                exit 1
-            }
-        }
-    ' "$manifest"
+require_successful_release_run() {
+    local tag="$1" tag_sha="$2" run_id conclusion
+    run_id=$(find_release_run_id "$tag" "$tag_sha")
+    [[ -n "$run_id" ]] || error "Could not find workflow run for tag $tag"
+    conclusion=$(gh run view "$run_id" --repo "$GITHUB_REPO" --json conclusion --jq '.conclusion')
+    [[ "$conclusion" == success ]] \
+        || error "Workflow run $run_id has conclusion '$conclusion' (expected 'success'). Check: https://github.com/$GITHUB_REPO/actions/runs/$run_id"
+    printf '%s\n' "$run_id"
 }
 
 check_sha256_manifest() {
@@ -376,14 +418,18 @@ verify_downloaded_artifact() {
     [[ -d "$artifact_dir" ]] || error "$name: artifact directory not found at $artifact_dir"
 
     local manifest
-    manifest=$(require_single_find_match "$name artifact manifest" "$artifact_dir" -type f -name artifact-manifest.sha256)
+    manifest=$(require_file "$name artifact manifest" "$artifact_dir/artifact-manifest.sha256")
     [[ -s "$manifest" ]] || error "$name: artifact-manifest.sha256 is empty"
 
     local manifest_rel="${manifest#"$artifact_dir"/}"
     [[ "$manifest_rel" != "$manifest" ]] || error "$name: could not resolve manifest path relative to artifact directory"
 
-    validate_sha256_manifest_paths "$manifest" \
-        || error "$name: artifact manifest contains an absolute or parent-relative path"
+    check_command node "Install Node.js before signing"
+    node "$SCRIPT_DIR/release-artifact.mjs" verify "$artifact_dir" \
+        || error "$name: artifact inventory verification failed"
+    if [[ "$name" == standalone-* ]]; then
+        [[ -f "$artifact_dir/artifact-executables.txt" ]] || error "$name: executable inventory is missing"
+    fi
 
     local identity="https://github.com/$GITHUB_REPO/.github/workflows/release.yml@refs/tags/$tag"
 
@@ -465,12 +511,6 @@ download_artifacts() {
     check_command gh "brew install gh && gh auth login"
     check_gh_attestation_support
 
-    if all_artifacts_downloaded; then
-        log "All artifacts already downloaded, verifying cache"
-        verify_downloaded_artifacts "$tag" "$tag_sha"
-        return
-    fi
-
     local run_id=""
     local attempts=0
     local max_attempts=60  # 5 minutes of retries
@@ -510,22 +550,8 @@ resume_download() {
     check_command gh "brew install gh && gh auth login"
     check_gh_attestation_support
 
-    if all_artifacts_downloaded; then
-        log "All artifacts already downloaded, verifying cache"
-        verify_downloaded_artifacts "$tag" "$tag_sha"
-        return
-    fi
-
-    local run_id=""
-    run_id=$(find_release_run_id "$tag" "$tag_sha")
-
-    [[ -z "$run_id" ]] && error "Could not find workflow run for tag $tag"
-
-    local conclusion
-    conclusion=$(gh run view "$run_id" --repo "$GITHUB_REPO" --json conclusion --jq '.conclusion')
-    if [[ "$conclusion" != "success" ]]; then
-        error "Workflow run $run_id has conclusion '$conclusion' (expected 'success'). Check: https://github.com/$GITHUB_REPO/actions/runs/$run_id"
-    fi
+    local run_id
+    run_id=$(require_successful_release_run "$tag" "$tag_sha")
 
     log "Found completed workflow run: $run_id"
     log "Downloading artifacts..."
@@ -555,6 +581,12 @@ sign_macos_app() {
 
     find "$app_path/Contents/MacOS" "$app_path/Contents/Resources" -type f \
         \( -perm -111 -o -name "*.node" -o -name "*.dylib" -o -name "spawn-helper" \) | while read -r binary; do
+        # Executable launch scripts are sealed as bundle resources. Their
+        # standalone signatures live in extended attributes, lost in the tar.
+        case "$(file -b "$binary")" in
+            *Mach-O*) ;;
+            *) continue ;;
+        esac
         log "  Signing: ${binary#"$app_path/"}"
 
         if [[ "$binary" == "$app_path/Contents/MacOS/node" ]]; then
@@ -604,10 +636,14 @@ sign_macos_app() {
 sign_macos() {
     log "Starting macOS code signing..."
 
+    invalidate_updates
+    rm -f "$SIGN_DIR/.completed-sign-mac" "$SIGN_DIR/.completed-notarize" "$SIGN_DIR/$FNAME_MAC"
+
     local app
     app=$(mac_app_path)
 
     sign_macos_app "$app" "aarch64"
+    touch "$SIGN_DIR/.completed-sign-mac"
 
     log "All macOS signing complete"
 }
@@ -645,6 +681,10 @@ notarize_macos_app() {
 notarize_macos() {
     log "Starting macOS notarization..."
 
+    require_stage sign-mac
+    invalidate_updates
+    rm -f "$SIGN_DIR/.completed-notarize" "$SIGN_DIR/$FNAME_MAC"
+
     check_command xcrun "xcode-select --install"
     prompt_secret APPLE_SIGN_PASS "Enter Apple ID password (or app-specific password)"
 
@@ -653,7 +693,7 @@ notarize_macos() {
 
     notarize_macos_app "$app" "aarch64"
 
-    # Re-package signed+notarized app into .dmg and .tar.gz
+    # Re-package signed+notarized app into .tar.gz.
     local app_name
     app_name=$(basename "$app")
 
@@ -670,6 +710,8 @@ notarize_macos() {
         error "$FNAME_MAC contains AppleDouble (._*) entries — macOS metadata leaked into the archive"
     fi
 
+    touch "$SIGN_DIR/.completed-notarize"
+
     log "All macOS notarization and packaging complete"
 }
 
@@ -682,22 +724,20 @@ sign_windows() {
 
     log "Starting Windows code signing..."
 
+    invalidate_updates
+    rm -f "$SIGN_DIR/.completed-sign-win"
+
     check_command jsign "brew install jsign"
     prompt_secret EV_SIGN_PIN "Enter PIV PIN for Windows signing"
 
     local exe_path
     exe_path=$(windows_exe_path)
 
-    # `--storepass` stays on argv because jsign offers no alternative: it reads
-    # the password only as a literal option value, with no environment or
-    # file indirection (checked against jsign's own `--help`). The exposure is
-    # `ps` on this machine for the duration of the call, and the PIN alone is
-    # inert without the physical YubiKey it unlocks. Accepted, not overlooked —
-    # see docs/specs/security-ci.md -> "Desktop Releases".
+    # Jsign resolves env:NAME itself; the PIV PIN never appears in argv.
     log "Signing inner executable: $exe_path"
-    jsign \
+    EV_SIGN_PIN="$EV_SIGN_PIN" jsign \
         --storetype PIV \
-        --storepass "$EV_SIGN_PIN" \
+        --storepass env:EV_SIGN_PIN \
         --alias "$JSIGN_ALIAS" \
         --tsaurl "$TSA_URL" \
         --tsmode RFC3161 \
@@ -708,14 +748,14 @@ sign_windows() {
 
     rebuild_windows_installer "$exe_path" "$installer_path"
     log "Signing installer: $installer_path"
-    jsign \
+    EV_SIGN_PIN="$EV_SIGN_PIN" jsign \
         --storetype PIV \
-        --storepass "$EV_SIGN_PIN" \
+        --storepass env:EV_SIGN_PIN \
         --alias "$JSIGN_ALIAS" \
         --tsaurl "$TSA_URL" \
         --tsmode RFC3161 \
         "$installer_path"
-
+    touch "$SIGN_DIR/.completed-sign-win"
 
     log "Windows signing complete"
 }
@@ -728,6 +768,10 @@ sign_updates() {
     local version="$1"
 
     log "Signing update bundles with Tauri key..."
+
+    require_stage notarize
+    require_stage sign-win
+    invalidate_updates
 
     check_command pnpm "Install pnpm with corepack: corepack enable pnpm"
     pnpm --dir "$REPO_ROOT/standalone" exec tauri --version &>/dev/null \
@@ -811,6 +855,8 @@ sign_updates() {
 }
 EOF
 
+    touch "$SIGN_DIR/.completed-sign-updates"
+
     log "Update manifest written to $website_manifest — commit and deploy website to make it live"
 
     log "Update bundle signing complete"
@@ -833,19 +879,20 @@ create_release() {
     log "Creating GitHub Release $tag..."
 
     check_command gh "brew install gh && gh auth login"
+    require_stage sign-updates
 
     [[ -d "$release_dir" ]] || error "Release assets not found at $release_dir. Run signing steps first."
     for asset in "${release_assets[@]}"; do
-        [[ -f "$asset" ]] || error "Release asset missing: $asset. Run sign-updates first."
+        [[ -f "$asset" && ! -L "$asset" ]] || error "Release asset missing or symlinked: $asset. Run sign-updates first."
     done
 
     local unexpected_assets=()
     while IFS= read -r asset; do
         [[ -n "$asset" ]] && unexpected_assets+=("$asset")
-    done < <(find "$release_dir" -type f \
-        ! -name "$FNAME_MAC" \
-        ! -name "$FNAME_WIN" \
-        ! -name "$FNAME_LINUX" \
+    done < <(find "$release_dir" -mindepth 1 \
+        ! -path "$release_dir/$FNAME_MAC" \
+        ! -path "$release_dir/$FNAME_WIN" \
+        ! -path "$release_dir/$FNAME_LINUX" \
         -print | sort)
 
     if [[ "${#unexpected_assets[@]}" -gt 0 ]]; then
@@ -860,10 +907,11 @@ create_release() {
     local notes_file="$WORK_DIR/release-notes.md"
     if [[ -f "$REPO_ROOT/CHANGELOG.md" ]]; then
         # Extract section between [X.Y.Z] and the next ## heading.
-        # Drop the leading version heading (GitHub already shows the tag as the title)
-        # and the trailing next-version heading line.
-        sed -n "/^## \[$version\]/,/^## \[/p" "$REPO_ROOT/CHANGELOG.md" \
-            | sed '1d;$d' \
+        # Match the version literally and preserve the last line at EOF.
+        awk -v heading="## [$version]" '
+            /^## / { if (found) exit; found = ($0 == heading || index($0, heading " ") == 1); next }
+            found { print }
+        ' "$REPO_ROOT/CHANGELOG.md" \
             | sed '/./,$!d' > "$notes_file"
     fi
 
@@ -872,6 +920,14 @@ create_release() {
     fi
 
     if gh release view "$tag" --repo "$GITHUB_REPO" &>/dev/null; then
+        local existing_assets
+        existing_assets=$(gh release view "$tag" --repo "$GITHUB_REPO" --json assets --jq '.assets[].name')
+        while IFS= read -r asset; do
+            case "$asset" in
+                ""|"$FNAME_MAC"|"$FNAME_WIN"|"$FNAME_LINUX") ;;
+                *) error "Existing release contains unexpected asset: $asset. Remove it before retrying." ;;
+            esac
+        done <<< "$existing_assets"
         log "Release $tag already exists — updating assets..."
         gh release upload "$tag" \
             --repo "$GITHUB_REPO" \
@@ -947,8 +1003,9 @@ main() {
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") all <version>"
 
-            ensure_version "$version"
+            validate_version "$version"
             check_git_clean
+            ensure_version "$version"
             download_artifacts "$version"
             prepare_sign_dir
             sign_macos
@@ -961,7 +1018,9 @@ main() {
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") resume <version>"
 
-            ensure_version "$version"
+            validate_version "$version"
+            [[ -f "$WORK_DIR/.version" ]] || error "No cached release. Run all first."
+            [[ "$(cat "$WORK_DIR/.version")" == "$version" ]] || error "Cached release version differs. Run all to start another version."
             resume_download "$version"
             prepare_sign_dir
             sign_macos
@@ -971,31 +1030,35 @@ main() {
             create_release "$version"
             ;;
         sign-mac)
-            prepare_sign_dir
+            verify_cached_release
+            prepare_artifact standalone-mac-aarch64
             sign_macos
             ;;
         notarize)
-            prepare_sign_dir
+            verify_cached_release
             notarize_macos
             ;;
         sign-win)
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") sign-win <version>"
-            ensure_version "$version"
-            prepare_sign_dir
+            validate_version "$version"
+            verify_cached_release "$version"
+            prepare_artifact standalone-win-x64
             sign_windows "$version"
             ;;
         sign-updates)
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") sign-updates <version>"
-            ensure_version "$version"
+            validate_version "$version"
+            verify_cached_release "$version"
             [[ -d "$SIGN_DIR" ]] || error "Signed work directory not found at $SIGN_DIR. Run all/resume first."
             sign_updates "$version"
             ;;
         release)
             local version="${2:-}"
             [[ -z "$version" ]] && error "Usage: $(basename "$0") release <version>"
-            ensure_version "$version"
+            validate_version "$version"
+            verify_cached_release "$version"
             create_release "$version"
             ;;
         *)
@@ -1006,4 +1069,6 @@ main() {
     log "Done!"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

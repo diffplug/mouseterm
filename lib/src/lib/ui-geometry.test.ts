@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * The two pure helpers in `ui-geometry.ts`. `pointInConvexPolygon` decides
- * whether the TodoAlertDialog's hot area still holds the cursor (a false
+ * whether a popover's hot area still holds the cursor (a false
  * negative closes the dialog out from under a mouse still travelling toward
  * it), and `clampOverlayPosition` is what keeps a measured popover on screen —
  * both are geometry with edge cases the callers cannot show.
@@ -39,7 +39,7 @@ describe('pointInConvexPolygon', () => {
   });
 
   it('holds a cursor inside the dialog funnel trapezoid', () => {
-    // The shape TodoAlertDialog builds: the trigger button's top edge widening
+    // The shape a trigger-anchored popover builds: the button's top edge widening
     // to the dialog's top edge below it.
     const funnel = [
       { x: 100, y: 0 },

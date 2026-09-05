@@ -259,6 +259,19 @@ case ",$CERT_DOMAINS," in
     ;;
 esac
 
+# Match run-relay's KEY=VALUE parser: the last assignment wins, and only
+# a matched pair of double quotes is removed. Never source configuration.
+env_file_value() {
+  [ -r "$1" ] || return 1
+  awk -v key="$2" '
+    index($0, key "=") == 1 { value = substr($0, length(key) + 2) }
+    END {
+      if (value ~ /^".*"$/) value = substr(value, 2, length(value) - 2)
+      printf "%s", value
+    }
+  ' "$1"
+}
+
 # --------------------------------------------------------- origin identity ---
 
 CONFIG_DIR="$INSTALL_ROOT/config"
@@ -274,7 +287,7 @@ PREVIOUS_LINK="$INSTALL_ROOT/previous"
 FIRST_INSTALL=1
 if [ -f "$ENV_FILE" ]; then
   FIRST_INSTALL=0
-  EXISTING_ORIGIN="$(sed -n 's/^DORMOUSE_ORIGIN=//p' "$ENV_FILE" | head -1 | sed 's/^"//; s/"$//')"
+  EXISTING_ORIGIN="$(env_file_value "$ENV_FILE" DORMOUSE_ORIGIN)"
   if [ -n "$EXISTING_ORIGIN" ] && [ "$EXISTING_ORIGIN" != "$ORIGIN" ]; then
     printf '\n' >&2
     warn "This machine already has an installation bound to a DIFFERENT origin."
@@ -392,6 +405,13 @@ NODE_BUILD_ARCH="$("$NODE_BIN" -e 'process.stdout.write(process.arch)')"
 [ "$NODE_BUILD_VERSION" = "v$NODE_PIN" ] || die "the build ran under Node $NODE_BUILD_VERSION but the repository pins v$NODE_PIN."
 ok "pinned runtime: $NODE_BUILD_VERSION ($NODE_BUILD_ARCH)"
 
+# A release id can repeat within one second. Claim its directory exclusively;
+# an existing path may be a live release and must never be cleared for staging.
+create_release_stage() {
+  mkdir "$1" || return 1
+  mkdir "$1/lib" "$1/runtime"
+}
+
 # ------------------------------------------------------------- stage build ---
 
 step "Staging the new release"
@@ -409,8 +429,7 @@ RELEASE_ID="$(date -u +%Y%m%dT%H%M%SZ)-$GIT_SHORT"
 [ "$GIT_DIRTY" = "true" ] && RELEASE_ID="$RELEASE_ID-dirty"
 STAGE="$RELEASES_DIR/$RELEASE_ID"
 
-rm -rf "$STAGE"
-mkdir -p "$STAGE/lib" "$STAGE/runtime"
+create_release_stage "$STAGE" || die "could not create a new release directory: $STAGE (existing releases are never overwritten)."
 
 info "pnpm deploy --prod --legacy"
 WS_STATE_BACKUP=""
@@ -486,7 +505,7 @@ random_hex32() {
 env_missing_keys() {
   local key missing=""
   for key in DORMOUSE_ORIGIN DORMOUSE_STATE_DIR DORMOUSE_BIND_HOST PORT; do
-    grep -q "^$key=." "$1" || missing="$missing $key"
+    [ -n "$(env_file_value "$1" "$key")" ] || missing="$missing $key"
   done
   printf '%s' "$missing"
 }
@@ -530,9 +549,9 @@ An install interrupted between creating that file and writing it leaves exactly 
 # The bind host is a security boundary whenever the TLS proxy is local: Serve
 # reaches the app over loopback, so an unbound socket would also publish the
 # plaintext port to the LAN and to the tailnet.
-grep -q '^DORMOUSE_BIND_HOST=127\.0\.0\.1$' "$ENV_FILE" \
+[ "$(env_file_value "$ENV_FILE" DORMOUSE_BIND_HOST)" = "127.0.0.1" ] \
   || die "config/relay.env must set DORMOUSE_BIND_HOST=127.0.0.1. Fix it before continuing — Tailscale access control is not a reason to expose the plaintext backend."
-grep -q "^PORT=$LOOPBACK_PORT$" "$ENV_FILE" \
+[ "$(env_file_value "$ENV_FILE" PORT)" = "$LOOPBACK_PORT" ] \
   || die "config/relay.env must set PORT=$LOOPBACK_PORT to match the Serve mapping."
 
 # ------------------------------------------------------------- bin scripts ---
@@ -620,9 +639,21 @@ fail() { printf '  %s✗%s %s\n' "$C_RED" "$C_OFF" "$1"; FAILURES=$((FAILURES + 
 note() { printf '  %s%s%s\n' "$C_DIM" "$1" "$C_OFF"; }
 warn() { printf '  %s!%s %s\n' "$C_YEL" "$C_OFF" "$1"; }
 
+# Match run-relay's KEY=VALUE parser: the last assignment wins, and only
+# a matched pair of double quotes is removed. Never source configuration.
+env_file_value() {
+  [ -r "$1" ] || return 1
+  awk -v key="$2" '
+    index($0, key "=") == 1 { value = substr($0, length(key) + 2) }
+    END {
+      if (value ~ /^".*"$/) value = substr(value, 2, length(value) - 2)
+      printf "%s", value
+    }
+  ' "$1"
+}
+
 env_value() {
-  [ -r "$ENV_FILE" ] || return 1
-  sed -n "s/^$1=//p" "$ENV_FILE" | head -1 | sed 's/^"//; s/"$//'
+  env_file_value "$ENV_FILE" "$1"
 }
 
 PORT="$(env_value PORT || echo 3100)"
@@ -666,6 +697,26 @@ release_field() {
   local target="$ROOT/current/RELEASE"
   [ -f "$target" ] || return 1
   sed -n "s/^$1=//p" "$target" | head -1
+}
+
+# Mode alone accepts a private path owned by another account. Compare numeric
+# uids so ownership does not depend on directory-service name resolution.
+# $1 = path, $2 = expected octal mode, $3 = label.
+owner_only() {
+  local out mode owner me
+  me="$(id -u)"
+  out="$(stat -f '%Lp %u' "$1" 2>/dev/null || true)"
+  if [ -z "$out" ]; then
+    fail "$3 is missing: $1"
+    return
+  fi
+  mode="${out%% *}"
+  owner="${out#* }"
+  if [ "$mode" = "$2" ] && [ "$owner" = "$me" ]; then
+    pass "$3 is mode 0$2, owned by uid $me"
+  else
+    fail "$3 is mode 0$mode owned by uid $owner — expected mode 0$2 owned by uid $me"
+  fi
 }
 
 # Which release is serving port $1? Empty when that cannot be established —
@@ -875,30 +926,21 @@ cmd_verify() {
     fi
   fi
 
-  local cfg_mode state_mode run_mode env_mode offer_mode
-  cfg_mode="$(stat -f '%Lp' "$ROOT/config" 2>/dev/null || echo '???')"
-  state_mode="$(stat -f '%Lp' "$STATE_DIR" 2>/dev/null || echo '???')"
-  # run/ is checked as a directory in its own right, not merely as the offer's
-  # parent: the directory governs who may replace or delete the one credential
-  # the Relay honors from disk.
-  run_mode="$(stat -f '%Lp' "$ROOT/run" 2>/dev/null || echo '???')"
-  env_mode="$(stat -f '%Lp' "$ENV_FILE" 2>/dev/null || echo '???')"
-  [ "$cfg_mode" = "700" ] && pass "config/ is mode 0700" || fail "config/ is mode $cfg_mode, expected 700"
-  [ "$state_mode" = "700" ] && pass "state/ is mode 0700" || fail "state/ is mode $state_mode, expected 700"
-  [ "$run_mode" = "700" ] && pass "run/ is mode 0700" || fail "run/ is mode $run_mode, expected 700"
-  [ "$env_mode" = "600" ] && pass "config/relay.env is mode 0600" || fail "config/relay.env is mode $env_mode, expected 600"
+  owner_only "$ROOT/config" 700 'config/'
+  owner_only "$STATE_DIR" 700 'state/'
+  owner_only "$ROOT/run" 700 'run/'
+  owner_only "$ENV_FILE" 600 'config/relay.env'
 
   # The enrollment offer is single-use: absent means it was spent (or never
   # minted by an older installer), which is healthy. Only its permissions are
   # this command's business, and only while it is there.
   if [ -f "$OFFER_FILE" ]; then
-    offer_mode="$(stat -f '%Lp' "$OFFER_FILE" 2>/dev/null || echo '???')"
-    [ "$offer_mode" = "600" ] && pass "run/enroll-offer.json is mode 0600" || fail "run/enroll-offer.json is mode $offer_mode, expected 600"
+    owner_only "$OFFER_FILE" 600 'run/enroll-offer.json'
   else
     note "no enrollment offer on disk (spent, or minted by an older installer)"
   fi
 
-  if grep -q '^DORMOUSE_BIND_HOST=127\.0\.0\.1$' "$ENV_FILE" 2>/dev/null; then
+  if [ "$(env_value DORMOUSE_BIND_HOST)" = "127.0.0.1" ]; then
     pass "DORMOUSE_BIND_HOST=127.0.0.1"
   else
     fail "DORMOUSE_BIND_HOST is not pinned to 127.0.0.1"

@@ -81,6 +81,7 @@ function request(url: string, init: { method?: string; headers?: Record<string, 
       headers: init.headers,
     }, (res) => {
       const chunks: Buffer[] = [];
+      res.on('error', reject);
       res.on('data', (c: Buffer) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }));
     });
@@ -97,7 +98,7 @@ async function frame(target: string, opts = NO_LOG): Promise<string> {
 }
 
 /** Send a raw WebSocket upgrade at the proxy and capture what upstream saw. */
-function upgrade(url: string, headers: Record<string, string>): Promise<string> {
+function upgrade(url: string, headers: Record<string, string>, raw = false): Promise<string> {
   const u = new URL(url);
   return new Promise((resolve, reject) => {
     const socket = net.connect(Number(u.port), u.hostname, () => {
@@ -106,7 +107,7 @@ function upgrade(url: string, headers: Record<string, string>): Promise<string> 
     });
     let seen = '';
     socket.on('data', (c: Buffer) => { seen += c.toString('utf8'); });
-    socket.on('close', () => resolve(seen));
+    socket.on('close', () => resolve(raw ? seen : (seen ? seen.slice(seen.indexOf('\r\n\r\n') + 4) : '')));
     socket.on('error', reject);
     setTimeout(() => socket.destroy(), 250);
   });
@@ -116,7 +117,9 @@ function upgrade(url: string, headers: Record<string, string>): Promise<string> 
 function echoUpgradeUpstream(): Promise<number> {
   const server = http.createServer();
   server.on('upgrade', (req, socket) => {
+    socket.write('HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSet-Cookie: poisoned=1; Path=/\r\n\r\n');
     socket.end(JSON.stringify({
+      cookie: req.headers.cookie,
       host: req.headers.host ?? null,
       origin: req.headers.origin ?? null,
     }));
@@ -223,6 +226,45 @@ describe('iframe proxy — serving', () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe(`${new URL(url).origin}/next`);
+  });
+
+  it('does not rewrite redirect authorities that merely start with the upstream origin', async () => {
+    let location = '';
+    const port = await upstream((_q, s) => { s.writeHead(302, { location }); s.end(); });
+    const url = await frame(`http://127.0.0.1:${port}/`);
+    location = `http://127.0.0.1:${port}0/other`;
+    expect((await get(url)).headers.location).toBe(location);
+  });
+
+  it('rewrites only a Referer origin, preserving foreign referers and query values', async () => {
+    const port = await upstream((q, s) => s.end(q.headers.referer));
+    const url = await frame(`http://127.0.0.1:${port}/`);
+    const origin = new URL(url).origin;
+    const own = await request(url, { headers: { referer: `${origin}/page?return=${origin}/nested` } });
+    expect(own.body).toBe(`http://127.0.0.1:${port}/page?return=${origin}/nested`);
+    const foreign = `https://foreign.example/page?return=${origin}/nested`;
+    expect((await request(url, { headers: { referer: foreign } })).body).toBe(foreign);
+  });
+
+  it.each([NO_LOG, NO_EMBEDDER])('strips ambient cookies and upstream Set-Cookie for every grant (%j)', async (opts) => {
+    const port = await upstream((q, s) => {
+      s.writeHead(200, { 'content-type': 'text/plain', 'set-cookie': ['poisoned=1; Path=/', 'other=2'] });
+      s.end(JSON.stringify({ cookie: q.headers.cookie ?? null }));
+    });
+    const res = await request(await frame(`http://127.0.0.1:${port}/`, opts), {
+      headers: { Cookie: 'local-secret=private' },
+    });
+    expect(JSON.parse(res.body).cookie).toBeNull();
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('terminates the client response when a non-HTML upstream aborts mid-body', async () => {
+    const port = await upstream((_q, s) => {
+      s.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': '100' });
+      s.write('partial');
+      setTimeout(() => s.destroy(), 20);
+    });
+    await expect(get(await frame(`http://127.0.0.1:${port}/`))).rejects.toMatchObject({ code: 'ECONNRESET' });
   });
 
   it('serves an actionable error page (frameable) when the upstream is unreachable', async () => {
@@ -416,6 +458,27 @@ describe('iframe proxy — the upgrade path', () => {
       host: `127.0.0.1:${upstreamPort}`,
       origin: `http://127.0.0.1:${upstreamPort}`,
     });
+  });
+
+  it('strips Cookie and Set-Cookie on a successful upgrade', async () => {
+    const seen = await upgrade(url, wsHeaders({ Cookie: 'local-secret=private' }), true);
+    expect(seen).toContain('HTTP/1.1 101');
+    expect(seen.toLowerCase()).not.toContain('set-cookie:');
+    expect(JSON.parse(seen.split('\r\n\r\n')[1]).cookie).toBeUndefined();
+  });
+
+  it('strips Set-Cookie when upstream refuses the upgrade', async () => {
+    const port = await upstream((_q, s) => {
+      s.writeHead(403, { 'set-cookie': 'poisoned=1; Path=/' });
+      s.end('refused');
+    });
+    const refusedUrl = await frame(`http://127.0.0.1:${port}/`);
+    const seen = await upgrade(refusedUrl, {
+      ...wsHeaders({}), Host: new URL(refusedUrl).host,
+    }, true);
+    expect(seen).toContain('HTTP/1.1 403');
+    expect(seen).toContain('refused');
+    expect(seen.toLowerCase()).not.toContain('set-cookie:');
   });
 
   it('forwards a foreign Origin untouched rather than laundering it', async () => {

@@ -329,6 +329,67 @@ test('resolveSpawnConfig skips -l for csh', () => {
   assert.deepEqual(config.shellArgs, []);
 });
 
+// The real shared owner, with only node-pty replaced: all local and remote
+// resizes reach this manager, so these races must be decided here.
+function repaintHarness(t) {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const resizes = [];
+  const exits = [];
+  let serial = 0;
+  const mgr = create(() => {}, {
+    spawn() {
+      const generation = ++serial;
+      return {
+        pid: generation,
+        onData() {},
+        onExit(handler) { exits.push(handler); },
+        resize(cols, rows) { resizes.push({ generation, cols, rows }); },
+        kill() {},
+      };
+    },
+  });
+  mgr.spawn('pane-1');
+  return { mgr, resizes, exits };
+}
+
+for (const rows of [1, 24]) {
+  test(`PTY owner restores a ${rows}-row repaint without a live Viewer`, (t) => {
+    const { mgr, resizes } = repaintHarness(t);
+    mgr.resize('pane-1', 80, rows, true);
+    assert.deepEqual(resizes, [{ generation: 1, cols: 80, rows: rows > 1 ? rows - 1 : 2 }]);
+    // A Viewer can detach/dispose; restoring the owner's temporary size still
+    // completes. No Viewer callback or subscription owns this timer.
+    t.mock.timers.tick(60);
+    assert.deepEqual(resizes.at(-1), { generation: 1, cols: 80, rows });
+  });
+}
+
+for (const repaint of [false, true]) {
+  test(`a later ${repaint ? 'Viewer repaint' : 'local resize'} supersedes PTY restoration`, (t) => {
+    const { mgr, resizes } = repaintHarness(t);
+    mgr.resize('pane-1', 80, 24, true);
+    t.mock.timers.tick(30);
+    mgr.resize('pane-1', 120, 40, repaint);
+    const written = resizes.length;
+    t.mock.timers.tick(30);
+    assert.equal(resizes.length, written, 'the first Viewer must never restore its old size');
+    t.mock.timers.tick(30);
+    assert.deepEqual(resizes.at(-1), { generation: 1, cols: 120, rows: 40 });
+  });
+}
+
+for (const retire of ['exit', 'kill', 'killAll', 'replace']) {
+  test(`PTY repaint restoration stops on ${retire}`, (t) => {
+    const { mgr, resizes, exits } = repaintHarness(t);
+    mgr.resize('pane-1', 80, 24, true);
+    if (retire === 'exit') exits[0]({ exitCode: 0 });
+    else if (retire === 'replace') mgr.spawn('pane-1');
+    else mgr[retire]('pane-1');
+    t.mock.timers.tick(60);
+    assert.deepEqual(resizes, [{ generation: 1, cols: 80, rows: 23 }]);
+  });
+}
+
 test('create forwards PTY data and observes natural exit', () => {
   const events = [];
   const listeners = {};
@@ -380,7 +441,7 @@ test('list reports the resolved launch shell for live reconnects', () => {
   mgr.spawn('pane-pwsh', { shell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' });
   mgr.list();
 
-  assert.deepEqual(events.at(-1), {
+  assert.deepEqual(events.findLast(item => item.event === 'list'), {
     event: 'list',
     data: {
       ptys: [{

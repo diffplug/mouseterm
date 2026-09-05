@@ -54,17 +54,25 @@ The label is the `DerivedHeader` from `deriveHeader(...)`; `docs/specs/terminal-
 
 #### Header context menu
 
-**One menu per pane, opened by right-click anywhere on the header or by `>` in command mode** — at the pointer, or under the header's left edge (`data-pane-header-for` plus a synthetic `contextmenu`, so both paths share one code path). **Only terminal panes have it**; browser surfaces and Doors have no header, so `>` no-ops there. Only the alert bell owns its own right-click (`stopPropagation`, opening the alert dialog); every other region, the title span included, bubbles here. It is portaled to `document.body`, viewport-clamped, and dismissed by outside `pointerdown`, `Escape`, `resize`, or capture-phase `scroll` — **never by a scroll originating inside the menu**, since arrow-key focus moves auto-scroll the overflowing list.
+**Must open the terminal context from terminal header, alert, body, and command-mode `>` entry points.** Browser-only Surfaces and Doors have no context. Application mouse ownership follows `docs/specs/mouse-and-clipboard.md` → Terminal context input.
 
-Content, top to bottom:
+**Must anchor at the terminal body's top-left below its header**, leaving two rem at right and bottom. Keep one context per Wall. Outside pointer press and explicit close dismiss it; resize follows its containing body. No separate context heading or clipboard toolbar is shown.
 
-- **Header row** — display title, the pane's `surface:N` handle (`resolveSurfaceRef`, muted), close button.
-- **Title-candidates table** — latest entry per `titleCandidates` channel (`docs/specs/terminal-state.md`): channel, text, timestamp; else a muted `No title candidates`. **Diagnostic only** — it changes no title priority rule.
-- **Port rows** — the TCP ports the pane's process tree binds, scanned by `getOpenPorts` **once per open** (reopen to rescan): a spinner, then one `host:port` row per distinct port (digit chip first, process name muted beside it), else a muted `no listening ports` / `port scan failed`.
+| Row | Content |
+|---|---|
+| Title | Derived display title, labeled Explain action, copyable source Surface ref and close at right |
+| Dir | Home-abbreviated directory, native explorer action, absolute-path copy |
+| Ports | One scan per opening; scanning/empty/failure states; one port inline, multiple ports in a dropdown with count beside it; four labeled actions |
+| Alerts | Source Watch and TODO controls; notification details directly below |
+| Helper | Remaining space; one-line status, Modify/Reset and Promote; hide its name below 48rem container width |
 
-**The menu owns the keyboard while open**: DOM focus on mount, the previously focused element restored when a dismissal leaves input ownership unchanged, and registration as dialog-keyboard-active so command-mode keys don't fire underneath. `1`–`9` activate the matching port row and **presses during the scan are dropped, never buffered**; `↑`/`↓` rove the rows (wrapping), `Enter`/`Space` activate the focused row, `Tab`/`Shift+Tab` cycle every focusable element, `Escape` closes.
+**Must focus context controls on opening.** Explicit entry into helper xterm gives it terminal keys; Escape there belongs to its program. Escape from controls closes the innermost disclosure, then context. Terminal clipboard routing uses the focused helper rather than the selected source. Actions use subdued link color and shared compact `OnOffSwitch` controls.
 
-Activating a port row reproduces `dor ab open <url>` for that port and closes the menu at once (`docs/specs/dor-browser.md` → Pane Context Menu Connect): the browser surface becomes the selection in passthrough, reattaching first if minimized — **the one command-mode gesture that moves selection off the pane it targeted and exits command mode** — with loading/errors surfacing in the pane, not the menu. With no `agentBrowserCommand` the rows are inert labels with no digit chips. Source of truth: `lib/src/components/wall/PaneHeaderContextMenu.tsx`, `lib/src/components/wall/TerminalPaneHeader.tsx`, `lib/src/components/wall/keyboard/handle-pane-shortcuts.ts`.
+**Must place the shared notepad button beside Promote in the Helper status row**, opening the parent's panel over the context; `docs/specs/notepad.md` → "Helper terminals" owns its behavior.
+
+**Must promote by adopting the helper Session into a new split beside the source**, preserving identity and focusing it. Helper lifetime and source closure are owned by `docs/specs/terminal-context.md`.
+
+Source of truth: `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`; `TerminalPanel` in `lib/src/components/wall/TerminalPanel.tsx`; `TerminalPaneHeader` in `lib/src/components/wall/TerminalPaneHeader.tsx`; `useWallKeyboard` in `lib/src/components/wall/use-wall-keyboard.ts`.
 
 ### Pane body
 
@@ -123,9 +131,11 @@ Source of truth: `lib/src/components/Baseboard.tsx`, `lib/src/components/Door.ts
 
 ## Workspaces
 
-Each Workspace owns its own Content (Lath layout) and Baseboard (doors); the standalone Window holds several but mounts only the **active** one. Union status is `docs/specs/alert.md`'s; VS Code's per-webview mapping is `docs/specs/vscode.md`'s.
+Each Wall renders one Workspace's Content (Lath layout) and Baseboard (doors). VS Code's per-webview mapping is owned by `docs/specs/vscode.md`.
 
-What exists today: the in-memory model and its container verbs (`createWorkspace` / `closeWorkspace` / `renameWorkspace` / `setActiveWorkspace` in `lib/src/lib/workspace-store.ts`), the union projection (`computeWorkspaceUnion` in `lib/src/lib/workspace-union.ts`), and Window persistence — the only thing `dormouse.flags.workspaces` (`WORKSPACES_FLAG_KEY` in `lib/src/lib/feature-flags.ts`, **off by default**) actually gates: `lib/src/lib/window-persistence.ts` is an identity passthrough with the flag off, so the standalone host stores a bare `PersistedSession`, and wraps/unwraps a `PersistedWindow` with it on (`docs/specs/transport.md`); VS Code never goes through it. No production code calls the container verbs yet, and `setActiveWorkspace` does not re-render the Wall, so the app runs exactly one implicit Workspace either way.
+The in-memory model, container verbs, and Window persistence wrapper are implemented but unwired. The live union projection and its host displays are owned by `docs/specs/alert.md` → Workspace union. **Must reject duplicate Workspace IDs before mutating the model**, preserving the last-Workspace close guard (`workspace-store.test.ts`). `dormouse.flags.workspaces` is off by default and selects the wrapper's bare `PersistedSession` versus `PersistedWindow` format (`docs/specs/transport.md`). **Both standalone adapters disable session persistence**, so the flag alone enables no storage or Workspace UI. No production code calls the container verbs; `setActiveWorkspace` does not re-render the Wall, and standalone runs one implicit Workspace.
+
+Source of truth: `createWorkspace` / `setWorkspaces` / `closeWorkspace` / `renameWorkspace` / `setActiveWorkspace` in `lib/src/lib/workspace-store.ts`; `WORKSPACES_FLAG_KEY` in `lib/src/lib/feature-flags.ts`; `loadSessionState` / `saveSessionState` in `lib/src/lib/window-persistence.ts`; `PERSIST_SESSION` in `standalone/src/tauri-adapter.ts` and `standalone/src/browser-sidecar-adapter.ts`.
 
 The strip UI, real switching, and lifecycle UX are staged in [Future](#future) — this spec's `## Future` is the single rollout ledger; other specs link here.
 
@@ -158,9 +168,9 @@ Wall starts in `command` mode. Embedders may pass `initialMode="passthrough"` wh
 
 `docs/specs/shortcuts.md` tables every binding; this section owns the dispatch behavior behind it.
 
-All keys are handled in one capture-phase `keydown` listener on `window` (`use-wall-keyboard.ts`), which delegates in a fixed order to the modules in `lib/src/components/wall/keyboard/`: dual-tap → editable-field clipboard → mouse-selection keys → *(passthrough stops here)* → *(rename stops here)* → kill confirmation → *(an open dialog stops here)* → pane shortcuts → pane navigation. **Every handled key calls `preventDefault()` + `stopPropagation()`.**
+All keys are handled in one capture-phase `keydown` listener on `window` (`use-wall-keyboard.ts`), which delegates in a fixed order to the modules in `lib/src/components/wall/keyboard/`: dual-tap → editable-field clipboard → mouse-selection keys → *(passthrough stops here)* → *(rename stops here)* → kill confirmation → *(an open dialog stops here)* → pane shortcuts → pane navigation. **Must prevent default and stop propagation for handled command keys.** Bare Meta/Shift presses stop only internal dispatch; the detector leaves their DOM event untouched.
 
-That order is load-bearing twice: a rename input suppresses the pane shortcuts but **not** the mode-exit gesture or the field's own clipboard chords; and a staged kill confirmation hijacks *every* key before the dialog gate, so the confirm letter works even though the modal is open.
+That order is load-bearing twice: a rename input suppresses the pane shortcuts but **not** the mode-exit gesture or the field's own clipboard chords; and a staged kill confirmation hijacks each key reaching it before the dialog gate, so the confirm letter works even though the modal is open.
 
 **Every open dialog holds its own reference-counted lease on that gate**, and command-mode dispatch resumes only once the last lease is released — so a dialog closing over another cannot lift the survivor's suppression (`createDialogKeyboardCoordinator` in `lib/src/components/wall/wall-context.tsx`).
 
@@ -210,7 +220,7 @@ Source of truth: `lib/src/lib/rect-tween.ts` (position and velocity), `lib/src/l
 
 #### Directional motion smear
 
-Each travelling edge trails a soft band sized by its own motion. A line smears only by moving *across* itself, so **a horizontal edge is driven by its vertical speed and a vertical edge by its horizontal speed, and all four edges are independent.** Each speed normalizes against `cfg.focusRing.smearFullSpeed` into a single `t`; width ramps from `strokeWidth` to `smearMaxPx`, alpha from 0 to `smearPeakAlpha`. **Both start at zero**, so a stationary edge lays no band under the crisp ring. A settled or reduced-motion ring has null speeds and the smear layer is `display: none`, keeping snapshots deterministic.
+Each travelling edge trails a soft band sized by its own motion. A line smears only by moving *across* itself, so **a horizontal edge is driven by its vertical speed and a vertical edge by its horizontal speed, and all four edges are independent.** Each speed normalizes against `cfg.focusRing.smearFullSpeed` into a single `t`; width ramps from `strokeWidth` to `smearMaxPx`, alpha from 0 to `smearPeakAlpha`. **Must give stationary edges zero alpha.** A settled or reduced-motion ring has null speeds and the smear layer is `display: none`, keeping snapshots deterministic.
 
 - **Velocity is analytic**: `sampleRingVelocity` differentiates the tween (`E'` from `LATH_EASING.slope`), so the smear peaks on the opening frame and needs no smoothing. **Never finite-difference rendered positions** (rationale).
 - **Never divide alpha by the widening factor** — extent and intensity are independent knobs, and `smearFullSpeed` alone shapes a travel (rationale).
@@ -218,7 +228,7 @@ Each travelling edge trails a soft band sized by its own motion. A line smears o
 - **Two layers**, because one closed path cannot carry four widths (rationale): the smear is a sibling `<g data-ring="smear">` of eight pieces drawn underneath, and **the ring (`<path data-ring="outline">`) is never transformed, re-dashed, or re-alpha'd.**
 - **Eight pieces: four edges plus four corners**, every one cut from ONE shared point set (`ringPoints`) that `roundedRectPath` also walks, so the smear provably tiles the ring — pinned by `ring-geometry.test.ts`. A corner reaches two widths at once through a `scale` transform that `cornerPath` compensates for, and takes the mean of its two edges' opacity (rationale; mechanism documented at `cornerPath`). **Find each piece by `data-piece`, never by index.**
 - **Dash length is computed, never measured.** `ringPerimeter` returns the outline's exact length in closed form — straight runs plus `1.6232252401402307 × r` per corner. **Never substitute `π/2`** (the quarter-*circle* value: 3% short, silently shifting every dash) **or reinstate `SVGGeometryElement.getTotalLength()`** (a synchronous style+layout flush every frame) (rationale).
-- **Never reintroduce an SVG `feGaussianBlur` here** — WebKit CPU-rasterizes SVG filters every frame. The cost is SVG filters specifically: stroke widths, scale transforms, opacities and CSS `filter: blur()` are all GPU-composited and free (rationale).
+- **Never reintroduce an SVG `feGaussianBlur` here** (rationale).
 
 Source of truth: `lib/src/lib/ring-geometry.ts`.
 
@@ -239,6 +249,8 @@ Source of truth: `lib/src/components/wall/WorkspaceSelectionOverlay.tsx`, `lib/s
 **Pane↔door.** Down from a pane with no pane below it selects the *first* door; Up from a door selects the *last* pane; Left/Right moves between doors. **Doors have no spatial query** — they are an ordered list.
 
 **`Cmd/Ctrl+Arrow` swap.** Swaps Surface **content** between two panes, leaving the layout shape unchanged. One Lath `swap` op trades the two leaf identities, and because per-leaf metadata and terminal-registry entries are keyed by id, title/params/session follow automatically — **never write a companion title swap** — with no DOM reattach. Selection stays on the moved Surface, so **the breadcrumb records the *partner*** (the pane now holding the old slot): the opposite `Cmd+Arrow` swaps back exactly and a plain opposite arrow selects the partner.
+
+**Must ignore swap chords while a Door is selected**, including when a prior pane move left a breadcrumb (`handle-pane-shortcuts.test.ts`). Source of truth: `handlePaneShortcuts` in `lib/src/components/wall/keyboard/handle-pane-shortcuts.ts`.
 
 ## Minimize and reattach
 
@@ -264,6 +276,8 @@ A door dragged out of the baseboard skips the token entirely and inserts at the 
 
 Triggered by `,` in command mode or by clicking the session name in the pane header.
 
+**Must consume `,` without starting a rename on a Door or browser Surface.** Only a terminal pane mounts the title editor. Pinned by `handle-pane-shortcuts.test.ts`.
+
 The name `<span>` is replaced by an `InlineEditInput` (shared with the browser URL editor in `docs/specs/dor-browser.md`): same font (`font-mono font-medium`), `bg-transparent`, no border, seeded from the label with the failure glyph stripped. `Enter` confirms, `Escape` cancels, `blur` confirms — **whichever lands first settles the edit**, so the blur following an Enter/Escape unmount cannot submit a second time. It stops propagation on `mousedown`/`click`/`keydown` so the panel click and the header drag never fire.
 
 The field is **controlled by its own draft state**, seeded at mount and untouched by later prop changes, and **the `select()` ref callback has a stable identity** so it runs exactly once (rationale). **Mounting is the reset** — the editor exists only during a rename, so each one starts from the current label. Clipboard chords inside the field are the wall's job on hosts whose webview has no native Edit menu (`docs/specs/mouse-and-clipboard.md` §8.9).
@@ -279,15 +293,15 @@ Source of truth: `lib/src/components/wall/IllegalRenameWarning.tsx`, `lib/src/co
 | Op | Behavior |
 |---|---|
 | **Create** `getOrCreateTerminal` | Creates xterm.js with UnicodeGraphemes, Fit, and Image addons plus a PTY; reuses an existing entry. `allowProposedApi: true` enables UnicodeGraphemesAddon. **The WebGL addon is not loaded here** ([Renderer](#renderer)). |
-| **Resume** `resumeTerminal` | Creates the xterm entry and writes replay data, spawning no PTY. Webview recreated while the host retains Live PTYs (Link: Severed → Resuming → Live). |
+| **Resume** `resumeTerminal` | Creates the xterm entry and writes replay data, spawning no PTY. Webview recreated over retained Live or Exited PTYs (Link: Severed → Resuming → Live). |
 | **Restore** `restoreTerminal` | Creates the xterm entry and spawns a new PTY with the saved cwd; **replays no transcript** (`docs/specs/transport.md` → "What is persisted"). Cold start from a saved Snapshot (Link: Cold → Live). |
 | **mount / unmount** | `mountElement` reparents the persistent DOM element into a container, `unmountElement` removes it. **The Registry entry survives.** |
-| **Dispose** `disposeSession` | Kills the PTY, disposes xterm, removes the registry entry. **Only on explicit kill (`x`).** |
+| **Dispose** `disposeSession` | Kills the PTY, disposes xterm, removes the registry entry on kill or Surface replacement. **Never on minimize.** |
 | **Swap** | `Cmd/Ctrl+Arrow` trades two leaf identities via a Lath `swap`; registry entries follow the ids ([Spatial navigation](#spatial-navigation)). |
 
 - **Untouched**: new `getOrCreateTerminal` sessions start untouched; `isUntouched(id)` exposes the flag, user-originated PTY input clears it, and resume/restore seed the persisted one. **Missing legacy snapshot data defaults to touched (`false`)**, keeping close confirmation conservative.
 - **Shell selection replacement**: the standalone Settings dialog's Shell row and the VS Code shell picker send `dormouse:new-terminal` with `replaceUntouched` when the selected shell type changes. **A shell is identified by executable path plus ordered arguments**, so WSL distributions and Windows Developer shells sharing an executable stay distinct. **`Wall` always mints a new session id and a fresh `surface:N` ref.** An untouched selected pane or door has the new terminal take over its leaf via a Lath `replace` op (an atomic identity swap; doors reattach through the normal restore path first), the old session disposed and its ref retired; a touched selection, or none, spawns a new pane beside it. Announced spawns show a transient pane-anchored notice (`Switched to zsh`, `Opened bash`). **A replacement migrates the Surface's notepad to the new id rather than archiving it** (`docs/specs/notepad.md` → "Closure").
-- **Replay-time terminal reports must be dropped; user input must not be** — during **resume** replay the registry drops the replies xterm.js emits to queries embedded in buffered output, before they reach the new shell (`docs/specs/terminal-escapes.md` → "Report filtering on the input side").
+- **Replay-time terminal reports must be dropped; user input must not be** — during **resume** replay the registry drops the replies xterm.js emits to queries embedded in buffered output, before they reach the retained PTY (`docs/specs/terminal-escapes.md` → "Report filtering on the input side").
 
 Source of truth: `lib/src/lib/terminal-store.ts` (registry maps and pending shell opts, imported directly, including by `lib/src/remote/burrow/`), `lib/src/lib/terminal-lifecycle.ts` (the ops), `lib/src/lib/terminal-registry.ts` (the facade).
 
@@ -325,7 +339,7 @@ Container shapes and the `dormouse.flags.workspaces` wrapping are `docs/specs/tr
 Snapshots are read through `readPersistedSession()`, which tolerates a stringified blob and logs-and-discards an unreadable one so malformed storage starts fresh rather than blocking startup (`docs/specs/transport.md` → "Persisted session types").
 
 Startup recovery is priority-based:
-1. **Resume** (webview hidden/shown, live PTYs): request PTY list + replay data from the platform, `resumeTerminal()` each (500ms timeout). **Saved pane and door titles are seeded back via `setTerminalUserTitle()`** (`docs/specs/transport.md`), so persisted placeholder labels never replay as user pins. If the saved session covers every live PTY, restore the saved Lath layout when its leaf set matches and reattach saved minimized items as doors. **Never fall through to cold restore just because the visible `paneIds` list is empty** — a wall whose live sessions are all minimized is still a live resume.
+1. **Resume** (webview recreated, retained Live or Exited PTYs): request PTY list + replay data from the platform, `resumeTerminal()` each (500ms timeout). **Saved pane and door titles are seeded back via `setTerminalUserTitle()`** (`docs/specs/transport.md`), so persisted placeholder labels never replay as user pins. If the saved session covers every retained PTY, restore the saved Lath layout when its leaf set matches and reattach saved minimized items as doors. **Never fall through to cold restore just because the visible `paneIds` list is empty** — a wall whose retained sessions are all minimized is still a resume.
 2. **Restore** (app restart, cold start): the Wall's `seed` hydrates from the restored Lath layout, else falls to (3); `restoreTerminal()` per pane with its saved cwd and title. Browser surfaces are rebuilt from their persisted params instead.
 3. **Fallback/manual pane creation**: with no saved layout safely applicable, add panes as splits from the previous pane.
 4. **Empty state**: one new pane.
@@ -385,7 +399,7 @@ A store commit that empties the tree (last pane killed or minimized) triggers th
 
 ## Future
 
-**Scope: workspaces-rollout** — the remaining stages of the multi-Workspace feature. The model, container verbs, Window persistence (behind `dormouse.flags.workspaces`), and union projection are implemented but unwired ([Workspaces](#workspaces); persisted containers in `docs/specs/transport.md`, union projection in `docs/specs/alert.md`). This ledger is the single home for what remains; other specs link here rather than restating it.
+**Scope: workspaces-rollout** — the remaining stages of the multi-Workspace feature. Current implementation: [Workspaces](#workspaces). Persisted containers are owned by `docs/specs/transport.md`; union projection by `docs/specs/alert.md`. This ledger is the single home for what remains; other specs link here rather than restating it.
 
 ### Stage 3 — workspace strip and switching UI (standalone)
 
@@ -395,11 +409,11 @@ Switch/create/close/rename shortcuts are chosen alongside that pass. Command mod
 
 ### Stage 4 — real switching and multi-Workspace activation
 
-`switchWorkspace` mounts the target Workspace's Surfaces — rebuilding its Lath layout, reattaching its doors — and unmounts the previously active Workspace's. Terminals keep the `mount` / `unmount` + replay path: the Registry entry and PTY survive `unmount`, so Process stays `Live`. A browser surface's backing agent-browser session or proxy grant likewise survives while its viewer resources are released.
+`switchWorkspace` presents the target Workspace's panes and doors and hides the previously active Workspace's. Terminals reuse the `mount` / `unmount` path: the Registry entry, xterm buffer, and PTY survive, Process is unchanged, and nothing replays. Browser Surfaces keep their backing agent-browser session or proxy grant; parking follows below.
 
 Switching **parks** the outgoing Workspace's browser Surfaces rather than unmounting them, on exactly the terms minimize already does (`docs/specs/tiling-engine.md` → "Parked leaves"): the switch parks each one, then seeds the incoming Workspace's tree, which `seed` is already written to survive — it keeps parked leaves except any the seed itself admits. That is what makes an iframe survive a round trip through another Workspace. Open question: a switch parks a whole Workspace at a time, so `MAX_PARKED_SURFACES` may need raising, or becoming a per-Workspace budget. VS Code is out of reach either way — one webview per Workspace ([Workspaces](#workspaces)) bounds cross-Workspace DOM survival by webview lifetime, not by anything the Wall does. Because a terminal's Activity keeps flowing while unmounted, an inactive Workspace's tab can begin ringing or showing TODO while the user is elsewhere; **mounting must not fire a fresh ring** (glossary I8, mirroring the minimize/reattach rule I3).
 
-Stage 4 also lifts the single-Workspace cap and wires the lifecycle UX:
+Stage 4 also enables multiple Workspaces in the standalone presentation and wires the lifecycle UX:
 
 - **Create** (`createWorkspace`): adds a Workspace, names it `Workspace N`, makes it active, and spawns a single fresh pane — matching the empty-state behavior in Session persistence.
 - **Close** (`closeWorkspace`): `kill`s each member Surface and removes the Workspace. Closing one holding touched Surfaces confirms first, reusing the kill-confirm vocabulary; the confirmation surface settles in the Storybook UI pass. **The last remaining Workspace cannot be closed** — there is always one active Workspace, as there is always one visible pane (corner case #5).

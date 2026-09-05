@@ -13,8 +13,8 @@ nothing in CI or a local build notices — only a human opening the live listing
 does. An invocation with `--packagePath` republishes an already-built VSIX,
 whose URLs were rewritten when it was packaged.
 
-Generated guide media gets `public/guide/` to itself because `syncGuideMedia`
-deletes that directory wholesale on every build. It previously wrote to
+Generated guide media gets `public/guide/` to itself; `syncGuideMedia`
+replaces its `images/` directory on every build. It previously wrote to
 `public/images/`, which is the natural home for hand-authored site assets, and
 the whole path was gitignored — so an `og-card.png` dropped there would have
 worked locally, never been staged, and vanished on the next build.

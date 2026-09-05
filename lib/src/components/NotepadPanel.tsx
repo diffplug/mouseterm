@@ -15,7 +15,7 @@ import { revealNoteSource } from '../lib/notepad/pin';
  * the store keeps a single `openNotepadId`, so a Wall never shows two. It stays
  * mounted while closed so a failed pin can reopen it with its message.
  */
-export function NotepadPanel({ surfaceId }: { surfaceId: string }) {
+export function NotepadPanel({ surfaceId, pins = true }: { surfaceId: string; pins?: boolean }) {
   const openId = useOpenNotepadId();
   const [sourceNotice, setSourceNotice] = useState<SourceNotice | null>(null);
   const open = openId === surfaceId;
@@ -40,7 +40,7 @@ export function NotepadPanel({ surfaceId }: { surfaceId: string }) {
     <OpenNotepadPanel
       surfaceId={surfaceId}
       sourceNotice={sourceNotice}
-      onRevealSource={revealSource}
+      onRevealSource={pins ? revealSource : undefined}
     />
   );
 }
@@ -52,7 +52,7 @@ function OpenNotepadPanel({
 }: {
   surfaceId: string;
   sourceNotice: SourceNotice | null;
-  onRevealSource: (noteId: string) => void;
+  onRevealSource?: (noteId: string) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
 

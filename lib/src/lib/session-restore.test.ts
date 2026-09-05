@@ -172,6 +172,17 @@ describe('restoreSession', () => {
   it('does not spawn a terminal for a browser surface, but keeps it in paneIds', () => {
     const saved: PersistedSession = {
       version: 3,
+      lathLayout: {
+        version: 1,
+        tree: { root: { kind: 'split', dir: 'row', children: [
+          { node: { kind: 'leaf', id: 'pane-term' }, weight: 0.5 },
+          { node: { kind: 'leaf', id: 'pane-web' }, weight: 0.5 },
+        ] } },
+        leafMeta: {
+          'pane-term': { component: 'terminal', tabComponent: 'terminal', title: 'Terminal' },
+          'pane-web': { component: 'browser', tabComponent: 'terminal', title: 'localhost', params: { renderMode: 'iframe', url: 'http://localhost:5173' } },
+        },
+      },
       panes: [
         { id: 'pane-term', title: 'Terminal', cwd: null, untouched: false },
         { id: 'pane-web', title: 'localhost', cwd: null, untouched: false, surfaceType: 'browser' },
@@ -184,6 +195,28 @@ describe('restoreSession', () => {
     expect(terminalRegistryMocks.restoreTerminal).toHaveBeenCalledWith('pane-term', expect.objectContaining({ title: 'Terminal' }));
     // The browser pane stays in paneIds so the layout blob recreates and selects it.
     expect(result?.paneIds).toEqual(['pane-term', 'pane-web']);
+  });
+
+  it.each([undefined, { version: 1 }, {
+    version: 1,
+    tree: { root: { kind: 'leaf', id: 'stale-pane' } },
+    leafMeta: { 'stale-pane': { component: 'terminal', tabComponent: 'terminal', title: 'Stale' } },
+  }])('omits visible browsers from terminal fallback for an unusable layout: %j', (lathLayout) => {
+    const doors = [{ id: 'door-web', title: 'Browser door', component: 'browser', params: { renderMode: 'iframe', url: 'http://localhost:5173' } }];
+    const result = restoreSession(createPlatform({
+      version: 3,
+      lathLayout,
+      doors,
+      panes: [
+        { id: 'pane-term', title: 'Terminal', cwd: null, untouched: false },
+        { id: 'pane-web', title: 'Browser', cwd: null, untouched: false, surfaceType: 'browser' },
+        { id: 'door-web', title: 'Browser door', cwd: null, untouched: false, surfaceType: 'browser' },
+      ],
+    }));
+
+    expect(result).toMatchObject({ paneIds: ['pane-term'], lathLayout: undefined, doors });
+    expect(terminalRegistryMocks.restoreTerminal).toHaveBeenCalledTimes(1);
+    expect(terminalRegistryMocks.restoreTerminal).toHaveBeenCalledWith('pane-term', expect.anything());
   });
 
   it('passes the native lathLayout through untouched', () => {

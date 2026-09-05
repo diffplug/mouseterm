@@ -121,7 +121,7 @@ export function fakeWindow(
     surfaces: options.surfaces ?? {},
     ownPtyIds: new Set(options.ownPtyIds ?? []),
     writes: [] as Array<{ ptyId: string; data: string }>,
-    resizes: [] as Array<{ ptyId: string; cols: number; rows: number }>,
+    resizes: [] as Array<{ ptyId: string; cols: number; rows: number; repaint?: boolean }>,
     invalidations: 0,
     /** Commands this window was asked to run for another one, and who asked. */
     forwarded: [] as Array<{ payload: BurrowCommand; from: PeerLinkClient }>,
@@ -157,7 +157,9 @@ export function fakeWindow(
         ownsPty: (ptyId) => this.ownPtyIds.has(ptyId),
         streamPty: streams.streamPty,
         writePty: (ptyId, data) => void this.writes.push({ ptyId, data }),
-        resizePty: (ptyId, cols, rows) => void this.resizes.push({ ptyId, cols, rows }),
+        resizePty: (ptyId, cols, rows, repaint) => void this.resizes.push({
+          ptyId, cols, rows, ...(repaint === undefined ? {} : { repaint }),
+        }),
         handleForwardedCommand: (payload, from) => void this.forwarded.push({ payload, from }),
         dropForwardedCommands: (from) => void this.dropped.push(from),
         deliverCommandResult: (payload) => void this.results.push(payload),

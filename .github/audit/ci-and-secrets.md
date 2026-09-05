@@ -23,11 +23,15 @@ Secrets + Environments, guaranteed present by an earlier step. If a prefixed
 call still returns 403, record FAIL with the note "PAT scope drifted from
 docs/specs/security-audit.md".
 
-**Check effective permissions, not declared ones.** A job with no
-`permissions:` block inherits the repository default, so read
-`actions/permissions/workflow` before judging any permission bullet. A job that
-declares nothing textually "grants" nothing while its token may carry nine
-write scopes.
+When run by `scripts/security-audit-local.sh` without `AUDIT_PAT`, use the
+operator's existing `gh` authentication without a `GH_TOKEN=` override.
+Report an inaccessible check as `UNVERIFIABLE`; local credentials are not
+evidence about the CI PAT's scope.
+
+**Check effective permissions, not declared ones.** A job-level `permissions:`
+block overrides the workflow-level block; absent both, the repository default
+applies. Unspecified scopes in an explicit block are `none`. Read
+`actions/permissions/workflow` before judging any inherited-permission check.
 
 ## Qualitative pass
 

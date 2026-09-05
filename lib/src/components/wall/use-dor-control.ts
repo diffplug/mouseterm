@@ -22,10 +22,7 @@ import {
 import { surfaceRunsCommand, type TerminalPaneState } from '../../lib/terminal-state';
 import { isAllowedAgentBrowserBinary } from '../../lib/agent-browser-binary';
 import { browserSurfaceUrl, hostPathDisplay } from './browser-url';
-import { agentBrowserSessionFromParams, isAgentBrowserParams } from './browser-surface';
-// One-way import: connect-port no longer depends on this module (its eager-surface
-// and refresh seams are injected as plain functions).
-import { connectPortToDefaultBrowser } from './connect-port';
+import { agentBrowserSessionFromParams } from './browser-surface';
 import { listenerUrlsByPort } from './port-url';
 import { dorDirectionForEdge, type LathWallEngine } from './lath-wall-engine';
 import type { WallNav } from './keyboard/types';
@@ -245,19 +242,26 @@ function waitForTerminalState(
   id: string,
   predicate: (state: TerminalPaneState) => boolean,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
   if (predicate(getTerminalPaneState(id))) return Promise.resolve(true);
   return new Promise((resolve) => {
     let elapsed = 0;
+    const finish = (ready: boolean) => {
+      clearInterval(timer);
+      signal?.removeEventListener('abort', cancel);
+      resolve(ready);
+    };
+    const cancel = () => finish(false);
     const timer = setInterval(() => {
       if (predicate(getTerminalPaneState(id))) {
-        clearInterval(timer);
-        resolve(true);
+        finish(true);
       } else if ((elapsed += RESTART_POLL_INTERVAL_MS) >= timeoutMs) {
-        clearInterval(timer);
-        resolve(false);
+        finish(false);
       }
     }, RESTART_POLL_INTERVAL_MS);
+    signal?.addEventListener('abort', cancel, { once: true });
   });
 }
 
@@ -267,7 +271,8 @@ function waitForTerminalState(
  * for it to go live. Drives the live PTY directly, so it works for minimized
  * doors too (their PTY keeps running). Returns a message on failure.
  */
-async function restartSurfaceInPlace(id: string, command: string, cwd: string): Promise<ParseResult<undefined>> {
+async function restartSurfaceInPlace(id: string, command: string, cwd: string, signal?: AbortSignal): Promise<ParseResult<undefined>> {
+  if (signal?.aborted) return { ok: false, message: 'restart was cancelled' };
   // A match is by construction OSC-driven (surfaceRunsCommand only matches a
   // shell that reports its command), so this never fires on the real path — but
   // it guarantees we never fire Ctrl+C into a non-integration shell (e.g. cmd.exe
@@ -279,14 +284,18 @@ async function restartSurfaceInPlace(id: string, command: string, cwd: string): 
     id,
     (state) => state.currentCommand === null,
     RESTART_INTERRUPT_TIMEOUT_MS,
+    signal,
   );
+  if (signal?.aborted) return { ok: false, message: 'restart was cancelled' };
   if (!interrupted) return { ok: false, message: 'did not return to a prompt after interrupt' };
   platform.writePty(id, `${command}\r`);
   const restarted = await waitForTerminalState(
     id,
     (state) => surfaceRunsCommand(state, command, cwd),
     RESTART_START_TIMEOUT_MS,
+    signal,
   );
+  if (signal?.aborted) return { ok: false, message: 'restart was cancelled' };
   if (!restarted) return { ok: false, message: 'command did not restart' };
   return { ok: true, value: undefined };
 }
@@ -323,9 +332,9 @@ function parseDorSplitDirection(value: unknown): DorSplitDirection | null {
 }
 
 /**
- * Quote a raw argv into a single command string for the target pane's shell.
- * This is the one place the command is quoted; the CLI sends argv unquoted
- * precisely because only the webview knows which shell will run it.
+ * Quote raw argv for the configured default shell, which new splits launch.
+ * The same string is used for ensure matching and restart; the CLI sends argv
+ * unquoted because the shell defaults live in the webview.
  */
 function dorCommandString(args: string[] | undefined): string | undefined {
   if (!args || args.join('').trim() === '') return undefined;
@@ -353,7 +362,6 @@ export function useDorControl({
   createContentSurface,
   killPaneImmediately,
   closeSurface,
-  revealSurface,
   lastAgentBrowserBinaryPathRef,
 }: {
   /** The Lath engine — visible-pane projection (`lath.listPanes()`), aspect-ratio
@@ -392,14 +400,9 @@ export function useDorControl({
    *  down. A string means the archive refused, and is why; the Surface is still
    *  here. */
   closeSurface: (id: string, opts?: { prompt?: boolean }) => Promise<string | null>;
-  /** Put the selection on a surface, reattaching it first when it is minimized.
-   *  Used by the human-initiated `connectPort` (a menu click is a request to see
-   *  that surface); the `dor ab` control path stays focus-neutral. */
-  revealSurface: (id: string) => void;
   /** The last binary path a `dor ab` surface resolved on a terminal's PATH. */
   lastAgentBrowserBinaryPathRef: MutableRefObject<string | undefined>;
 }): {
-  connectPort: (id: string, url: string) => Promise<void>;
   /** Fold a params patch onto a surface (visible pane or minimized door) — the
    *  one write path a background daemon boot uses to hand a session-less pane
    *  its `{session, wsPort, binaryPath}`. */
@@ -499,7 +502,7 @@ export function useDorControl({
 
   // Fold a params patch onto a surface, pane or door alike — the store holds both,
   // so there is one write path. Shared by `ensureAgentBrowserSurface`'s reuse arm and
-  // the connect-port refresh seam. A no-op on an empty patch.
+  // the context's port launches in Wall.tsx. A no-op on an empty patch.
   const updateSurfaceParams = useCallback((id: string, patch: Record<string, unknown>) => {
     if (Object.keys(patch).length === 0) return;
     lath.store.updateParams(id, patch);
@@ -565,60 +568,6 @@ export function useDorControl({
     };
   }, [createContentSurface, findAgentBrowserSurface, updateSurfaceParams, surfaceRefForId]);
 
-  // The pane context menu's "connect a port" action, bound to this hook's
-  // closure so Wall.tsx delegates in one line instead of re-threading the
-  // hook's internals. The pane is created eagerly and session-less so it appears
-  // instantly; `connectPortToDefaultBrowser` then hands it its session +
-  // stream port (docs/specs/dor-browser.md → Pane Context Menu Connect).
-  // Failures are logged, not returned — the menu closes before one can exist.
-  const connectPort = useCallback((id: string, url: string): Promise<void> => {
-    const ensureEagerSurface = (session: string): ParseResult<{ surfaceId: string }> => {
-      // Every arm below ends on the same surface id, and a menu click is a human
-      // asking to see and control that surface — so focus it in passthrough
-      // (reattach first if minimized). `dor ab`'s control path stays
-      // focus-neutral; this one does not.
-      const reveal = (surfaceId: string): ParseResult<{ surfaceId: string }> => {
-        revealSurface(surfaceId);
-        return { ok: true, value: { surfaceId } };
-      };
-      // (a) A surface already bound to this session — reuse; params untouched
-      // (the navigation + final refresh handle the rest).
-      const existing = findAgentBrowserSurface(session);
-      if (existing) return reveal(existing.id);
-      // (b) A still-booting default pane from a rapid earlier connect (created
-      // but not yet handed its session) — reuse it so a second click during the
-      // daemon boot doesn't spawn a duplicate.
-      const booting = findSurfaceByParams((params) =>
-        isAgentBrowserParams(params)
-        && (params as { key?: unknown }).key === 'default'
-        && agentBrowserSessionFromParams(params) === null);
-      if (booting) return reveal(booting.id);
-      // (c) Create it now: NO `session` (keeps the controller's stale-port
-      // recovery inert until the daemon is up), but carry the target `url` so
-      // the browser chrome shows it immediately.
-      const created = ensureAgentBrowserSurface({
-        key: 'default',
-        url,
-        reference: () => {
-          const surface = buildDorSurfaces().find((candidate) => candidate.id === id);
-          return surface ? { ok: true, value: surface } : { ok: false, message: `surface for pane '${id}' was not found` };
-        },
-      });
-      if (!created.ok) return created;
-      return reveal(created.surfaceId);
-    };
-    return connectPortToDefaultBrowser({
-      url,
-      platform: getPlatform(),
-      binaryPath: lastAgentBrowserBinaryPathRef.current,
-      ensureEagerSurface,
-      refreshSurface: updateSurfaceParams,
-    }).then((outcome) => {
-      // The menu no longer surfaces errors (it closes instantly); log a failure
-      // the way the render-swap path in Wall.tsx does.
-      if (!outcome.ok) console.warn('[dormouse] connect port failed:', outcome.message);
-    });
-  }, [buildDorSurfaces, ensureAgentBrowserSurface, findAgentBrowserSurface, findSurfaceByParams, updateSurfaceParams, revealSurface, lastAgentBrowserBinaryPathRef]);
 
   useEffect(() => {
     const handler = async (event: Event) => {
@@ -712,6 +661,10 @@ export function useDorControl({
       }
 
       if (detail.method === SURFACE_CONTROL_METHODS.ensure) {
+        if (detail.signal?.aborted) {
+          detail.respond({ ok: false, error: 'ensure was cancelled' });
+          return;
+        }
         const command = dorCommandString(stringArrayParam(params.command));
         if (!command) {
           detail.respond({ ok: false, error: 'command cannot be empty' });
@@ -726,7 +679,7 @@ export function useDorControl({
         if (existingId) {
           const minimized = doorsRef.current.some((door) => door.id === existingId);
           if (booleanParam(params.restart)) {
-            const restarted = await restartSurfaceInPlace(existingId, command, cwd);
+            const restarted = await restartSurfaceInPlace(existingId, command, cwd, detail.signal);
             if (!restarted.ok) {
               detail.respond({ ok: false, error: `surface '${surfaceRefForId(existingId)}' ${restarted.message}` });
               return;
@@ -794,6 +747,7 @@ export function useDorControl({
           result.value.id,
           () => isPaneOscDriven(result.value.id),
           INTEGRATION_DETECT_TIMEOUT_MS,
+          detail.signal,
         );
         if (!integrated) {
           // Tear down the throwaway split. The focus-neutral create never selected
@@ -802,7 +756,7 @@ export function useDorControl({
           // killPaneImmediately tears the door down too — disposing the session and
           // removing it from the baseboard.
           killPaneImmediately(result.value.id);
-          detail.respond({ ok: false, error: missingIntegrationError(ensureShell) });
+          detail.respond({ ok: false, error: detail.signal?.aborted ? 'ensure was cancelled' : missingIntegrationError(ensureShell) });
           return;
         }
         detail.respond({
@@ -935,7 +889,7 @@ export function useDorControl({
         // someone looking at the Wall (docs/specs/notepad.md → "Closure").
         const refused = await closeSurface(target.id, { prompt: false });
         if (refused) {
-          detail.respond({ ok: false, error: `notepad archive failed: ${refused}` });
+          detail.respond({ ok: false, error: refused });
           return;
         }
         detail.respond({
@@ -1117,5 +1071,5 @@ export function useDorControl({
     return () => window.removeEventListener('dormouse:control-request', handler);
   }, [buildDorSurfaces, buildDorSurfaceList, closeSurface, createContentSurface, createSplitSurface, ensureAgentBrowserSurface, findSurfaceIdRunningCommand, killPaneImmediately, requireBrowserSurface, requireListedSurface, requireTerminalSurface, resolveListedSurface, resolveVisibleSurface, surfaceRefForId, lath, nav]);
 
-  return { connectPort, updateSurfaceParams };
+  return { updateSurfaceParams };
 }

@@ -81,7 +81,7 @@ export type TerminalSemanticEvent =
   | { type: 'promptEnd' }
   | { type: 'commandLine'; commandLine: string }
   | { type: 'commandStart'; source?: CommandRunSource; startedAt?: number }
-  | { type: 'commandFinish'; exitCode?: number }
+  | { type: 'commandFinish'; exitCode?: number; finishedAt?: number }
   | { type: 'title'; title: TerminalTitle };
 
 export interface DirectoryDisplayOptions {
@@ -214,7 +214,7 @@ export function reduceTerminalState(
         if (sameActivity(state.activity, next)) return state;
         return { ...state, activity: next };
       }
-      const finishedAt = now();
+      const finishedAt = event.finishedAt ?? now();
       const finalTerminalTitle = snapshotInRunTerminalTitle(state, state.currentCommand, finishedAt);
       const finishedCommand: CommandRun = {
         ...state.currentCommand,
@@ -287,7 +287,7 @@ export function cwdFromOsc7(rawUriInput: string, now = Date.now()): CwdState | n
 }
 
 export function cwdFromOsc9_9(rawPath: string, now = Date.now()): CwdState | null {
-  const path = boundedCwdValue(safeDecodeURIComponent(boundedCwdValue(rawPath).trim()));
+  const path = boundedCwdValue(rawPath);
   if (!path) return null;
   return {
     path,
@@ -584,6 +584,28 @@ export function buildAppTitleResolver(
   return (pane) => titlesByPane.get(pane) ?? null;
 }
 
+/** Explanation uses the same winning-title functions as headerPrimary. */
+export function explainTerminalTitle(pane: TerminalPaneState, options: HeaderOptions = {}): { source: string; value: string; note: string }[] {
+  const user = titleCandidateForSource(pane, 'user')?.title.trim();
+  const command = pane.currentCommand ?? pane.lastCommand;
+  const app = options.appTitleForPane?.(pane)?.trim();
+  const appWins = !user && !!command && !!app && isAppTitleFreshFor(pane, command);
+  const terminal = !user && !appWins && command ? terminalTitleForCommand(pane, command) : null;
+  const winner = terminal && command ? (command.finishedAt !== undefined && command.finalTerminalTitle && meaningfulTerminalTitle(command.finalTerminalTitle.title) ? command.finalTerminalTitle : findInRunTerminalTitle(pane, command)) : null;
+  const candidates = titleCandidatesForDisplay(pane);
+  const rows = candidates.map(candidate => ({
+    source: titleSourceLabel(candidate.source), value: candidate.title,
+    note: candidate.source === 'user' && user ? 'Used' : winner && candidate.source === winner.source && candidate.updatedAt === winner.updatedAt ? 'Used by command title' : 'Not used',
+  }));
+  if (winner && !candidates.some(candidate => candidate.source === winner.source && candidate.updatedAt === winner.updatedAt)) {
+    rows.push({ source: `${titleSourceLabel(winner.source)} (command)`, value: winner.title, note: 'Used by command title' });
+  }
+  if (appWins) rows.push({ source: 'Notification', value: app!, note: 'Used' });
+  if (command) rows.push({ source: 'Command', value: command.displayCommand, note: !user && !appWins && !terminal ? 'Used' : 'Fallback' });
+  rows.push({ source: 'Result', value: headerPrimary(pane, options).text, note: pane.currentCommand ? 'Running' : 'Idle' });
+  return rows;
+}
+
 export function titleCandidatesForDisplay(pane: TerminalPaneState): TerminalTitle[] {
   return Object.values(pane.titleCandidates)
     .filter((candidate): candidate is TerminalTitle => !!candidate)
@@ -654,7 +676,7 @@ function statusBucket(kind: ShellActivity['kind']): 'unknown' | 'idle' | 'runnin
 }
 
 function cwdFromDecodedPath(rawPath: string, source: CwdSource, now: number): CwdState | null {
-  const path = boundedCwdValue(safeDecodeURIComponent(boundedCwdValue(rawPath).trim()));
+  const path = boundedCwdValue(rawPath);
   if (!path) return null;
   return {
     path,
@@ -739,10 +761,14 @@ function isRemoteFileHost(host: string | undefined): boolean {
 }
 
 function formatFullPath(path: string, homePath?: string): string {
-  if (homePath && (path === homePath || path.startsWith(`${homePath}/`))) {
-    return `~${path.slice(homePath.length)}`;
-  }
-  return path;
+  if (!homePath) return path;
+  // Windows homes compare case-insensitively with either separator; a sibling
+  // such as `/home/username` never abbreviates under `/home/user`.
+  const windows = isWindowsPath(homePath);
+  const normalize = (value: string) => (windows ? value.replace(/\\/g, '/').toLowerCase() : value);
+  const home = normalize(homePath).replace(/\/$/, '');
+  const candidate = normalize(path);
+  return candidate === home || candidate.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }
 
 function formatTrailingPath(path: string, kind: PathKind, depth: number): string {
@@ -1129,7 +1155,7 @@ function latestTerminalTitleCandidate(state: TerminalPaneState | null | undefine
   if (!state) return null;
   let latest: TerminalTitle | null = null;
   for (const candidate of Object.values(state.titleCandidates)) {
-    if (!candidate || candidate.source === 'user') continue;
+    if (!candidate || !HEADER_APP_TITLE_SOURCES.includes(candidate.source)) continue;
     if (!latest || candidate.updatedAt > latest.updatedAt) latest = candidate;
   }
   return latest;

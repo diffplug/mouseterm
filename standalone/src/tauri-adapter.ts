@@ -1,3 +1,4 @@
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../../lib/src/lib/terminal-context-types';
 import { invoke as rawInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-shell";
@@ -162,6 +163,7 @@ export class TauriAdapter implements PlatformAdapter {
       }),
 
       listen<{ ptys: PtyInfo[] }>("pty:list", (event) => {
+        for (const pty of event.payload.ptys) if (pty.helper) this.alertManager.setHelper(pty.id, true);
         for (const handler of this.listHandlers) {
           handler(event.payload);
         }
@@ -260,7 +262,15 @@ export class TauriAdapter implements PlatformAdapter {
     } catch { return []; }
   }
 
-  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void {
+  async terminalContext(request: TerminalContextRequest): Promise<TerminalContextInfo> {
+    const result = await rawInvoke<TerminalContextInfo>('pty_context', { request });
+    if (result.error) throw new Error(result.error);
+    if (request.op === 'promote') this.alertManager.setHelper(request.id, !!request.restore);
+    return result;
+  }
+
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[]; helper?: HelperIdentity }): void {
+    if (options?.helper) this.alertManager.setHelper(id, true);
     invoke("pty_spawn", { id, options });
   }
 
@@ -590,9 +600,9 @@ export class TauriAdapter implements PlatformAdapter {
   // plumbing below it — TauriSessionStore, the Rust temp-then-rename file store,
   // the quit flush/drain ordering — is intact and still needed by the
   // workspaces-rollout scope (docs/specs/layout.md -> `## Future`). Bringing
-  // VS Code-style restoration to standalone later is flipping this flag plus
-  // adding capture to the existing quit teardown, which already has the right
-  // shape (flush -> kill -> flush -> drain).
+  // VS Code-style restoration to standalone later also needs to reconcile
+  // the unconditional boot deletion in clearLegacySessionState and add capture
+  // to the existing quit teardown (flush -> kill -> flush -> drain).
   private static PERSIST_SESSION = false;
 
   /**

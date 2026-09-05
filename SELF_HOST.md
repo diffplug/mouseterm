@@ -1,5 +1,6 @@
 # Run the Dormouse Relay behind Tailscale
 
+> See `docs/specs/glossary.md` for Session, baseboard, and remote-role vocabulary.
 > This is an assistant-run setup playbook. Start a fresh Claude instance in
 > this repository and say: `read @SELF_HOST.md and walk me through it`.
 >
@@ -200,8 +201,9 @@ what keeps the task free of a stored password; Linux alone opts out, with
   absent on a first install warns, naming the same release as `current` fails.
 
 These cannot be proven from the laptop, and are the checkpoints below: the HTTPS
-origin answering from a second tailnet device and stopping when that device
-leaves the tailnet; the service manager restarting the Relay after a real kill;
+origin answering from a second tailnet device and, when private HTTPS is intended,
+stopping when that device leaves the tailnet; the service manager restarting
+the Relay after a real kill;
 state surviving a reinstall from a newer checkout, with rollback returning the
 previous release; Pocket passkey setup and Burrow enrollment completing against
 this origin, and one command typed from the phone coming back with the laptop's
@@ -228,8 +230,8 @@ Establish with the user what the script cannot:
   the branch, and the SHA. Never pull or switch branches on their behalf; the
   installer installs exactly what is checked out.
 - **Their phone runs Tailscale** and is signed in to the same tailnet.
-- **Port 3100 is free.** Unchecked by the installer, and a stale process there
-  would let the post-install health check pass against the wrong Relay
+- **Port 3100 is free.** Unchecked before installation; a stale listener blocks
+  the new Relay from binding and fails the post-install identity check
   (`pnpm dev:relay` uses 3000):
 
   ```sh
@@ -303,8 +305,8 @@ same picture without the pass/fail framing.
 
 Then, from another tailnet-connected device: request
 `https://<laptop>.<tailnet>.ts.net/api/hello`, open the Pocket application at
-the same origin, then temporarily leave Tailscale on that device and confirm the
-origin becomes unreachable.
+the same origin. If private HTTPS is intended, temporarily leave Tailscale on
+that device and confirm the origin becomes unreachable.
 
 Kill the Relay process once and confirm the service manager restarts it:
 
@@ -412,7 +414,7 @@ Prove it once, while the user is watching:
 
 `manage uninstall` removes the service definition and installed code, keeps
 `config` and `state` and reports where they are, and keeps `manage` itself —
-which is what makes step 3 possible. `manage purge` is the separate,
+so purge remains reachable. `manage purge` is the separate,
 irreversible deletion, behind a typed confirmation phrase and never part of a
 reinstall. Run them in that order; purge finishes by printing the single command
 that clears whatever is left: the install root, plus the log directory on Linux
@@ -558,12 +560,9 @@ install.
 
 ## Installer contract (maintainers)
 
-The runbook above is the operator half; this section is the *spec* for the three
-installers — what they guarantee and the traps they encode. One idempotent
-script per platform, the whole mechanism there, with no hand-edited service
-definitions and no scheduled updater; rerunning one updates the installed
-release from the current checkout and never pulls, fetches, or switches
-branches.
+**Must keep one idempotent installer per platform.** Rerunning it updates the
+installed release from the current checkout; it never pulls, fetches, switches
+branches, or schedules an updater.
 
 The security properties this deployment is audited against are the "Network
 posture (self-hosted)" and "Credentials at rest" `FAIL IF` lines in
@@ -594,7 +593,7 @@ service-definition paths are under "What the installer does".
 | KeepAlive | plist `KeepAlive` | the supervision loop in `bin\run-relay.ps1`; Task Scheduler's `RestartCount` is defence in depth, not the mechanism | `Restart=always`, `RestartSec=10` |
 | Stopping it | `launchctl bootout` takes the process tree | ends only the `powershell.exe`; its children survive and are reaped by install root (see the traps) | `systemctl --user stop` takes the whole cgroup |
 | `current`/`previous` | symlinks, swapped with `rename(2)` on the link path | `current.txt`/`previous.txt` naming a release id, swapped with `rename(2)` on the file | symlinks, swapped with `rename(2)` on the link path |
-| `0700` / `0600` | the modes, under `umask 077` | a DACL protected from inheritance carrying exactly one ACE, for the installing user | the modes, under `umask 077`; `verify` checks mode **and** owner |
+| `0700` / `0600` | modes under `umask 077`; `verify` checks mode and owner | an owner-only DACL; `verify` also checks owner SID | modes under `umask 077`; `verify` checks mode and owner |
 | Entry | `/bin/bash bin/run-relay` | `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File bin\run-relay.ps1`, at an absolute interpreter path | `ExecStart=/bin/bash "<root>/bin/run-relay"` |
 
 Two rows are load-bearing Windows deviations, both because the macOS mechanism
@@ -616,12 +615,18 @@ reports which mode is live rather than asserting either.
 - **One replica; an update is a short intentional restart.** Relay transient
   state is in memory (`docs/specs/relay.md` → Guardrails), so Burrows and Pocket
   clients reconnect across a release switch; no zero-downtime swap to attempt.
+- **Never overwrite an existing release directory while staging.** A colliding
+  release id fails without deleting its contents.
 - **State outlives code.** `config/` and `state/` sit outside `releases/`, are
   readable only by the installing user, and survive every update, prune and
   uninstall; purging is separate and explicitly confirmed. The Relay generates
   `state/setup-password.json` once from 32 CSPRNG bytes, validates it on every
   boot, and never accepts an operator-supplied setup credential.
   `config/relay.env` is generated once, then preserved byte-for-byte.
+  **Must read its last assignment for each key**, stripping only one matched
+  pair of double quotes, in the installer, service wrapper, and management
+  commands. `scripts/installer-verify-test.mjs` exercises the unix readers
+  against the shipped wrapper parser.
   **A preserved file missing installer-owned keys is half-written**: name them
   and stop, never rewrite values that cannot be proven stale. **`manage verify`
   walks every file in `state\` on Windows**, where Node's modes are a no-op.
@@ -645,11 +650,10 @@ reports which mode is live rather than asserting either.
 - **The install belongs to one user account.** Every installer refuses to run
   privileged — root on macOS/Linux, elevated on Windows — because that account
   owning `config/` and `state/` is the whole credential posture. **On unix the
-  property is mode *and* owner**, since a `0700` directory owned by another
-  principal satisfies the mode and inverts it; Linux's `manage verify` asserts
-  both legs on `config/`, `state/`, `run/` and `config/relay.env`. *(macOS
-  checks the modes only, Windows' `Test-OwnerOnly` the DACL but never the owner
-  — two known gaps, `docs/specs/security-remote.md` → "Credentials at rest".)*
+  property is mode *and* owner**. Both unix `manage verify` implementations
+  assert them on `config/`, `state/`, `run/`, `config/relay.env`, and an unspent
+  enrollment offer. Windows checks the owning SID and DACL, rejecting a missing
+  access-rule set (`docs/specs/security-remote.md` → "Credentials at rest").
 - **A failed update is a failure.** The candidate release is health-checked on
   an ephemeral port against a throwaway state dir *before* `current` moves; if
   the live service then fails to answer, `current` is restored to `previous` and
@@ -684,7 +688,6 @@ reports which mode is live rather than asserting either.
   **Linux still leads with `systemctl --user is-active`**, which catches a
   responder no port lookup can see: a foreign network namespace, or WSL with
   `networkingMode=mirrored`, where loopback is shared with the Windows host.
-  Two known exceptions: Windows `manage restart` still accepts a bare 200, and
   `manage status` on all three reports what the pointers say by design.
   Source of truth: `relay/src/runtime-file.ts`.
 

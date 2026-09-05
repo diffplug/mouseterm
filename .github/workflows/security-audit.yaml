@@ -71,8 +71,8 @@ jobs:
           AUDIT_PAT: ${{ secrets.AUDIT_PAT }}
         run: |
           [ -n "$AUDIT_PAT" ] && exit 0
-          echo "FAIL" > audit-status.txt
           echo "**FAIL** — \`AUDIT_PAT\` is not present in the \`security-audit\` environment. See [security-audit.md > Environment and AUDIT_PAT](https://github.com/$GITHUB_REPOSITORY/blob/main/docs/specs/security-audit.md#environment-and-audit_pat) for provisioning." > audit-report.md
+          echo "FAIL" > audit-status.txt
           echo "::error::AUDIT_PAT secret is not set."
           exit 1
 
@@ -131,6 +131,7 @@ jobs:
           # stays in `.github/audit/` so CI and
           # `scripts/security-audit-local.sh` cannot drift apart.
           claude_args: >-
+            --model sonnet
             --allowed-tools "Read,Write,Edit,Bash,Grep,Glob,Task,Agent"
             --disallowed-tools "Workflow"
             --agents '{"supply-chain":{"description":"Audits docs/specs/security-supply-chain.md.","prompt":"Read `.github/audit/_preamble.md` and then `.github/audit/supply-chain.md`, and follow them exactly."},"ci-and-secrets":{"description":"Audits docs/specs/security.md, docs/specs/security-ci.md, and docs/specs/security-audit.md.","prompt":"Read `.github/audit/_preamble.md` and then `.github/audit/ci-and-secrets.md`, and follow them exactly."},"application-security":{"description":"Audits docs/specs/security-local.md and docs/specs/security-remote.md, and sweeps the rest of the product code.","prompt":"Read `.github/audit/_preamble.md` and then `.github/audit/application-security.md`, and follow them exactly.","model":"opus"}}'
@@ -285,7 +286,7 @@ jobs:
           # must not let the release gate in `release.yml` pass, and a
           # later PASS should auto-close it like any other failure.
           if [ -s audit-status.txt ]; then
-            STATUS=$(tr -d '[:space:]' < audit-status.txt)
+            STATUS=$(cat audit-status.txt)
           fi
           case "${STATUS:-}" in
             PASS|FAIL) ;;
@@ -352,8 +353,7 @@ jobs:
           # shellcheck disable=SC2086
           for f in $AUDIT_FRAGMENTS; do
             [ -s "$f" ] || continue
-            # Three cases, not two. A fragment whose first line is neither
-            # verdict — a subagent that ignored the preamble, a stray heading
+            # An unrecognized first line — a subagent that ignored the preamble, a stray heading
             # or blank line — must not fall through to an unchallenged PASS:
             # that would put the verdict back on a prompt having been
             # followed, which is the thing this guard exists to stop being
@@ -361,11 +361,16 @@ jobs:
             # read is an audit that did not finish rather than a finding, and
             # deliberately not folded into MISSING_FRAGMENTS, whose message
             # says no fragment was left at all.
+            # A failure with an appended explanation is still a finding;
+            # only the PASS arm needs exact matching to open the gate.
             case "$(head -n1 "$f")" in
               'VERDICT: FAIL'*)
                 echo "::error::$f opens with VERDICT: FAIL; the merged verdict cannot stand."
                 DISSENTING="${DISSENTING:+$DISSENTING, }$f" ;;
-              'VERDICT: PASS'*) ;;
+              'VERDICT: PASS') ;;
+              'VERDICT: INCONCLUSIVE')
+                echo "::warning::$f could not determine every check."
+                INCONCLUSIVE_DOMAINS="${INCONCLUSIVE_DOMAINS:+$INCONCLUSIVE_DOMAINS, }$f" ;;
               *)
                 echo "::warning::$f has no VERDICT line; the dissent check cannot read it."
                 UNREADABLE_VERDICTS="${UNREADABLE_VERDICTS:+$UNREADABLE_VERDICTS, }$f" ;;
@@ -386,7 +391,7 @@ jobs:
           if [ -n "${DISSENTING:-}" ]; then
             STATUS=FAIL
           elif [ "$STATUS" != "FAIL" ] &&
-               { [ -n "${MISSING_FRAGMENTS:-}" ] || [ -n "${UNREADABLE_VERDICTS:-}" ]; }; then
+               { [ -n "${MISSING_FRAGMENTS:-}" ] || [ -n "${UNREADABLE_VERDICTS:-}" ] || [ -n "${INCONCLUSIVE_DOMAINS:-}" ]; }; then
             STATUS=MISSING
           fi
 
@@ -444,10 +449,13 @@ jobs:
             echo "- **A domain returned \`FAIL\`.** $DISSENTING opened with \`VERDICT: FAIL\` — read that domain's section first. A domain's own verdict outranks the merged one." >> "$NOTES"
           fi
           if [ -n "${MISSING_FRAGMENTS:-}" ]; then
-            echo "- **A domain left no report.** Nothing was written for: $MISSING_FRAGMENTS. Those domains are unaudited, not passing — a missing fragment is indistinguishable in the merged report from a domain that found nothing. If all three are named, suspect \`Redact secrets from agent output\`: it deletes every fragment and the report when it throws, which means a secret reached a file in cleartext." >> "$NOTES"
+            echo "- **A domain left no report.** No nonempty fragment remains for: $MISSING_FRAGMENTS. Those domains are unaudited. The redactor deletes every fragment and the report when it throws; check that step's result as well as the audit transcript." >> "$NOTES"
           fi
           if [ -n "${UNREADABLE_VERDICTS:-}" ]; then
-            echo "- **A domain's verdict could not be read.** The first line of $UNREADABLE_VERDICTS is neither \`VERDICT: PASS\` nor \`VERDICT: FAIL\`, so its agreement with the merged verdict is unconfirmed. Usually a subagent that did not follow \`.github/audit/_preamble.md\`; the domain did report, so its section below still stands on its own." >> "$NOTES"
+            echo "- **A domain's verdict could not be read.** The first line of $UNREADABLE_VERDICTS is not an exact \`VERDICT: PASS\`, \`VERDICT: FAIL\`, or \`VERDICT: INCONCLUSIVE\`. Read its fragment; the domain did report, but its verdict is unconfirmed." >> "$NOTES"
+          fi
+          if [ -n "${INCONCLUSIVE_DOMAINS:-}" ]; then
+            echo "- **A domain could not determine every check.** $INCONCLUSIVE_DOMAINS returned \`VERDICT: INCONCLUSIVE\`; read its \`UNVERIFIABLE\` checks. Those checks do not count as passing." >> "$NOTES"
           fi
           if [ "$STATUS_FILE_VERDICT" = "none" ]; then
             echo "- **The audit wrote no verdict.** \`audit-status.txt\` was absent, empty, or not \`PASS\`/\`FAIL\`, so the run ended without deciding. Start at the report's own markers: \`UNVERIFIABLE\` is a check the agent could not determine, while a domain section reading \`_No report …_\` is one that never reported — which is what an expired wait deadline looks like." >> "$NOTES"

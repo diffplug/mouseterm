@@ -139,8 +139,8 @@ describe('handleMouseSelectionKeys', () => {
   it('copies raw on Cmd+C and rewrapped on Cmd+Shift+C outside a drag', async () => {
     const { copyRaw, copyRewrapped } = await import('../../../lib/clipboard');
     const { getMouseSelectionState, flashCopy } = await import('../../../lib/mouse-selection');
-    vi.mocked(copyRaw).mockClear().mockResolvedValue(undefined as never);
-    vi.mocked(copyRewrapped).mockClear().mockResolvedValue(undefined as never);
+    vi.mocked(copyRaw).mockClear().mockResolvedValue(true);
+    vi.mocked(copyRewrapped).mockClear().mockResolvedValue(true);
     vi.mocked(flashCopy).mockClear();
     vi.mocked(getMouseSelectionState).mockReturnValue({ selection: { dragging: false } } as never);
 

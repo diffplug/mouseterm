@@ -11,7 +11,7 @@ import {
   stateRequiresNativeMouseSuppression,
   updateDrag,
 } from './mouse-selection';
-import { detectTokenAt } from './smart-token';
+import { detectTokenInBufferLine } from './smart-token';
 import { extractSelectionText } from './selection-text';
 import type { TerminalOverlayDims } from './terminal-store';
 
@@ -115,6 +115,11 @@ export function attachTerminalMouseRouter({
     opts: { pointerId: number | null; touchLike: boolean; block?: boolean },
   ) => {
     const { state, cell, terminalOwns } = terminalOwnsEvent(ev);
+    // Touch suppresses compatibility mousedown, so popup's mouse listener
+    // cannot clear a previous selection for us.
+    setSelection(id, null);
+    setHintToken(id, null);
+    setSelectionBaseline(null);
     if (!terminalOwns) return false;
     const suppressNativeMouse = state.mouseReporting !== 'none';
     if (suppressNativeMouse || opts.touchLike) {
@@ -170,8 +175,7 @@ export function attachTerminalMouseRouter({
     if (!consumed) consumePointerEvent(ev, suppressNativeMouse || isNonMousePointerEvent(ev));
 
     const line = terminal.buffer.active.getLine(cell.row);
-    const text = line?.translateToString(false, 0, terminal.cols);
-    const token = text ? detectTokenAt(text, cell.col) : null;
+    const token = line ? detectTokenInBufferLine(line, cell.col) : null;
     setHintToken(id, token ? {
       kind: token.kind,
       row: cell.row,
@@ -351,7 +355,7 @@ export function attachTerminalMouseRouter({
 
   const onAltChange = (ev: KeyboardEvent) => {
     if (!isDragging(id)) return;
-    setDragAlt(id, ev.altKey);
+    setDragAlt(id, ev.altKey || dragBlock);
   };
 
   element.addEventListener('mousedown', onMouseDown, true);

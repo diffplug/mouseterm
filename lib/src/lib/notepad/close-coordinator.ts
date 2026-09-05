@@ -58,6 +58,8 @@ export interface ArchiveSurfaceNotesOptions {
    *  standalone quit gate's deadline). The mutation still finishes — it may
    *  already be mid-flight — but the live notes are then left alone. */
   signal?: AbortSignal;
+  /** The caller retains the notes and pending batch until its final closure gate settles. */
+  retainNotes?: boolean;
 }
 
 /**
@@ -75,7 +77,7 @@ export async function archiveSurfaceNotes(
   // No archive port means no notepad on this host at all, so there is nothing
   // captured to lose and nowhere to write it — closure must not be blockable.
   if (!hasNotepadArchive()) {
-    for (const surfaceId of surfaceIds) removeSurface(surfaceId);
+    if (!options?.retainNotes) for (const surfaceId of surfaceIds) removeSurface(surfaceId);
     return;
   }
   // The freeze comes before the first `getNotes`, so the batches below and the
@@ -116,7 +118,7 @@ export async function archiveSurfaceNotes(
         const landed = peekPendingBatchId(surfaceId);
         if (!landed) {
           // A Surface that never held a note closes without touching the archive.
-          removeSurface(surfaceId);
+          if (!options?.retainNotes) removeSurface(surfaceId);
           continue;
         }
         deleteBatchIds.push(landed);
@@ -155,7 +157,7 @@ export async function archiveSurfaceNotes(
     // screen, and emptying them now would delete notes in front of someone who
     // just said no. The batch is stored and its id stays remembered, so the next
     // close replaces it rather than adding a second copy.
-    if (options?.signal?.aborted) return;
+    if (options?.signal?.aborted || options?.retainNotes) return;
     for (const surfaceId of archiving) removeSurface(surfaceId);
   } finally {
     // Whether the write landed or rejected, the notepad is the user's again.

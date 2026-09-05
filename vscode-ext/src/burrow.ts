@@ -60,7 +60,7 @@ export interface BurrowDeps {
   /** Post to every live webview in this window. */
   broadcastToWebviews(message: ExtensionMessage): void;
   writePty(ptyId: string, data: string): void;
-  resizePty(ptyId: string, cols: number, rows: number): void;
+  resizePty(ptyId: string, cols: number, rows: number, repaint?: boolean): void;
   /**
    * Watch one PTY this window owns, through the window's shared keyed registry
    * (`processed-pty-streams.ts`) rather than a registry of its own per attachment.
@@ -149,12 +149,12 @@ export function createBurrowProvider(bound: BurrowDeps): BurrowSurfaceProvider {
         }
         bound.writePty(ptyId, data);
       },
-      resizePty: (ptyId, cols, rows) => {
+      resizePty: (ptyId, cols, rows, repaint) => {
         if (isRemotePtyHandle(ptyId)) {
-          remoteResize(ptyId, cols, rows);
+          remoteResize(ptyId, cols, rows, repaint);
           return;
         }
-        bound.resizePty(ptyId, cols, rows);
+        bound.resizePty(ptyId, cols, rows, repaint);
       },
 
       streamPty(ptyId, sink) {

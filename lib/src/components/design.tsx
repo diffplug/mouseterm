@@ -368,15 +368,19 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
 
 /**
  * Left margin that lines content up under an `OnOffSwitch`'s label rather than
- * its pill: the switch's `w-14` plus the usual `gap-3` between them. Lives here
+ * its control: the switch's `w-15` plus the usual `gap-3` between them. Lives here
  * so it moves with the switch's own geometry.
  */
-export const UNDER_SWITCH_INDENT = 'ml-[4.25rem]';
+export const UNDER_SWITCH_INDENT = 'ml-18';
+
+/** Quiet action tint and interaction treatment, shared by switches and context actions. */
+export const SUBTLE_ACTION_COLOR_CLASS = 'text-[color:color-mix(in_srgb,var(--color-link)_35%,var(--color-muted))] enabled:hover:text-link enabled:focus-visible:text-link';
+export const SUBTLE_ACTION_INTERACTION_CLASS = 'enabled:hover:bg-current/10 focus-visible:outline focus-visible:outline-focus-ring';
 
 /**
- * The app's boolean control: a two-position pill reading "on | off". Rendered as
- * a `role="switch"` button, so it is disabled natively by a surrounding
- * `<fieldset disabled>`.
+ * The app's boolean control: compact track (off left, on right) and one state
+ * label. Keep its width fixed across states and in sync with UNDER_SWITCH_INDENT.
+ * Native button behavior handles Space/Enter and surrounding disabled fieldsets.
  */
 export function OnOffSwitch({
   on,
@@ -397,15 +401,19 @@ export function OnOffSwitch({
       aria-checked={on}
       aria-label={`${label} ${on ? 'on' : 'off'}`}
       onClick={() => (on ? onDisable() : onEnable())}
-      className="relative inline-flex h-5 w-14 items-center rounded-full border border-border bg-app-bg text-sm font-medium"
+      className={clsx(
+        'inline-flex h-6 w-15 shrink-0 items-center gap-1.5 rounded px-1 font-mono text-sm font-normal disabled:cursor-not-allowed disabled:opacity-45',
+        SUBTLE_ACTION_COLOR_CLASS,
+        SUBTLE_ACTION_INTERACTION_CLASS,
+      )}
     >
       <span
         aria-hidden
-        className="absolute inset-y-0.5 w-[calc(50%-2px)] rounded-full bg-header-active-bg/25 transition-transform"
-        style={{ transform: on ? 'translateX(2px)' : 'translateX(calc(100% + 2px))' }}
-      />
-      <span className={clsx('z-10 flex-1 text-center', on ? 'text-header-active-bg' : 'text-muted')}>on</span>
-      <span className={clsx('z-10 flex-1 text-center', on ? 'text-muted' : 'text-header-active-bg')}>off</span>
+        className={clsx('relative h-3.5 w-6 shrink-0 rounded-full', on ? 'bg-link/25' : 'bg-foreground/10')}
+      >
+        <span className={clsx('absolute top-0.5 h-2.5 w-2.5 rounded-full', on ? 'left-3 bg-link' : 'left-0.5 bg-muted')} />
+      </span>
+      <span className={clsx('w-[3ch] shrink-0 text-left', !on && 'text-muted')}>{on ? 'On' : 'Off'}</span>
     </button>
   );
 }

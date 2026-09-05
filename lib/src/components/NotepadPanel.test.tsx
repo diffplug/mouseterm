@@ -562,6 +562,20 @@ describe('NotepadPanel — source pins', () => {
     } as unknown as RuntimeTerminalSource;
   }
 
+  it('edits the shared list without pin controls in the Helper view', () => {
+    const id = addPlainNote(SURFACE, 'shared')!;
+    addTerminalNote(SURFACE, [{ text: 'parent output' }], deadSource());
+    act(() => root.render(<NotepadPanel surfaceId={SURFACE} pins={false} />));
+    open();
+    expect(noteElements()).toHaveLength(2);
+    expect(container.querySelector('[aria-label="Show source"]')).toBeNull();
+    expect(getNotes(SURFACE)[1].source).toBeDefined();
+    click(buttonIn(noteElements().find(note => note.dataset.noteId === id)!, 'Delete note'));
+    expect(getNotes(SURFACE)).toHaveLength(1);
+    act(() => root.render(<NotepadPanel surfaceId={SURFACE} />));
+    expect(container.querySelector('[aria-label="Show source"]')).not.toBeNull();
+  });
+
   it('shows the pin only on a note that has a source', () => {
     addPlainNote(SURFACE, 'no source here');
     addTerminalNote(SURFACE, [{ text: 'gone' }], deadSource());

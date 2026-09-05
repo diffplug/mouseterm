@@ -1,4 +1,5 @@
-import { copyRaw, copyRewrapped, doPaste } from '../../../lib/clipboard';
+import { doPaste } from '../../../lib/clipboard';
+import { copySelection } from '../../../lib/copy-selection';
 import { isEditableTarget, isTerminalInputProxy } from '../../../lib/dom';
 import {
   extendSelectionToToken,
@@ -61,10 +62,7 @@ export function handleMouseSelectionKeys(e: KeyboardEvent, ctx: WallKeyboardCtx)
   if (sel && !sel.dragging && hasCopyModifier(e) && keyLower === 'c') {
     e.preventDefault();
     e.stopImmediatePropagation();
-    const rewrapped = e.shiftKey;
-    void (rewrapped ? copyRewrapped(sid) : copyRaw(sid)).then(() => {
-      flashCopy(sid, rewrapped ? 'rewrapped' : 'raw');
-    });
+    void copySelection(sid, e.shiftKey);
     return true;
   }
   // Only ever with a finalized selection: with none, Ctrl+N has to reach the

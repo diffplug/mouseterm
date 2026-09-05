@@ -22,7 +22,7 @@ export function ExternalLinkModalHost() {
 
   const confirm = useCallback(() => {
     const current = getExternalLinkConfirmationSnapshot();
-    if (current?.decision.status === 'openable') {
+    if (current?.decision.status === 'openable' && current.verdict !== 'deceptive') {
       getPlatform().openExternal?.(current.decision.uri);
     }
     clearExternalLinkConfirmation();

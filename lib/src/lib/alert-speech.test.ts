@@ -353,6 +353,33 @@ describe('spoken alarms', () => {
     expect(getAlertSpeechState('pty-1')).toBe('spoken');
   });
 
+  it('ignores an older ring starting after a newer ring has begun speaking', () => {
+    start();
+    ring('pty-1');
+    vi.advanceTimersByTime(SPEAK_DELAY_MS);
+    const old = utterances[0];
+    ring('pty-1');
+    vi.advanceTimersByTime(SPEAK_DELAY_MS);
+    const current = utterances[1];
+    current.onstart?.();
+    old.onstart?.();
+    old.onend?.();
+    expect(getAlertSpeechState('pty-1')).toBe('speaking');
+    current.onend?.();
+    expect(getAlertSpeechState('pty-1')).toBe('spoken');
+  });
+
+  it('ignores a captured start callback after redispatch of the same ring', () => {
+    ringTwoWithFirstSpeaking();
+    const staleStart = utterances[1].onstart;
+    setStatus('pty-1', 'NOTHING_TO_SHOW');
+    const replacement = utterances[2];
+    replacement.onstart?.();
+    staleStart?.();
+    replacement.onend?.();
+    expect(getAlertSpeechState('pty-2')).toBe('spoken');
+  });
+
   it('no-ops when the host webview has no speech backend', () => {
     vi.stubGlobal('speechSynthesis', undefined);
     start();
@@ -421,6 +448,10 @@ describe('spoken alarms', () => {
     // Dispose detaches exactly what was still tracked — the bounded tail. The
     // evicted remainder is inert regardless: its generation token is gone.
     expect(utterances.filter(u => u.onend === null)).toEqual(utterances.slice(-8));
+    utterances[0].onstart?.();
+    expect(getAlertSpeechState('pty-0')).toBeNull();
+    utterances[0].onend?.();
+    expect(getAlertSpeechState('pty-0')).toBeNull();
   });
 
   it('bounds the queued Session index when the engine silently drops utterances', () => {

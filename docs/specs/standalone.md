@@ -22,7 +22,7 @@ Source of truth: `standalone/src/main.tsx` (`bootstrap()`).
 2. `setPlatform(platform)`, then `await platform.init()` **before**
    `resumeOrRestore` — init registers the listeners resume replay arrives on and
    hydrates the session cache (§Persistence).
-3. `installPeerSurfaceResponder()` **after `init()`, never before** (§Burrow service
+3. `installPeerSurfaceResponder()` **after `init()`, never before** (§Burrow
    service) — the responder seeds itself with a `status` command that the adapter
    must already have listeners for (rationale).
 4. `getAvailableShells()` **without awaiting**, so its webview → Rust → sidecar
@@ -272,7 +272,36 @@ chord the webview already handles.**
 
 ## Persistence
 
-`TauriAdapter.saveState` / `getState` route the session blob through
+**Standalone persists no Session state**: every launch starts fresh
+(`docs/specs/transport.md` → "The governing rule"). One `PERSIST_SESSION` gate
+drives all of it — `TauriAdapter.getState` returns null, `saveState` is a no-op,
+and the adapter reports `persistsSession: false` so `saveSession` skips building a
+record at all. **That last part is what keeps the gate from being cosmetic**,
+since the record build costs a `getCwd` round trip per terminal pane regardless
+(rationale). `init()` also **deletes** any pre-upgrade snapshot via
+`clear_session`, unconditionally and including an orphaned
+`<label>.json.tmp` (`docs/specs/transport.md` → "Retiring the transcripts already
+on disk"), deleting rather than blanking (rationale). The store beneath the gate
+is intact and still needed by the workspaces-rollout scope
+(`docs/specs/layout.md` → `## Future`). The Tauri boot cleanup runs regardless
+of the flag; future recovery must also reconcile that deletion and add capture
+to the quit teardown.
+
+**Flip both `PERSIST_SESSION` flags together** — a harness that restored panes
+across a reload would be debugging a path the shipped app never takes; the rest
+of the mirroring rule is `docs/specs/transport.md` → Standalone browser-dev
+harness. `BrowserSidecarAdapter` **deletes** the
+`dormouse.browser-sidecar.session` key on `init()` rather than ignoring it
+(rationale).
+
+**What the gate costs on reload is the *layout*, not the Sessions.** Nothing wires
+`shutdown()` to `beforeunload`, so the sidecar's PTYs outlive a page reload and
+`lib/src/lib/reconnect.ts` resumes over them — but with no `getState()` resume plan
+every live PTY lands in one tab group, doors and saved titles dropped. Real
+standalone has always done this across a WebView reload (rationale).
+
+**Must keep the implemented store plumbing dormant while persistence is disabled.**
+Below the gate, `TauriAdapter.saveState` / `getState` route the session blob through
 `lib/src/lib/window-persistence.ts` (`loadSessionState` / `saveSessionState`) —
 the standalone adapter boundary where the `PersistedWindow` wrapping lives
 (`docs/specs/transport.md`, Workspace/Window containers).
@@ -304,16 +333,14 @@ its own lifetime, so `clear_session` never sweeps it
 (`docs/specs/notepad.md` -> "Standalone quit"). Both stores write through the one
 `write_file_atomically`.
 
-**Owner-only on disk, before any bytes are written** — the blob carries terminal
-transcripts (`docs/specs/security-local.md` -> "Persisted state").
+**Must restrict the session store to the owner before any bytes are written**
+(`docs/specs/security-local.md` -> "Persisted state"; rationale).
 `restrict_to_owner` sets `0700` on the directory and `0600` on the temp file
 *first*, since the rename preserves its mode; on Windows, where a unix mode is a
 silent no-op, it applies a protected single-entry DACL instead (mechanism in its
 doc comment). `burrow_state_dir` locks the sidecar's state directory with the
 same call and relies on it reaching a file that already *existed*, which
-`restrict_to_owner_leaves_one_owner_only_ace` pins (rationale). **Neither call is
-fatal**, but the state-dir one logs a `WARNING` naming the path rather than
-failing silently, because on Windows it is the only thing restricting `burrowToken`.
+`restrict_to_owner_leaves_one_owner_only_ace` pins (rationale). **Must abort a snapshot save if either permission change fails**, preserving the previous snapshot. The state-directory call remains nonfatal and logs a `WARNING` naming the path. Pinned by `session_permission_failures_preserve_previous_snapshot_without_writing_bytes` and `session_write_tightens_directory_and_existing_temp_file`.
 
 **Boot + the synchronous-read constraint.** `getState()` is synchronous —
 cold-start restore reads it before React mounts — but a Tauri `invoke` is async, so
@@ -323,56 +350,19 @@ synchronously, `setItem` updates it and forwards to `save_session` asynchronousl
 coalescing bursts to at most one in-flight write (latest value wins). Mirrors the
 VS Code adapter's host-injected seed (`docs/specs/vscode.md`).
 
-**Dirty-gated writes.** An idle app must not rewrite the multi-MB blob. A
-generation-counter dirty tracker gates the periodic heartbeat; the trigger
-taxonomy above it is shared frontend code, so every adapter gets it
-(`docs/specs/layout.md` → Session persistence).
+Dirty tracking is shared frontend behavior (`docs/specs/layout.md` → Session persistence).
+**Must skip an unchanged store write only when that value is queued or saved.**
+An idle failed write remains retryable even though the read cache already holds
+its value; pinned by `tauri-session-store.test.ts`.
 
-- **Races resolve conservatively**: a save captures its target generation before
-  serializing and clears dirty only on a fulfilled write, so a change arriving
-  mid-save costs one redundant save at worst and is never lost.
-- **Store-level backstop**: `TauriSessionStore.setItem` short-circuits on a blob
-  byte-equal to the cached one, valid from the first write because the cache is
-  boot-seeded from disk.
+Source of truth: `TauriSessionStore.setItem` in `standalone/src/tauri-session-store.ts`.
 
-Source of truth: `lib/src/lib/session-dirty.ts`,
-`lib/src/components/wall/use-session-persistence.ts`,
-`standalone/src/tauri-session-store.ts`.
-
-**Durability on quit.** `saveState` returns after updating the cache and merely
-*firing* `save_session`, so the quit orchestrator (§Quit flow) awaits the pipeline
-all the way to disk: `requestSessionFlush` drives the debounced/heartbeat save
-through `saveState`, then `drainSessionSaves` awaits `TauriSessionStore.drain()`,
-which resolves when the write pipeline goes idle, under a bounded timeout. **The
-final debounce/heartbeat window is therefore never lost** (rationale).
-
-**Standalone persists no Session state**: every launch starts fresh
-(`docs/specs/transport.md` → "The governing rule"). One `PERSIST_SESSION` gate
-drives all of it — `TauriAdapter.getState` returns null, `saveState` is a no-op,
-and the adapter reports `persistsSession: false` so `saveSession` skips building a
-record at all. **That last part is what keeps the gate from being cosmetic**,
-since the record build costs a `getCwd` round trip per terminal pane regardless
-(rationale). `init()` also **deletes** any pre-upgrade snapshot via
-`clear_session`, unconditionally and including an orphaned
-`<label>.json.tmp` (`docs/specs/transport.md` → "Retiring the transcripts already
-on disk"), deleting rather than blanking (rationale). The store beneath the gate
-is intact and still needed by the workspaces-rollout scope
-(`docs/specs/layout.md` → `## Future`); re-enabling recovery is flipping the gate
-plus adding capture to the quit teardown, whose ordering already fits (flush →
-kill → flush → drain).
-
-**Flip both `PERSIST_SESSION` flags together** — a harness that restored panes
-across a reload would be debugging a path the shipped app never takes; the rest
-of the mirroring rule is `docs/specs/transport.md` → Standalone browser-dev
-harness. `BrowserSidecarAdapter` **deletes** the
-`dormouse.browser-sidecar.session` key on `init()` rather than ignoring it
-(rationale).
-
-**What the gate costs on reload is the *layout*, not the Sessions.** Nothing wires
-`shutdown()` to `beforeunload`, so the sidecar's PTYs outlive a page reload and
-`lib/src/lib/reconnect.ts` resumes over them — but with no `getState()` resume plan
-every live PTY lands in one tab group, doors and saved titles dropped. Real
-standalone has always done this across a WebView reload (rationale).
+**Must await the store pipeline before exiting**, under the quit timeout
+(§Quit flow; rationale). `drainSessionSaves` awaits `TauriSessionStore.drain()`,
+which resolves when the write pipeline goes idle, including after a rejected
+write; failed writes are logged. With Session persistence disabled, the pipeline
+is already idle. Drain is a completion barrier, not a guarantee of successful
+disk persistence.
 
 ## Quit flow
 
@@ -380,9 +370,8 @@ Source of truth: `standalone/src-tauri/src/lib.rs` (`QuitState`, `request_quit`,
 the `quit_ack` / `quit_progress` / `quit_cancel` / `quit_proceed` commands, the `CloseRequested` /
 `ExitRequested` arms) and `standalone/src/quit.ts` (the webview orchestrator).
 
-**Rust intercepts every quit trigger** — quitting ends every terminal, so the
-webview tears them down gracefully and durably writes the freshest session first
-(rationale).
+**Must intercept every quit trigger in Rust** and run the webview teardown
+before exiting (rationale).
 
 **Trigger interception.** Two Rust arms funnel into `request_quit(app)`:
 
@@ -477,8 +466,8 @@ able to stop the quit (`docs/specs/notepad.md` -> "Standalone quit"):
 3. `requestSessionFlush` — flush the post-exit Session state. **Must retain the
    previously persisted CWD when `getCwd` returns null for a dead PTY.** Both
    flushes are no-ops while `persistsSession: false` (§Persistence).
-4. `drainSessionSaves` — await the last `save_session` reaching disk; the process
-   does not exit until it lands (§Persistence, "Durability on quit").
+4. `drainSessionSaves` — await the store pipeline becoming idle or its timeout
+   (§Persistence).
 5. If an update is pending, a fresh `quit_progress` then `installPendingUpdate()`
    — strictly *after* the completed save (`docs/specs/auto-update.md`); Rust's
    phase-3 watchdog backstops a hung installer.
@@ -502,11 +491,17 @@ native handler never fires. Behavior and status:
 ## Logging
 
 Windows release builds use the GUI subsystem, so nothing streams to a launching
-terminal. The Rust backend appends sidecar stdout/stderr lines and its own
-diagnostics to a log file: `%LOCALAPPDATA%\Dormouse Terminal\dormouse.log` on
-Windows, `$TMPDIR/dormouse.log` elsewhere, overridable via `DORMOUSE_LOG_FILE`
-(`docs/specs/deploy.md`, Packaged app logging). The updater debug modal reads it
-back through `read_update_log`.
+terminal. The Rust backend appends sidecar stderr, malformed stdout diagnostics,
+and its own diagnostics to a log file: `%LOCALAPPDATA%\Dormouse Terminal\dormouse.log` on
+Windows, `$TMPDIR/dormouse.log` elsewhere, overridable via `DORMOUSE_LOG_FILE`.
+
+**Must bound updater debug-log reads to the final 10,000 bytes**, dropping a
+leading partial UTF-8 character. `read_update_log` runs off the main thread. The
+log resets at app startup and grows during the run.
+
+Source of truth: `init_log` / `read_update_log` in `standalone/src-tauri/src/lib.rs`;
+`read_utf8_tail` in `standalone/src-tauri/src/log_tail.rs`, pinned by
+`reads_only_the_budget_even_when_the_log_grows`.
 
 ## Build and development
 
@@ -534,3 +529,9 @@ Source of truth: `standalone/package.json` (package scripts),
 - `pnpm dev:standalone:ab` runs the sidecar + webview in a normal browser via the
   browser-dev harness instead of the Tauri WebView (`docs/specs/transport.md`,
   Standalone browser-dev harness).
+
+## Terminal context host operations
+
+**Must forward native directory opening, process inspection, helper promotion, and global autorun settings to the PTY host**, preserving correlated errors. Directory opening validates an existing absolute directory, resolves it canonically, and invokes Finder/Explorer/the platform opener with one path argument and no shell. Process-inspection failure is unknown work, never proof of idle. Preference storage is owned by `docs/specs/terminal-context.md` → Global autorun setting; live ownership and replay by `docs/specs/transport.md` → Auxiliary helper metadata.
+
+Source of truth: `terminalContext` in `standalone/src/tauri-adapter.ts`; `pty_context` in `standalone/src-tauri/src/lib.rs`; `context` in `standalone/sidecar/pty-core.js`.

@@ -40,6 +40,7 @@ One implementation map per spec: an exhaustive `Files` / `Code Map` section or s
 - **`docs/specs/tiling-engine.md`** — **Lath**, the in-house headless tiling engine: pure split-tree core, never-re-parent LathHost adapter, wall store + engine, Lath-only persistence.
 - **`docs/specs/alert.md`** — The Activity layer: alert tracks, attention model, TODO lifecycle, notification protocols with their sanitization rules, the Workspace union projection.
 - **`docs/specs/terminal-state.md`** — Per-Session semantic state: CWD, prompt/command lifecycle, title candidates and header derivation, grouping keys.
+- **`docs/specs/terminal-context.md`** — Unified terminal context and helper terminal: lifecycle, promotion, source closure, and global autorun settings.
 - **`docs/specs/terminal-escapes.md`** — Registry of every escape sequence parsed, answered, or ignored, each row pointing at its owning spec. Read before touching OSC/CSI parsing.
 - **`docs/specs/transport.md`** — Adapter-agnostic webview ↔ host protocol: PTY lifecycle and buffering, reconnection, message contracts, persisted-session types, the invariants every adapter honors.
 - **`docs/specs/mouse-and-clipboard.md`** — Terminal-owned selection, copy (Raw / Rewrapped), paste tiers, smart URL/path extension, the mouse-ownership state matrix.
@@ -125,3 +126,25 @@ in [`lib/src/theme-colors.css`](lib/src/theme-colors.css), which a host can
 import on its own, and the type scale, fonts, and animation tokens in
 [`lib/src/theme.css`](lib/src/theme.css). When adding or removing a color
 token, update `theme-colors.css` and `design.tsx` together.
+
+<!-- dor-skill:begin — managed by `dor skill --install`; edits inside are overwritten -->
+## Running inside Dormouse
+
+If the `DORMOUSE_SURFACE_ID` environment variable is set, this terminal is
+hosted by [Dormouse](https://dormouse.sh) and the `dor` CLI is on your `PATH`.
+**Run `dor skill` first and do what it says** — it teaches you to use the
+terminal fully (visible panes, browser surfaces, sub-agents). Two rules are
+mandatory whether or not you have read it:
+
+- **NEVER start a long-running process — a dev server, a `--watch`, any daemon
+  — as a background subprocess.** It would be invisible to the user and die with
+  your shell. ALWAYS run it with `dor ensure -- <command>` (e.g.
+  `dor ensure -- npm run dev`), which puts it in a visible pane that outlives
+  you and is reused instead of duplicated on re-runs.
+- **NEVER use a built-in, native, or bundled browser tool to open, view, or
+  drive a web page.** ALWAYS use `dor ab` (agent-browser) — `dor ab open
+  <url>`, `dor ab click @e3`, and so on — so the page renders in a Dormouse
+  pane the user can watch.
+
+If `DORMOUSE_SURFACE_ID` is not set, ignore this section — `dor` is not here.
+<!-- dor-skill:end -->

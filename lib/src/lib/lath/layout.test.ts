@@ -42,6 +42,18 @@ describe('layout — golden trees', () => {
     });
   });
 
+  it('redistributes unclamped weights without depending on child order', () => {
+    const opts = { gap: 0, minLeaf: { width: 100, height: 0 } };
+    const children = [[leaf('a'), 0.1], [leaf('b'), 0.24], [leaf('c'), 0.66]] as const;
+    for (const ordered of [children, [...children].reverse()]) {
+      const t = tree(split('row', ...ordered.map(([node, weight]) => [node, weight] as [typeof node, number])));
+      const result = layout(t, R(0, 0, 500, 20), opts);
+      expect(result.get('a')?.width).toBe(100);
+      expect(result.get('b')?.width).toBe(107);
+      expect(result.get('c')?.width).toBe(293);
+    }
+  });
+
   it('degrades to min-proportional when overconstrained (never overlaps)', () => {
     const t = tree(split('row', [leaf('a'), 0.5], [leaf('b'), 0.5]));
     expect(obj(layout(t, R(0, 0, 50, 50), { gap: 0, minLeaf: { width: 40, height: 0 } }))).toEqual({
@@ -62,6 +74,15 @@ describe('layout — golden trees', () => {
       expect(r.width).toBeGreaterThanOrEqual(0);
       expect(r.height).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  it('clamps negative dimensions consistently for leaves, node queries, and sashes', () => {
+    const rect = R(5, 7, -20, -30);
+    expect(layout(leafTree('a'), rect, noMin).get('a')).toEqual(R(5, 7, 0, 0));
+    const t = tree(split('row', [leaf('a'), 0.5], [leaf('b'), 0.5]));
+    expect([...layout(t, rect, noMin).values()]).toEqual([R(5, 7, 0, 0), R(5, 7, 0, 0)]);
+    expect(nodeRectAtPath(t, rect, noMin, [])).toEqual(R(5, 7, 0, 0));
+    expect(sashes(t, rect, noMin)[0].rect).toEqual(R(5, 7, 0, 0));
   });
 
   it('the empty tree lays out nothing', () => {

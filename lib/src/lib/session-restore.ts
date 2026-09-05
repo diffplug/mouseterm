@@ -26,6 +26,12 @@ export function restoreSession(platform: PlatformAdapter): RestoredSession | nul
   if (!saved || !saved.panes || saved.panes.length === 0) return null;
   const doors = saved.doors ?? [];
   const doorIds = new Set(doors.map((item) => item.id));
+  const visiblePanes = saved.panes.filter((pane) => !doorIds.has(pane.id));
+  const visibleIds = new Set(visiblePanes.map((pane) => pane.id));
+  const candidateLayout = persistedLathLayout(saved);
+  const leafIds = candidateLayout ? Object.keys(candidateLayout.leafMeta) : [];
+  const lathLayout = candidateLayout && leafIds.length === visibleIds.size && leafIds.every((id) => visibleIds.has(id))
+    ? candidateLayout : undefined;
   const shellOpts = getDefaultShellOpts();
   // Host-owned and single-use, and read here rather than off the pane: the
   // session blob the webview saves must never carry one, or a later restore
@@ -53,8 +59,11 @@ export function restoreSession(platform: PlatformAdapter): RestoredSession | nul
   }
 
   return {
-    paneIds: saved.panes.filter((pane) => !doorIds.has(pane.id)).map((p) => p.id),
-    lathLayout: persistedLathLayout(saved),
+    // Without a usable layout Wall seeds terminal metadata for each id. Browser
+    // render params live only in that layout (or a door), so omit visible browser
+    // ids instead of silently restoring them as shells.
+    paneIds: visiblePanes.filter((pane) => lathLayout || pane.surfaceType !== 'browser').map((pane) => pane.id),
+    lathLayout,
     doors,
     ...carrySurfaceRefs(saved),
   };

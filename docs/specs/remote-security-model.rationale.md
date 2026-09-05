@@ -159,6 +159,15 @@ chaining key with a session it must never affect.
 
 ## Burrow bounds
 
+**Why the frame FIFO needs its own bounds.** The handshake token bucket runs
+inside asynchronous processing; a slow WebCrypto operation previously let the
+Relay retain unlimited waiting frames in a Promise chain before admission ran.
+A frame-count cap bounds bookkeeping, and a separate string-length cap bounds
+ciphertexts and ignored JSON fields. Four million code units accommodates the
+base64 expansion of a maximum-size fragmented application message. Disconnecting
+on overflow preserves fail-closed Noise ordering. Keeping one drain across
+reconnects prevents repeated connection losses from accumulating stalled crypto.
+
 **Why the eight-invitation cap is shared with the Relay's token cap.** The two
 credentials ride in one QR and die together: an invitation whose setup token has
 been evicted is a code that cannot register a passkey, and a token whose

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IMarker, Terminal } from '@xterm/xterm';
 
 const mocks = vi.hoisted(() => ({
@@ -16,6 +16,7 @@ import { __resetMouseSelectionForTests, setSelection, type Selection } from '../
 import { FakePtyAdapter, setPlatform } from '../platform';
 import { hasNotepadArchive } from './archive-service';
 import { addSelectionToNotepad, isNotepadChordBound } from './capture';
+import { registry, type TerminalEntry } from '../terminal-store';
 import { beginClosing, clearAllNotepads, getNotes } from './notepad-store';
 
 class FakeMarker {
@@ -94,7 +95,33 @@ beforeEach(() => {
   setPlatform(new FakePtyAdapter());
 });
 
+afterEach(() => registry.delete('helper-1'));
+
 describe('addSelectionToNotepad', () => {
+  it('captures Helper output into the parent without registering any markers', () => {
+    const terminal = makeTerminal(LINES);
+    const markers = vi.spyOn(terminal, 'registerMarker');
+    mocks.getTerminalInstance.mockReturnValue(terminal);
+    registry.set('helper-1', { helper: { parentId: 'term-1', command: '' } } as TerminalEntry);
+    setSelection('helper-1', sel());
+    expect(addSelectionToNotepad('helper-1')).toBe(true);
+    expect(getNotes('helper-1')).toEqual([]);
+    expect(getNotes('term-1')).toHaveLength(1);
+    expect(getNotes('term-1')[0].source).toBeUndefined();
+    expect(markers).not.toHaveBeenCalled();
+
+    const release = beginClosing(['term-1']);
+    expect(addSelectionToNotepad('helper-1')).toBe(false);
+    expect(getNotes('term-1')).toHaveLength(1);
+    release();
+
+    // Promotion changes ownership only for subsequent captures.
+    registry.get('helper-1')!.helper = undefined;
+    expect(addSelectionToNotepad('helper-1')).toBe(true);
+    expect(getNotes('helper-1')[0].source?.terminalId).toBe('helper-1');
+    expect(getNotes('term-1')).toHaveLength(1);
+  });
+
   it('captures the finalized selection as a rich note pinned to its source', () => {
     mocks.getTerminalInstance.mockReturnValue(makeTerminal(LINES));
     setSelection('term-1', sel());

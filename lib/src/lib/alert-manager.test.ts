@@ -31,6 +31,24 @@ describe('AlertManager in isolation', () => {
     ]);
   }
 
+  it('drops every feed and control for a helper Session until it is promoted', () => {
+    const states: string[] = [];
+    manager.onStateChange((id) => states.push(id));
+    manager.setHelper('helper', true);
+    runWatchedCommand('helper');
+    manager.onData('helper');
+    applyTerminalProtocolEvents(manager, 'helper', [{ type: 'notification', notification: { title: 'done', body: null } }]);
+    manager.attend('helper');
+    manager.clearTodo('helper');
+    vi.advanceTimersByTime(10_000);
+    expect(states).toEqual([]);
+    expect(manager.getState('helper')).toEqual(DEFAULT_ALERT_STATE);
+
+    manager.setHelper('helper', false);
+    runWatchedCommand('helper');
+    expect(states).toContain('helper');
+  });
+
   it('state machine advances through silence to ALERT_RINGING', () => {
     const id = 'test-pty';
     runWatchedCommand(id);
@@ -675,6 +693,38 @@ describe('AlertManager in isolation', () => {
   });
 
   // --- The always-on detector vs. the rule set as pure policy ---
+
+  it.each(['promptStart', 'promptEnd'] as const)('resets unwatched output history on %s without a command watch', (type) => {
+    const id = `prompt-boundary-${type}`;
+    const completions: CompletionEvent[] = [];
+    manager.registerCompletionClaimant(id, (event) => {
+      completions.push(event);
+      return false;
+    });
+    driveToBusy(id);
+    manager.applyTerminalSemanticEvents(id, [{ type }]);
+    settle();
+    expect(completions).toEqual([]);
+
+    // The prompt reset forgets old work but keeps observing subsequent output.
+    driveToBusy(id);
+    settle();
+    expect(completions).toEqual([{ kind: 'settled' }]);
+  });
+
+  it('clears a WATCHING ring before it has created a TODO', () => {
+    const id = 'clear-unattended-watching';
+    driveToRinging(id);
+    expect(manager.getState(id)).toMatchObject({ status: 'ALERT_RINGING', todo: false });
+
+    manager.clearTodo(id);
+    expect(manager.getState(id)).toMatchObject({
+      status: 'NOTHING_TO_SHOW', watchingEnabled: true, todo: false, notification: null,
+    });
+    driveToBusy(id);
+    settle();
+    expect(manager.getState(id).status).toBe('ALERT_RINGING');
+  });
 
   it('drives the detector on an unwatched Session without showing it or ringing', () => {
     const id = 'unwatched-detector';

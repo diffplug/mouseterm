@@ -19,6 +19,7 @@ vi.mock('./terminal-registry', () => ({
 import { resumeOrRestore } from './reconnect';
 import { addPlainNote, buildVolatileSnapshot, clearAllNotepads, getNotes } from './notepad/notepad-store';
 import type { VolatileNotepadSnapshot } from './notepad/types';
+import { getHelper, forgetHelper } from './helper-terminal';
 import type { LathNode } from './lath/model';
 
 /** A native Lath persisted layout over `ids` (row split; empty tree for none) —
@@ -86,6 +87,17 @@ function createPlatform(ptys: PtyInfo[], savedState: PersistedSession | null): P
 describe('resumeOrRestore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('restores helpers outside the primary layout and disarms autorun', async () => {
+    const layout = lathLayoutFor('parent');
+    const helper = { parentId: 'parent', command: 'git status' };
+    const result = await resumeOrRestore(createPlatform([{ id: 'parent', alive: true }, { id: 'helper', alive: true, helper }], {
+      version: 3, lathLayout: layout, panes: [{ id: 'parent', title: 'Parent', cwd: null }],
+    }));
+    expect(result.paneIds).toEqual(['parent']); expect(result.lathLayout).toEqual(layout);
+    expect(terminalRegistryMocks.resumeTerminal).toHaveBeenCalledWith('helper', 'helper-replay', { alive: true, exitCode: undefined, helper });
+    expect(getHelper('parent')?.status).toBe('preserved'); forgetHelper('parent');
   });
 
   it('restores saved visible layout and minimized doors for matching live PTYs', async () => {

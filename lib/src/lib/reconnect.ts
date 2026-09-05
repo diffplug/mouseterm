@@ -1,3 +1,4 @@
+import { restoreHelper } from './helper-terminal';
 import type { LathPersistedLayout } from './lath/persistence';
 import type { PlatformAdapter, PtyInfo } from './platform/types';
 import { hydrateNotepadFromVolatile } from './notepad/notepad-store';
@@ -84,7 +85,7 @@ function resumeLiveSessions(platform: PlatformAdapter): Promise<ReconnectResult 
       const savedResumeInfo = getSavedPaneResumeInfo(savedState, ptyList.map((pty) => pty.id));
       const ids: string[] = [];
       for (const pty of ptyList) {
-        const resumeInfo: { alive: boolean; exitCode?: number; shell?: string; title?: string; untouched?: boolean } = {
+        const resumeInfo: { alive: boolean; exitCode?: number; shell?: string; title?: string; untouched?: boolean; helper?: PtyInfo['helper'] } = {
           alive: pty.alive,
           exitCode: pty.exitCode,
         };
@@ -92,8 +93,11 @@ function resumeLiveSessions(platform: PlatformAdapter): Promise<ReconnectResult 
         const savedInfo = savedResumeInfo.get(pty.id);
         if (savedInfo?.title !== undefined) resumeInfo.title = savedInfo.title;
         if (savedInfo?.untouched) resumeInfo.untouched = true;
+        const parentPresent = pty.helper && ptyList.some(parent => parent.id === pty.helper?.parentId && !parent.helper);
+        if (parentPresent) resumeInfo.helper = pty.helper;
         resumeTerminal(pty.id, replayBuffer.get(pty.id) ?? null, resumeInfo);
-        ids.push(pty.id);
+        if (parentPresent && pty.helper) restoreHelper(pty.id, pty.helper);
+        else { ids.push(pty.id); if (pty.helper) void platform.terminalContext?.({ op: 'promote', id: pty.id }); }
       }
       // Pull saved visible/doors state so a resume (e.g. after panel
       // close/reopen) restores splits and doors instead of stacking every live

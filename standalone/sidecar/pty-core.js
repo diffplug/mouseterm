@@ -653,6 +653,7 @@ function getDescendantPids(rootPid, runtime = {}) {
       }
       return [...buildDescendantSet(pairs, rootPid)];
     } catch {
+      if (runtime.strict) throw new Error("Unable to inspect terminal processes");
       return [rootPid];
     }
   }
@@ -668,6 +669,7 @@ function getDescendantPids(rootPid, runtime = {}) {
       });
       return [...buildDescendantSet(parsePsPairs(out), rootPid)];
     } catch {
+      if (runtime.strict) throw new Error("Unable to inspect terminal processes");
       return [rootPid];
     }
   }
@@ -683,11 +685,13 @@ function getDescendantPids(rootPid, runtime = {}) {
         .filter(([pid, ppid]) => Number.isInteger(pid) && Number.isInteger(ppid));
       return [...buildDescendantSet(pairs, rootPid)];
     } catch {
+      if (runtime.strict) throw new Error("Unable to inspect terminal processes");
       return [rootPid];
     }
   }
 
-  return [rootPid];
+  if (runtime.strict) throw new Error("Unable to inspect terminal processes");
+      return [rootPid];
 }
 
 module.exports.getDescendantPids = getDescendantPids;
@@ -1046,10 +1050,35 @@ module.exports.create = function create(send, ptyModule) {
 
   const pty = ptyModule;
   const ptys = new Map(); // id -> pty.IPty
+  const helpers = new Map();
+  const replayBuffers = new Map();
   const ptyShells = new Map(); // id -> resolved shell executable
+  // Repaint restoration belongs to the PTY owner, where every local and remote
+  // resize passes. A Viewer-local timer cannot see another display taking size
+  // authority (docs/specs/remote-api.md -> Attach is the resize).
+  const repaintTimers = new Map();
+  const FORCE_REPAINT_BOUNCE_MS = 60;
+
+  function cancelRepaint(id) {
+    clearTimeout(repaintTimers.get(id));
+    repaintTimers.delete(id);
+  }
+
+  function validHelperOwner(id, helper) {
+    return typeof helper.parentId === 'string' && typeof helper.command === 'string'
+      && helper.command.length <= 4096 && !/[\r\n\0]/.test(helper.command)
+      && helper.parentId !== id && replayBuffers.has(helper.parentId) && !helpers.has(helper.parentId)
+      && ![...helpers].some(([otherId, other]) => otherId !== id && other.parentId === helper.parentId);
+  }
 
   function spawn(id, options) {
     const config = resolveSpawnConfig({ ...options, id, surfaceId: id });
+    if (options?.helper && validHelperOwner(id, options.helper)) {
+      helpers.set(id, { parentId: options.helper.parentId, command: options.helper.command });
+    } else if (options?.helper) {
+      send("exit", { id, exitCode: 1 });
+      return;
+    } else helpers.delete(id);
 
     let p;
     try {
@@ -1082,16 +1111,20 @@ module.exports.create = function create(send, ptyModule) {
       return;
     }
 
+    cancelRepaint(id);
     ptys.set(id, p);
+    replayBuffers.set(id, "");
     ptyShells.set(id, config.shell);
 
     p.onData((data) => {
+      if (ptys.get(id) === p) replayBuffers.set(id, ((replayBuffers.get(id) || '') + data).slice(-200000));
       send('data', { id, data });
     });
 
     p.onExit(({ exitCode, signal }) => {
       send('exit', { id, exitCode, signal });
       if (ptys.get(id) === p) {
+        cancelRepaint(id);
         ptys.delete(id);
         ptyShells.delete(id);
       }
@@ -1109,9 +1142,28 @@ module.exports.create = function create(send, ptyModule) {
     if (p) p.write(data);
   }
 
-  function resize(id, cols, rows) {
+  function resize(id, cols, rows, repaint = false) {
+    cancelRepaint(id);
     const p = ptys.get(id);
-    if (p) p.resize(cols, rows);
+    if (!p) return;
+    if (!repaint) {
+      p.resize(cols, rows);
+      return;
+    }
+    p.resize(cols, rows > 1 ? rows - 1 : rows + 1);
+    const timer = setTimeout(() => {
+      if (repaintTimers.get(id) !== timer) return;
+      repaintTimers.delete(id);
+      if (ptys.get(id) !== p) return;
+      try {
+        p.resize(cols, rows);
+      } catch (error) {
+        // Process death can race its onExit callback; never crash the owner.
+        console.error(`[pty-core] repaint failed for ${id}:`, error.message);
+      }
+    }, FORCE_REPAINT_BOUNCE_MS);
+    timer.unref?.();
+    repaintTimers.set(id, timer);
   }
 
   // Synchronous lifetime observation for the Burrow's atomic
@@ -1122,6 +1174,9 @@ module.exports.create = function create(send, ptyModule) {
   }
 
   function kill(id) {
+    helpers.delete(id);
+    replayBuffers.delete(id);
+    cancelRepaint(id);
     const p = ptys.get(id);
     if (p) {
       p.kill();
@@ -1131,19 +1186,70 @@ module.exports.create = function create(send, ptyModule) {
   }
 
   function killAll() {
+    for (const id of repaintTimers.keys()) cancelRepaint(id);
     for (const [, p] of ptys) {
       p.kill();
     }
     ptys.clear();
     ptyShells.clear();
+    helpers.clear();
+    replayBuffers.clear();
   }
 
   function list() {
     const result = [];
     for (const [id] of ptys) {
-      result.push({ id, alive: true, shell: ptyShells.get(id) });
+      result.push({ id, alive: true, shell: ptyShells.get(id), ...(helpers.has(id) ? { helper: helpers.get(id) } : {}) });
     }
     send('list', { ptys: result });
+    for (const { id } of result) send('replay', { id, data: replayBuffers.get(id) || '' });
+  }
+
+  // Only explicit settings edits write this installation-global preference. No
+  // terminal transcripts or session layout are persisted here.
+  const settingsPath = require('node:path').join(os.homedir(), '.dormouse', 'helper-terminal.json');
+  function context(request, requestId) {
+    let command = 'git status';
+    try {
+      const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      if (typeof saved.command === 'string' && saved.command.length <= 4096 && !/[\r\n\0]/.test(saved.command)) command = saved.command;
+    } catch { /* Factory default until explicitly saved. */ }
+    const result = { home: os.homedir(), busy: null, command, requestId };
+    try {
+      const p = ptys.get(request.id);
+      if (request.op === 'settings') {
+        if (request.command !== undefined) {
+          if (typeof request.command !== 'string' || request.command.length > 4096 || /[\r\n\0]/.test(request.command)) throw new Error('Use a single command line (up to 4096 characters)');
+          fs.mkdirSync(require('node:path').dirname(settingsPath), { recursive: true });
+          const temporary = settingsPath + '.' + process.pid + '.tmp';
+          fs.writeFileSync(temporary, JSON.stringify({ command: request.command }), { mode: 0o600 });
+          fs.renameSync(temporary, settingsPath);
+          result.command = request.command;
+        }
+      } else if (request.op === 'info') {
+        result.busy = p ? getDescendantPids(p.pid, { strict: true }).some(pid => pid !== p.pid) : false;
+        if (p && !result.busy && p.process) {
+          const basename = value => require('node:path').basename(value).replace(/^-/, '').replace(/\.exe$/i, '').toLowerCase();
+          result.busy = basename(p.process) !== basename(ptyShells.get(request.id));
+        }
+      } else if (request.op === 'promote') {
+        if (request.restore) {
+          if (!replayBuffers.has(request.id) || !validHelperOwner(request.id, request.restore)) throw new Error('Invalid helper owner');
+          helpers.set(request.id, { parentId: request.restore.parentId, command: request.restore.command });
+        } else helpers.delete(request.id);
+      } else if (request.op === 'openDirectory') {
+        const path = require('node:path');
+        if (typeof request.path !== 'string' || !path.isAbsolute(request.path) || request.path.includes('\0') || !directoryExists(request.path)) throw new Error('Directory is unavailable');
+        const nativePath = fs.realpathSync(request.path);
+        const exe = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer.exe' : 'xdg-open';
+        // Absolute canonical path is one argument; no shell interprets OSC text.
+        require('node:child_process').execFile(exe, [nativePath], { windowsHide: true }, (error) => {
+          send('context', { ...result, ...(error ? { error: error.message } : {}) });
+        });
+        return;
+      } else throw new Error('Unknown terminal context operation');
+    } catch (error) { result.error = error.message; }
+    send('context', result);
   }
 
   function getCwd(id, requestId) {
@@ -1215,5 +1321,6 @@ module.exports.create = function create(send, ptyModule) {
     send('shells', { shells: detectAvailableShells(), requestId });
   }
 
-  return { spawn, write, resize, hasPty, kill, killAll, list, getCwd, getOpenPorts, interrupt, gracefulKillAll, getShells };
+  return { spawn, write, resize, hasPty, kill, killAll, list, context,
+    getCwd, getOpenPorts, interrupt, gracefulKillAll, getShells };
 };
