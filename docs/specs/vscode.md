@@ -411,6 +411,12 @@ debugger can attach to.
 
 `vscode-ext/vite.config.ts` sets `root: ../lib` and `outDir: ./media`, building the shared React frontend directly into the extension's media folder.
 
+## Terminal context host operations
+
+**Must forward native directory opening, process inspection, helper promotion, and global autorun settings to the PTY host**, preserving correlated errors. Directory opening validates an existing absolute directory, resolves it canonically, and invokes Finder/Explorer/the platform opener with one path argument and no shell. Process-inspection failure is unknown work, never proof of idle. Preference storage is owned by `docs/specs/terminal-context.md` → Global autorun setting; live ownership and replay by `docs/specs/transport.md` → Auxiliary helper metadata.
+
+Source of truth: `terminalContext` in `lib/src/lib/platform/vscode-adapter.ts`; `terminalContext` in `vscode-ext/src/pty-manager.ts`; `context` in `standalone/sidecar/pty-core.js`.
+
 ## Future
 
 ### Webview→host Surface-state channel

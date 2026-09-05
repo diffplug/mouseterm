@@ -1,3 +1,5 @@
+import type { PortMode } from './TerminalContextView';
+import type { PortUrlEntry } from './port-url';
 import { createContext } from 'react';
 import type { AlertButtonActionResult, SessionStatus, SetTerminalUserTitleResult } from '../../lib/terminal-registry';
 import type { WallMode } from './wall-types';
@@ -101,3 +103,10 @@ export const ZoomedIdContext = createContext<string | null>(null);
 export const WindowFocusedContext = createContext(true);
 
 export const DialogKeyboardContext = createContext<(active: boolean) => void>(() => {});
+
+export const TerminalContextContext = createContext<{
+  id: string | null; warning?: string;
+  open(id: string, warning?: string): void; close(): void;
+  promote(id: string): Promise<void>;
+  openPort(id: string, entry: PortUrlEntry, mode: PortMode): Promise<void>;
+}>({ id: null, open: () => {}, close: () => {}, promote: async () => {}, openPort: async () => {} });

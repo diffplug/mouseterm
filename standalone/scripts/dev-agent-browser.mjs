@@ -114,6 +114,7 @@ const fireAndForget = {
 const invokeMap = {
   get_available_shells: (_args) => requestSidecar('pty:getShells', {}, 'pty:shells', (data) => data.shells ?? []),
   pty_get_cwd: ({ id }) => requestSidecar('pty:getCwd', { id }, 'pty:cwd', (data) => data.cwd ?? null),
+  pty_context: ({ request }) => requestSidecar('pty:context', request, 'pty:context', data => data),
   pty_get_open_ports: ({ id }) => requestSidecar('pty:getOpenPorts', { id }, 'pty:openPorts', (data) => data.ports ?? []),
   read_clipboard_file_paths: () => requestSidecar('clipboard:readFiles', {}, 'clipboard:files', (data) => data.paths ?? null),
   read_clipboard_image_as_file_path: () => requestSidecar('clipboard:readImage', {}, 'clipboard:image', (data) => data.path ?? null),
@@ -337,5 +338,5 @@ await startHostServer();
 startSidecar();
 startVite();
 await waitForVite();
-await openAgentBrowser();
+if (process.env.DORMOUSE_BROWSER_DEV_SKIP_OPEN !== '1') await openAgentBrowser();
 log('running; Ctrl-C to stop');

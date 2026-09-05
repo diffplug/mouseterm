@@ -534,6 +534,12 @@ Source of truth: `dor/src/commands/skill.ts`, `scripts/generate-dor-skill.mjs`,
 `dor/skill.md`, whose byte-identity with `dor skill` output is pinned by
 `dor/test/cli-output.test.mjs`.
 
+## Helper exclusion
+
+**Must exclude unpromoted helpers from discovery and control**, including direct internal-id targets and helper-origin requests. Promotion assigns the ordinary public Surface ref without changing Session identity; subsequent CLI operations use ordinary Surface semantics.
+
+Source of truth: `buildDorSurfacesInternal` in `lib/src/components/Wall.tsx`; `dispatchDorControlRequest` in `lib/src/lib/platform/dor-control-dispatch.ts`.
+
 ## Future
 
 - **Surface a dead control channel in the UI.** A lost bind leaves one

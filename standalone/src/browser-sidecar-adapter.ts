@@ -1,3 +1,4 @@
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../../lib/src/lib/terminal-context-types';
 import type {
   AgentBrowserCommandResult,
   AgentBrowserEditOp,
@@ -127,7 +128,15 @@ export class BrowserSidecarAdapter implements PlatformAdapter {
     }
   }
 
-  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void {
+  private helpers = new Set<string>();
+  async terminalContext(request: TerminalContextRequest): Promise<TerminalContextInfo> {
+    const result = await this.host.invoke<TerminalContextInfo>('pty_context', { request });
+    if (result.error) throw new Error(result.error);
+    if (request.op === 'promote') { if (request.restore) this.helpers.add(request.id); else this.helpers.delete(request.id); }
+    return result;
+  }
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[]; helper?: HelperIdentity }): void {
+    if (options?.helper) this.helpers.add(id);
     this.host.send("pty_spawn", { id, options });
   }
 
@@ -304,16 +313,17 @@ export class BrowserSidecarAdapter implements PlatformAdapter {
       for (const handler of this.dataHandlers) handler(payload);
     } else if (event === "terminal:protocolEvents") {
       const payload = data as { id: string; events: TerminalProtocolEvent[] };
-      applyTerminalProtocolEvents(this.alertManager, payload.id, payload.events);
+      if (!this.helpers.has(payload.id)) applyTerminalProtocolEvents(this.alertManager, payload.id, payload.events);
     } else if (event === "terminal:semanticEvents") {
       const { id, events } = data as { id: string; events: TerminalSemanticEvent[] };
-      this.alertManager.applyTerminalSemanticEvents(id, events);
+      if (!this.helpers.has(id)) this.alertManager.applyTerminalSemanticEvents(id, events);
       applyTerminalSemanticEvents(id, events);
     } else if (event === "pty:exit") {
       const payload = data as { id: string; exitCode: number };
-      this.alertManager.onExit(payload.id, payload.exitCode);
+      if (!this.helpers.has(payload.id)) this.alertManager.onExit(payload.id, payload.exitCode);
       for (const handler of this.exitHandlers) handler(payload);
     } else if (event === "pty:list") {
+      for (const pty of (data as { ptys: PtyInfo[] }).ptys) if (pty.helper) this.helpers.add(pty.id);
       for (const handler of this.listHandlers) handler(data as { ptys: PtyInfo[] });
     } else if (event === "pty:replay") {
       // The one stream the sidecar does not parse; see TauriAdapter, including

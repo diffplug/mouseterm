@@ -54,17 +54,23 @@ The label is the `DerivedHeader` from `deriveHeader(...)`; `docs/specs/terminal-
 
 #### Header context menu
 
-**One menu per terminal pane, opened by right-click anywhere on the header or by `>` in command mode** — at the pointer, or under the header's left edge (`data-pane-header-for` plus a synthetic `contextmenu`, so both paths share one code path). Browser headers and Doors have no such menu, so `>` no-ops there. Only the alert bell owns its own right-click (`stopPropagation`, opening the alert dialog); every other region, the title span included, bubbles here. It is portaled to `document.body`, viewport-clamped, and dismissed by outside `pointerdown`, `Escape`, `resize`, or capture-phase `scroll` — **never by a scroll originating inside the menu**, since arrow-key focus moves auto-scroll the overflowing list.
+**Must open the terminal context from terminal header, alert, body, and command-mode `>` entry points.** Browser-only Surfaces and Doors have no context. Application mouse ownership follows `docs/specs/mouse-and-clipboard.md` → Terminal context input.
 
-Content, top to bottom:
+**Must anchor at the terminal body's top-left below its header**, leaving two rem at right and bottom. Keep one context per Wall. Outside pointer press and explicit close dismiss it; resize follows its containing body. No separate context heading or clipboard toolbar is shown.
 
-- **Header row** — display title, the pane's `surface:N` handle (`resolveSurfaceRef`, muted), close button.
-- **Title-candidates table** — latest entry per `titleCandidates` channel (`docs/specs/terminal-state.md`): channel, text, timestamp; else a muted `No title candidates`. **Diagnostic only** — it changes no title priority rule.
-- **Port rows** — the TCP ports the pane's process tree binds, scanned by `getOpenPorts` **once per open** (reopen to rescan): a spinner, then one `host:port` row per distinct port (digit chip first, process name muted beside it), else a muted `no listening ports` / `port scan failed`.
+| Row | Content |
+|---|---|
+| Title | Derived display title, labeled Explain action, copyable source Surface ref and close at right |
+| Dir | Home-abbreviated directory, native explorer action, absolute-path copy |
+| Ports | One scan per opening; scanning/empty/failure states; one port inline, multiple ports in a dropdown with count beside it; four labeled actions |
+| Alerts | Source Watch and TODO controls; notification details directly below |
+| Helper | Remaining space; one-line status, Modify/Reset and Promote; hide its name below 48rem container width |
 
-**The menu owns the keyboard while open**: DOM focus on mount, the previously focused element restored when a dismissal leaves input ownership unchanged, and registration as dialog-keyboard-active so command-mode keys don't fire underneath. `1`–`9` activate the matching port row and **presses during the scan are dropped, never buffered**; `↑`/`↓` rove the rows (wrapping), `Enter`/`Space` activate the focused row, `Tab`/`Shift+Tab` cycle every focusable element, `Escape` closes.
+**Must focus context controls on opening.** Explicit entry into helper xterm gives it terminal keys; Escape there belongs to its program. Escape from controls closes the innermost disclosure, then context. Terminal clipboard routing uses the focused helper rather than the selected source. Actions use subdued link color and shared compact `OnOffSwitch` controls.
 
-Activating a port row reproduces `dor ab open <url>` for that port and closes the menu at once (`docs/specs/dor-browser.md` → Pane Context Menu Connect): the browser surface becomes the selection in passthrough, reattaching first if minimized — **the one command-mode gesture that moves selection off the pane it targeted and exits command mode** — with loading/errors surfacing in the pane, not the menu. With no `agentBrowserCommand` the rows are inert labels with no digit chips. Source of truth: `lib/src/components/wall/PaneHeaderContextMenu.tsx`, `lib/src/components/wall/TerminalPaneHeader.tsx`, `lib/src/components/wall/keyboard/handle-pane-shortcuts.ts`.
+**Must promote by adopting the helper Session into a new split beside the source**, preserving identity and focusing it. Helper lifetime and source closure are owned by `docs/specs/terminal-context.md`.
+
+Source of truth: `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`; `TerminalPanel` in `lib/src/components/wall/TerminalPanel.tsx`; `TerminalPaneHeader` in `lib/src/components/wall/TerminalPaneHeader.tsx`; `useWallKeyboard` in `lib/src/components/wall/use-wall-keyboard.ts`.
 
 ### Pane body
 
@@ -383,18 +389,6 @@ A store commit that empties the tree (last pane killed or minimized) triggers th
 4. **Asymmetric back-navigation**: the breadcrumb ([Spatial navigation](#spatial-navigation)) makes every arrow move reversible even where no spatial query would return you.
 5. **Door keeps selection through the auto-spawn refill** ([Auto-spawn refill](#auto-spawn-refill)). Explicit user selection of a pane — a click, a drag, or an embed focusing itself — still moves selection off a door.
 6. **Focus-neutral surface creation (`dor ensure` / `dor iframe` / `dor ab`)**: unlike `dor split`, these open in the background without moving focus off the caller (`docs/specs/dor-cli.md`, `docs/specs/dor-browser.md`). An add never re-parents the caller's subtree or steals activation, and the create does not call `selectPane` (`settleAddSelection` returns false for a focus-neutral, non-selection-replacing add). **The one exception**: `dor iframe` / `dor ab` replacing the pane the user is *currently selected on* moves selection to the replacement, else it would dangle on the removed leaf; any other pane, or a door selection, is left untouched. A throwaway that never reports OSC 633 integration is torn down with `killPaneImmediately`, whose live selection check leaves the caller's selection intact (a `--minimize` throwaway is already a door, disposed directly).
-
-## Terminal context prototype
-
-**Must isolate the Terminal context prototype to Storybook.** Static presentation never spawns helpers or changes production menus.
-
-**Must place the Surface ref and close button at the Title row's right**, without a heading row or terminal clipboard actions.
-
-**Must keep the prototype's helper header on one line**, hiding its name at narrow widths. Notification details appear directly when present.
-
-**Must label Title, Dir, Modify, and four port actions in subdued link color; put counts beside dropdowns.** Switches use `OnOffSwitch` (`DESIGN.md` → Inputs).
-
-Source of truth: `TerminalContextStory` in `lib/src/stories/TerminalContext.stories.tsx`.
 
 ## Future
 

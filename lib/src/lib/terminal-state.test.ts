@@ -16,6 +16,7 @@ import {
   COMMAND_FAIL_GLYPH,
   DEFAULT_IDLE_TITLE,
   deriveHeader,
+  explainTerminalTitle,
   deriveSurfaceLabel,
   buildAppTitleResolver,
   groupTerminalPanes,
@@ -683,3 +684,15 @@ function runningPane(path: string, command: string, host?: string) {
     },
   });
 }
+
+
+describe('terminal context title explanation', () => {
+  it('keeps the winning completed-command OSC after the shell replaces that channel', () => {
+    const pane = createTerminalPaneState({
+      lastCommand: { id: 'run', rawCommandLine: 'pnpm dev', displayCommand: 'pnpm dev', startedAt: 1, finishedAt: 3, source: 'osc633_E', cwdAtStart: null, finalTerminalTitle: { source: 'osc2', title: 'Dev server', updatedAt: 2 } },
+      titleCandidates: { osc2: { source: 'osc2', title: 'zsh', updatedAt: 4 } },
+    });
+    expect(explainTerminalTitle(pane)).toContainEqual({ source: 'OSC 2 (command)', value: 'Dev server', note: 'Used by command title' });
+    expect(explainTerminalTitle(pane)).toContainEqual({ source: 'OSC 2', value: 'zsh', note: 'Not used' });
+  });
+});

@@ -513,3 +513,9 @@ Source of truth: `standalone/package.json` (package scripts),
 - `pnpm dev:standalone:ab` runs the sidecar + webview in a normal browser via the
   browser-dev harness instead of the Tauri WebView (`docs/specs/transport.md`,
   Standalone browser-dev harness).
+
+## Terminal context host operations
+
+**Must forward native directory opening, process inspection, helper promotion, and global autorun settings to the PTY host**, preserving correlated errors. Directory opening validates an existing absolute directory, resolves it canonically, and invokes Finder/Explorer/the platform opener with one path argument and no shell. Process-inspection failure is unknown work, never proof of idle. Preference storage is owned by `docs/specs/terminal-context.md` → Global autorun setting; live ownership and replay by `docs/specs/transport.md` → Auxiliary helper metadata.
+
+Source of truth: `terminalContext` in `standalone/src/tauri-adapter.ts`; `pty_context` in `standalone/src-tauri/src/lib.rs`; `context` in `standalone/sidecar/pty-core.js`.

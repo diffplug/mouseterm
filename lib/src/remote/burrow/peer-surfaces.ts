@@ -75,7 +75,8 @@ function driveOwnSurface({
   cols,
   rows,
 }: PeerSurfaceParams): PeerSurfaceResult[] {
-  const entry = registry.get(surfaceId);
+  const candidate = registry.get(surfaceId);
+  const entry = candidate?.helper ? undefined : candidate;
   if (!entry) return [];
 
   const term = entry.terminal;

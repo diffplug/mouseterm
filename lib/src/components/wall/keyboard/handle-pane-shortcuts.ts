@@ -1,3 +1,4 @@
+import { getHelper } from '../../../lib/helper-terminal';
 import {
   dismissOrToggleAlert,
   getActivity,
@@ -83,6 +84,7 @@ export function handlePaneShortcuts(
   if ((e.key === 'k' || e.key === 'x') && sid) {
     e.preventDefault();
     e.stopPropagation();
+    if (getHelper(sid)) { ctx.wallActionsRef.current.onKill(sid); return true; }
     if (ctx.selectedTypeRef.current === 'door') {
       const item = ctx.doorsRef.current.find((d) => d.id === sid);
       if (item) {

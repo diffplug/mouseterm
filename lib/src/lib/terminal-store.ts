@@ -1,8 +1,12 @@
+import type { HelperIdentity } from './terminal-context-types';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { ShellCommandKind } from 'dor/commands/shell-quote';
 
 export interface TerminalEntry {
+  helper?: HelperIdentity;
+  helperBusy?: boolean;
+  inputVersion?: number;
   /** Parser family of the shell this Session launched. Unlike the app-global
    *  default, this remains stable when the user selects a different shell for
    *  future Sessions. */
@@ -42,6 +46,7 @@ export interface TerminalOverlayDims {
 }
 
 export interface PendingShellOpts {
+  helper?: HelperIdentity;
   shell?: string;
   args?: string[];
   cwd?: string;

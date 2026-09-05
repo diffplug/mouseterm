@@ -90,6 +90,16 @@ describe('surface responder', () => {
     expect(platform.answer('surfaceOp', { surfaceId: 'elsewhere', op: 'attach' })).toEqual([]);
   });
 
+  it('denies helper discovery and direct attachment until promotion', () => {
+    const terminal = registerSurface('helper');
+    registry.get('helper')!.helper = { parentId: 'parent', command: 'git status' };
+    expect(platform.answer('directory', {})).toEqual([]);
+    expect(platform.answer('surfaceOp', { surfaceId: 'helper', op: 'attach', cols: 100, rows: 30 })).toEqual([]);
+    expect(terminal.resize).not.toHaveBeenCalled();
+    registry.get('helper')!.helper = undefined;
+    expect(platform.answer('surfaceOp', { surfaceId: 'helper', op: 'resolve' })).toEqual([{ ptyId: 'helper', cols: 80, rows: 24 }]);
+  });
+
   it('resolves ownership without resizing the live xterm', () => {
     const terminal = registerSurface('surface-1');
 

@@ -396,7 +396,7 @@ export function useDorControl({
     title: string;
     focusNeutral?: boolean;
   }) => ParseResult<{ id: string; ref: string; status: 'created' | 'replaced' }>;
-  killPaneImmediately: (id: string) => void;
+  killPaneImmediately: (id: string) => void | boolean | Promise<void | boolean>;
   /** Put the selection on a surface, reattaching it first when it is minimized.
    *  Used by the human-initiated `connectPort` (a menu click is a request to see
    *  that surface); the `dor ab` control path stays focus-neutral. */
@@ -938,7 +938,10 @@ export function useDorControl({
             return;
           }
         }
-        killPaneImmediately(target.id);
+        if (await killPaneImmediately(target.id) === false) {
+          detail.respond({ ok: false, error: 'Helper has running work; stop it in the helper before closing the parent' });
+          return;
+        }
         detail.respond({
           ok: true,
           result: {

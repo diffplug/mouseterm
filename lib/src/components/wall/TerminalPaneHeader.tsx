@@ -1,3 +1,4 @@
+import { registry } from '../../lib/terminal-store';
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { tv } from 'tailwind-variants';
@@ -12,14 +13,12 @@ import {
   XIcon,
 } from '@phosphor-icons/react';
 import { HeaderActionButton } from '../HeaderActionButton';
-import { TodoAlertDialog } from '../TodoAlertDialog';
 import { HEADER_PALETTE_TRANSITION_CLASS, paneZoomButtonClass, POPUP_SURFACE_CLASS, TERMINAL_TOP_RADIUS_CLASS, TODO_PILL_TRACKING_CLASS } from '../design';
 import { AlertBell } from '../AlertBell';
 import { useTodoPillContent } from '../TodoPillBody';
 import type { PaneProps } from './pane-props';
 import { IllegalRenameWarning, type RenameRejection } from './IllegalRenameWarning';
 import { InlineEditInput } from './InlineEditInput';
-import { PaneHeaderContextMenu } from './PaneHeaderContextMenu';
 import {
   getMouseSelectionState,
   setOverride as setMouseOverride,
@@ -41,10 +40,9 @@ import {
   COMMAND_FAIL_GLYPH,
   deriveHeader,
   resolveDisplayPrimary,
-  titleCandidatesForDisplay,
 } from '../../lib/terminal-state';
 import {
-  DialogKeyboardContext,
+  TerminalContextContext,
   ModeContext,
   WallActionsContext,
   RenamingIdContext,
@@ -87,7 +85,7 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
   const renamingId = useContext(RenamingIdContext);
   const zoomed = useContext(ZoomedIdContext) === id;
   const windowFocused = useContext(WindowFocusedContext);
-  const setDialogKeyboardActive = useContext(DialogKeyboardContext);
+  const context = useContext(TerminalContextContext);
   const activityStates = useSyncExternalStore(subscribeToActivity, getActivitySnapshot);
   const terminalStates = useSyncExternalStore(subscribeToTerminalPaneState, getTerminalPaneStateSnapshot);
   const showMouseIcon = useSyncExternalStore(
@@ -99,7 +97,7 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
   const actions = useContext(WallActionsContext);
   const activity = activityStates.get(id) ?? DEFAULT_ACTIVITY_STATE;
   const paneState = terminalStates.get(id) ?? createTerminalPaneState();
-  const allPaneStates = useMemo(() => [...terminalStates.values()], [terminalStates]);
+  const allPaneStates = useMemo(() => [...terminalStates].filter(([surfaceId]) => !registry.get(surfaceId)?.helper).map(([, state]) => state), [terminalStates]);
   const visiblePaneStates = allPaneStates.length > 0 ? allPaneStates : [paneState];
   const appTitleForPane = useMemo(
     () => buildAppTitleResolver(terminalStates, activityStates),
@@ -128,12 +126,9 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
   const tabRef = useRef<HTMLDivElement>(null);
   const suppressAlertClickRef = useRef(false);
   const [tier, setTier] = useState<HeaderTier>('full');
-  const [dialogTriggerRect, setDialogTriggerRect] = useState<DOMRect | null>(null);
   const [todoPreviewRect, setTodoPreviewRect] = useState<DOMRect | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [renameWarning, setRenameWarning] = useState<{ rect: DOMRect; reason: RenameRejection; value: string } | null>(null);
   const todoPill = useTodoPillContent(activity.todo);
-  const titleCandidates = useMemo(() => titleCandidatesForDisplay(paneState), [paneState]);
   const showTodoPill = todoPill.visible && tier !== 'minimal';
   const runningArgv0 = paneState.currentCommand?.rawCommandLine
     ? commandArgv0(paneState.currentCommand.rawCommandLine)
@@ -147,9 +142,7 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
   const todoNotificationPreview = formatNotificationPreview(activity.notification);
   const todoPreviewId = `todo-notification-preview-${id}`;
 
-  const closeDialog = useCallback(() => setDialogTriggerRect(null), []);
   const closeTodoPreview = useCallback(() => setTodoPreviewRect(null), []);
-  const closeContextMenu = useCallback(() => setContextMenu(null), []);
   const closeRenameWarning = useCallback(() => setRenameWarning(null), []);
   const submitRename = useCallback((value: string, anchor: HTMLElement) => {
     const rect = anchor.getBoundingClientRect();
@@ -165,14 +158,14 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
     setTodoPreviewRect(button.getBoundingClientRect());
   }, [activity.notification]);
 
-  const triggerAlertButtonAction = useCallback((displayedStatus: SessionStatus, button: HTMLButtonElement) => {
+  const triggerAlertButtonAction = useCallback((displayedStatus: SessionStatus, _button: HTMLButtonElement) => {
     const result = actions.onAlertButton(id, displayedStatus);
     // 'no-command' opens the dialog too — it is where we explain that alerts are
     // keyed on the running command and there is nothing running here.
     if (result === 'dismissed' || result === 'menu' || result === 'no-command') {
-      setDialogTriggerRect(button.getBoundingClientRect());
+      context.open(id);
     }
-  }, [actions, id]);
+  }, [actions, id, context]);
 
   useEffect(() => {
     const el = tabRef.current;
@@ -198,12 +191,10 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
       className={tabVariant({ state: isActiveHeader ? 'active' : 'inactive' })}
       onMouseDown={() => actions.onClickPanel(id)}
       onContextMenu={(e) => {
-        // The whole header opens this one menu; only the bell button
-        // stopPropagations its own right-click (the alert dialog). Right-clicks
-        // on the title now bubble here — the menu offers "title candidates".
+        // Header and alert entry points share the terminal context.
         e.preventDefault();
         e.stopPropagation();
-        setContextMenu({ x: e.clientX, y: e.clientY });
+        context.open(id);
       }}
     >
       <div className="flex flex-1 min-w-0 items-center gap-1.5 overflow-hidden">
@@ -256,7 +247,7 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
           }}
           onContextMenu={(e) => {
             e.preventDefault();
-            setDialogTriggerRect(e.currentTarget.getBoundingClientRect());
+            context.open(id);
           }}
           ariaLabel={alertButtonAriaLabel}
           tooltip={alertButtonTooltip}
@@ -362,29 +353,11 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
           </div>
         </>
       )}
-      {dialogTriggerRect && (
-        <TodoAlertDialog
-          triggerRect={dialogTriggerRect}
-          sessionId={id}
-          onClose={closeDialog}
-          onKeyboardActiveChange={setDialogKeyboardActive}
-        />
-      )}
-      {todoPreviewRect && activity.notification && !dialogTriggerRect && (
+      {todoPreviewRect && activity.notification && context.id !== id && (
         <TodoNotificationPreview
           id={todoPreviewId}
           notification={activity.notification}
           anchorRect={todoPreviewRect}
-        />
-      )}
-      {contextMenu && (
-        <PaneHeaderContextMenu
-          id={id}
-          anchor={contextMenu}
-          onClose={closeContextMenu}
-          onKeyboardActiveChange={setDialogKeyboardActive}
-          candidates={titleCandidates}
-          currentTitle={displayTitleBase}
         />
       )}
       {renameWarning && (

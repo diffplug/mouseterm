@@ -441,7 +441,7 @@ test('list reports the resolved launch shell for live reconnects', () => {
   mgr.spawn('pane-pwsh', { shell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' });
   mgr.list();
 
-  assert.deepEqual(events.at(-1), {
+  assert.deepEqual(events.findLast(item => item.event === 'list'), {
     event: 'list',
     data: {
       ptys: [{

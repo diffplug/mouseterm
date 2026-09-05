@@ -1,3 +1,4 @@
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../../lib/src/lib/terminal-context-types';
 import { invoke as rawInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-shell";
@@ -133,30 +134,31 @@ export class TauriAdapter implements PlatformAdapter {
       listen<PtyDataDetail>("pty:data", (event) => {
         const { id, data, textData } = event.payload;
         // Feed visible data to alert manager for visual activity monitoring.
-        this.alertManager.onData(id);
+        if (!this.helpers.has(id)) this.alertManager.onData(id);
         for (const handler of this.dataHandlers) {
           handler({ id, data, textData });
         }
       }),
 
       listen<{ id: string; events: TerminalProtocolEvent[] }>("terminal:protocolEvents", (event) => {
-        applyTerminalProtocolEvents(this.alertManager, event.payload.id, event.payload.events);
+        if (!this.helpers.has(event.payload.id)) applyTerminalProtocolEvents(this.alertManager, event.payload.id, event.payload.events);
       }),
 
       listen<{ id: string; events: TerminalSemanticEvent[] }>("terminal:semanticEvents", (event) => {
         const { id, events } = event.payload;
-        this.alertManager.applyTerminalSemanticEvents(id, events);
+        if (!this.helpers.has(id)) this.alertManager.applyTerminalSemanticEvents(id, events);
         applyTerminalSemanticEvents(id, events);
       }),
 
       listen<{ id: string; exitCode: number }>("pty:exit", (event) => {
-        this.alertManager.onExit(event.payload.id, event.payload.exitCode);
+        if (!this.helpers.has(event.payload.id)) this.alertManager.onExit(event.payload.id, event.payload.exitCode);
         for (const handler of this.exitHandlers) {
           handler(event.payload);
         }
       }),
 
       listen<{ ptys: PtyInfo[] }>("pty:list", (event) => {
+        for (const pty of event.payload.ptys) { if (pty.helper) this.helpers.add(pty.id); }
         for (const handler of this.listHandlers) {
           handler(event.payload);
         }
@@ -255,7 +257,17 @@ export class TauriAdapter implements PlatformAdapter {
     } catch { return []; }
   }
 
-  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void {
+  private helpers = new Set<string>();
+
+  async terminalContext(request: TerminalContextRequest): Promise<TerminalContextInfo> {
+    const result = await rawInvoke<TerminalContextInfo>('pty_context', { request });
+    if (result.error) throw new Error(result.error);
+    if (request.op === 'promote') { if (request.restore) this.helpers.add(request.id); else this.helpers.delete(request.id); }
+    return result;
+  }
+
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[]; helper?: HelperIdentity }): void {
+    if (options?.helper) this.helpers.add(id);
     invoke("pty_spawn", { id, options });
   }
 

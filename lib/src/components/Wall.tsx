@@ -1,3 +1,8 @@
+import { TerminalContextContext } from './wall/wall-context';
+import type { PortMode } from './wall/TerminalContextView';
+import type { PortUrlEntry } from './wall/port-url';
+import { disposeHelper, forgetHelper, getHelper, helperHasWork } from '../lib/helper-terminal';
+import { registry as terminalRegistry } from '../lib/terminal-store';
 import { useRef, useState, useEffect, useCallback, useMemo, useSyncExternalStore, lazy, Suspense, type ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { Baseboard } from './Baseboard';
@@ -262,6 +267,8 @@ export function Wall({
    */
   enableBurrow?: boolean;
 } = {}) {
+  const [terminalContext, setTerminalContext] = useState<{ id: string; warning?: string } | null>(null);
+  const pendingHelperCloses = useRef(new Set<string>());
   // The Lath engine handle — Dormouse's tiling engine. Constructed lazily exactly
   // once per Wall mount, so `createLathWallEngine` is not re-invoked each render
   // (docs/specs/tiling-engine.md).
@@ -515,7 +522,34 @@ export function Wall({
     }, 1500);
   }, []);
 
-  const killPaneImmediately = useCallback((id: string) => {
+  const killPaneImmediately = useCallback((id: string): void | boolean | Promise<void | boolean> => {
+    const helper = getHelper(id);
+    if (helper) {
+      if (pendingHelperCloses.current.has(id)) return false;
+      pendingHelperCloses.current.add(id);
+      return helperHasWork(helper).then(busy => {
+        pendingHelperCloses.current.delete(id);
+        if (getHelper(id) !== helper) return;
+        if (busy) {
+          const door = doorsRef.current.find(item => item.id === id);
+          if (door) handleReattachRef.current(door);
+          setConfirmKill(null);
+          setTerminalContext({ id, warning: 'Helper has running work. Stop it in the helper, then close this terminal again.' });
+          return false;
+        } else {
+          disposeHelper(id);
+          setTerminalContext(current => current?.id === id ? null : current);
+          return killPaneImmediately(id);
+        }
+      }).catch(error => {
+        pendingHelperCloses.current.delete(id);
+        const door = doorsRef.current.find(item => item.id === id);
+        if (door) handleReattachRef.current(door);
+        setConfirmKill(null);
+        setTerminalContext({ id, warning: `Could not inspect helper processes: ${String(error)}` });
+        return false;
+      });
+    }
     // A second kill for a pane already mid-fade is a no-op (idempotent) — it must
     // not re-fire the event, re-dispose, or schedule a second removal.
     if (lath.isDying(id)) return;
@@ -629,6 +663,7 @@ export function Wall({
    *  "Parked leaves"). Terminals do not park: their state lives in the PTY and the
    *  registry replays it, so the existing remove/restore path already loses nothing. */
   const minimizePane = useCallback((id: string, opts?: { select?: boolean }) => {
+    setTerminalContext(current => current?.id === id ? null : current);
     const meta = lath.getMeta(id);
     if (!meta) return;
     // May auto-spawn if this was the last leaf. `doorLeaf` retains the leaf's meta in
@@ -1048,6 +1083,7 @@ export function Wall({
     reference,
     title,
     focusNeutral,
+    preserveSource,
   }: {
     minimized: boolean;
     params: Record<string, unknown>;
@@ -1056,6 +1092,7 @@ export function Wall({
     // `dor iframe` / `dor ab` pass this to open the surface in the background
     // without moving focus off the caller, matching `dor ensure`.
     focusNeutral?: boolean;
+    preserveSource?: boolean;
   }): ParseResult<{
     id: string;
     ref: string;
@@ -1069,7 +1106,7 @@ export function Wall({
     // Replace-in-place is reserved for a reference with no browser — a blank
     // untouched shell. Anything holding web content (a browser surface today, a
     // tool that has both later) must split beside it instead of being destroyed.
-    const replaceUntouchedShell = !hasBrowser(reference.kind) && isUntouched(reference.id);
+    const replaceUntouchedShell = !preserveSource && !getHelper(reference.id) && !hasBrowser(reference.kind) && isUntouched(reference.id);
 
     if (replaceUntouchedShell) {
       // Whether the user's current selection sits on the pane being replaced.
@@ -1154,6 +1191,7 @@ export function Wall({
       const shouldReplaceUntouched =
         detail.replaceUntouched === true &&
         selectedPaneVisible &&
+        !getHelper(selectedPaneId!) &&
         isUntouched(selectedPaneId!);
       const shellName = detail.name?.trim() || 'terminal';
 
@@ -1168,7 +1206,7 @@ export function Wall({
         return;
       }
 
-      if (detail.replaceUntouched === true && selectedDoor && isUntouched(selectedDoor.id)) {
+      if (detail.replaceUntouched === true && selectedDoor && !getHelper(selectedDoor.id) && isUntouched(selectedDoor.id)) {
         handleReattachRef.current(selectedDoor, {
           enterPassthrough: false,
           afterRestore: {
@@ -1244,13 +1282,32 @@ export function Wall({
 
   const wallActions: WallActions = useMemo(() => ({
     onKill: (id: string) => {
-      exitTerminalMode();
-      if (isUntouched(id)) {
-        killPaneImmediately(id);
-        return;
-      }
-      const char = randomKillChar();
-      setConfirmKill({ id, char });
+      const confirmSource = () => {
+        exitTerminalMode();
+        const door = doorsRef.current.find(item => item.id === id);
+        if (door) {
+          handleReattachRef.current(door, { enterPassthrough: false, afterRestore: isUntouched(id) ? 'kill-immediately' : 'confirm-kill' });
+          return;
+        }
+        if (isUntouched(id)) { void killPaneImmediately(id); return; }
+        setConfirmKill({ id, char: randomKillChar() });
+      };
+      const helper = getHelper(id);
+      if (!helper) { confirmSource(); return; }
+      void helperHasWork(helper).then(busy => {
+        if (getHelper(id) !== helper) return;
+        if (busy) {
+          const door = doorsRef.current.find(item => item.id === id);
+          if (door) handleReattachRef.current(door);
+          setConfirmKill(null);
+          setTerminalContext({ id, warning: 'Helper has running work. Stop it in the helper, then close this terminal again.' });
+        } else confirmSource();
+      }).catch(error => {
+        const door = doorsRef.current.find(item => item.id === id);
+        if (door) handleReattachRef.current(door);
+        setConfirmKill(null);
+        setTerminalContext({ id, warning: `Could not inspect helper processes: ${String(error)}` });
+      });
     },
     onAlertButton: (id: string, displayedStatus: SessionStatus) => {
       return dismissOrToggleAlert(id, displayedStatus);
@@ -1432,6 +1489,78 @@ export function Wall({
     // The pane context menu's "connect a port" action: act like `dor ab open`.
     onConnectPort: connectPort,
   }), [addSplitPanel, minimizePane, enterTerminalMode, exitTerminalMode, killPaneImmediately, replaceSurface, buildDorSurfaces, createContentSurface, surfaceRefForId, connectPort, updateSurfaceParams, lath, nav]);
+  const contextPortLaunches = useRef(new Map<string, Promise<void>>());
+  const openContextPort = useCallback(async (id: string, entry: PortUrlEntry, mode: PortMode): Promise<void> => {
+    const platform = getPlatform();
+    if (mode === 'system') { platform.openExternal?.(entry.url); return; }
+    const key = `${id}:${entry.port}:${mode === 'iframe' ? 'iframe' : 'agent'}`;
+    const pending = contextPortLaunches.current.get(key);
+    if (pending) { await pending; return openContextPort(id, entry, mode); }
+    const operation = (async () => {
+      const reference = buildDorSurfaces().find(surface => surface.id === id);
+      if (!reference) throw new Error('The parent terminal is no longer available');
+      const existing = buildDorSurfaceList().find(surface => {
+        const params = lath.getMeta(surface.id)?.params;
+        return params?.contextPortKey === key && !lath.isDying(surface.id);
+      });
+      if (existing) {
+        revealSurface(existing.id);
+        if (mode !== 'iframe') {
+          const controller = getAgentBrowserScreenController(existing.id);
+          controller?.actions.setRenderMode?.(mode);
+          controller?.chromeActions.navigate(entry.url);
+        } else updateSurfaceParams(existing.id, { url: entry.url });
+        return;
+      }
+      if (mode !== 'iframe' && !platform.agentBrowserOpen) throw new Error('Agent browser is unavailable');
+      const created = createContentSurface({ minimized: false, reference, preserveSource: true,
+        params: { surfaceType: 'browser', renderMode: mode, url: entry.url, syncEngaged: true, contextPortKey: key }, title: hostPathDisplay(entry.url, true) });
+      if (!created.ok) throw new Error(created.message);
+      enterTerminalMode(created.value.id);
+      if (mode === 'iframe') return;
+      const result = await platform.agentBrowserOpen!(entry.url, { headed: mode === 'ab-popout' }, lastAgentBrowserBinaryPathRef.current);
+      if (!result.ok || !result.session) {
+        killPaneImmediately(created.value.id);
+        throw new Error(result.error ?? 'Could not open agent browser');
+      }
+      const binding = { session: result.session, wsPort: result.wsPort, binaryPath: result.binaryPath };
+      if (!lath.getMeta(created.value.id) || lath.isDying(created.value.id)) { closeAgentBrowserSession({ renderMode: mode, ...binding }); return; }
+      updateSurfaceParams(created.value.id, binding);
+    })();
+    contextPortLaunches.current.set(key, operation);
+    try { await operation; } finally { contextPortLaunches.current.delete(key); }
+  }, [buildDorSurfaces, buildDorSurfaceList, createContentSurface, enterTerminalMode, killPaneImmediately, lath, revealSurface, updateSurfaceParams]);
+  const contextActions = useMemo(() => ({
+    id: terminalContext?.id ?? null, warning: terminalContext?.warning,
+    open: (id: string, warning?: string) => { if (terminalRegistry.get(id)?.helper) return; setTerminalContext({ id, warning }); },
+    close: () => setTerminalContext(null),
+    promote: async (id: string) => {
+      const helper = getHelper(id);
+      if (!helper || !nav.hasPane(id)) throw new Error('Helper cannot be placed beside this terminal');
+      // Cancel launch injection before asynchronous ownership transfer.
+      clearInterval(helper.timer);
+      helper.promoting = true;
+      helper.status = 'preserved';
+      const entry = terminalRegistry.get(helper.id);
+      if (entry) entry.untouched = false;
+      try { await getPlatform().terminalContext?.({ op: 'promote', id: helper.id }); }
+      catch (error) { helper.promoting = false; throw error; }
+      const edge = lath.store.autoEdgeFor(id);
+      const placed = lath.store.addLeaf(helper.id, terminalLeafMeta(), { refId: id, edge });
+      if (!placed.ok) {
+        await getPlatform().terminalContext?.({ op: 'promote', id: helper.id, restore: { parentId: id, command: helper.command } });
+        helper.promoting = false;
+        throw new Error('Could not split the source pane');
+      }
+      if (entry) { entry.helper = undefined; entry.untouched = false; }
+      forgetHelper(id);
+      surfaceRefForId(helper.id);
+      setTerminalContext(null);
+      enterTerminalMode(helper.id);
+    },
+    openPort: openContextPort,
+  }), [terminalContext, lath, nav, surfaceRefForId, enterTerminalMode, openContextPort]);
+
   const wallActionsRef = useRef(wallActions);
   wallActionsRef.current = wallActions;
 
@@ -1543,6 +1672,7 @@ export function Wall({
     <ModeContext.Provider value={mode}>
       <SelectedIdContext.Provider value={selectedId}>
         <WallActionsContext.Provider value={wallActions}>
+          <TerminalContextContext.Provider value={contextActions}>
           <PaneWriteContext.Provider value={paneWrite}>
           <PaneElementsContext.Provider value={paneElementsContextValue}>
           <DoorElementsContext.Provider value={doorElementsContextValue}>
@@ -1614,6 +1744,7 @@ export function Wall({
           </DoorElementsContext.Provider>
           </PaneElementsContext.Provider>
           </PaneWriteContext.Provider>
+          </TerminalContextContext.Provider>
         </WallActionsContext.Provider>
       </SelectedIdContext.Provider>
     </ModeContext.Provider>

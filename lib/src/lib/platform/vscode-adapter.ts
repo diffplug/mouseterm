@@ -1,3 +1,4 @@
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../terminal-context-types';
 import type { AgentBrowserCommandResult, AgentBrowserEditOp, AgentBrowserEditResult, AgentBrowserOpenResult, AgentBrowserPopResult, AgentBrowserScreenshotResult, AgentBrowserStreamStatusResult, AlertStateDetail, IframeProxyResult, OpenPort, PlatformAdapter, PtyDataDetail, PtyInfo, BurrowLink } from './types';
 import { OPEN_PORT_TIMEOUT_MS } from './types';
 import { createBurrowLinkClient } from '../../host/remote/link-client';
@@ -265,7 +266,13 @@ export class VSCodeAdapter implements PlatformAdapter {
     return result ?? [];
   }
 
-  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void {
+  async terminalContext(request: TerminalContextRequest): Promise<TerminalContextInfo> {
+    const result = await this.requestResponse('pty:context', 'pty:contextResult', { request }, (msg) => msg.result);
+    if (result.error) throw new Error(result.error);
+    return result;
+  }
+
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[]; helper?: HelperIdentity }): void {
     this.vscode.postMessage({ type: 'pty:spawn', id, options });
   }
 

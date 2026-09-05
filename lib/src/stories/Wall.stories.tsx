@@ -264,3 +264,15 @@ export const MultipleRingingSessions: Story = {
     }),
   },
 };
+
+/** Real context and helper lifecycle, backed by the deterministic demo shell. */
+export const TerminalContext: Story = {
+  args: { initialPaneIds: ['context-live'], initialMode: 'passthrough' },
+  parameters: { fakePty: { scenario: SCENARIO_SHELL_PROMPT } },
+  play: async () => {
+    await settleTerminals();
+    const header = await requireElement('[data-pane-header-for="context-live"]', 'terminal header');
+    header.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+    await waitForCondition(() => !!document.querySelector('[data-helper-terminal]'));
+  },
+};

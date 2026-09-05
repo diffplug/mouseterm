@@ -150,3 +150,11 @@ Source of truth: `deriveHeader` / `deriveSurfaceLabel` / `resolveDisplayPrimary`
 - **`prompt` and `editing` collapse into one `idle` bucket**; **`finished` stays distinct** so a recently-completed pane can be filtered separately though its header label carries the same `<idle>` prefix. `statusBucket` projects the 5 `ShellActivity.kind` values onto 4.
 
 Source of truth: `groupTerminalPanes` / `TerminalGroupingMode` / `cwdIdentity` / `statusBucket` in `lib/src/lib/terminal-state.ts`.
+
+## Terminal context diagnostics
+
+**Must derive title explanation from the header's winning-title functions**, including user override, eligible OSC candidate, notification title, and command fallback. Retain the last command's captured title when later shell OSCs replace live candidates; the diagnostic table is not an OSC history.
+
+**Must abbreviate home only at a complete path boundary**, retaining the absolute path for copying and native directory operations. Compare helper and source host identity as well as directory paths.
+
+Source of truth: `explainTerminalTitle` in `lib/src/lib/terminal-state.ts`; `abbreviatedDirectory` in `lib/src/lib/helper-terminal.ts`; `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`.

@@ -272,6 +272,7 @@ fn read_log_tail(max_bytes: usize) -> Result<String, String> {
 
 #[derive(Serialize, Deserialize, Clone)]
 struct PtySpawnOptions {
+    helper: Option<JsonValue>,
     cols: Option<u16>,
     rows: Option<u16>,
     cwd: Option<String>,
@@ -442,6 +443,11 @@ fn dor_control_response(state: tauri::State<'_, SidecarState>, response: DorCont
         "data": response,
     });
     send_to_sidecar(&state, msg.to_string());
+}
+
+#[tauri::command(async)]
+fn pty_context(state: tauri::State<'_, SidecarState>, request: JsonValue) -> Result<JsonValue, String> {
+    request_from_sidecar_timeout(&state, "pty:context", request, Duration::from_secs(10))
 }
 
 #[tauri::command(async)]
@@ -1605,6 +1611,7 @@ pub fn run() {
             pty_theme_colors,
             pty_kill,
             pty_get_cwd,
+            pty_context,
             pty_get_open_ports,
             pty_graceful_kill_all,
             iframe_create_proxy_url,

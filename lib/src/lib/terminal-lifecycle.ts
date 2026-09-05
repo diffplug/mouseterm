@@ -301,8 +301,8 @@ function wireXtermHandlers(
     if (!isSyntheticTerminalReport) {
       recordTerminalUserInput(id, input, makePromptLineReader(terminal));
       const hadTodo = getActivity(id).todo;
-      getPlatform().alertAttend(id);
-      if (hadTodo && inputContainsEnter(input)) {
+      if (!registry.get(id)?.helper) getPlatform().alertAttend(id);
+      if (!registry.get(id)?.helper && hadTodo && inputContainsEnter(input)) {
         getPlatform().alertClearTodo(id);
       }
     }
@@ -311,7 +311,7 @@ function wireXtermHandlers(
   });
 
   const resizeDisposable = terminal.onResize(({ cols, rows }) => {
-    getPlatform().alertResize(id);
+    if (!registry.get(id)?.helper) getPlatform().alertResize(id);
     getPlatform().resizePty(id, cols, rows);
     bumpRenderTick();
     if (getMouseSelectionState(id).selection) setMouseSelection(id, null);
@@ -340,7 +340,7 @@ function wireXtermHandlers(
   };
 }
 
-function setupTerminalEntry(id: string, options: { shell?: string; untouched?: boolean } = {}): TerminalEntry {
+function setupTerminalEntry(id: string, options: { shell?: string; untouched?: boolean; helper?: import('./terminal-context-types').HelperIdentity } = {}): TerminalEntry {
   const { terminal, fit, element } = createXtermHost();
   const selectionBaselineRef = { current: null as string | null };
 
@@ -369,6 +369,7 @@ function setupTerminalEntry(id: string, options: { shell?: string; untouched?: b
   };
 
   const entry: TerminalEntry = {
+    helper: options.helper,
     shellKind: shellCommandKind(options.shell, PLATFORM_STRING),
     terminal,
     fit,
@@ -453,6 +454,7 @@ export function getOrCreateTerminal(id: string): TerminalEntry {
   const shellOpts = pendingShellOpts.get(id);
   pendingShellOpts.delete(id);
   const entry = setupTerminalEntry(id, {
+    helper: shellOpts?.helper,
     shell: shellOpts?.shell,
     untouched: shellOpts?.untouched ?? true,
   });
@@ -468,6 +470,7 @@ export function getOrCreateTerminal(id: string): TerminalEntry {
     shell: shellOpts?.shell,
     args: shellOpts?.args,
     cwd: shellOpts?.cwd,
+    helper: shellOpts?.helper,
   });
   if (shellOpts?.command) {
     seedLaunchedCommand(id, shellOpts.command, shellOpts.cwd);
@@ -481,12 +484,13 @@ export function getOrCreateTerminal(id: string): TerminalEntry {
 export function resumeTerminal(
   id: string,
   replayData: string | null,
-  exitInfo?: { alive: boolean; exitCode?: number; shell?: string; title?: string | null; untouched?: boolean },
+  exitInfo?: { alive: boolean; exitCode?: number; shell?: string; title?: string | null; untouched?: boolean; helper?: import('./terminal-context-types').HelperIdentity },
 ): TerminalEntry {
   const existing = registry.get(id);
   if (existing) return existing;
 
   const entry = setupTerminalEntry(id, {
+    helper: exitInfo?.helper,
     shell: exitInfo?.shell,
     untouched: exitInfo?.untouched ?? false,
   });
@@ -576,10 +580,14 @@ export function mountElement(id: string, container: HTMLElement): void {
   requestAnimationFrame(() => entry.fit.fit());
 }
 
-export function unmountElement(id: string): void {
+export function unmountElement(id: string, container?: HTMLElement): void {
   const entry = registry.get(id);
-  if (!entry) return;
-  entry.element.remove();
+  if (!entry || (container && entry.element.parentElement !== container)) return;
+  if (entry.helper) {
+    let parking = document.getElementById('helper-terminal-parking');
+    if (!parking) { parking = document.createElement('div'); parking.id = 'helper-terminal-parking'; parking.hidden = true; document.body.appendChild(parking); }
+    parking.appendChild(entry.element);
+  } else entry.element.remove();
 }
 
 export function disposeAllSessions(): void {
@@ -653,8 +661,10 @@ export function isUntouched(id: string): boolean {
 
 export function markSessionTouched(id: string): void {
   const entry = registry.get(id);
-  if (!entry || !entry.untouched) return;
+  if (!entry) return;
+  entry.inputVersion = (entry.inputVersion ?? 0) + 1;
   entry.untouched = false;
+  if (entry.helper) entry.helperBusy = undefined;
 }
 
 /**
@@ -694,6 +704,6 @@ export function focusSession(id: string, focused: boolean): void {
     entry.terminal.focus();
   } else {
     entry.terminal.blur();
-    getPlatform().alertClearAttention(id);
+    if (!registry.get(id)?.helper) getPlatform().alertClearAttention(id);
   }
 }

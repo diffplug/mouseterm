@@ -1,3 +1,4 @@
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../../lib/src/lib/terminal-context-types';
 import { fork, ChildProcess, type Serializable } from 'child_process';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -13,6 +14,7 @@ export interface PtyCallbacks {
 }
 
 export interface PtySpawnOptions {
+  helper?: HelperIdentity;
   cols?: number;
   rows?: number;
   cwd?: string;
@@ -366,7 +368,11 @@ function sendToChild(msg: any): void {
   }
 }
 
+export const helperPtys = new Map<string, HelperIdentity>();
+
 export function spawn(id: string, options?: PtySpawnOptions): void {
+  if (options?.helper) helperPtys.set(id, options.helper);
+  else helperPtys.delete(id);
   killedPtyIds.delete(id);
   ptyBuffers.set(id, createBufferEntry(true, undefined, options?.shell));
   const dorEnv = getDorRuntimeEnv(extensionPath_);
@@ -379,6 +385,7 @@ export function spawn(id: string, options?: PtySpawnOptions): void {
     shell: options?.shell,
     args: options?.args,
     env: dorEnv,
+    helper: options?.helper,
   });
 }
 
@@ -418,6 +425,24 @@ export function getAvailableShells(): Promise<ShellEntry[]> {
     if (shells.length === 0 && shellsCache === pending) shellsCache = null;
   });
   return pending;
+}
+
+let contextSequence = 0;
+export function terminalContext(request: TerminalContextRequest): Promise<TerminalContextInfo> {
+  return new Promise((resolve, reject) => {
+    const requestId = `context-${++contextSequence}`;
+    ensureChild(extensionPath_);
+    const timeout = setTimeout(() => { child?.off('message', handler); reject(new Error('Terminal context request timed out')); }, 10000);
+    const handler = (msg: any) => {
+      if (msg.type !== 'context' || msg.requestId !== requestId) return;
+      clearTimeout(timeout);
+      child?.off('message', handler);
+      if (!msg.error && request.op === 'promote') { if (request.restore) helperPtys.set(request.id, request.restore); else helperPtys.delete(request.id); }
+      resolve(msg);
+    };
+    child?.on('message', handler);
+    sendToChild({ type: 'context', request, requestId });
+  });
 }
 
 export function getCwd(id: string): Promise<string | null> {
@@ -465,6 +490,7 @@ export function resize(id: string, cols: number, rows: number, repaint?: boolean
 }
 
 export function kill(id: string): void {
+  helperPtys.delete(id);
   killedPtyIds.add(id);
   ptyBuffers.delete(id);
   sendToChild({ type: 'kill', id });
