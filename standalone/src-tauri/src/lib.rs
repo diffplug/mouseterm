@@ -774,21 +774,10 @@ fn read_session_from(dir: &Path, label: &str) -> Result<Option<String>, String> 
     }
 }
 
-/// Tighten a path to owner-only, best-effort.
-///
-/// Session snapshots are `PersistedWindow` blobs carrying terminal
-/// *transcripts* — scrollback, so whatever the user's shells printed:
-/// tokens echoed by a failing curl, a pasted connection string, the contents
-/// of a `.env` someone `cat`ed. Written under the umask they land `0644` in a
-/// `0755` directory, readable by every other account on the machine. The
-/// Burrow's own state file is already `0600` in a `0700` directory for a
-/// strictly *smaller* secret (`lib/src/host/remote/burrow-state-store.ts`), so
-/// this is closing an inconsistency, not inventing a rule.
-///
-/// Failures are reported rather than swallowed, and whether one is tolerable
-/// is the caller's decision: `write_session_to` ignores it — a filesystem
-/// without the permission model it wants must not fail a session save — while
-/// `burrow_state_dir` logs it.
+/// Tighten a path to owner-only. Session snapshots carry layout and metadata;
+/// legacy snapshots can contain transcripts. The session writer fails before
+/// writing bytes if either the directory or temp-file restriction fails.
+/// Other callers choose whether to propagate or log the error.
 ///
 /// The `mode` is a unix mode and is ignored on Windows, which has no such
 /// concept — there the equivalent is a DACL protected from inheritance carrying
@@ -813,13 +802,8 @@ fn restrict_to_owner(path: &Path, mode: u32) -> Result<(), String> {
 /// Replace `path`'s DACL with a single full-control entry for the current
 /// user, and mark it protected so nothing is inherited from the parent.
 ///
-/// Reports rather than swallowing. Whether a failure is tolerable depends on
-/// the caller, not on this function: `write_session_to` runs on the quit path
-/// and would rather keep a snapshot under the ACL Windows gave it than lose it,
-/// while `burrow_state_dir` runs at sidecar start and is — per
-/// `docs/specs/security-remote.md` -> "Credentials at rest" — the *only* thing restricting
-/// `burrowToken` on Windows, so a failure there is a silent downgrade of the one
-/// control and must reach the log.
+/// Reports failures to the caller; snapshot writes require success before bytes
+/// are written, while Burrow state-directory setup logs failures.
 #[cfg(windows)]
 fn restrict_to_owner(path: &Path, _mode: u32) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
@@ -931,10 +915,17 @@ fn restrict_to_owner(_path: &Path, _mode: u32) -> Result<(), String> {
 }
 
 fn write_session_to(dir: &Path, label: &str, state: &str) -> Result<(), String> {
+    write_session_with_permissions(dir, label, state, restrict_to_owner)
+}
+
+fn write_session_with_permissions(
+    dir: &Path,
+    label: &str,
+    state: &str,
+    restrict: impl Fn(&Path, u32) -> Result<(), String>,
+) -> Result<(), String> {
     create_dir_all(dir).map_err(|e| format!("create sessions dir: {e}"))?;
-    // Deliberately ignored here: this is the quit path, and losing the snapshot
-    // is worse than keeping one under the ACL the OS gave it.
-    let _ = restrict_to_owner(dir, 0o700);
+    restrict(dir, 0o700)?;
     let file_name = session_file_name(label);
     let path = dir.join(&file_name);
     let tmp = dir.join(format!("{file_name}.tmp"));
@@ -944,7 +935,7 @@ fn write_session_to(dir: &Path, label: &str, state: &str) -> Result<(), String> 
         let mut f = File::create(&tmp).map_err(|e| format!("open temp: {e}"))?;
         // Before any bytes land: the rename below preserves the temp file's
         // mode, so tightening here is what makes the final snapshot 0600.
-        let _ = restrict_to_owner(&tmp, 0o600);
+        restrict(&tmp, 0o600)?;
         f.write_all(state.as_bytes())
             .map_err(|e| format!("write temp: {e}"))?;
         f.sync_all().map_err(|e| format!("fsync temp: {e}"))?;
@@ -2077,6 +2068,59 @@ mod tests {
         assert_eq!(
             read_session_from(dir.path(), "main").unwrap().as_deref(),
             Some(r#"{"v":2}"#),
+        );
+    }
+
+    #[test]
+    fn session_permission_failures_preserve_previous_snapshot_without_writing_bytes() {
+        for fail_mode in [0o700, 0o600] {
+            let dir = TempDir::new("sessions-permission-failure");
+            write_session_to(dir.path(), "main", "previous").unwrap();
+            let result = super::write_session_with_permissions(
+                dir.path(),
+                "main",
+                "private replacement",
+                |path, mode| {
+                    if mode == fail_mode {
+                        Err("permission denied".to_owned())
+                    } else {
+                        super::restrict_to_owner(path, mode)
+                    }
+                },
+            );
+            assert_eq!(result.unwrap_err(), "permission denied");
+            assert_eq!(
+                read_session_from(dir.path(), "main").unwrap().as_deref(),
+                Some("previous")
+            );
+            let tmp = dir.path().join("main.json.tmp");
+            if tmp.exists() {
+                assert_eq!(fs::metadata(tmp).unwrap().len(), 0);
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn session_write_tightens_directory_and_existing_temp_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new("sessions-permissions");
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        let tmp = dir.path().join("main.json.tmp");
+        fs::write(&tmp, "legacy").unwrap();
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o644)).unwrap();
+        write_session_to(dir.path(), "main", "private").unwrap();
+        assert_eq!(
+            fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(dir.path().join("main.json"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
         );
     }
 

@@ -88,7 +88,7 @@ Neither `params` nor the URI is parsed at the PTY boundary.
 | **Deceptive** | display text URL-shaped (a full URL or a bare domain) but resolving to a different host than the target; one that merely *differs* — a human phrase, a same-host sibling URL — is **plain**, not deceptive, and stays openable | **No open action at all**: close and "Copy deceptive URL to clipboard", the copy button taking initial focus so a reflexive Enter cannot open anything |
 | **Blocked** | malformed URIs, control-character-bearing targets, browser-executable or opaque pseudo-schemes (`javascript:`, `data:`, `blob:`, `about:`) | **Never silently dropped**: the dialog opens with the reason, close the only action |
 
-**Cancel/close is the safe default**, and long targets wrap and scroll rather than truncate so a deceptive one cannot hide past the fold. **Every adapter must revalidate through `normalizeExternalUri` before opening** (VS Code before `vscode.env.openExternal`) — the dialog is a user-consent affordance, not the security boundary.
+**Cancel/close is the safe default; long targets must wrap and scroll without truncation.** **The confirmation host must reject deceptive verdicts even if its callback runs.** **Every adapter must revalidate through `normalizeExternalUri` before opening** (VS Code before `vscode.env.openExternal`) — consent does not replace validation.
 
 Source of truth: `lib/src/lib/external-links.ts`, `lib/src/lib/external-link-confirmation.ts`, `lib/src/components/ExternalLinkModal.tsx`.
 

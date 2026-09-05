@@ -36,7 +36,7 @@ shell-integration scripts — the parser scans raw bytes and cannot defend it
 
 - **FAIL IF** `isKnownUnsupportedIterm2Osc` in `lib/src/lib/terminal-protocol.ts` stops consuming `OSC 52`, or a parse site stops running `TerminalProtocolParser` before `pty:data` leaves it (rationale). Pinned by `lib/src/lib/terminal-protocol.test.ts`.
 - **FAIL IF** a value the parser retains stops being bounded and control-stripped before storage, or a new one arrives without a limit — `TITLE_LIMIT`, `BODY_LIMIT`, `COMMAND_LINE_LIMIT` and `sanitizeText` in `lib/src/lib/terminal-protocol.ts`, `MAX_CWD_LENGTH` and `boundedCwdValue` in `lib/src/lib/terminal-state.ts`. `COMMAND_LINE_LIMIT` binds *after* the `\xNN` unescape, a 4x bound before it (rationale).
-- **FAIL IF** an `OSC 8` activation reaches an adapter's `openExternal` without the confirmation dialog, or the dialog renders an open action for a **deceptive** verdict: `linkHandler` in `lib/src/lib/terminal-lifecycle.ts`, `classifyDisplayMatch` in `lib/src/lib/external-links.ts`, the render branches in `lib/src/components/ExternalLinkModal.tsx`. The classification is pinned by `lib/src/lib/external-links.test.ts`; the *absence* of the open action is not (rationale).
+- **FAIL IF** an `OSC 8` activation reaches an adapter's `openExternal` without the confirmation dialog, or the dialog renders an open action for a **deceptive** verdict: `linkHandler` in `lib/src/lib/terminal-lifecycle.ts`, `classifyDisplayMatch` in `lib/src/lib/external-links.ts`, the render branches in `lib/src/components/ExternalLinkModal.tsx`. Pinned by `lib/src/lib/external-links.test.ts` and `lib/src/components/ExternalLinkModalHost.test.tsx`; the host also rejects a deceptive confirmation (rationale).
 
 ## Browser panes
 
@@ -109,15 +109,7 @@ the attacker that matters is a page open in the user's own browser, which reache
 loopback exactly as easily as our webview does; **an ephemeral port is not a secret
 either** (rationale).
 
-**The rule is about privilege, not admission: no listener may grant an unrecognized
-caller anything it could not already obtain by reaching the upstream directly.** Every
-such listener answers two questions on every request — **was I addressed by my own
-loopback name**, and **do I recognize this caller** — and differs in what it does with
-the second. Two refuse the request outright. The iframe proxy admits everyone and
-instead declines to **vouch** (rationale). **The recognition mechanism differs per
-listener because their URLs differ, and the differences are forced, not stylistic**: a
-URL token is available to the browser-dev harness, which owns its page's URL, and never
-to the iframe proxy (rationale).
+**Never grant an unrecognized caller anything it could not obtain directly from the upstream.** Listeners check their loopback name and recognize callers; the iframe proxy admits strangers but declines to vouch. **Use URL tokens only where the listener owns the page URL**, as the browser-dev harness does; iframe proxies cannot preserve them through upstream routing and subresources (rationale).
 
 **The replacement policy must allow exactly `'self'` plus the full validated
 ancestor chain the webview supplies with each proxy URL request.** `'self'` allows
@@ -126,11 +118,14 @@ embedder, and the browser checks the whole chain (rationale).
 
 - **FAIL IF** any loopback HTTP or WebSocket listener grants an unrecognized caller a privilege it could not obtain by reaching the upstream directly. Refusing the request is one way; the iframe proxy's *admits all, vouches for none, names its embedder* is another, and is not a violation (rationale). `scripts/loopback-lint.mjs` (`pnpm test`) makes the cheap half deterministic — a new loopback bind that does not reference a guard module fails the build — but only in the bind forms its `BIND_FORMS` lists, each pinned by a fixture in `scripts/loopback-lint-selftest.mjs`, which goes red on a form that has none. **Adding a server dependency means adding its bind spelling there**; a host built at runtime is invisible to a regex in any spelling. The lint sees only a guard reference, not whether every request calls it, so this bullet is still read by hand. Derive the set by searching the shipped trees for `createServer`, `.listen(`, `serve(` and `WebSocket` rather than trusting this list. Today the set is three: the iframe proxy (`lib/src/host/iframe-proxy.ts`), the VS Code agent-browser stream relay (`vscode-ext/src/agent-browser-host.ts`), and the browser-dev bridge (`standalone/scripts/dev-agent-browser.mjs`). A Unix-domain socket or named pipe is not in scope — no browser can reach one — which is why the `dor` control channel is bounded by socket permissions instead.
 - **FAIL IF** the iframe proxy rewrites `Origin` to the upstream's own origin for a caller whose inbound `Origin` is not the proxy's own — in `handleRequest` **or** `handleUpgrade`. A foreign `Origin` must be forwarded untouched rather than blocked, so the upstream sees the truth and applies its own policy (rationale).
+- **FAIL IF** the iframe proxy forwards `Cookie` upstream or `Set-Cookie` downstream on HTTP or WebSocket handshakes, including refused upgrades. Pinned by `lib/src/host/iframe-proxy.test.ts` (rationale).
 - **FAIL IF** the iframe proxy stops checking that `Host` names its own grant port, on either path. Its per-grant ephemeral port and one-fixed-upstream binding are real mitigations but neither is a secret, so the `Host` check is what makes DNS rebinding fail.
 - **FAIL IF** the iframe proxy drops upstream `X-Frame-Options` / CSP `frame-ancestors` without replacing them with exactly `frame-ancestors 'self' <validated embedder chain>`, admits another source, or targets the shim anywhere but its own proxy origin and that chain's innermost origin. With no usable chain it must preserve the headers and inject nothing (rationale).
 - **FAIL IF** a request bearing a *foreign* `Origin` refreshes a grant's idle timer: a grant holds a live upstream binding, and a stranger polling it keeps a closed pane's binding open. An *absent* `Origin` must keep refreshing it — that is what a live frame's own navigations and sub-resources send.
 - **FAIL IF** the stream relay's grant stops being single-use, TTL-bounded, and pinned to one target port, or if it begins rewriting `Origin` rather than dropping it. It needs no `Host` check while the token holds (rationale).
 - **FAIL IF** the browser-dev bridge drops any of its four gates — the per-run token, the loopback `Host` check, the `application/json` content-type required of every non-GET, and the exact-origin `access-control-allow-origin`. The first three live together in the gate that runs before routing, so a route that never reads a body is covered by all of them. It is dev-only and ships in nothing, but it dispatches `pty_spawn` with caller-supplied `shell`, `args`, `cwd` and `env` — arbitrary command execution on a maintainer or CI-agent machine (`docs/specs/security-ci.md` -> "Automated Maintainer (tend)"). The content-type rule is a security control, not tidiness (rationale).
+
+**Cookie-authenticated iframe pages are unsupported.** Header stripping does not isolate `document.cookie`: proxied scripts still share the loopback hostname's non-HttpOnly cookies across grant ports. This remains a browser-pane isolation gap (rationale).
 
 Source of truth: the shared rule and predicates — `isLoopbackHost`, `isOwnOrigin`,
 `isForeignOrigin` — in `lib/src/host/loopback-guard.ts`.
@@ -171,7 +166,7 @@ lands at the umask — readable by another local account wherever `<tmpdir>` is
 shared (rationale). No log call carries PTY bytes; the `dor` control socket path
 does. A gap, not an accepted risk.
 
-- **FAIL IF** `write_session_to` in `standalone/src-tauri/src/lib.rs` stops restricting the `sessions/` directory and the snapshot to the owning user on **every** platform `restrict_to_owner` has an arm for — `0700`/`0600` on unix, and on Windows a DACL protected from inheritance carrying exactly one ACE for the current user, asserted by `restrict_to_owner_leaves_one_owner_only_ace`. That test covers the Windows arm alone; the unix modes and both call sites are pinned by nothing. The mode reaches the temp file *before* any bytes are written (rationale).
+- **FAIL IF** `write_session_to` in `standalone/src-tauri/src/lib.rs` stops restricting the `sessions/` directory and the snapshot to the owning user on **every** platform `restrict_to_owner` has an arm for — `0700`/`0600` on unix, and on Windows a DACL protected from inheritance carrying exactly one ACE for the current user, asserted by `restrict_to_owner_leaves_one_owner_only_ace`. `session_write_tightens_directory_and_existing_temp_file` pins unix modes; `session_permission_failures_preserve_previous_snapshot_without_writing_bytes` pins both failure gates. The mode reaches the temp file *before* any bytes are written (rationale).
 
 Source of truth: `SESSION_STATE_KEY` in `vscode-ext/src/session-state.ts`,
 `ensureToken` in `vscode-ext/src/peer-link.ts`, `default_log_path` in

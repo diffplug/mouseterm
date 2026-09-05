@@ -579,9 +579,11 @@ foreign.** `isOwnOrigin` and `isForeignOrigin` are not each other's negation —
 
 **Must rewrite `Origin` only when it names the proxy itself.** Forward a foreign
 origin unchanged and keep an absent origin absent, on request and upgrade paths;
-`Referer` only substitutes the proxy's own origin. (rationale) The shared rule
+`Referer` substitutes only an exact parsed proxy origin, preserving its path and query; redirects likewise substitute only an exact upstream origin. (rationale) The shared rule
 for all loopback listeners lives in `lib/src/host/loopback-guard.ts` and is
 audited by `docs/specs/security-local.md` → "Loopback Listeners".
+
+Iframe cookies and script-access limits: `docs/specs/security-local.md` → "Loopback Listeners".
 
 **Never relax** the `Host` validation, the conditional `Origin` gate, or the
 `frame-ancestors` replacement without updating that `docs/specs/security-local.md` audit. Pinned

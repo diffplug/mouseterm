@@ -230,8 +230,12 @@ function handleRequest(grant: Grant, req: http.IncomingMessage, res: http.Server
   }
   // Referer needs no such test: it only substitutes our own proxy origin, so a
   // foreign referer already passes through untouched.
-  if (typeof headers.referer === 'string') headers.referer = headers.referer.split(grant.proxyOrigin).join(grant.upstream.origin);
+  if (typeof headers.referer === 'string') {
+    headers.referer = rewriteOrigin(headers.referer, grant.proxyOrigin, grant.upstream.origin);
+  }
   delete headers['accept-encoding'];
+  // Cookies share the loopback hostname across ports; these are not upstream credentials.
+  delete headers.cookie;
 
   const upstreamReq = http.request({
     protocol: 'http:',
@@ -285,6 +289,7 @@ function handleRequest(grant: Grant, req: http.IncomingMessage, res: http.Server
 function passThrough(grant: Grant, upstreamRes: http.IncomingMessage, res: http.ServerResponse): void {
   const outHeaders = sanitizeResponseHeaders(grant, upstreamRes.headers);
   res.writeHead(upstreamRes.statusCode ?? 200, outHeaders);
+  upstreamRes.on('error', () => res.destroy());
   upstreamRes.pipe(res);
 }
 
@@ -339,7 +344,7 @@ function sanitizeResponseHeaders(grant: Grant, headers: http.IncomingHttpHeaders
   for (const [name, value] of Object.entries(headers)) {
     if (value === undefined) continue;
     const lower = name.toLowerCase();
-    if (HOP_BY_HOP_RESPONSE_HEADERS.has(lower)) continue;
+    if (HOP_BY_HOP_RESPONSE_HEADERS.has(lower) || lower === 'set-cookie') continue;
     // Replaced, never merely dropped: this proxy may only take the upstream's
     // "do not embed" away if it puts back one that names the exact allowed set:
     // this per-grant origin plus the app's validated ancestor chain
@@ -353,10 +358,20 @@ function sanitizeResponseHeaders(grant: Grant, headers: http.IncomingHttpHeaders
   // Keep upstream redirects on the proxy origin so they don't bounce the frame
   // straight at the un-instrumented upstream.
   const loc = out.location;
-  if (typeof loc === 'string' && loc.startsWith(grant.upstream.origin)) {
-    out.location = grant.proxyOrigin + loc.slice(grant.upstream.origin.length);
+  if (typeof loc === 'string') {
+    out.location = rewriteOrigin(loc, grant.upstream.origin, grant.proxyOrigin);
   }
   return out;
+}
+
+// Compare parsed origins, never string prefixes or embedded query values.
+// A foreign redirect/referer must keep its authority and its payload intact.
+function rewriteOrigin(value: string, from: string, to: string): string {
+  try {
+    const url = new URL(value);
+    if (url.origin === from) return `${to}${url.pathname}${url.search}${url.hash}`;
+  } catch { /* Relative Locations and malformed headers pass through unchanged. */ }
+  return value;
 }
 
 // --- WebSocket upgrade passthrough (dev-server HMR, openvscode-server) -------
@@ -375,26 +390,45 @@ function handleUpgrade(grant: Grant, req: http.IncomingMessage, socket: net.Sock
   }
   if (!isForeignOrigin(req.headers.origin, grant.port)) grant.lastUsed = Date.now();
   socket.on('error', () => {});
-  const path = req.url ?? '/';
-  const targetPort = Number(grant.upstream.port) || 80;
-  const vouch = isOwnOrigin(req.headers.origin, grant.port);
+  const headers: http.OutgoingHttpHeaders = { ...req.headers, host: grant.upstream.host };
+  delete headers.cookie;
+  if (isOwnOrigin(req.headers.origin, grant.port)) headers.origin = grant.upstream.origin;
 
-  const upstream = net.connect(targetPort, grant.upstream.hostname, () => {
-    const headerLines: string[] = [];
-    for (let i = 0; i < req.rawHeaders.length; i += 2) {
-      const name = req.rawHeaders[i];
-      const lower = name.toLowerCase();
-      if (lower === 'host') headerLines.push(`Host: ${grant.upstream.host}`);
-      else if (lower === 'origin') headerLines.push(`Origin: ${vouch ? grant.upstream.origin : req.rawHeaders[i + 1]}`);
-      else headerLines.push(`${name}: ${req.rawHeaders[i + 1]}`);
+  // Parse the HTTP handshake before becoming a byte pipe: Set-Cookie on a 101
+  // would otherwise poison cookies belonging to other loopback ports.
+  const upstreamReq = http.request({
+    hostname: grant.upstream.hostname,
+    port: grant.upstream.port || 80,
+    method: req.method,
+    path: req.url ?? '/',
+    headers,
+  });
+  upstreamReq.on('upgrade', (response, upstream, upstreamHead) => {
+    upstream.setTimeout(0);
+    const lines: string[] = [];
+    for (let i = 0; i < response.rawHeaders.length; i += 2) {
+      if (response.rawHeaders[i].toLowerCase() === 'set-cookie') continue;
+      lines.push(`${response.rawHeaders[i]}: ${response.rawHeaders[i + 1]}`);
     }
-    upstream.write(`GET ${path} HTTP/1.1\r\n${headerLines.join('\r\n')}\r\n\r\n`);
-    if (head && head.length) upstream.write(head);
+    socket.write(`HTTP/1.1 ${response.statusCode} ${response.statusMessage}\r\n${lines.join('\r\n')}\r\n\r\n`);
+    if (upstreamHead.length) socket.write(upstreamHead);
+    if (head.length) upstream.write(head);
+    upstream.on('error', () => socket.destroy());
+    upstream.on('close', () => socket.destroy());
+    socket.on('close', () => upstream.destroy());
     socket.pipe(upstream);
     upstream.pipe(socket);
   });
-  upstream.on('error', () => socket.destroy());
-  socket.on('close', () => upstream.destroy());
+  upstreamReq.on('response', (response) => {
+    // A rejected upgrade is still an ordinary response with the same cookie boundary.
+    const res = new http.ServerResponse(req);
+    res.assignSocket(socket);
+    passThrough(grant, response, res);
+  });
+  upstreamReq.on('error', () => socket.destroy());
+  upstreamReq.setTimeout(UPSTREAM_IDLE_TIMEOUT_MS, () => upstreamReq.destroy());
+  socket.on('close', () => upstreamReq.destroy());
+  upstreamReq.end();
 }
 
 function sweepGrants(now: number): void {

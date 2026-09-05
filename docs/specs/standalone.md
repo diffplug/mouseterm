@@ -334,9 +334,7 @@ window, `<app_data_dir>/sessions/<label>.json`:
 silent no-op, it applies a protected single-entry DACL instead (mechanism in its
 doc comment). `burrow_state_dir` locks the sidecar's state directory with the
 same call and relies on it reaching a file that already *existed*, which
-`restrict_to_owner_leaves_one_owner_only_ace` pins (rationale). **Neither call is
-fatal**, but the state-dir one logs a `WARNING` naming the path rather than
-failing silently, because on Windows it is the only thing restricting `burrowToken`.
+`restrict_to_owner_leaves_one_owner_only_ace` pins (rationale). **Must abort a snapshot save if either permission change fails**, preserving the previous snapshot. The state-directory call remains nonfatal and logs a `WARNING` naming the path. Pinned by `session_permission_failures_preserve_previous_snapshot_without_writing_bytes` and `session_write_tightens_directory_and_existing_temp_file`.
 
 **Boot + the synchronous-read constraint.** `getState()` is synchronous —
 cold-start restore reads it before React mounts — but a Tauri `invoke` is async, so
