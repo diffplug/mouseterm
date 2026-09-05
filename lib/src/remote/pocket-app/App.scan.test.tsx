@@ -127,7 +127,11 @@ vi.mock('../client/webauthn', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../client/webauthn')>()),
   browserWebAuthn: {},
 }));
-vi.mock('./PocketWall', () => ({ PocketWall: () => null }));
+vi.mock('./PocketWall', () => ({
+  PocketWall: ({ onError }: { onError?: (error: unknown) => void }) => (
+    <button onClick={() => onError?.(new Error('terminal attach refused'))}>Fail attachment</button>
+  ),
+}));
 vi.mock('../../lib/platform', () => ({ setPlatform: () => undefined }));
 vi.mock('../../lib/terminal-registry', () => ({
   disposeAllSessions: () => undefined,
@@ -575,6 +579,21 @@ describe('the Burrows list', () => {
 
     expect(alertText(container)).toContain('Sign in again');
     expect(buttonNamed(container, 'Sign in with passkey')).not.toBeNull();
+    expect(fake.clientClose).toHaveBeenCalled();
+  });
+
+  it('ends the session and reports a terminal attachment failure on the Burrows list', async () => {
+    fake.hasPriorUse = true;
+    fake.listKnownBurrows.mockResolvedValue([await knownBurrow('burrow-1')]);
+    fake.listBurrows.mockResolvedValue([{ burrowId: 'burrow-1', label: '', online: true }]);
+    await boot();
+    await click(container, 'Sign in with passkey');
+    await click(container, 'Connect');
+    await click(container, 'Fail attachment');
+
+    expect(alertText(container)).toContain('terminal attach refused');
+    expect(buttonNamed(container, 'Connect')).not.toBeNull();
+    expect(fake.adapterDispose).toHaveBeenCalled();
     expect(fake.clientClose).toHaveBeenCalled();
   });
 });

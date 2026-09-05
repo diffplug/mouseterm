@@ -378,6 +378,12 @@ export default function App({
 
   const onConnect = (burrow: BurrowView) => run('connect', () => connectTo(burrow));
 
+  const onWallError = useCallback((error: unknown) => {
+    endSession();
+    setError(error instanceof Error ? error.message : String(error));
+    setPhase({ at: 'burrows' });
+  }, [endSession]);
+
   /**
    * A scanned or pasted invitation, from the moment it parses to the moment the
    * ceremony ends. The invitation itself never leaves this call: it is a live
@@ -604,7 +610,7 @@ export default function App({
       // The adapter is stood up before the phase moves, so the ref is set
       // whenever this branch is reachable.
       return adapterRef.current ? (
-        <ConnectedView burrow={phase.burrow} adapter={adapterRef.current} onLeave={leaveWall} />
+        <ConnectedView burrow={phase.burrow} adapter={adapterRef.current} onLeave={leaveWall} onError={onWallError} />
       ) : (
         <Waiting />
       );
@@ -760,10 +766,12 @@ export function ConnectedView({
   burrow,
   adapter,
   onLeave,
+  onError,
 }: {
   burrow: BurrowView;
   adapter: RemotePtyAdapter;
   onLeave: () => void;
+  onError?: (error: unknown) => void;
 }): React.ReactElement {
   return (
     <div className={PK.app}>
@@ -774,7 +782,7 @@ export function ConnectedView({
         <h1 className={PK.headerTitle}>{burrow.label || burrow.burrowId}</h1>
       </header>
       <div className={PK.wallHost}>
-        <PocketWall adapter={adapter} />
+        <PocketWall adapter={adapter} onError={onError} />
       </div>
     </div>
   );

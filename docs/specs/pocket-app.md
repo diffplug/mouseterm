@@ -121,7 +121,8 @@ disposal.** A disposed adapter never restarts or delivers events. Pinned by
 another attachment to the same surface starts.
 
 **Must close an authorized connection when `hello` or adapter initialization
-fails.** Pinned by `lib/src/remote/pocket-app/App.scan.test.tsx`.
+fails, or the wall's current attachment fails; report on the Burrows list.**
+Pinned by `lib/src/remote/pocket-app/App.scan.test.tsx`.
 
 Three details the table leaves implicit:
 
