@@ -9,13 +9,19 @@ function relativePath(path) {
   return path;
 }
 
+const MANIFEST = 'artifact-manifest.sha256';
+const EXECUTABLES = 'artifact-executables.txt';
+
 function lines(file) {
   return readFileSync(file, 'utf8').trimEnd().split('\n');
 }
 
-/** Hash verification alone does not reject extra code injected into a cached app. */
-export function verifyInventory(root, manifestName = 'artifact-manifest.sha256') {
-  relativePath(manifestName);
+/**
+ * Hash verification alone does not reject extra code injected into a cached app.
+ * Returns the validated executable paths, so the caller that acts on them reads
+ * the same parse that vetted them.
+ */
+export function verifyInventory(root) {
   const actual = new Set();
   function walk(dir, prefix = '') {
     for (const name of readdirSync(dir)) {
@@ -28,9 +34,9 @@ export function verifyInventory(root, manifestName = 'artifact-manifest.sha256')
     }
   }
   walk(root);
-  if (!actual.delete(manifestName)) throw new Error('Artifact manifest is missing');
+  if (!actual.delete(MANIFEST)) throw new Error('Artifact manifest is missing');
   const listed = new Set();
-  for (const line of lines(join(root, manifestName))) {
+  for (const line of lines(join(root, MANIFEST))) {
     const match = /^([0-9a-fA-F]{64}) [ *](.+)$/.exec(line);
     if (!match) throw new Error('Malformed SHA-256 manifest record');
     const path = relativePath(match[2]);
@@ -40,26 +46,22 @@ export function verifyInventory(root, manifestName = 'artifact-manifest.sha256')
   }
   if (actual.size) throw new Error(`Unlisted artifact files: ${[...actual].join(', ')}`);
 
-  const metadata = 'artifact-executables.txt';
-  if (listed.has(metadata)) {
-    const executables = readFileSync(join(root, metadata), 'utf8');
-    const seen = new Set();
-    for (const path of executables ? executables.replace(/\n$/, '').split('\n') : []) {
-      relativePath(path);
-      if (!listed.has(path) || path === metadata) throw new Error(`Unlisted executable: ${path}`);
-      if (seen.has(path)) throw new Error(`Duplicate executable: ${path}`);
-      seen.add(path);
-    }
+  if (!listed.has(EXECUTABLES)) return [];
+  const content = readFileSync(join(root, EXECUTABLES), 'utf8');
+  const executables = content ? content.replace(/\n$/, '').split('\n') : [];
+  const seen = new Set();
+  for (const path of executables) {
+    relativePath(path);
+    if (!listed.has(path) || path === EXECUTABLES) throw new Error(`Unlisted executable: ${path}`);
+    if (seen.has(path)) throw new Error(`Duplicate executable: ${path}`);
+    seen.add(path);
   }
+  return executables;
 }
 
 /** Only call on a working copy whose manifest and hashes have been verified. */
 export function restoreExecutables(root) {
-  verifyInventory(root);
-  const content = readFileSync(join(root, 'artifact-executables.txt'), 'utf8');
-  for (const path of content ? content.replace(/\n$/, '').split('\n') : []) {
-    chmodSync(join(root, path), 0o755);
-  }
+  for (const path of verifyInventory(root)) chmodSync(join(root, path), 0o755);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
