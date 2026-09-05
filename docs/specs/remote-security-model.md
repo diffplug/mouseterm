@@ -1,5 +1,7 @@
 # Remote Security Model
 
+> See `docs/specs/glossary.md` for Client, Burrow, Relay, and Session vocabulary.
+
 The trust model for remote control: three primitives between the Client
 (Dormouse Pocket), Burrow (Dormouse Terminal), and coordinating Relay.
 
@@ -37,18 +39,6 @@ resets; **availability** — the relay is down whenever the machine is (a
 per-login user agent), and the Relay is a hard online dependency for every new
 session ([relay.md](./relay.md)); **traffic analysis**
 ([Residual metadata](#residual-metadata)).
-
-## Terminology
-
-* **Client (Dormouse Pocket)** — a browser or installed PWA; authenticates with
-  passkeys, holds one X25519 static per paired Burrow.
-* **Burrow (Dormouse Terminal)** — the machine being controlled. **The Burrow is
-  the final authority for access decisions.**
-* **Relay** — coordination only: accounts, passkey registration,
-  presence-challenge minting, routing. It cannot read what it routes and is not
-  the final authority for Burrow access. Revocation today is local editing plus a
-  Burrow restart ([relay.md](./relay.md) Guardrails); propagation is staged in
-  [Future](#future).
 
 ## Trust Model
 
@@ -172,7 +162,8 @@ Source of truth: `remote-lib-common/src/security/acl.ts` (the schema and
   to equal what it built from its own state**, verifies RP ID, origin,
   presence/verification policy, and signature against the *presented* key, and
   hashes that key for the ACL. **A Relay success flag is never evidence**, and
-  **the verifier never throws** — a rejection is an ordinary denial (rationale).
+  **the verifier never throws**, including missing WebCrypto or rejected digest
+  operations — a rejection is an ordinary denial (rationale).
 - **Every proof is fresh and single-use**: any restart — dropped transport,
   consumed challenge, failed handshake, later attempt — needs a new handshake,
   Burrow challenge, Relay nonce, and authenticator operation; one prompt per
@@ -233,6 +224,12 @@ newly-added passkey is not automatically trusted; its Client must still pair.
   `presence-rejected`, `invitation-expired`, `superseded`, or `burrow-error`.
   **Both use the same fixed padded control message**, so approval and denial are
   one size on the wire ([relay.md](./relay.md) -> E2E framing).
+- **Must serialize approval snapshots and publish the ACL only after saving.**
+  Service lifecycle changes await approval writes. A failed save denies
+  `burrow-error` without changing the live ACL. Once the
+  write starts, local consent is final: teardown can discard its transport but
+  cannot cancel the write or announce denial; completion never revives a retired
+  ceremony.
 - **An unparseable first control is terminal**, not a retry: it spends the code
   (rationale).
 - **A resumed handshake re-checks that its invitation is still the live one**
@@ -257,7 +254,7 @@ Source of truth: `BurrowRuntime.mintInvitation` / `#onPairingInit` /
   is a fresh 32-byte Burrow challenge (`ChallengeIssuer`, 2-minute TTL).
   Completing Noise proves both statics and **authorizes nothing**.
 - **Authorization = proof ∧ conjunction.** The Burrow consumes the challenge
-  *before any other work*, verifies `PresenceProofV1` against the binding it
+  *before verifying presence*, verifies `PresenceProofV1` against the binding it
   built from its own `burrowId`, connection ID, challenge and handshake hash, then
   requires one active `BurrowAclRecord` holding all four of `accountId`,
   `passkeyCredentialId`, `passkeyPublicKeyHash`, and the IK-authenticated Client
@@ -265,7 +262,7 @@ Source of truth: `BurrowRuntime.mintInvitation` / `#onPairingInit` /
 - **Then `ConnectionOutcomeV1`**: success carries the Burrow label; denial carries
   only `pairing-required`, `presence-rejected`, `protocol-rejected`,
   `burrow-busy`, or `burrow-error`. **Every ACL miss is `pairing-required`** —
-  individual ACL, passkey, DH, or transcript failures are logged owner-locally
+  individual ACL and presence failures are logged owner-locally
   and never returned. Success promotes the two `CipherState`s into the
   established session; every terminal decision sends exactly one outcome and
   clears pending state; **failures before `Split` yield only a generic outer
@@ -314,8 +311,8 @@ endpoints when one is sent (rationale).
   ([relay.md](./relay.md) -> Web Push). **Copied field by field, never
   spread**, so no Burrow can override the token's `burrowId`.
 - **The worker decrypts at the sink**, against the pinned record for that
-  `burrowId`, and re-bounds what it recovers. **Any failure shows the generic
-  content-free notification**, because `userVisibleOnly` makes showing nothing a
+  `burrowId`, and re-bounds what it recovers. **Any failure, including missing
+  WebCrypto, shows the generic content-free notification**, because `userVisibleOnly` makes showing nothing a
   browser-substituted notice ([pocket-app.md](./pocket-app.md) -> Installable
   web app owns the branch list).
 
@@ -378,7 +375,8 @@ omits `client-gone`, invents client IDs, or reorders frames.
   | Pending pairing | `invitation-expired` |
   | Pending connection (its challenge is now dead) | `presence-rejected` |
   | Idle established session | nothing |
-  | Ceremony evicted at a cap | nothing (rationale) |
+  | Pending pairing evicted at its cap | `superseded` (rationale) |
+  | Pending connection evicted at its cap | nothing (rationale) |
 
 - **The idle deadline moves only on a successfully decrypted Client→Burrow
   transport message**, keepalive or application data; **never** on Burrow output,
@@ -413,9 +411,9 @@ admits Burrow enrollment with ([relay.md](./relay.md#http-api)). Pinned by
   another Burrow, id, or ceremony ([relay.md](./relay.md) -> E2E framing owns
   the field order). **Application authentication binds to Noise's final
   handshake hash** — no parallel transcript, exporter, KDF, or nonce scheme.
-  Sessions use only the two `CipherState`s from `Split`, each from nonce zero,
+  Sessions use the two `CipherState`s from `Split`, each from nonce zero,
   with empty associated data; routing metadata is never authenticated
-  application content. **No rekey**: sessions are idle-bounded, not long-lived.
+  application content. **No rekey**: sessions expire on inactivity.
 - **X25519 stays WebCrypto-only** (`generateKey` / `deriveBits` / `importKey`),
   **never a JavaScript curve** (rationale). **An X25519 rejection and an
   all-zero shared secret are one terminal handshake failure**, and the handshake

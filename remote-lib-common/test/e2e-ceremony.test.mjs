@@ -103,6 +103,38 @@ test('a proof over the expected binding verifies and yields the presented key ha
   }
 });
 
+test('presence proof rejects when WebCrypto disappears or a digest fails', async () => {
+  const binding = pairingBinding();
+  const proof = await proofFor(binding);
+  const real = globalThis.crypto;
+  for (const failingDigest of [1, 2, 3, 4]) {
+    let calls = 0;
+    const crypto = {
+      subtle: {
+        digest(...args) {
+          if (++calls === failingDigest) return Promise.reject(new Error('digest unavailable'));
+          return real.subtle.digest(...args);
+        },
+        importKey: (...args) => real.subtle.importKey(...args),
+        verify: (...args) => real.subtle.verify(...args),
+      },
+    };
+    assert.deepEqual(await verifyPresenceProof(proof, binding, POLICY, crypto), {
+      ok: false, reason: failingDigest === 1 ? 'challenge-underivable' : 'assertion-invalid',
+    });
+    assert.equal(calls, failingDigest);
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: undefined });
+  try {
+    assert.deepEqual(await verifyPresenceProof(proof, binding, POLICY), {
+      ok: false, reason: 'challenge-underivable',
+    });
+  } finally {
+    Object.defineProperty(globalThis, 'crypto', descriptor);
+  }
+});
+
 test('a proof that is not a PresenceProofV1 at all is malformed', async () => {
   const binding = pairingBinding();
   const valid = await proofFor(binding);

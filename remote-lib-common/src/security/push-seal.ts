@@ -143,12 +143,12 @@ export async function sealPush(
  */
 export async function openPush(
   { clientStaticPrivateKey, burrowStaticPublicKey, sealed }: OpenPushRequest,
-  crypto: WebCryptoLike = getWebCrypto(),
+  crypto?: WebCryptoLike,
 ): Promise<Uint8Array | null> {
   try {
     if (!isSealedPushV1(sealed)) return null;
     const salt = fromBase64Url(sealed.salt);
-    const key = await sealKey(crypto, clientStaticPrivateKey, burrowStaticPublicKey, salt);
+    const key = await sealKey(crypto ?? getWebCrypto(), clientStaticPrivateKey, burrowStaticPublicKey, salt);
     return chacha20poly1305(key, ZERO_NONCE).decrypt(fromBase64Url(sealed.ct));
   } catch {
     return null;

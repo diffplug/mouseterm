@@ -59,6 +59,7 @@ import {
   type RelayToBurrowFrame,
 } from 'remote-lib-common';
 import type { BurrowEnrollment } from './enrollment';
+import { createSerialQueue } from '../../host/remote/serial-queue';
 import { realTimer, type RemoteTimer, type RemoteWebSocket } from '../ws';
 import { loadBurrowAcl } from './acl';
 import type { PendingPairing } from './pairing-approval';
@@ -175,6 +176,8 @@ interface PendingPairingSession {
   readonly clientStaticPublicKey: string;
   readonly requestedAt: number;
   readonly expiresAt: number;
+  /** Local consent is final while its durable write is in flight. */
+  committing?: boolean;
   /** Set once the first control message verified; until then there is no code. */
   approval?: {
     readonly code: string;
@@ -244,7 +247,7 @@ export interface BurrowOptions {
    * next restart.
    */
   loadAcl: (burrowId: string) => BurrowAclRecord[];
-  saveAcl: (burrowId: string, records: readonly BurrowAclRecord[]) => void;
+  saveAcl: (burrowId: string, records: readonly BurrowAclRecord[]) => void | Promise<void>;
   /** Surface a pairing request for local approval. */
   requestApproval: (pending: PendingPairing) => void;
   /** Dismiss a surfaced request once resolved. */
@@ -281,12 +284,13 @@ const MAX_BACKOFF_MS = 30_000;
 export class BurrowRuntime {
   readonly #enrollment: BurrowEnrollment;
   readonly #policy: ConnectionPolicy;
-  readonly #acl: BurrowAcl;
+  #acl: BurrowAcl;
+  readonly #saveApproval = createSerialQueue();
   readonly #challenges: ChallengeIssuer;
 
   readonly #createWebSocket: (url: string) => WebSocketLike;
   readonly #createSession?: BurrowOptions['createSession'];
-  readonly #saveAcl: (burrowId: string, records: readonly BurrowAclRecord[]) => void;
+  readonly #saveAcl: BurrowOptions['saveAcl'];
   readonly #requestApproval: (pending: PendingPairing) => void;
   readonly #dismissApproval: (clientId: string) => void;
   readonly #onInvitationChanged: NonNullable<BurrowOptions['onInvitationChanged']>;
@@ -1070,7 +1074,7 @@ export class BurrowRuntime {
    * attempt is spent *before* the comparison, so no throw can leave a retry
    * behind.
    */
-  #approvePairing(clientId: string, pairingId: string, code: string): void {
+  #approvePairing(clientId: string, pairingId: string, code: string): void | Promise<void> {
     const pending = this.#clients.get(clientId)?.pairing;
     if (!pending || pending.pairingId !== pairingId || !pending.approval) return;
     if (pending.attempted) return;
@@ -1094,33 +1098,56 @@ export class BurrowRuntime {
       this.#finishPairing(clientId, 'confirmation-mismatch');
       return;
     }
-    const deliveryId = randomBase64Url(DELIVERY_ID_BYTE_LENGTH);
-    const record = this.#acl.approve({
-      accountId: pending.approval.accountId,
-      passkeyCredentialId: pending.approval.passkeyCredentialId,
-      passkeyPublicKeyHash: pending.approval.passkeyPublicKeyHash,
-      clientStaticPublicKey: pending.clientStaticPublicKey,
-      deliveryId,
-      approvedBy: 'burrow-user',
-      label: pending.approval.label,
+    const approval = pending.approval;
+    // Serialize snapshot creation as well as persistence: overlapping approvals
+    // must not overwrite each other, and a failed save must not grant access in
+    // memory or revoke an existing pairing. Only the committed copy is live.
+    return this.#saveApproval(async () => {
+      if (this.#clients.get(clientId)?.pairing !== pending) return;
+      if (pending.expiresAt <= this.#now()) {
+        this.#finishPairing(clientId, 'invitation-expired');
+        return;
+      }
+      try {
+        const next = BurrowAcl.fromRecords(this.#acl.burrowId, this.#acl.records(), { now: this.#now });
+        const record = next.approve({
+          accountId: approval.accountId,
+          passkeyCredentialId: approval.passkeyCredentialId,
+          passkeyPublicKeyHash: approval.passkeyPublicKeyHash,
+          clientStaticPublicKey: pending.clientStaticPublicKey,
+          deliveryId: randomBase64Url(DELIVERY_ID_BYTE_LENGTH),
+          approvedBy: 'burrow-user',
+          label: approval.label,
+        });
+        pending.committing = true;
+        await this.#saveAcl(this.#enrollment.burrowId, next.records());
+        this.#acl = next;
+        // Consent already happened, so a successful save stays committed even
+        // after transport loss. Never answer on a retired or replacement pipe.
+        if (this.#clients.get(clientId)?.pairing !== pending) return;
+        this.#sendPairingOutcome(clientId, pending, {
+          ok: true,
+          burrowStaticPublicKey,
+          burrowLabel: boundedBurrowLabel(this.#enrollment.label),
+          accountId: record.accountId,
+          passkeyCredentialId: record.passkeyCredentialId,
+          passkeyPublicKeyHash: record.passkeyPublicKeyHash,
+          deliveryId: record.deliveryId,
+        });
+        this.#disposePairing(clientId, 'paired');
+      } catch (error) {
+        console.warn('[burrow] could not persist the ACL', error);
+        if (this.#clients.get(clientId)?.pairing !== pending) return;
+        pending.committing = false;
+        this.#finishPairing(clientId, 'burrow-error');
+      }
+      this.#reap();
     });
-    this.#saveAcl(this.#enrollment.burrowId, this.#acl.records());
-    this.#sendPairingOutcome(clientId, pending, {
-      ok: true,
-      burrowStaticPublicKey,
-      burrowLabel: boundedBurrowLabel(this.#enrollment.label),
-      accountId: record.accountId,
-      passkeyCredentialId: record.passkeyCredentialId,
-      passkeyPublicKeyHash: record.passkeyPublicKeyHash,
-      deliveryId,
-    });
-    this.#disposePairing(clientId, 'paired');
-    this.#reap();
   }
 
   #denyPairing(clientId: string, pairingId: string): void {
     const pending = this.#clients.get(clientId)?.pairing;
-    if (!pending || pending.pairingId !== pairingId) return;
+    if (!pending || pending.pairingId !== pairingId || pending.attempted) return;
     this.#finishPairing(clientId, 'user-denied');
     this.#reap();
   }
@@ -1129,6 +1156,13 @@ export class BurrowRuntime {
   #finishPairing(clientId: string, code: PairingDenialCode): void {
     const pending = this.#clients.get(clientId)?.pairing;
     if (!pending) return;
+    // A write already authorized locally cannot be cancelled by timeout or a
+    // Relay replacement. Drop its pipe without falsely announcing a denial;
+    // the Client reports unavailable if the durable outcome cannot reach it.
+    if (pending.committing) {
+      this.#disposePairing(clientId);
+      return;
+    }
     this.#sendPairingOutcome(clientId, pending, { ok: false, code });
     this.#disposePairing(clientId, PAIRING_OUTCOME_FOR_DENIAL[code]);
   }
