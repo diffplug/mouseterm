@@ -68,8 +68,8 @@ const ARCHIVE_GATE_MS = 3000;
 
 /**
  * The notepad's quit gate (docs/specs/notepad.md → "Standalone quit"): every
- * Surface still holding notes is archived in one mutation, after the running-work
- * decision and before teardown begins, so a controlled quit never drops notes.
+ * Surface holding notes or a pending batch identity participates in one archive
+ * mutation, after the running-work decision and before teardown begins.
  * Rejects with a user-presentable message when the write fails or outruns its
  * bound — the caller turns that into Cancel / Quit anyway.
  */
