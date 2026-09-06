@@ -29,6 +29,26 @@ export function ContextAction({ children, label, onClick, disabled = false, mute
     className={`inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 disabled:opacity-40 ${SUBTLE_ACTION_INTERACTION_CLASS} ${muted ? 'text-muted' : SUBTLE_ACTION_COLOR_CLASS}`}>{children}</button>;
 }
 
+function ContextCopyAction({ children, label, onCopy }: { children: ReactNode; label: string; onCopy: () => Promise<boolean> }) {
+  const [confirmation, setConfirmation] = useState(0);
+  useEffect(() => {
+    if (!confirmation) return;
+    const timer = setTimeout(() => setConfirmation(0), 1400);
+    return () => clearTimeout(timer);
+  }, [confirmation]);
+  return <ContextAction label={label} onClick={() => {
+    setConfirmation(0);
+    void onCopy().then(success => { if (success) setConfirmation(value => value + 1); });
+  }}>
+    <span className="grid">
+      <span className={`col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5 ${confirmation ? 'invisible' : ''}`}>{children}</span>
+      <span role="status" className="col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5">
+        {confirmation ? <><CheckIcon size={14} weight="bold" />Copied</> : null}
+      </span>
+    </span>
+  </ContextAction>;
+}
+
 export function TerminalContextView(p: TerminalContextViewProps) {
   const detailRoot = useRef<HTMLDivElement>(null);
   const [detail, setDetail] = useState(p.initialDetail ?? null);
@@ -64,10 +84,10 @@ export function TerminalContextView(p: TerminalContextViewProps) {
         <span className="text-muted">Title</span>
         <div className="flex h-6 min-w-0 items-center gap-1.5">
           <span className="truncate">{p.title}</span><ContextAction label="Explain this title" onClick={() => setDetail('title')}><BugBeetleIcon size={15} />Explain</ContextAction>
-          <div className="ml-auto flex shrink-0 items-center gap-2 text-muted"><ContextAction label="Copy surface identifier" onClick={() => void attempt(p.onCopyRef)}><span className="text-muted">{p.surfaceRef}</span><CopyIcon size={12} /></ContextAction><ContextAction label="Close terminal context" onClick={p.onClose} muted><XIcon size={15} /></ContextAction></div>
+          <div className="ml-auto flex shrink-0 items-center gap-2 text-muted"><ContextCopyAction label="Copy surface identifier" onCopy={() => attempt(p.onCopyRef)}><span>{p.surfaceRef}</span><CopyIcon size={12} /></ContextCopyAction><ContextAction label="Close terminal context" onClick={p.onClose} muted><XIcon size={15} /></ContextAction></div>
         </div>
         <span className="text-muted">Dir</span>
-        <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-1.5"><span className="truncate" title={p.cwd}>{p.cwd}</span><ContextAction label={p.canExplore ? p.explorerLabel : 'Directory unavailable on this host'} disabled={!p.canExplore} onClick={() => void attempt(p.onExplore)}><ArrowSquareOutIcon size={15} />{p.explorerLabel}</ContextAction><ContextAction label="Copy absolute path" onClick={() => void attempt(p.onCopyPath)}><CopyIcon size={14} />Copy path</ContextAction></div>
+        <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-1.5"><span className="truncate" title={p.cwd}>{p.cwd}</span><ContextAction label={p.canExplore ? p.explorerLabel : 'Directory unavailable on this host'} disabled={!p.canExplore} onClick={() => void attempt(p.onExplore)}><ArrowSquareOutIcon size={15} />{p.explorerLabel}</ContextAction><ContextCopyAction label="Copy absolute path" onCopy={() => attempt(p.onCopyPath)}><CopyIcon size={14} />Copy path</ContextCopyAction></div>
         <span className="text-muted">Ports</span>
         <div className="flex min-h-7 flex-wrap items-center gap-2">
           {p.scan.status === 'scanning' ? <span className="text-muted">Scanning ports…</span> : p.scan.status === 'failed' ? <span className="text-error">Port scan failed · Reopen to try again</span> : !selected ? <span className="text-muted">No listening ports</span> : <>

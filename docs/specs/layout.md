@@ -68,6 +68,8 @@ The label is the `DerivedHeader` from `deriveHeader(...)`; `docs/specs/terminal-
 
 **Must focus context controls on opening.** Explicit entry into helper xterm gives it terminal keys; Escape there belongs to its program. Escape from controls closes the innermost disclosure, then context. Terminal clipboard routing uses the focused helper rather than the selected source. Actions use subdued link color and shared compact `OnOffSwitch` controls.
 
+**Must tint the copyable Surface ref as an action and confirm each successful context copy in its button** with a checkmark and “Copied” for 1.4 seconds, preserving button width and keeping the context open. Failed copies show the action error without success feedback.
+
 **Must promote by adopting the helper Session into a new split beside the source**, preserving identity and focusing it. Helper lifetime and source closure are owned by `docs/specs/terminal-context.md`.
 
 Source of truth: `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`; `TerminalPanel` in `lib/src/components/wall/TerminalPanel.tsx`; `TerminalPaneHeader` in `lib/src/components/wall/TerminalPaneHeader.tsx`; `useWallKeyboard` in `lib/src/components/wall/use-wall-keyboard.ts`.
