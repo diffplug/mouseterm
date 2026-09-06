@@ -447,6 +447,7 @@ export function Wall({
    *  caller (the standalone quit gate over every noted Surface, past its own
    *  deadline), so reading it here would make those Surfaces unclosable. */
   const pendingSurfaceCloses = useRef(new Set<string>());
+  const isClosingSurface = useCallback((id: string) => pendingSurfaceCloses.current.has(id), []);
   confirmKillRef.current = confirmKill;
 
   // The navigation/query seam for the keyboard handlers, backed by the engine + its
@@ -997,8 +998,8 @@ export function Wall({
           setConfirmKill({ id: item.id, char: randomKillChar() });
         } else if (typeof afterRestore === 'object' && afterRestore.type === 'replace-terminal') {
           // Atomic identity swap in place — no transient add/remove.
-          lath.store.replaceLeaf(item.id, afterRestore.newId, terminalLeafMeta());
           closeHelperParent(item.id);
+          lath.store.replaceLeaf(item.id, afterRestore.newId, terminalLeafMeta());
           disposeSession(item.id);
           // An in-place shell replacement is not a closure: the notes follow the
           // new id rather than being archived (docs/specs/notepad.md → "Closure").
@@ -1397,7 +1398,7 @@ export function Wall({
     surfaceRefForId,
     createSplitSurface,
     createContentSurface,
-    killPaneImmediately,
+    isClosingSurface,
     closeSurface,
     lastAgentBrowserBinaryPathRef,
   });

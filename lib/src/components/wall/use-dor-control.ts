@@ -27,7 +27,6 @@ import { listenerUrlsByPort } from './port-url';
 import { dorDirectionForEdge, type LathWallEngine } from './lath-wall-engine';
 import type { WallNav } from './keyboard/types';
 import type { CloseSurfaceMode, DooredItem } from './wall-types';
-import { isSurfaceClosing } from '../../lib/notepad/notepad-store';
 
 type DorControlParams = {
   command?: unknown;
@@ -359,7 +358,7 @@ function dorCommandString(args: string[] | undefined): string | undefined {
  * surface-resolution/query helpers. This is CLI policy — surface targeting,
  * param coercion, command quoting, restart/integration timing — not wall layout;
  * the layout primitives it drives (`createSplitSurface`, `createContentSurface`,
- * `killPaneImmediately`, `buildDorSurfaces`, `surfaceRefForId`) are owned by the
+ * `closeSurface`, `buildDorSurfaces`, `surfaceRefForId`) are owned by the
  * Wall and injected here (docs/specs/dor-cli.md).
  */
 export function useDorControl({
@@ -371,7 +370,7 @@ export function useDorControl({
   surfaceRefForId,
   createSplitSurface,
   createContentSurface,
-  killPaneImmediately,
+  isClosingSurface,
   closeSurface,
   lastAgentBrowserBinaryPathRef,
 }: {
@@ -404,9 +403,8 @@ export function useDorControl({
     title: string;
     focusNeutral?: boolean;
   }) => ParseResult<{ id: string; ref: string; status: 'created' | 'replaced' }>;
-  /** Immediate teardown with no archive step — `dor ensure`'s throwaway split
-   *  only (docs/specs/notepad.md → "Closure"). */
-  killPaneImmediately: (id: string) => void;
+  /** A Wall closure in flight, independent of another caller freezing notes. */
+  isClosingSurface: (id: string) => boolean;
   /** The user-visible closure path: archive the Surface's notes, then tear it
    *  down. A string means the closure was refused, and is why; the Surface is
    *  still here. */
@@ -490,7 +488,7 @@ export function useDorControl({
   /** A Surface a command may still target: not mid-fade, and not mid-closure
    *  (`closeSurface` archives before it tears down; a match made meanwhile
    *  would be acted on moments before it vanishes). */
-  const isTargetable = useCallback((id: string) => !lath.isDying(id) && !isSurfaceClosing(id), [lath]);
+  const isTargetable = useCallback((id: string) => !lath.isDying(id) && !isClosingSurface(id), [lath, isClosingSurface]);
 
   const findSurfaceIdRunningCommand = useCallback((command: string, cwdPath: string): string | null => {
     const ids = [
@@ -768,14 +766,13 @@ export function useDorControl({
           INTEGRATION_DETECT_TIMEOUT_MS,
           detail.signal,
         );
-        if (integrated !== 'ready') {
-          // Tear down the throwaway split. The focus-neutral create never selected
-          // it, so the kill's live selection check leaves the caller's selection
-          // where ensure found it. A `--minimize` create is already a door;
-          // killPaneImmediately tears the door down too — disposing the session and
-          // removing it from the baseboard.
-          killPaneImmediately(result.value.id);
-          detail.respond({ ok: false, error: integrated === 'aborted' ? ENSURE_CANCELLED : missingIntegrationError(ensureShell) });
+        if (detail.signal?.aborted || integrated !== 'ready') {
+          // The temporary pane is visible during integration detection and may
+          // have acquired notes. Preserve the ordinary closure contract even
+          // when the client has gone away (docs/specs/notepad.md → "Closure").
+          const reason = detail.signal?.aborted || integrated === 'aborted' ? ENSURE_CANCELLED : missingIntegrationError(ensureShell);
+          const refused = await closeSurface(result.value.id, 'silent');
+          detail.respond({ ok: false, error: refused ? `${reason}; temporary surface kept open: ${refused}` : reason });
           return;
         }
         detail.respond({
@@ -1088,7 +1085,7 @@ export function useDorControl({
 
     window.addEventListener('dormouse:control-request', handler);
     return () => window.removeEventListener('dormouse:control-request', handler);
-  }, [buildDorSurfaces, buildDorSurfaceList, closeSurface, createContentSurface, createSplitSurface, ensureAgentBrowserSurface, findSurfaceIdRunningCommand, killPaneImmediately, requireBrowserSurface, requireListedSurface, requireTerminalSurface, resolveListedSurface, resolveVisibleSurface, surfaceRefForId, lath, nav]);
+  }, [buildDorSurfaces, buildDorSurfaceList, closeSurface, createContentSurface, createSplitSurface, ensureAgentBrowserSurface, findSurfaceIdRunningCommand, requireBrowserSurface, requireListedSurface, requireTerminalSurface, resolveListedSurface, resolveVisibleSurface, surfaceRefForId, lath, nav]);
 
   return { findSurfaceByParams, updateSurfaceParams };
 }

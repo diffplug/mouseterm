@@ -117,13 +117,13 @@ Source of truth: `lib/src/components/NotepadArchiveView.tsx`; the Settings entry
 
 **A terminal Surface's process CWD is refreshed immediately before its batch is built** — every such Surface at once, bounded as one batch at `PROCESS_CWD_REFRESH_MS`, a timeout, refusal, or synchronous lookup error keeping whatever the Session last reported, and **never overriding, or even asking about, a CWD the shell integration reported** — so a shell with no CWD escapes still archives where it was, and no Surface pays for an answer that would be discarded.
 
-**The immediate-teardown primitive is reachable only once the archive question is settled, or from a Surface that cannot have taken a note**: `closeSurface` after its append lands or its Close anyway answer discards the notes, and `dor ensure`'s integration-timeout teardown of the throwaway split it just created.
+**Must route `dor ensure` cancellation and integration-timeout cleanup through `closeSurface`**, archiving notes entered in the temporary pane or retaining it if closure fails. **Must call the immediate-teardown primitive only after the archive question is settled.**
 
 **Must check Helper work before archiving and again before teardown.** If work begins during the write, retain the live notes and pending batch for replacement on retry. The parent's notes stay frozen through both checks. Close anyway discards notes only after the same Helper guard accepts closure.
 
 On a failed archive:
 
-- **A blockable closure keeps the Surface open** behind a pane-anchored error offering **Keep open** (default) and **Close anyway**, which discards that Surface's notes; without the escape an unwritable archive would make every Surface unclosable. **Close anyway and Quit anyway write nothing**: a batch an earlier attempt landed before reporting failure stays in the Archive rather than risking a second refused write.
+- **A blockable closure keeps the Surface open** behind a pane-anchored error offering **Keep open** (default) and **Close anyway**, which discards that Surface's notes; without the escape an unwritable archive would make every Surface unclosable. **Must perform no new archive write for Close anyway or Quit anyway**: a batch an earlier attempt landed before reporting failure stays in the Archive rather than risking a second refused write.
 - **Refused closures queue, oldest first, one prompt on screen**, so a second refusal cannot orphan the Surface waiting on the first; a Surface already queued has its message replaced.
 - **`dor kill` returns an error, raises no prompt, and the Surface stays** — the caller is a command, not someone looking at the Wall.
 - **An aborted `AbortSignal` suppresses the forget step.** The mutation still finishes, but the live notes stay, so a caller that stopped waiting cannot empty a notepad behind the user; a later close re-archives them once.

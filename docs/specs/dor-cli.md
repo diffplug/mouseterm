@@ -229,8 +229,10 @@ late response for a reaped id is a silent no-op on the server.
 
 **Must cancel `ensure`'s polling when the client disconnects.** Cancellation
 before an interrupted command returns to its prompt prevents relaunch;
-cancellation during initial integration detection removes the throwaway split.
+cancellation during initial integration detection closes the temporary Surface per `docs/specs/notepad.md` → "Closure".
 `lib/src/components/Wall.test.tsx` pins both paths.
+
+**Must exclude Surfaces with a Wall closure in progress from reuse.** An unrelated notes freeze permits reuse.
 
 Source of truth: `standalone/sidecar/dor-control-server.js`,
 `dor/src/control-client.ts`, `dor/src/protocol.ts`, `peerDirIsSafe` in
@@ -353,7 +355,7 @@ The spec keeps the behavior help cannot express:
 | Command | Behavioral contract |
 |---|---|
 | `split` | **Only a bare split focuses the new Surface.** A `--` marker or command tail leaves the caller focused; pre-parse preserves the marker stricli discards. |
-| `ensure` | **Must have a `--` command tail.** Matching uses the exact OSC 633 command plus resolved CWD; `cmd.exe` without integration fails immediately, other unintegrated shells time out after 8s and lose their throwaway split. `--restart` drives the live PTY in place, preserving layout and minimized/visible state, so it works on Doors too. |
+| `ensure` | **Must have a `--` command tail.** Matching uses the exact OSC 633 command plus resolved CWD; `cmd.exe` without integration fails immediately, other unintegrated shells time out after 8s and close through the notepad coordinator. `--restart` drives the live PTY in place, preserving layout and minimized/visible state, so it works on Doors too. |
 | `send` | **Must select exactly one input mode.** Text then key is the only mixed order; duplicate flags require the explicit sequence form. |
 | `read` | Clean, ANSI-free rendered lines; line limits count rendered lines. |
 | `await` | **Must name `--until quiet\|exit`; never infer it.** Timeout 1–86400 whole seconds, default 600; `alert.md` owns wake semantics. |

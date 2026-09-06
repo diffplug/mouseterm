@@ -119,10 +119,9 @@ const closedParents = new WeakSet<object>();
 
 /** The parent Surface is retiring (kill, renderer swap, shell replacement):
  *  dispose its helper, and refuse an `openHelper` whose host round trip lands
- *  afterwards, which would otherwise spawn a helper PTY nothing can reach. A
- *  helper mid-promotion is left alone: it is becoming its own pane. */
+ *  afterwards, which would otherwise spawn a helper PTY nothing can reach. */
 export function closeHelperParent(parentId: string): void {
-  if (!helpers.get(parentId)?.promoting) disposeHelper(parentId);
+  disposeHelper(parentId);
   const entry = registry.get(parentId);
   if (entry) closedParents.add(entry);
 }

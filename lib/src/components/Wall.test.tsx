@@ -20,7 +20,7 @@ import type { PlatformAdapter } from '../lib/platform/types';
 import * as terminalRegistry from '../lib/terminal-registry';
 import { UNNAMED_PANEL_TITLE } from '../lib/terminal-registry';
 import { __resetArchiveServiceForTests } from '../lib/notepad/archive-service';
-import { addPlainNote, clearAllNotepads, getNotes } from '../lib/notepad/notepad-store';
+import { addPlainNote, beginClosing, clearAllNotepads, getNotes } from '../lib/notepad/notepad-store';
 import type { NotepadArchiveV1 } from '../lib/notepad/types';
 import { createTerminalPaneState, type TerminalPaneState } from '../lib/terminal-state';
 
@@ -238,6 +238,93 @@ describe('Wall on the Lath engine', () => {
     await flush();
     expect(leafCount()).toBe(1);
     expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+  });
+
+  it('reuses a running Surface while another archive caller holds its notes freeze', async () => {
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" />));
+    await flush();
+    const cwd = { path: '/repo', pathKind: 'posix', isRemote: false, source: 'osc633', updatedAt: 0 } as const;
+    vi.spyOn(terminalRegistry, 'getTerminalPaneState').mockReturnValue(createTerminalPaneState({
+      cwd,
+      currentCommand: { id: 'run', rawCommandLine: 'pnpm dev', displayCommand: 'pnpm dev', cwdAtStart: cwd, startedAt: 0, source: 'osc633_E' },
+    }));
+    const release = beginClosing(['pane-a']);
+    const respond = vi.fn();
+    try {
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('dormouse:control-request', { detail: {
+          method: SURFACE_CONTROL_METHODS.ensure, params: { command: ['pnpm', 'dev'], cwd: '/repo' }, respond,
+        } }));
+      });
+      expect(respond).toHaveBeenCalledWith({ ok: true, result: expect.objectContaining({ status: 'existing', surfaceId: 'pane-a' }) });
+      expect(leafCount()).toBe(1);
+    } finally { release(); }
+  });
+
+  it('does not reuse a running Surface while its own close is archiving', async () => {
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" />));
+    await flush();
+    const cwd = { path: '/repo', pathKind: 'posix', isRemote: false, source: 'osc633', updatedAt: 0 } as const;
+    vi.spyOn(terminalRegistry, 'getTerminalPaneState').mockReturnValue(createTerminalPaneState({
+      cwd,
+      currentCommand: { id: 'run', rawCommandLine: 'pnpm dev', displayCommand: 'pnpm dev', cwdAtStart: cwd, startedAt: 0, source: 'osc633_E' },
+    }));
+    vi.spyOn(terminalRegistry, 'isPaneOscDriven').mockReturnValue(true);
+    act(() => { addPlainNote('pane-a', 'keep this note'); });
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const saveOriginal = fake.notepadArchive.save.bind(fake.notepadArchive);
+    const save = vi.spyOn(fake.notepadArchive, 'save').mockImplementation(async (...args) => { await gate; return saveOriginal(...args); });
+    const killed = vi.fn();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('dormouse:control-request', { detail: {
+        method: SURFACE_CONTROL_METHODS.kill, params: { surface: 'surface:1', confirmation: { mode: 'dangerously' } }, respond: killed,
+      } }));
+    });
+    await flush();
+    expect(save).toHaveBeenCalled();
+    const respond = vi.fn();
+    try {
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('dormouse:control-request', { detail: {
+          method: SURFACE_CONTROL_METHODS.ensure, params: { command: ['pnpm', 'dev'], cwd: '/repo' }, respond,
+        } }));
+      });
+      expect(respond).toHaveBeenCalledWith({ ok: true, result: expect.objectContaining({ status: 'created' }) });
+      expect(killed).not.toHaveBeenCalled();
+    } finally { release(); await flush(); }
+    expect(killed).toHaveBeenCalledWith({ ok: true, result: expect.objectContaining({ status: 'killed', surfaceId: 'pane-a' }) });
+  });
+
+  it.each([false, true])('preserves notes entered in a cancelled ensure pane (archive fails: %s)', async fails => {
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" />));
+    await flush();
+    vi.spyOn(terminalRegistry, 'isPaneOscDriven').mockReturnValue(false);
+    vi.spyOn(terminalRegistry, 'getDefaultShellOpts').mockReturnValue({ shell: '/bin/bash' });
+    const controller = new AbortController();
+    const respond = vi.fn();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('dormouse:control-request', { detail: {
+        method: SURFACE_CONTROL_METHODS.ensure, params: { command: ['pnpm', 'dev'], cwd: '/repo', surface: 'surface:1' }, signal: controller.signal, respond,
+      } }));
+    });
+    const temporaryId = Array.from(container.querySelectorAll('[data-lath-leaf]')).map(el => el.getAttribute('data-lath-leaf')!).find(id => id !== 'pane-a')!;
+    expect(temporaryId).toBeTruthy();
+    act(() => { addPlainNote(temporaryId, 'written while integration is pending'); });
+    if (fails) vi.spyOn(fake.notepadArchive, 'save').mockRejectedValue(new Error('disk full'));
+    await act(async () => controller.abort());
+    await flush();
+    if (fails) {
+      expect(respond).toHaveBeenCalledWith({ ok: false, error: expect.stringContaining('temporary surface kept open: notepad archive failed: disk full') });
+      expect(getNotes(temporaryId)).toHaveLength(1);
+      expect(container.querySelector(`[data-lath-leaf="${temporaryId}"]`)).not.toBeNull();
+    } else {
+      expect(respond).toHaveBeenCalledWith({ ok: false, error: 'ensure was cancelled' });
+      expect(container.querySelector(`[data-lath-leaf="${temporaryId}"]`)).toBeNull();
+      const archive = (await fake.notepadArchive.load())?.raw as NotepadArchiveV1;
+      expect(archive.batches.flatMap(batch => batch.notes)).toEqual([expect.objectContaining({ content: { kind: 'plain', text: 'written while integration is pending' } })]);
+      expect(getNotes(temporaryId)).toEqual([]);
+    }
   });
 
   it('renders a pane through LathHost, splits via wallActions, kills, and persists the Lath layout on save', async () => {

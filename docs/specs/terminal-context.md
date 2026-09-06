@@ -7,7 +7,7 @@
 
 ## Helper lifecycle
 
-- **Must create at most one helper per source, lazily on first context opening.** Concurrent openings share the same pending creation. Closing the source during startup cancels creation. Helpers cannot have helpers.
+- **Must create at most one helper per source, lazily on first context opening.** Concurrent openings share the same pending creation. Closing the source during startup cancels creation, including while its registry entry remains for the exit animation. Helpers cannot have helpers.
 - **Must start with the configured shell in the source's local directory**, using the ordinary split fallback when unavailable. Shell exports and virtual environments are not inherited. SSH integration is outside this feature.
 - **Must inject autorun only after integrated shell readiness**, accepting prompt-start and prompt-end/editing states with no current command. User input before injection cancels it. After eight seconds without readiness, show an unsupported state and never write a timeout fallback.
 - **Must treat typing, paste, accepted drops, and application mouse input as user work**, disarming automatic refresh until Reset or Promote. Selection, copying, resize, and terminal protocol replies do not count. Returning to idle does not rearm autorun.
@@ -29,7 +29,7 @@
 
 **Must make Reset an explicit discard**, confirming loss of scrollback, unfinished input, running programs, and unsaved edits. Cancellation changes nothing; confirmation disposes the old helper and launches a fresh one using the source's current directory and current global setting. Stale timers cannot write to the replacement.
 
-Source of truth: `openHelper` / `helperHasWork` / `disposeHelper` in `lib/src/lib/helper-terminal.ts`; `markSessionTouched` / `parkElement` in `lib/src/lib/terminal-lifecycle.ts`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`. Tests: `lib/src/lib/helper-terminal.test.ts`.
+Source of truth: `openHelper` / `helperHasWork` / `disposeHelper` / `closeHelperParent` in `lib/src/lib/helper-terminal.ts`; `markSessionTouched` / `parkElement` in `lib/src/lib/terminal-lifecycle.ts`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`. Tests: `lib/src/lib/helper-terminal.test.ts`.
 
 Notepad sharing and pin restrictions follow `docs/specs/notepad.md` → "Helper terminals".
 
@@ -37,7 +37,7 @@ Notepad sharing and pin restrictions follow `docs/specs/notepad.md` → "Helper 
 
 **Must promote the actual Session into a regular split beside its source**, preserving the PTY, xterm, scrollback, directory, partial input, and identity. Cancel pending autorun, close context, assign the public Surface ref, and focus the promoted terminal. Failed placement restores auxiliary host ownership. The source's next opening creates a new helper.
 
-**Must reject Reset and duplicate Promote during ownership transfer**, including from a reopened context. A failed transfer or rollback reports its error and resumes inspection so promotion can be retried.
+**Must reject Reset, source retirement, and duplicate Promote during ownership transfer**, including from a reopened context. A failed transfer or rollback reports its error and resumes inspection so promotion can be retried.
 
 **Must close an idle helper with its source**, even when it has user input or scrollback. The idle shell itself is not running work. Existing source-work confirmation remains applicable.
 
