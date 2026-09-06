@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from '@storybook/react';
 import { TerminalPane } from '../components/TerminalPane';
 import {
   flattenScenario,
-  SCENARIO_LS_OUTPUT,
   SCENARIO_ANSI_COLORS,
   SCENARIO_LONG_RUNNING,
   SCENARIO_FAST_OUTPUT,
@@ -27,11 +26,6 @@ const meta: Meta<typeof TerminalContainer> = {
 
 export default meta;
 type Story = StoryObj<typeof TerminalContainer>;
-
-export const LsOutput: Story = {
-  args: { id: 'term-ls' },
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_LS_OUTPUT) } },
-};
 
 export const AnsiColors: Story = {
   args: { id: 'term-colors' },
