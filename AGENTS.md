@@ -9,14 +9,9 @@ pnpm install     # install deps
 pnpm build       # build lib, vscode extension, Pocket, and website
 ```
 
-**For `innerdogfood` inside Dormouse, run:**
-
-```sh
-dor ensure -- pnpm innerdogfood
-dor ab --key innerdogfood open http://localhost:1420
-```
-
-See `docs/specs/transport.md` → "Standalone browser-dev harness".
+**Run `innerdogfood` in visible panes** — `dor ensure -- pnpm innerdogfood`, then
+`dor ab --key innerdogfood open http://localhost:1420`
+(`docs/specs/transport.md` → "Standalone browser-dev harness").
 
 **Open every PR as a draft.** Chromatic bills per snapshot and skips drafts, so
 marking a PR ready for review is what spends them.

@@ -349,8 +349,8 @@ describe('terminal-mouse-router: override suppression', () => {
     return pointerEvent({ pointerType: 'mouse', ...overrides });
   }
 
-  // Drives a left-button mouse press into an active selection drag (capture +
-  // pendingDrag created on press, capture taken once movement crosses threshold).
+  // Drives a left-button mouse press into an active selection drag (pendingDrag
+  // created on press; capture and drag both begin once movement crosses threshold).
   function startMouseDrag(element: FakeElement) {
     element.emit('pointerdown', mousePointer({ clientX: 5, clientY: 5 }));
     element.emit('mousedown', mouseEvent({ clientX: 5, clientY: 5 }));
@@ -388,7 +388,9 @@ describe('terminal-mouse-router: override suppression', () => {
   it('does not capture the mouse pointer for non-left buttons', () => {
     const { cleanup, element } = createHarness(windowHost);
 
-    element.emit('pointerdown', mousePointer({ button: 2 }));
+    element.emit('pointerdown', mousePointer({ button: 2, clientX: 5, clientY: 5 }));
+    element.emit('mousedown', mouseEvent({ button: 2, clientX: 5, clientY: 5 }));
+    windowHost.emit('mousemove', mouseEvent({ button: 2, clientX: 25, clientY: 15 }));
 
     expect(element.setPointerCapture).not.toHaveBeenCalled();
     cleanup();

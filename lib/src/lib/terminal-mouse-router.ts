@@ -96,6 +96,9 @@ export function attachTerminalMouseRouter({
   // released over the host page, which lets us finalize an outside release at
   // once instead of waiting for the window-mousemove heal.
   let mouseDragPointerId: number | null = null;
+  // The id of the latest mouse pointerdown, bridged to the compatibility mousedown
+  // that follows it: only pointerdown carries a pointer id, and the capture below
+  // happens on a window mousemove, which has none.
   let mousePressPointerId: number | null = null;
   // True between a captured mouse pointerup we saw and the compatibility mouseup
   // we expect to follow it for an *inside* release; see onWindowPointerUp.
@@ -158,10 +161,11 @@ export function attachTerminalMouseRouter({
       // Capture only once this is a selection drag. Capturing the wrapper on
       // pointerdown retargets a plain click's mouseup outside xterm's screen,
       // so its OSC 8 link handler never sees the release.
-      if (!pendingDrag.touchLike && mousePressPointerId !== null) {
+      if (!pendingDrag.touchLike && pendingDrag.pointerId !== null) {
+        const pressPointerId = pendingDrag.pointerId;
         try {
-          element.setPointerCapture(mousePressPointerId);
-          mouseDragPointerId = mousePressPointerId;
+          element.setPointerCapture(pressPointerId);
+          mouseDragPointerId = pressPointerId;
         } catch {
           // The window-mousemove heal still covers an outside release.
           mouseDragPointerId = null;
@@ -229,14 +233,15 @@ export function attachTerminalMouseRouter({
       consumePointerEvent(ev, true);
       return;
     }
-    beginPendingDrag(ev, { pointerId: null, touchLike: false });
+    beginPendingDrag(ev, { pointerId: mousePressPointerId, touchLike: false });
   };
 
   const onPointerDown = (ev: PointerEvent) => {
     if (ev.pointerType === 'mouse') {
       if (ev.button !== 0) return;
-      const { terminalOwns } = terminalOwnsEvent(ev);
-      if (!terminalOwns) return;
+      // Only stash the id. Whether the terminal owns the press is decided by the
+      // mousedown that follows, which is what creates pendingDrag — and without a
+      // pendingDrag the id is never read.
       mousePressPointerId = ev.pointerId;
       return;
     }
@@ -273,13 +278,14 @@ export function attachTerminalMouseRouter({
 
   const onWindowMouseMove = (ev: MouseEvent) => {
     // Backstop for engines that don't deliver a cross-frame captured pointerup
-    // (see onPointerDown). A mouse drag is otherwise kept alive only by the
-    // window 'mouseup' below, and when the button is released outside our iframe
-    // that mouseup is delivered to the host document and never reaches us,
-    // leaving the drag stuck. The next move we see (e.g. when the pointer
-    // re-enters) reports no buttons held — treat that as the mouseup we missed
-    // and finalize the drag in place. A genuine drag that leaves and re-enters
-    // still holding the button reports buttons===1, so this never fires mid-drag.
+    // (see the capture in updatePendingOrActiveDrag). A mouse drag is otherwise
+    // kept alive only by the window 'mouseup' below, and when the button is
+    // released outside our iframe that mouseup goes to the host document and
+    // never reaches us, leaving the drag stuck. The next move we see (e.g. when
+    // the pointer re-enters) reports no buttons held — treat that as the mouseup
+    // we missed and finalize the drag in place. A genuine drag that leaves and
+    // re-enters still holding the button reports buttons===1, so this never
+    // fires mid-drag.
     if (ev.buttons === 0 && (pendingDrag || isDragging(id))) {
       finishPendingOrActiveDrag(ev);
       return;
@@ -291,7 +297,6 @@ export function attachTerminalMouseRouter({
     // The button came up inside the iframe; cancel any pending outside-release
     // finalize (see onWindowPointerUp) and end the drag through the normal path.
     awaitingOutsideMouseUp = false;
-    mousePressPointerId = null;
     finishPendingOrActiveDrag(ev);
   };
 
@@ -303,7 +308,6 @@ export function attachTerminalMouseRouter({
 
   const onWindowPointerUp = (ev: PointerEvent) => {
     if (ev.pointerType === 'mouse') {
-      if (mousePressPointerId === ev.pointerId) mousePressPointerId = null;
       if (mouseDragPointerId !== ev.pointerId) return;
       mouseDragPointerId = null;
       // Capture auto-releases on pointerup, but be explicit.
