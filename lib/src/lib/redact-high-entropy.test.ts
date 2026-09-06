@@ -7,6 +7,7 @@ describe('redactHighEntropyTokens', () => {
     ['uppercase hex', '8B7D0C4E9F2A61035E8C9D1F04A76B23'],
     ['base32', 'K7QW2MXP5RZV3NAT6YHC4BSD'],
     ['lowercase base32', 'k7qw2mxp5rzv3nat6yhc4bsd'],
+    ['padded base32', 'K7QW2MXP5RZV3NAT6YHC4BSD======'],
     ['base64', 'k8Xq+W2m/P5rZ9vN3aT6yHc4BsD0EfGj'],
     ['padded base64', 'k8Xq+W2m/P5rZ9vN3aT6yA=='],
     ['base64url', 'k8Xq-W2m_P5rZ9vN3aT6yHc4BsD0EfGj'],
@@ -30,21 +31,27 @@ describe('redactHighEntropyTokens', () => {
     expect(redactHighEntropyTokens(text)).toBe(text);
   });
 
-  // Each pair below moves one constant in `TIERS` across its boundary; without
-  // them the narrower tiers are indistinguishable from the base64 tier alone.
+  // Pin the narrower alphabets separately from the base64 tier.
   it.each([
     ['hex at the 3.0 cutoff', '8b7d0c4e8b7d0c4e', true],
     ['hex below it', '8b7d0c4e8b7d0c4d', false],
+    ['15-char hex, too short', '8b7d0c4e9f2a610', false],
     ['16-char base32, too short for the base64 tier', 'K7QW2MXP5RZV3NAT', true],
+    ['15-char base32, too short', 'K7QW2MXP5RZV3NA', false],
+    ['base32 at the 3.5 cutoff', 'ABCDEFGHJKLMABCD', true],
     ['16-char base32 below the 3.5 cutoff', 'k7qw2mxpk7qw2mxp', false],
     ['16-char base64, too short for any tier', 'k8Xq+W2m/P5rZ9vN', false],
-  ])('%s: redacted=%s', (_kind, token, redacted) => {
+    ['19-char base64, too short', 'k8Xq+W2m/P5rZ9vN3aT', false],
+    ['20-char base64', 'k8Xq+W2m/P5rZ9vN3aT6', true],
+    ['base64 at the 4.0 cutoff', '0123456789ghijkl0123456789ghijkl', true],
+    ['base64 below it', '0123456789ghijkl0123456789ghijkk', false],
+  ])('%s', (_kind, token, redacted) => {
     expect(redactHighEntropyTokens(token)).toBe(redacted ? 'REDACTED' : token);
   });
 
   it('folds case on case-insensitive alphabets, so `A` and `a` are one symbol', () => {
-    // 3.5 bits counted as 16 distinct symbols, 2.75 counted as the 8 hex digits
-    // it actually carries — only the folded score is below the 3.0 hex cutoff.
+    // Case-sensitive entropy is 3.5 bits; folding gives 2.75 bits, below the
+    // hex cutoff. Treating case variants as distinct would wrongly redact it.
     expect(redactHighEntropyTokens('aAbBcCdDeEfF0000')).toBe('aAbBcCdDeEfF0000');
   });
 

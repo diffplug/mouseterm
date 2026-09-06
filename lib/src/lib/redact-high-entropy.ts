@@ -1,8 +1,7 @@
 /** One opaque-token shape: the alphabet, the length below which a sample is too
  * short to judge, and the bits/character above which it reads as random. Ordered
  * narrowest alphabet first, so a token is scored against the tightest one it fits.
- * The cutoffs sit below each alphabet's ceiling because a finite sample never
- * reaches it (rationale). */
+ * Finite samples often fall below their alphabet's maximum entropy. */
 interface TokenTier {
   readonly alphabet: RegExp;
   readonly minLength: number;
@@ -33,7 +32,7 @@ function entropyOf(value: string): number {
 }
 
 /** Replace opaque ASCII tokens; this is a randomness heuristic, not a guarantee
- * that all secrets (or only secrets) are removed (rationale). Padding joins the
+ * that all secrets (or only secrets) are removed. Padding joins the
  * replaced span but not the entropy estimate. */
 export function redactHighEntropyTokens(text: string): string {
   return text.replace(/([A-Za-z0-9+/_-]{16,})=*/g, (token, value: string) => {
