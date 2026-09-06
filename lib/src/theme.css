@@ -126,7 +126,7 @@ body {
   animation: terminal-context-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
-.terminal-context-content {
+.terminal-context-enter .terminal-context-content {
   animation: terminal-context-content 140ms ease-out 160ms backwards;
 }
 
@@ -158,11 +158,11 @@ body {
   to { opacity: 0; }
 }
 
-/* Reduced motion dismisses without an exit class (`motionIsInstant` in
- * `lib/src/lib/ui-geometry.ts`), so only the reveal needs a static substitute. */
+/* Also honor preference changes during a mounted entrance. `motionIsInstant`
+ * skips these classes altogether when reduced motion or static layout is known. */
 @media (prefers-reduced-motion: reduce) {
   .terminal-context-enter,
-  .terminal-context-content { animation: none; }
+  .terminal-context-enter .terminal-context-content { animation: none; }
 }
 
 /* TODO dismiss flourish. Sequence across 500ms:

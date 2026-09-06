@@ -6,6 +6,7 @@ import { AgentRobotIcon } from './BrowserDisplayIcon';
 import type { PortUrlEntry } from './port-url';
 import type { HelperStatus } from '../../lib/helper-terminal';
 import { WindowFocusedContext } from './wall-context';
+import { motionIsInstant } from '../../lib/ui-geometry';
 
 export type PortMode = 'system' | 'iframe' | 'ab-screencast' | 'ab-popout';
 export type ContextScan = { status: 'scanning' | 'failed' } | { status: 'loaded'; entries: PortUrlEntry[] };
@@ -33,7 +34,7 @@ export function ContextAction({ children, label, onClick, disabled = false, busy
   const windowFocused = useContext(WindowFocusedContext);
   // Native app launches can leave :hover stale until this window regains focus.
   const color = muted ? 'text-muted' : windowFocused ? SUBTLE_ACTION_COLOR_CLASS : SUBTLE_ACTION_REST_COLOR_CLASS;
-  return <button type="button" title={label} aria-label={label} aria-busy={busy || undefined} disabled={disabled || busy} onClick={onClick}
+  return <button type="button" title={label} aria-label={label} aria-busy={busy || undefined} aria-disabled={busy || undefined} disabled={disabled} onClick={busy ? undefined : onClick}
     className={`inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 ${busy ? '' : 'disabled:opacity-40'} ${windowFocused ? SUBTLE_ACTION_INTERACTION_CLASS : ''} ${color}`}>{children}</button>;
 }
 
@@ -96,6 +97,7 @@ function snapshotExit(surface: HTMLElement, content: HTMLElement | null) {
 }
 
 export function TerminalContextView(p: TerminalContextViewProps) {
+  const motionClass = motionIsInstant() ? '' : p.closing ? 'terminal-context-exit' : 'terminal-context-enter';
   const surface = useRef<HTMLElement>(null);
   const content = useRef<HTMLDivElement>(null);
   // Offsets of the opening pointer inside the surface; the keyframes clamp them.
@@ -134,7 +136,7 @@ export function TerminalContextView(p: TerminalContextViewProps) {
   const submit = async (action: Action) => { setBusy(true); if (await attempt(action)) setDetail(null); setBusy(false); };
   const status = p.status === 'waiting' ? 'Waiting for shell…' : p.status === 'off' ? 'Autorun off' : p.status === 'unsupported' ? 'Autorun skipped: shell readiness unavailable' : p.status === 'exited' ? 'Helper exited' : preserved ? 'Skipping autorun to preserve user keystrokes' : p.status === 'running' ? `Running ${p.command}…` : `${p.command} autoran`;
   return <section ref={surface} aria-label="Terminal context" data-terminal-context tabIndex={-1} inert={p.closing} aria-hidden={p.closing || undefined} style={SURFACE_STYLE}
-    className={`${TERMINAL_CONTEXT_SURFACE_CLASS} ${p.closing ? 'terminal-context-exit pointer-events-none' : 'terminal-context-enter'} absolute inset-4 flex flex-col overflow-hidden text-sm`}
+    className={`${TERMINAL_CONTEXT_SURFACE_CLASS} ${motionClass} ${p.closing ? 'pointer-events-none' : ''} absolute inset-4 flex flex-col overflow-hidden text-sm`}
     onContextMenu={event => event.preventDefault()}
     onKeyDown={event => {
       if ((event.target as HTMLElement).closest('[data-helper-terminal]') && !detail) return;
@@ -182,11 +184,11 @@ export function TerminalContextView(p: TerminalContextViewProps) {
         {(p.warning || (!detail && error)) && <div role="alert" className="mx-3 mb-2 border-l-4 border-error bg-error/10 px-3 py-2">{p.warning || error}</div>}
         <div className="min-h-0 flex-1 bg-terminal-bg text-terminal-fg">{p.children}</div>
       </div>
-    </div>
     {detail && <div className="absolute inset-0 z-10 bg-app-bg/35" onClick={() => setDetail(null)}><div ref={detailRoot} role="dialog" aria-modal="true" aria-label={detail === 'title' ? 'Title sources' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal'} className={`${POPUP_SURFACE_CLASS} absolute left-3 right-3 top-9 p-4`} onClick={e => e.stopPropagation()}>
       <div className="mb-3 flex items-center justify-between font-semibold"><span>{detail === 'title' ? 'Why this title?' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal?'}</span><ContextAction label="Close details" onClick={() => setDetail(null)} muted><XIcon size={14} /></ContextAction></div>
       {detail === 'title' ? <div className="grid grid-cols-[8rem_1fr_auto] gap-x-3 gap-y-2">{p.titleSources.map((source, index) => <div className="contents" key={index}><span className="text-muted">{source.source}</span><span>{source.value}</span><span className="text-muted">{source.note}</span></div>)}</div> : detail === 'modify' ? <><input autoFocus aria-label="Default helper autorun command" value={command} onChange={e => setCommand(e.target.value)} maxLength={4096} placeholder="Leave empty to turn autorun off" className="w-full border-b border-input-border bg-input-bg px-2 py-1.5 outline-focus-ring" /><p className="mb-4 mt-2 text-muted">Global default. Applies to new and reset helpers. Leave empty to turn autorun off.</p><div className="flex justify-end gap-2"><ContextAction label="Reset helper terminal" onClick={() => setDetail('reset')}>Reset helper…</ContextAction><ContextAction label="Save default" disabled={busy} onClick={() => void submit(() => p.onModify(command))}>Save default</ContextAction></div></> : <><p>Discard this helper, including scrollback, unfinished input, and any running program? Unsaved edits will be lost.</p><p className="mb-4 mt-2 text-muted">A fresh helper starts in the parent's current directory using the global autorun default.</p><div className="flex justify-end gap-2"><ContextAction label="Keep helper" onClick={() => setDetail(null)}>Keep helper</ContextAction><ContextAction label="Discard and reset" disabled={busy} onClick={() => void submit(p.onReset)}>Discard and reset</ContextAction></div></>}
       {error && <p role="alert" className="mt-2 text-error">{error}</p>}
     </div></div>}
+    </div>
   </section>;
 }
