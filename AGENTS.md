@@ -9,6 +9,9 @@ pnpm install     # install deps
 pnpm build       # build lib, vscode extension, Pocket, and website
 ```
 
+**Open every PR as a draft.** Chromatic bills per snapshot and skips drafts, so
+marking a PR ready for review is what spends them.
+
 ## Architecture
 
 - **`lib/`** — Shared React + TailwindCSS frontend library: components, tests, Storybook.
@@ -32,7 +35,7 @@ pnpm build       # build lib, vscode extension, Pocket, and website
 
 A spec is the accurate reference for the current code: it states the invariants and edge cases the code alone does not show, and its paired `<foo>.rationale.md` holds the evidence. To modify a feature, read its spec plus the rationale sections for the headings you touch.
 
-One implementation map per spec: an exhaustive `Files` / `Code Map` section or section-local `Source of truth:` pointers, never both.
+**May combine a concise `Files` / `Code Map` section with section-local `Source of truth:` pointers.** The map gives readers key entrypoints to follow through imports; the pointers locate the implementation of a particular rule. Map the useful starting points, not every file. Short specs need no map when their local pointers already make navigation clear. Keep behavior and invariants in their owning sections, rather than repeating them in map descriptions.
 
 - **`docs/specs/glossary.md`** — Canonical vocabulary: the Surface model, Session layers, `Window ⊃ Workspace ⊃ Pane ⊃ Surface`, transition verbs, invariants I1–I10. Read first; every spec defers to it for state, kind, and verb names.
 - **`docs/specs/layout.md`** — The interaction model over the tiling engine: modes, command-mode dispatch, navigation, minimize/reattach, kill/rename, session lifecycle and persistence recovery, the workspaces-rollout ledger. Read before touching keyboard/navigation/mode/workspace behavior.
@@ -78,7 +81,7 @@ When code covered by a spec changes, change the spec. Where two specs overlap (p
 
 **House form for rules.** A rule leads with a bolded imperative — **Never …**, **Must …**, **May …** — and at most one clause of why; the bold carries the emphasis, so scaffolding ("deliberately", "note that", "it is worth stating") is deleted. An audited rule leads with **FAIL IF** instead — the condition, what the auditor reads, at most one clause of why — and lives only in a `docs/specs/security*.md` spec, each claimed by exactly one domain prompt in `.github/audit/`. A rule list, precedence ladder, or flow renders as invariant bullets or a table, not prose; number rules only where another spec cites them. Mechanism constraining a single module lives as a comment at that code, the spec keeping the one-line rule and a `Source of truth:` pointer; mechanism constraining editors of *other* files stays in the spec. Consolidate `Source of truth:` pointers at the end of a section, as `` `symbol` in `path` `` with full repo paths — a bare file name dodges the path lint and rots. Name the test that pins a rule; never reproduce its case inventory. A diagram earns its place only for ordering or fan-out no table carries; prose beside a figure or table adds only what it cannot show, and a flow converts to a numbered list, never a sentence. A table cell states the fact, the section the rule, the rationale the why; a qualifier repeated in every row becomes a caption. A coined term is defined at its heading, not in an intro. Registries — `docs/specs/terminal-escapes.md`, `docs/specs/shortcuts.md`, the glossary tables — keep their inventories and own no behavior.
 
-Generated help and canonical types own syntax and shape; specs own behavior and cross-boundary invariants, including the contract of a consumer that does not exist yet. Keep specs concise, but never replace an invariant or edge case with only a code pointer. `Source of truth:` is the form for implementation references; protocols, command orchestration, and cross-package boundaries state direction and scope. Docs-only compression spot-checks referenced symbols, message directions, and root-vs-package script ownership against code before committing.
+Generated help and canonical types own syntax and shape; specs own behavior and cross-boundary invariants, including the contract of a consumer that does not exist yet. Keep specs concise, but never replace an invariant or edge case with only a code pointer. `Source of truth:` is the form for targeted implementation references; navigation maps use full repo paths with short role descriptions. Protocols, command orchestration, and cross-package boundaries state direction and scope. Docs-only compression spot-checks referenced symbols, message directions, and root-vs-package script ownership against code before committing.
 
 **Front matter.** Every spec using Session / Pane / Door / baseboard / passthrough vocabulary opens with a `> See \`docs/specs/glossary.md\` for ...` blockquote (exemplars: `layout.md`, `alert.md`, `terminal-state.md`); introducing that vocabulary into a spec without the callout adds it in the same edit. The callout licenses glossary terms bare — never re-explain them locally. The opening blockquotes are the front matter: the callout plus, where useful, one line each for what the spec owns, what it defers and to whom, and what to read first. Ownership is stated there once, never re-disclaimed per section.
 

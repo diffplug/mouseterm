@@ -28,6 +28,20 @@ const HOST_TYPOGRAPHY_VARS: Record<string, string> = {
     "'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
 };
 
+function withHostTypography(vars: Record<string, string>): Record<string, string> {
+  return { ...HOST_TYPOGRAPHY_VARS, ...vars };
+}
+
+/** The values `applyTheme` would paint for a theme, resolved without touching
+ *  the document: imported theme JSON usually omits VSCode registry defaults, and
+ *  Dormouse uses VSCode's overlay selection colors as solid fills. The picker
+ *  previews a candidate through this so a preview cannot drift from the app. */
+export function resolveThemeVars(theme: DormouseTheme): Record<string, string> {
+  const vars = completeThemeVars(withHostTypography(theme.vars), theme.type);
+  flattenSelectionAlpha(vars);
+  return vars;
+}
+
 function hasVisibleTheme(snapshot: AppliedThemeSnapshot): boolean {
   const body = document.body;
   const expectedClass = snapshot.theme.type === 'light' ? 'vscode-light' : 'vscode-dark';
@@ -53,12 +67,9 @@ export function applyTheme(theme: DormouseTheme): void {
     }
   }
 
-  // Imported theme JSON usually omits VSCode registry defaults; materialize
-  // them here so theme.css can read --vscode-* directly without fallbacks.
-  const providedVars = { ...HOST_TYPOGRAPHY_VARS, ...theme.vars };
-  const vars = completeThemeVars(providedVars, theme.type);
-  // Dormouse uses VSCode's overlay selection colors as solid fills.
-  flattenSelectionAlpha(vars);
+  // Materialized so theme.css can read --vscode-* directly without fallbacks.
+  const providedVars = withHostTypography(theme.vars);
+  const vars = resolveThemeVars(theme);
   appliedThemeSnapshot = { theme, providedVars, resolvedVars: vars };
   for (const [name, value] of Object.entries(vars)) {
     document.body.style.setProperty(name, value);

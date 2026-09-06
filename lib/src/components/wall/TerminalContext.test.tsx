@@ -110,6 +110,49 @@ it('keeps a failed promotion visible and retryable', async () => {
   props.onPromote = vi.fn(async () => { throw new Error('Placement failed'); }); render(); await click('Move this terminal into a new pane');
   expect(container.querySelector('[role="alert"]')?.textContent).toBe('Placement failed'); expect(props.onClose).not.toHaveBeenCalled();
 });
+it('keeps a submitting detail button focused so the dialog keeps Escape and its Tab trap', async () => {
+  let reject!: (reason: Error) => void;
+  props.onModify = vi.fn(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
+  props.initialDetail = 'modify'; render();
+  const save = button('Save default');
+  act(() => save.focus());
+  await click('Save default');
+  // In flight: inert via aria-disabled only, so the browser cannot blur it.
+  expect(save.disabled).toBe(false);
+  expect(save.getAttribute('aria-disabled')).toBe('true');
+  expect(document.activeElement).toBe(save);
+  await click('Save default');
+  expect(props.onModify).toHaveBeenCalledOnce();
+  await act(async () => reject(new Error('Command rejected')));
+  // The rejected edit keeps the dialog open, and focus never left the button.
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('Command rejected');
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(save.hasAttribute('aria-disabled')).toBe(false);
+  expect(document.activeElement).toBe(save);
+  // So the <section>'s handlers still receive Tab and Escape from a focused descendant.
+  act(() => save.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true })));
+  // Focus has to *move* and stay in: `contains` alone passes for a no-op Tab. Which element it
+  // lands on is not asserted — jsdom returns a selector list grouped by selector rather than in
+  // document order, so the trap's wrap target differs here from a real browser.
+  expect(document.activeElement).not.toBe(save);
+  expect(container.querySelector('[role="dialog"]')!.contains(document.activeElement)).toBe(true);
+  act(() => (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  expect(props.onClose).not.toHaveBeenCalled();
+});
+it('keeps the focus ring on an in-flight button while withholding only its hover styling', async () => {
+  props.onModify = vi.fn(() => new Promise<void>(() => {}));
+  props.initialDetail = 'modify'; render();
+  const save = button('Save default');
+  const rest = save.className;
+  await click('Save default');
+  // Hover is gated on aria-disabled; focus-visible is not, so the focused button keeps its ring.
+  const hovers = rest.split(' ').filter(c => c.includes('hover:'));
+  expect(hovers.length).toBeGreaterThan(0);
+  for (const hover of hovers) expect(hover).toContain('not-aria-disabled:');
+  for (const ring of ['focus-visible:outline', 'focus-visible:outline-focus-ring', 'enabled:focus-visible:text-link']) expect(save.className.split(' ')).toContain(ring);
+  expect(save.className).toBe(rest);
+});
 it('shows both directories in the mismatch warning', () => {
   props.mismatch = true; props.helperCwd = '~/other'; render(); expect(container.querySelector('[role="alert"]')?.textContent).toContain('~/other'); expect(container.querySelector('[role="alert"]')?.textContent).toContain('~/repo');
 });

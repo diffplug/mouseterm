@@ -76,7 +76,7 @@ The label is the `DerivedHeader` from `deriveHeader(...)`; `docs/specs/terminal-
 
 **Must tint the copyable Surface ref as an action and confirm each successful context copy in its button** with a checkmark and “Copied” for 1.4 seconds, preserving button width and keeping the context open. Failed copies show the action error without success feedback.
 
-**Must suppress context action hover and focus highlights while the window is unfocused**, including after opening a native explorer or system browser.
+**Must suppress context action hover and focus highlights while the window is unfocused**, including after opening a native explorer or system browser. **Must also withhold hover from an in-flight action, which stays focusable and `aria-disabled` rather than `disabled`** so the innermost disclosure keeps a focused descendant for Escape and Tab.
 
 **Must show “Opening…” with a spinner in the directory explorer button during launch and for at least 0.75 seconds**, preserving width and keyboard focus while blocking repeat clicks. Stop immediately on failure and show the action error. Respect reduced motion by keeping the spinner static.
 

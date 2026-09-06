@@ -3,18 +3,27 @@ export { CONSUMED_VSCODE_KEYS, convertVscodeThemeColors, uiThemeToType } from '.
 export {
   applyTheme,
   getAppliedThemeSnapshot,
+  resolveThemeVars,
   restoreActiveTheme,
   setDefaultThemeId,
   subscribeToActiveTheme,
 } from './apply';
 export type { AppliedThemeSnapshot } from './apply';
 export { useRestoredTheme } from './use-restored-theme';
-export { computeDynamicPalette, pickDoorPair, pickDynamicPalette, pickFocusRing } from './dynamic-palette';
+export {
+  computeDynamicPalette,
+  DYNAMIC_PALETTE_SOURCES,
+  dynamicPaletteValuesFrom,
+  pickDoorPair,
+  pickDynamicPalette,
+  pickFocusRing,
+} from './dynamic-palette';
 export type {
   DoorChoice,
   DynamicDoorPick,
   DynamicFocusRingPick,
   DynamicPaletteSnapshot,
+  DynamicPaletteValues,
   DynamicPaletteVars,
   FocusRingCandidate,
 } from './dynamic-palette';

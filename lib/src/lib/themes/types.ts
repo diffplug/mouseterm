@@ -5,9 +5,13 @@ export interface DormouseTheme {
   label: string;
   /** Theme base type */
   type: 'dark' | 'light';
-  /** Background color for picker swatch (editor.background) */
+  /** editor.background, recorded at import. Nothing renders it since the picker
+   *  began resolving previews from `vars`; the persisted-shape guard in
+   *  `store.ts` still requires it. */
   swatch: string;
-  /** Accent color for picker dot (focusBorder) */
+  /** focusBorder, recorded at import. Read only by the website's docs accent
+   *  (`website/src/lib/docs-accent.ts`) — the picker's swatch dot uses the
+   *  runtime focus-ring pick, which can differ when focusBorder is achromatic. */
   accent: string;
   /** --vscode-* CSS variable overrides */
   vars: Record<string, string>;
