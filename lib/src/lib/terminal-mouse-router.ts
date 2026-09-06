@@ -96,6 +96,7 @@ export function attachTerminalMouseRouter({
   // released over the host page, which lets us finalize an outside release at
   // once instead of waiting for the window-mousemove heal.
   let mouseDragPointerId: number | null = null;
+  let mousePressPointerId: number | null = null;
   // True between a captured mouse pointerup we saw and the compatibility mouseup
   // we expect to follow it for an *inside* release; see onWindowPointerUp.
   let awaitingOutsideMouseUp = false;
@@ -154,6 +155,18 @@ export function attachTerminalMouseRouter({
       const dx = ev.clientX - pendingDrag.clientX;
       const dy = ev.clientY - pendingDrag.clientY;
       if (dx * dx + dy * dy < DRAG_THRESHOLD_PX_SQ) return;
+      // Capture only once this is a selection drag. Capturing the wrapper on
+      // pointerdown retargets a plain click's mouseup outside xterm's screen,
+      // so its OSC 8 link handler never sees the release.
+      if (!pendingDrag.touchLike && mousePressPointerId !== null) {
+        try {
+          element.setPointerCapture(mousePressPointerId);
+          mouseDragPointerId = mousePressPointerId;
+        } catch {
+          // The window-mousemove heal still covers an outside release.
+          mouseDragPointerId = null;
+        }
+      }
       // Touch has no Alt to read mid-drag, so its double-tap block mode latches
       // for the whole drag; desktop Alt stays live (see onAltChange). A tap can
       // no longer chain into the next press once a drag has begun.
@@ -221,23 +234,10 @@ export function attachTerminalMouseRouter({
 
   const onPointerDown = (ev: PointerEvent) => {
     if (ev.pointerType === 'mouse') {
-      // Capture the mouse pointer for left-button presses on terminal-owned
-      // content so a selection drag released *outside* our iframe still reports
-      // back. Chromium delivers the captured pointerup across the frame boundary
-      // even when the button comes up over the host page, letting onWindowPointerUp
-      // finalize the drag immediately rather than waiting for the cursor to wander
-      // back in (the window-mousemove heal). Engines that don't honor cross-frame
-      // capture get no such pointerup and fall back to that heal.
       if (ev.button !== 0) return;
       const { terminalOwns } = terminalOwnsEvent(ev);
       if (!terminalOwns) return;
-      try {
-        element.setPointerCapture(ev.pointerId);
-        mouseDragPointerId = ev.pointerId;
-      } catch {
-        // Best-effort continuity aid; the heal still covers us if capture is rejected.
-        mouseDragPointerId = null;
-      }
+      mousePressPointerId = ev.pointerId;
       return;
     }
     if (!ev.isPrimary) return;
@@ -291,6 +291,7 @@ export function attachTerminalMouseRouter({
     // The button came up inside the iframe; cancel any pending outside-release
     // finalize (see onWindowPointerUp) and end the drag through the normal path.
     awaitingOutsideMouseUp = false;
+    mousePressPointerId = null;
     finishPendingOrActiveDrag(ev);
   };
 
@@ -302,6 +303,7 @@ export function attachTerminalMouseRouter({
 
   const onWindowPointerUp = (ev: PointerEvent) => {
     if (ev.pointerType === 'mouse') {
+      if (mousePressPointerId === ev.pointerId) mousePressPointerId = null;
       if (mouseDragPointerId !== ev.pointerId) return;
       mouseDragPointerId = null;
       // Capture auto-releases on pointerup, but be explicit.

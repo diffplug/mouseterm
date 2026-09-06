@@ -350,19 +350,38 @@ describe('terminal-mouse-router: override suppression', () => {
   }
 
   // Drives a left-button mouse press into an active selection drag (capture +
-  // pendingDrag created on press, drag begun once movement crosses threshold).
+  // pendingDrag created on press, capture taken once movement crosses threshold).
   function startMouseDrag(element: FakeElement) {
     element.emit('pointerdown', mousePointer({ clientX: 5, clientY: 5 }));
     element.emit('mousedown', mouseEvent({ clientX: 5, clientY: 5 }));
     windowHost.emit('mousemove', mouseEvent({ clientX: 25, clientY: 15 }));
   }
 
-  it('captures the mouse pointer on a left-button press over terminal-owned content', () => {
+  it('leaves a plain click uncaptured and unsuppressed so xterm can activate hyperlinks', () => {
+    const { cleanup, element } = createHarness(windowHost);
+    const down = mouseEvent();
+    const up = mouseEvent();
+
+    element.emit('pointerdown', mousePointer());
+    element.emit('mousedown', down);
+    windowHost.emit('mousemove', mouseEvent({ clientX: 6, buttons: 1 }));
+    windowHost.emit('pointerup', mousePointer({ clientX: 6 }));
+    windowHost.emit('mouseup', up);
+
+    expect(element.setPointerCapture).not.toHaveBeenCalled();
+    expect(down.stopPropagation).not.toHaveBeenCalled();
+    expect(up.stopPropagation).not.toHaveBeenCalled();
+    expect(getMouseSelectionState('t1').selection).toBeNull();
+    cleanup();
+  });
+
+  it('captures the mouse pointer once movement begins a selection drag', () => {
     const { cleanup, element } = createHarness(windowHost);
 
-    element.emit('pointerdown', mousePointer({ clientX: 5, clientY: 5 }));
+    startMouseDrag(element);
 
     expect(element.setPointerCapture).toHaveBeenCalledWith(1);
+    expect(getMouseSelectionState('t1').selection).toMatchObject({ dragging: true });
     cleanup();
   });
 

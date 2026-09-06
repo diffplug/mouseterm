@@ -62,6 +62,7 @@ Selection is available whenever the terminal handles the mouse (§3.5, §6.1).
 
 ### 3.1 Initiating a Selection
 
+- **Must capture mouse pointers only after the drag threshold** (rationale). Test: `lib/src/lib/terminal-mouse-router.test.ts`.
 - A click-and-drag in the terminal content area begins a selection; a ~4px movement threshold separates a plain click (which only shifts pane focus) from a drag.
 - On touch or pen, a primary pointer tap-and-drag takes the same path; non-primary touch pointers are ignored.
 - The selection draws as a single perimeter outline tracing the union of selected cells (§7 owns rendering). Color is `--color-focus-ring` (`docs/specs/theme.md`), with a hardcoded cornflower-blue final fallback in `SelectionOverlay.tsx`.

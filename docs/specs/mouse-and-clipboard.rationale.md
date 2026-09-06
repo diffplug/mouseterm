@@ -4,7 +4,9 @@
 
 ## 3.1 Initiating a Selection
 
-**How a mouse-up outside the iframe still reaches us.** Capture is taken on mouse-down, and Chromium delivers the captured `pointerup` across the frame boundary even when the button comes up over host chrome. Engines that do not honor cross-frame capture deliver nothing, so a window `mousemove` reporting `buttons === 0` stands in for the missed mouse-up: a pointer still holding the button reports `buttons === 1`, so the heal cannot fire mid-drag, but it does need the pointer to re-enter the frame. Against double-finalizing, the captured-pointerup path defers to a macrotask and stands down if the compatibility mouseup for an *inside* release arrives first.
+**Why plain clicks stay uncaptured.** Reproduced with Codex CLI 0.153.4 in the Chromium innerdogfood harness (2026-09): Codex emitted valid OSC 8 links and xterm recognized their targets. Capturing on Dormouse's wrapper at pointerdown retargeted mouseup outside xterm's screen and cleared its hovered link, preventing activation. Leaving the click uncaptured restored the confirmation dialog.
+
+**How a mouse-up outside the iframe still reaches us.** Capture is taken when movement crosses the selection-drag threshold, and Chromium delivers the captured `pointerup` across the frame boundary even when the button comes up over host chrome. Engines that do not honor cross-frame capture deliver nothing, so a window `mousemove` reporting `buttons === 0` stands in for the missed mouse-up: a pointer still holding the button reports `buttons === 1`, so the heal cannot fire mid-drag, but it does need the pointer to re-enter the frame. Against double-finalizing, the captured-pointerup path defers to a macrotask and stands down if the compatibility mouseup for an *inside* release arrives first.
 
 ## 5.1 Detection
 
