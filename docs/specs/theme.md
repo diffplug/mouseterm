@@ -212,8 +212,8 @@ playground navbar — carries none**.
   its swatch the active-header fill and the runtime's focus-ring pick
   (rationale). Omissions resolve from the candidate's polarity, never the
   document's, and **previewing neither applies a theme nor writes storage**.
-- **Hover underlines the label; nothing tints an entry to mark selection**, which
-  would overwrite the palette it exists to show.
+- **Must underline hover without visually marking selection**, preserving the
+  candidate's palette.
 - **Fades appear only toward a direction still holding entries**, painted in the
   active terminal background, updating on scroll, content, and resize.
 - **Chrome outside the previews styles itself in `--color-*` utilities.** A host
