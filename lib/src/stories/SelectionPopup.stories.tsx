@@ -10,7 +10,7 @@ import {
   refitSession,
   unmountElement,
 } from '../lib/terminal-registry';
-import { flattenScenario, getPlatform, SCENARIO_LS_OUTPUT } from '../lib/platform';
+import { flattenScenario, SCENARIO_LS_OUTPUT } from '../lib/platform';
 import { getMouseSelectionState, setSelection, type Selection } from '../lib/mouse-selection';
 import { TERMINAL_BOTTOM_RADIUS_CLASS } from '../components/design';
 import { TouchUiContext } from '../components/touch-ui-context';
@@ -20,23 +20,12 @@ function SelectionPopupStory({
   id,
   selection,
   touch = false,
-  reservesChord = false,
 }: {
   id: string;
   selection: Omit<Selection, 'startedInScrollback'>;
   touch?: boolean;
-  /** Stand in for the website demo's adapter, whose browser has already claimed
-   *  Cmd/Ctrl+N. Set during render because the popup reads it during render;
-   *  cleared on unmount so it cannot leak into the next story. */
-  reservesChord?: boolean;
 }) {
   const terminalHostRef = useRef<HTMLDivElement>(null);
-
-  const platform = getPlatform() as { browserReservesNotepadChord?: boolean };
-  platform.browserReservesNotepadChord = reservesChord || undefined;
-  useEffect(() => () => {
-    platform.browserReservesNotepadChord = undefined;
-  }, [platform]);
 
   useEffect(() => {
     const terminalHost = terminalHostRef.current;
@@ -120,12 +109,12 @@ const SELECTION: Omit<Selection, 'startedInScrollback'> = {
   dragging: false,
 };
 
-// The website demo: the notepad is there, but the browser owns Cmd/Ctrl+N, so
-// the third button shows no shortcut while the two copy chords keep theirs.
-export const ChordReservedByBrowser: Story = {
+// Desktop: all three buttons carry their keyboard shortcuts and, for a downward
+// drag, sit below the selection. The fake adapter has an in-memory notepad
+// archive, so Add to notepad is present here as it is in every real desktop host.
+export const Desktop: Story = {
   args: {
-    id: 'selection-popup-reserved-chord',
-    reservesChord: true,
+    id: 'selection-popup-desktop',
     selection: SELECTION,
   },
 };
