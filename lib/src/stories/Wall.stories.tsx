@@ -4,7 +4,6 @@ import {
   flattenScenario,
   SCENARIO_SHELL_PROMPT,
   SCENARIO_LS_OUTPUT,
-  SCENARIO_ANSI_COLORS,
 } from '../lib/platform';
 import type { ActivityState } from '../lib/terminal-registry';
 import { requireElement, settleTerminals, waitForCondition } from './settle-terminals';
@@ -108,10 +107,6 @@ async function openAlertDialog() {
 
 export const Default: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
-};
-
-export const WithAnsiColors: Story = {
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_ANSI_COLORS) } },
 };
 
 export const MultiPane: Story = {
