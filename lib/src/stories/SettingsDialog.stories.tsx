@@ -58,22 +58,6 @@ export const DeferralEnabled: Story = {
   },
 };
 
-/**
- * Push on, with one subscribed phone — the mockup's "Push will be sent to …"
- * case. The device line is the join of the server's subscriptions and the
- * Burrow's ACL labels, so a story has to prime it directly.
- */
-export const PushEnabled: Story = {
-  parameters: {
-    primedWatchedCommands: ['claude', 'codex'],
-    primedAlertSettings: { pushEnabled: true },
-    primedPushDevices: {
-      status: 'ready',
-      devices: [{ label: 'iPhone Safari' }],
-    },
-  },
-};
-
 /** Fan-out: several phones have turned push on, so all of them are named. */
 export const PushManyDevices: Story = {
   parameters: {
