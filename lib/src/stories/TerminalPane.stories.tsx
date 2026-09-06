@@ -3,7 +3,6 @@ import { TerminalPane } from '../components/TerminalPane';
 import {
   flattenScenario,
   SCENARIO_ANSI_COLORS,
-  SCENARIO_LONG_RUNNING,
   SCENARIO_FAST_OUTPUT,
 } from '../lib/platform';
 import { settleTerminals } from './settle-terminals';
@@ -30,11 +29,6 @@ type Story = StoryObj<typeof TerminalContainer>;
 export const AnsiColors: Story = {
   args: { id: 'term-colors' },
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_ANSI_COLORS) } },
-};
-
-export const LongRunning: Story = {
-  args: { id: 'term-long' },
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_LONG_RUNNING) } },
 };
 
 export const FastOutput: Story = {
