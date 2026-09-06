@@ -1,6 +1,6 @@
-import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ArrowCounterClockwiseIcon, ArrowLineUpIcon, ArrowSquareOutIcon, BugBeetleIcon, CheckIcon, CircleNotchIcon, CopyIcon, FrameCornersIcon, PauseIcon, SlidersHorizontalIcon, TerminalIcon, WarningIcon, XIcon } from '@phosphor-icons/react';
-import { OnOffSwitch, POPUP_SURFACE_CLASS, SUBTLE_ACTION_COLOR_CLASS, SUBTLE_ACTION_INTERACTION_CLASS, SUBTLE_ACTION_REST_COLOR_CLASS, TERMINAL_CONTEXT_SURFACE_CLASS } from '../design';
+import { OnOffSwitch, POPUP_SURFACE_CLASS, SUBTLE_ACTION_COLOR_CLASS, SUBTLE_ACTION_INTERACTION_CLASS, SUBTLE_ACTION_REST_COLOR_CLASS, TERMINAL_CONTEXT_SURFACE_CLASS, TERMINAL_CONTEXT_EXIT_MS, TERMINAL_SELECTION_BORDER_RADIUS } from '../design';
 import { stepFocus } from '../focus-step';
 import { AgentRobotIcon } from './BrowserDisplayIcon';
 import type { PortUrlEntry } from './port-url';
@@ -12,6 +12,9 @@ export type ContextScan = { status: 'scanning' | 'failed' } | { status: 'loaded'
 /** Every action may fail asynchronously; the view reports the failure. */
 type Action = () => void | Promise<void>;
 export interface TerminalContextViewProps {
+  /** Exit in progress: the view is inert, and `onClose` is not called again. */
+  closing?: boolean;
+  /** Viewport coordinates the reveal grows from; absent, the top-left corner. */
   origin?: { x: number; y: number };
   defaultCommand?: string; title: string; surfaceRef: string; cwd: string; helperCwd?: string; mismatch?: boolean;
   titleSources: { source: string; value: string; note?: string }[];
@@ -77,17 +80,40 @@ function ContextOpenAction({ children, label, disabled, onOpen }: { children: Re
   </ContextAction>;
 }
 
+/** The custom properties `.terminal-context-enter` / `-exit` read (`lib/src/theme.css`)
+ *  that JS owns: the exit length the removal timer must match, and the corner radius. */
+const SURFACE_STYLE = { '--context-exit-duration': `${TERMINAL_CONTEXT_EXIT_MS}ms`, '--context-radius': TERMINAL_SELECTION_BORDER_RADIUS } as CSSProperties;
+
+/** Freeze the reveal as it stands so an interrupted entrance contracts from what
+ *  is visible instead of flashing to full size; CSS clamps the origin, so it is
+ *  left alone. Reads before writes: one style recalc, not three. */
+function snapshotExit(surface: HTMLElement, content: HTMLElement | null) {
+  const { clipPath, opacity } = getComputedStyle(surface);
+  const contentOpacity = content ? getComputedStyle(content).opacity : '1';
+  surface.style.setProperty('--context-exit-clip', clipPath === 'none' ? 'var(--context-full-clip)' : clipPath);
+  surface.style.setProperty('--context-exit-opacity', opacity);
+  surface.style.setProperty('--context-exit-content-opacity', contentOpacity);
+}
+
 export function TerminalContextView(p: TerminalContextViewProps) {
   const surface = useRef<HTMLElement>(null);
-  const initialOrigin = useRef(p.origin);
+  const content = useRef<HTMLDivElement>(null);
+  // Offsets of the opening pointer inside the surface; the keyframes clamp them.
   useLayoutEffect(() => {
     const element = surface.current;
     if (!element) return;
     const rect = element.getBoundingClientRect();
-    const origin = initialOrigin.current;
-    element.style.setProperty('--context-origin-x', `${origin ? Math.max(0, Math.min(rect.width, origin.x - rect.left)) : 0}px`);
-    element.style.setProperty('--context-origin-y', `${origin ? Math.max(0, Math.min(rect.height, origin.y - rect.top)) : 0}px`);
-  }, []);
+    element.style.setProperty('--context-origin-x', `${p.origin ? p.origin.x - rect.left : 0}px`);
+    element.style.setProperty('--context-origin-y', `${p.origin ? p.origin.y - rect.top : 0}px`);
+  }, [p.origin]);
+  useEffect(() => { if (!p.closing) surface.current?.focus({ preventScroll: true }); }, [p.closing]);
+  const close = useCallback(() => { if (surface.current) snapshotExit(surface.current, content.current); p.onClose(); }, [p.onClose]);
+  useEffect(() => {
+    if (p.closing) return;
+    const outside = (e: PointerEvent) => { if (!surface.current?.contains(e.target as Node)) close(); };
+    document.addEventListener('pointerdown', outside, true);
+    return () => document.removeEventListener('pointerdown', outside, true);
+  }, [p.closing, close]);
   const detailRoot = useRef<HTMLDivElement>(null);
   const [detail, setDetail] = useState(p.initialDetail ?? null);
   useEffect(() => {
@@ -107,54 +133,55 @@ export function TerminalContextView(p: TerminalContextViewProps) {
   /** A detail-dialog action: closes the dialog on success and holds the buttons meanwhile. */
   const submit = async (action: Action) => { setBusy(true); if (await attempt(action)) setDetail(null); setBusy(false); };
   const status = p.status === 'waiting' ? 'Waiting for shell…' : p.status === 'off' ? 'Autorun off' : p.status === 'unsupported' ? 'Autorun skipped: shell readiness unavailable' : p.status === 'exited' ? 'Helper exited' : preserved ? 'Skipping autorun to preserve user keystrokes' : p.status === 'running' ? `Running ${p.command}…` : `${p.command} autoran`;
-  return <section ref={surface} aria-label="Terminal context" data-terminal-context tabIndex={-1}
-    className={`${TERMINAL_CONTEXT_SURFACE_CLASS} terminal-context-enter absolute inset-4 flex flex-col overflow-hidden text-sm`}
+  return <section ref={surface} aria-label="Terminal context" data-terminal-context tabIndex={-1} inert={p.closing} aria-hidden={p.closing || undefined} style={SURFACE_STYLE}
+    className={`${TERMINAL_CONTEXT_SURFACE_CLASS} ${p.closing ? 'terminal-context-exit pointer-events-none' : 'terminal-context-enter'} absolute inset-4 flex flex-col overflow-hidden text-sm`}
+    onContextMenu={event => event.preventDefault()}
     onKeyDown={event => {
       if ((event.target as HTMLElement).closest('[data-helper-terminal]') && !detail) return;
       if (detail && event.key === 'Tab') {
         event.preventDefault();
         stepFocus(Array.from(detailRoot.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input,select') ?? []), event.shiftKey ? -1 : 1);
       }
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (detail) setDetail(null); else p.onClose(); }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (detail) setDetail(null); else close(); }
     }}>
-    <div className="terminal-context-content flex min-h-0 flex-1 flex-col">
-    <div className="shrink-0 px-3 py-2">
-      <div className="grid grid-cols-[4rem_1fr] items-center gap-y-1">
-        <span className="text-muted">Title</span>
-        <div className="flex h-6 min-w-0 items-center gap-1.5">
-          <span className="truncate">{p.title}</span><ContextAction label="Explain this title" onClick={() => setDetail('title')}><BugBeetleIcon size={15} />Explain</ContextAction>
-          <div className="ml-auto flex shrink-0 items-center gap-2 text-muted"><ContextCopyAction label="Copy surface identifier" onCopy={() => attempt(p.onCopyRef)}><span>{p.surfaceRef}</span><CopyIcon size={12} /></ContextCopyAction><ContextAction label="Close terminal context" onClick={p.onClose} muted><XIcon size={15} /></ContextAction></div>
+    <div ref={content} className="terminal-context-content flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 px-3 py-2">
+        <div className="grid grid-cols-[4rem_1fr] items-center gap-y-1">
+          <span className="text-muted">Title</span>
+          <div className="flex h-6 min-w-0 items-center gap-1.5">
+            <span className="truncate">{p.title}</span><ContextAction label="Explain this title" onClick={() => setDetail('title')}><BugBeetleIcon size={15} />Explain</ContextAction>
+            <div className="ml-auto flex shrink-0 items-center gap-2 text-muted"><ContextCopyAction label="Copy surface identifier" onCopy={() => attempt(p.onCopyRef)}><span>{p.surfaceRef}</span><CopyIcon size={12} /></ContextCopyAction><ContextAction label="Close terminal context" onClick={close} muted><XIcon size={15} /></ContextAction></div>
+          </div>
+          <span className="text-muted">Dir</span>
+          <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-1.5"><span className="truncate" title={p.cwd}>{p.cwd}</span><ContextOpenAction label={p.canExplore ? p.explorerLabel : 'Directory unavailable on this host'} disabled={!p.canExplore} onOpen={() => attempt(p.onExplore)}><ArrowSquareOutIcon size={15} />{p.explorerLabel}</ContextOpenAction><ContextCopyAction label="Copy absolute path" onCopy={() => attempt(p.onCopyPath)}><CopyIcon size={14} />Copy path</ContextCopyAction></div>
+          <span className="text-muted">Ports</span>
+          <div className="flex min-h-7 flex-wrap items-center gap-2">
+            {p.scan.status === 'scanning' ? <span className="text-muted">Scanning ports…</span> : p.scan.status === 'failed' ? <span className="text-error">Port scan failed · Reopen to try again</span> : !selected ? <span className="text-muted">No listening ports</span> : <>
+              {entries.length > 1 ? <div className="inline-flex shrink-0 items-center gap-2"><select aria-label="Port" value={selected.port} onChange={e => setPort(Number(e.target.value))} className="h-6 rounded border border-input-border bg-input-bg px-1 text-foreground">{entries.map(entry => <option key={entry.port} value={entry.port}>{entry.host}:{entry.port}{entry.processName ? ` · ${entry.processName}` : ''}</option>)}</select><span className="text-muted">{entries.length} ports</span></div> : <><span>{selected.host}:{selected.port}</span><span className="text-muted">{selected.processName}</span></>}
+              <div className="ml-1 inline-flex shrink-0 items-center gap-1 border-l border-border pl-2">
+                <ContextAction label="Open in system browser" onClick={() => void attempt(() => p.onPort(selected, 'system'))}><ArrowSquareOutIcon size={15} />System browser</ContextAction>
+                <ContextAction label={p.canIframe ? 'Open in iframe embed' : 'Iframe unavailable on this host'} disabled={!p.canIframe} onClick={() => void attempt(() => p.onPort(selected, 'iframe'))}><FrameCornersIcon size={15} />Iframe</ContextAction>
+                <ContextAction label={p.canAgent ? 'Open in agent-browser screencast' : 'Agent browser unavailable on this host'} disabled={!p.canAgent} onClick={() => void attempt(() => p.onPort(selected, 'ab-screencast'))}><AgentRobotIcon size={17} />Agent browser</ContextAction>
+                <ContextAction label={p.canAgent ? 'Open in agent-browser popout' : 'Popout unavailable on this host'} disabled={!p.canAgent} onClick={() => void attempt(() => p.onPort(selected, 'ab-popout'))}><AgentRobotIcon size={17} /><ArrowSquareOutIcon size={13} />Popout</ContextAction>
+              </div>
+            </>}
+          </div>
+          <span className="text-muted">Alerts</span><div className="flex h-6 items-center gap-2"><span>{p.argv0 ? `Watch all ${p.argv0} commands` : 'No command running'}</span>{p.argv0 && <OnOffSwitch on={p.watching} onEnable={p.onWatch} onDisable={p.onWatch} label={`Watch all ${p.argv0} commands`} />}<span className="mx-1 h-3 border-l border-border" /><span>TODO</span><OnOffSwitch on={p.todo} onEnable={p.onTodo} onDisable={p.onTodo} label="TODO" /></div>
         </div>
-        <span className="text-muted">Dir</span>
-        <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-1.5"><span className="truncate" title={p.cwd}>{p.cwd}</span><ContextOpenAction label={p.canExplore ? p.explorerLabel : 'Directory unavailable on this host'} disabled={!p.canExplore} onOpen={() => attempt(p.onExplore)}><ArrowSquareOutIcon size={15} />{p.explorerLabel}</ContextOpenAction><ContextCopyAction label="Copy absolute path" onCopy={() => attempt(p.onCopyPath)}><CopyIcon size={14} />Copy path</ContextCopyAction></div>
-        <span className="text-muted">Ports</span>
-        <div className="flex min-h-7 flex-wrap items-center gap-2">
-          {p.scan.status === 'scanning' ? <span className="text-muted">Scanning ports…</span> : p.scan.status === 'failed' ? <span className="text-error">Port scan failed · Reopen to try again</span> : !selected ? <span className="text-muted">No listening ports</span> : <>
-            {entries.length > 1 ? <div className="inline-flex shrink-0 items-center gap-2"><select aria-label="Port" value={selected.port} onChange={e => setPort(Number(e.target.value))} className="h-6 rounded border border-input-border bg-input-bg px-1 text-foreground">{entries.map(entry => <option key={entry.port} value={entry.port}>{entry.host}:{entry.port}{entry.processName ? ` · ${entry.processName}` : ''}</option>)}</select><span className="text-muted">{entries.length} ports</span></div> : <><span>{selected.host}:{selected.port}</span><span className="text-muted">{selected.processName}</span></>}
-            <div className="ml-1 inline-flex shrink-0 items-center gap-1 border-l border-border pl-2">
-              <ContextAction label="Open in system browser" onClick={() => void attempt(() => p.onPort(selected, 'system'))}><ArrowSquareOutIcon size={15} />System browser</ContextAction>
-              <ContextAction label={p.canIframe ? 'Open in iframe embed' : 'Iframe unavailable on this host'} disabled={!p.canIframe} onClick={() => void attempt(() => p.onPort(selected, 'iframe'))}><FrameCornersIcon size={15} />Iframe</ContextAction>
-              <ContextAction label={p.canAgent ? 'Open in agent-browser screencast' : 'Agent browser unavailable on this host'} disabled={!p.canAgent} onClick={() => void attempt(() => p.onPort(selected, 'ab-screencast'))}><AgentRobotIcon size={17} />Agent browser</ContextAction>
-              <ContextAction label={p.canAgent ? 'Open in agent-browser popout' : 'Popout unavailable on this host'} disabled={!p.canAgent} onClick={() => void attempt(() => p.onPort(selected, 'ab-popout'))}><AgentRobotIcon size={17} /><ArrowSquareOutIcon size={13} />Popout</ContextAction>
-            </div>
-          </>}
-        </div>
-        <span className="text-muted">Alerts</span><div className="flex h-6 items-center gap-2"><span>{p.argv0 ? `Watch all ${p.argv0} commands` : 'No command running'}</span>{p.argv0 && <OnOffSwitch on={p.watching} onEnable={p.onWatch} onDisable={p.onWatch} label={`Watch all ${p.argv0} commands`} />}<span className="mx-1 h-3 border-l border-border" /><span>TODO</span><OnOffSwitch on={p.todo} onEnable={p.onTodo} onDisable={p.onTodo} label="TODO" /></div>
+        {p.notification && <div className="ml-16 mt-2 border-l-2 border-border py-1 pl-3"><div>{p.notification.title}</div><div className="whitespace-pre-wrap text-muted">{p.notification.body}</div></div>}
       </div>
-      {p.notification && <div className="ml-16 mt-2 border-l-2 border-border py-1 pl-3"><div>{p.notification.title}</div><div className="whitespace-pre-wrap text-muted">{p.notification.body}</div></div>}
-    </div>
-    <div className="@container flex min-h-0 flex-1 flex-col border-t border-border">
-      <div aria-label="Helper terminal status" className="flex h-9 shrink-0 items-center gap-3 whitespace-nowrap px-3">
-        <span className="hidden shrink-0 items-center gap-2 font-semibold @[48rem]:flex"><TerminalIcon size={15} />Helper terminal</span>
-        <div className="flex min-w-0 items-center gap-2 text-muted">{p.status === 'running' || p.status === 'waiting' ? <CircleNotchIcon size={13} className="shrink-0 animate-spin" /> : preserved || p.status === 'off' || p.status === 'unsupported' ? <PauseIcon size={13} className="shrink-0" /> : <CheckIcon size={13} className="shrink-0" />}<span className="truncate" title={status}>{status}</span>
-          {preserved || p.status === 'exited' ? <ContextAction label="Reset helper terminal" onClick={() => setDetail('reset')}><ArrowCounterClockwiseIcon size={13} />Reset…</ContextAction> : <ContextAction label="Modify autorun command" onClick={() => { setCommand(p.defaultCommand ?? p.command); setDetail('modify'); }}><SlidersHorizontalIcon size={15} />Modify</ContextAction>}
+      <div className="@container flex min-h-0 flex-1 flex-col border-t border-border">
+        <div aria-label="Helper terminal status" className="flex h-9 shrink-0 items-center gap-3 whitespace-nowrap px-3">
+          <span className="hidden shrink-0 items-center gap-2 font-semibold @[48rem]:flex"><TerminalIcon size={15} />Helper terminal</span>
+          <div className="flex min-w-0 items-center gap-2 text-muted">{p.status === 'running' || p.status === 'waiting' ? <CircleNotchIcon size={13} className="shrink-0 animate-spin" /> : preserved || p.status === 'off' || p.status === 'unsupported' ? <PauseIcon size={13} className="shrink-0" /> : <CheckIcon size={13} className="shrink-0" />}<span className="truncate" title={status}>{status}</span>
+            {preserved || p.status === 'exited' ? <ContextAction label="Reset helper terminal" onClick={() => setDetail('reset')}><ArrowCounterClockwiseIcon size={13} />Reset…</ContextAction> : <ContextAction label="Modify autorun command" onClick={() => { setCommand(p.defaultCommand ?? p.command); setDetail('modify'); }}><SlidersHorizontalIcon size={15} />Modify</ContextAction>}
+          </div>
+          <div className="ml-auto shrink-0"><ContextAction label="Move this terminal into a new pane" disabled={busy} onClick={() => void submit(p.onPromote)}><ArrowLineUpIcon size={15} />Promote</ContextAction></div>
         </div>
-        <div className="ml-auto shrink-0"><ContextAction label="Move this terminal into a new pane" disabled={busy} onClick={() => void submit(p.onPromote)}><ArrowLineUpIcon size={15} />Promote</ContextAction></div>
+        {p.mismatch && <div role="alert" className="mx-3 mb-2 flex shrink-0 items-start gap-2 border-l-4 border-error bg-error/10 px-3 py-2"><WarningIcon size={18} weight="fill" className="shrink-0 text-error" /><div><div className="font-semibold">Helper directory differs from parent</div><div className="mt-1 grid grid-cols-[4rem_1fr] gap-x-2"><span className="text-muted">Helper</span><strong>{p.helperCwd}</strong><span className="text-muted">Parent</span><span>{p.cwd}</span></div></div></div>}
+        {(p.warning || (!detail && error)) && <div role="alert" className="mx-3 mb-2 border-l-4 border-error bg-error/10 px-3 py-2">{p.warning || error}</div>}
+        <div className="min-h-0 flex-1 bg-terminal-bg text-terminal-fg">{p.children}</div>
       </div>
-      {p.mismatch && <div role="alert" className="mx-3 mb-2 flex shrink-0 items-start gap-2 border-l-4 border-error bg-error/10 px-3 py-2"><WarningIcon size={18} weight="fill" className="shrink-0 text-error" /><div><div className="font-semibold">Helper directory differs from parent</div><div className="mt-1 grid grid-cols-[4rem_1fr] gap-x-2"><span className="text-muted">Helper</span><strong>{p.helperCwd}</strong><span className="text-muted">Parent</span><span>{p.cwd}</span></div></div></div>}
-      {(p.warning || (!detail && error)) && <div role="alert" className="mx-3 mb-2 border-l-4 border-error bg-error/10 px-3 py-2">{p.warning || error}</div>}
-      <div className="min-h-0 flex-1 bg-terminal-bg text-terminal-fg">{p.children}</div>
-    </div>
     </div>
     {detail && <div className="absolute inset-0 z-10 bg-app-bg/35" onClick={() => setDetail(null)}><div ref={detailRoot} role="dialog" aria-modal="true" aria-label={detail === 'title' ? 'Title sources' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal'} className={`${POPUP_SURFACE_CLASS} absolute left-3 right-3 top-9 p-4`} onClick={e => e.stopPropagation()}>
       <div className="mb-3 flex items-center justify-between font-semibold"><span>{detail === 'title' ? 'Why this title?' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal?'}</span><ContextAction label="Close details" onClick={() => setDetail(null)} muted><XIcon size={14} /></ContextAction></div>

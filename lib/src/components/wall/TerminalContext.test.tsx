@@ -77,7 +77,7 @@ it('shows both directories in the mismatch warning', () => {
   props.mismatch = true; props.helperCwd = '~/other'; render(); expect(container.querySelector('[role="alert"]')?.textContent).toContain('~/other'); expect(container.querySelector('[role="alert"]')?.textContent).toContain('~/repo');
 });
 it('shares header, alert and uncaptured body entry points; captured mouse has no Shift escape', () => {
-  const open = vi.fn(); const value = { id: null, open, close: vi.fn(), promote: vi.fn(), openPort: vi.fn() };
+  const open = vi.fn(); const value = { id: null, mounted: null, open, close: vi.fn(), promote: vi.fn(), openPort: vi.fn() };
   act(() => root.render(<TerminalContextContext.Provider value={value}><TerminalPaneHeader id="parent" /><TerminalPanel id="parent" /></TerminalContextContext.Provider>));
   const header = container.querySelector('[data-pane-header-for]')!;
   const body = container.querySelector('textarea')!;

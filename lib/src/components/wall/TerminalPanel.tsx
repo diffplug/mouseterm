@@ -3,7 +3,6 @@ import { TerminalPane } from '../TerminalPane';
 import { TERMINAL_BOTTOM_RADIUS_CLASS } from '../design';
 import { getMouseSelectionState } from '../../lib/mouse-selection';
 import type { PaneProps } from './pane-props';
-import { TerminalContext } from './TerminalContext';
 import { usePaneChrome } from './use-pane-chrome';
 import {
   ModeContext,
@@ -30,7 +29,6 @@ export function TerminalPanel(props: PaneProps) {
       context.open(props.id, { origin: { x: event.clientX, y: event.clientY } });
     }}>
       <TerminalPane id={props.id} isFocused={isFocused} />
-      {context.id === props.id && <TerminalContext id={props.id} title={props.title} sourceElement={elRef.current} />}
     </div>
   );
 }

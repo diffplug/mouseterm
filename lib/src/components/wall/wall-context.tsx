@@ -100,12 +100,19 @@ export const DialogKeyboardContext = createContext<(active: boolean) => void>(()
 
 export interface TerminalContextOpenOptions {
   warning?: string;
+  /** Viewport coordinates the reveal grows from. */
   origin?: { x: number; y: number };
 }
 
+/** One opening of the terminal context; `closing` while its exit plays. */
+export type TerminalContextState = { id: string; closing?: boolean } & TerminalContextOpenOptions;
+
 export const TerminalContextContext = createContext<{
-  id: string | null; warning?: string; origin?: { x: number; y: number };
+  /** The Session holding the context's input — null while none is open or one is exiting. */
+  id: string | null;
+  /** The context that is rendered, an exiting one included; read only by its leaf. */
+  mounted: TerminalContextState | null;
   open(id: string, options?: TerminalContextOpenOptions): void; close(): void;
   promote(id: string): Promise<void>;
   openPort(id: string, entry: PortUrlEntry, mode: PortMode): Promise<void>;
-}>({ id: null, open: () => {}, close: () => {}, promote: async () => {}, openPort: async () => {} });
+}>({ id: null, mounted: null, open: () => {}, close: () => {}, promote: async () => {}, openPort: async () => {} });

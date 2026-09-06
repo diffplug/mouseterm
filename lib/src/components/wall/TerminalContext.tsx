@@ -1,8 +1,7 @@
-import { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { TerminalPane } from '../TerminalPane';
 import { TerminalContextView, type ContextScan } from './TerminalContextView';
-import { TerminalContextContext, WallActionsContext } from './wall-context';
+import { TerminalContextContext, WallActionsContext, type TerminalContextState } from './wall-context';
 import { disposeHelper, getHelper, helperRevision, openHelper, setHelperVisible, subscribeHelpers } from '../../lib/helper-terminal';
 import { getPlatform, IS_MAC, IS_WINDOWS } from '../../lib/platform';
 import { buildAppTitleResolver, commandArgv0, createTerminalPaneState, cwdDisplay, deriveSurfaceLabel, explainTerminalTitle, type CwdState } from '../../lib/terminal-state';
@@ -10,11 +9,10 @@ import { focusSession, getActivitySnapshot, getTerminalPaneStateSnapshot, isComm
 import { writeTextToClipboard } from '../../lib/clipboard';
 import { listenerUrlsByPort } from './port-url';
 import { DEFAULT_HELPER_COMMAND } from '../../lib/terminal-context-types';
-import { resolvePaneElement } from './resolve-pane-element';
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-export function TerminalContext({ id, title, sourceElement }: { id: string; title?: string; sourceElement: HTMLElement | null }) {
+export function TerminalContext({ id, title, closing, origin, warning: openWarning }: TerminalContextState & { title?: string }) {
   const context = useContext(TerminalContextContext);
   const actions = useContext(WallActionsContext);
   const states = useSyncExternalStore(subscribeToTerminalPaneState, getTerminalPaneStateSnapshot);
@@ -25,7 +23,6 @@ export function TerminalContext({ id, title, sourceElement }: { id: string; titl
   const [home, setHome] = useState('');
   const [defaultCommand, setDefaultCommand] = useState(DEFAULT_HELPER_COMMAND);
   const [helperError, setHelperError] = useState('');
-  const wrapper = useRef<HTMLDivElement>(null);
   const platform = getPlatform();
   const helper = getHelper(id);
   const state = states.get(id) ?? createTerminalPaneState();
@@ -38,39 +35,33 @@ export function TerminalContext({ id, title, sourceElement }: { id: string; titl
   const display = (location: CwdState) => cwdDisplay(location, { style: 'full', homePath: home });
   useEffect(() => {
     let cancelled = false;
-    setHelperVisible(id, true);
     void openHelper(id).catch(e => { if (!cancelled) setHelperError(errorText(e)); });
     void platform.terminalContext?.({ op: 'settings' }).then(info => { if (!cancelled) { setHome(info.home ?? ''); setDefaultCommand(info.command ?? DEFAULT_HELPER_COMMAND); } }).catch(() => {});
     void platform.getOpenPorts(id).then(ports => { if (!cancelled) setScan({ status: 'loaded', entries: listenerUrlsByPort(ports) }); }, () => { if (!cancelled) setScan({ status: 'failed' }); });
-    wrapper.current?.querySelector<HTMLElement>('[data-terminal-context]')?.focus({ preventScroll: true });
-    return () => { cancelled = true; setHelperVisible(id, false); };
+    return () => { cancelled = true; };
   }, [id, platform]);
+  // The helper polls only while the context is open; an exit pauses it at once.
   useEffect(() => {
-    const outside = (e: PointerEvent) => { if (!wrapper.current?.contains(e.target as Node)) context.close(); };
-    document.addEventListener('pointerdown', outside, true);
-    return () => document.removeEventListener('pointerdown', outside, true);
-  }, [context]);
+    if (closing) return;
+    setHelperVisible(id, true);
+    return () => setHelperVisible(id, false);
+  }, [id, closing]);
+  const onClose = useCallback(() => { context.close(); focusSession(id, true); }, [context, id]);
   const copy = async (value: string) => { if (!await writeTextToClipboard(value)) throw new Error('Could not copy to clipboard'); };
   const mismatch = !!helper && !!cwd && !!helperCwd && (cwd.path !== helperCwd.path || cwd.isRemote !== helperCwd.isRemote || (cwd.isRemote && cwd.host !== helperCwd.host));
-  const warning = context.warning ?? (helperError || (helper && helper.status !== 'waiting' && (!cwd || !helperCwd) ? 'Directory comparison unavailable: a terminal has not reported its directory.' : undefined));
-  const pane = resolvePaneElement(sourceElement);
-  if (!pane) return null;
-  // Keep the helper mounted in one portal for this opening. The leaf tracks
-  // layout changes itself, and the overlay escapes the body's clipping box.
-  return createPortal(<div ref={wrapper} onMouseDown={e => e.stopPropagation()} onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}>
-    <TerminalContextView origin={context.origin} title={deriveSurfaceLabel(state, appTitleForPane, title ?? id)} surfaceRef={actions.resolveSurfaceRef(id)}
-      titleSources={titleSources} cwd={cwd ? display(cwd) : 'Directory unknown'} helperCwd={helperCwd && display(helperCwd)} mismatch={mismatch}
-      scan={scan} argv0={argv0} watching={!!argv0 && isCommandWatched(argv0)} todo={activities.get(id)?.todo === true} notification={activities.get(id)?.notification}
-      status={helper?.status ?? 'waiting'} command={helper?.command ?? defaultCommand} defaultCommand={defaultCommand} warning={warning}
-      explorerLabel={IS_MAC ? 'Open in Finder' : IS_WINDOWS ? 'Open in Explorer' : 'Open folder'} canExplore={!!platform.terminalContext && !!cwd && !cwd.isRemote}
-      canAgent={!!platform.agentBrowserOpen} canIframe={!!platform.createIframeProxyUrl}
-      onClose={() => { context.close(); focusSession(id, true); }} onCopyRef={() => copy(actions.resolveSurfaceRef(id))} onCopyPath={() => copy(cwd?.path ?? '')}
-      onExplore={async () => { if (platform.terminalContext && cwd) await platform.terminalContext({ op: 'openDirectory', id, path: cwd.path }); }}
-      onWatch={() => { if (argv0) setCommandWatched(argv0, !isCommandWatched(argv0)); }} onTodo={() => toggleSessionTodo(id)}
-      onPort={(entry, mode) => context.openPort(id, entry, mode)}
-      onModify={async command => { await platform.terminalContext?.({ op: 'settings', command }); setDefaultCommand(command); }}
-      onReset={async () => { disposeHelper(id); await openHelper(id); }} onPromote={() => context.promote(id)}>
-      {helper && <div data-helper-terminal={helper.id} className="h-full px-3 py-2" onMouseDown={() => focusSession(helper.id, true)} onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}><TerminalPane key={helper.id} id={helper.id} isFocused={false} /></div>}
-    </TerminalContextView>
-  </div>, pane);
+  const warning = openWarning ?? (helperError || (helper && helper.status !== 'waiting' && (!cwd || !helperCwd) ? 'Directory comparison unavailable: a terminal has not reported its directory.' : undefined));
+  return <TerminalContextView closing={closing} origin={origin} title={deriveSurfaceLabel(state, appTitleForPane, title ?? id)} surfaceRef={actions.resolveSurfaceRef(id)}
+    titleSources={titleSources} cwd={cwd ? display(cwd) : 'Directory unknown'} helperCwd={helperCwd && display(helperCwd)} mismatch={mismatch}
+    scan={scan} argv0={argv0} watching={!!argv0 && isCommandWatched(argv0)} todo={activities.get(id)?.todo === true} notification={activities.get(id)?.notification}
+    status={helper?.status ?? 'waiting'} command={helper?.command ?? defaultCommand} defaultCommand={defaultCommand} warning={warning}
+    explorerLabel={IS_MAC ? 'Open in Finder' : IS_WINDOWS ? 'Open in Explorer' : 'Open folder'} canExplore={!!platform.terminalContext && !!cwd && !cwd.isRemote}
+    canAgent={!!platform.agentBrowserOpen} canIframe={!!platform.createIframeProxyUrl}
+    onClose={onClose} onCopyRef={() => copy(actions.resolveSurfaceRef(id))} onCopyPath={() => copy(cwd?.path ?? '')}
+    onExplore={async () => { if (platform.terminalContext && cwd) await platform.terminalContext({ op: 'openDirectory', id, path: cwd.path }); }}
+    onWatch={() => { if (argv0) setCommandWatched(argv0, !isCommandWatched(argv0)); }} onTodo={() => toggleSessionTodo(id)}
+    onPort={(entry, mode) => context.openPort(id, entry, mode)}
+    onModify={async command => { await platform.terminalContext?.({ op: 'settings', command }); setDefaultCommand(command); }}
+    onReset={async () => { disposeHelper(id); await openHelper(id); }} onPromote={() => context.promote(id)}>
+    {helper && <div data-helper-terminal={helper.id} className="h-full px-3 py-2" onMouseDown={() => focusSession(helper.id, true)}><TerminalPane key={helper.id} id={helper.id} isFocused={false} /></div>}
+  </TerminalContextView>;
 }

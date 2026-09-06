@@ -1,4 +1,6 @@
-import { TerminalContextContext, type TerminalContextOpenOptions } from './wall/wall-context';
+import { TerminalContextContext, type TerminalContextOpenOptions, type TerminalContextState } from './wall/wall-context';
+import { TERMINAL_CONTEXT_EXIT_MS } from './design';
+import { motionIsInstant } from '../lib/ui-geometry';
 import type { PortMode } from './wall/TerminalContextView';
 import type { PortUrlEntry } from './wall/port-url';
 import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHelper, helperHasWork, type HelperTerminal } from '../lib/helper-terminal';
@@ -271,7 +273,15 @@ export function Wall({
    */
   enableBurrow?: boolean;
 } = {}) {
-  const [terminalContext, setTerminalContext] = useState<({ id: string } & TerminalContextOpenOptions) | null>(null);
+  const [terminalContext, setTerminalContext] = useState<TerminalContextState | null>(null);
+  // Remove a closing context once its exit has played. A reopen or replacement
+  // changes the state object, so the cleanup cancels the stale removal; the
+  // identity check covers a timer that fires before that cleanup is flushed.
+  useEffect(() => {
+    if (!terminalContext?.closing) return;
+    const timer = setTimeout(() => setTerminalContext(current => current === terminalContext ? null : current), TERMINAL_CONTEXT_EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [terminalContext]);
   const pendingHelperCloses = useRef(new Set<string>());
   // The Lath engine handle — Dormouse's tiling engine. Constructed lazily exactly
   // once per Wall mount, so `createLathWallEngine` is not re-invoked each render
@@ -1526,9 +1536,17 @@ export function Wall({
     try { await operation; } finally { contextPortLaunches.current.delete(key); }
   }, [buildDorSurfaces, buildDorSurfaceList, createContentSurface, enterTerminalMode, killPaneImmediately, lath, revealSurface, updateSurfaceParams]);
   const contextActions = useMemo(() => ({
-    id: terminalContext?.id ?? null, warning: terminalContext?.warning, origin: terminalContext?.origin,
+    id: terminalContext && !terminalContext.closing ? terminalContext.id : null,
+    mounted: terminalContext,
     open: (id: string, options?: TerminalContextOpenOptions) => { if (isHelperSession(id)) return; setTerminalContext({ id, ...options }); },
-    close: () => setTerminalContext(null),
+    close: () => {
+      const instant = motionIsInstant();
+      setTerminalContext(current => {
+        if (!current || instant) return null;
+        // Same object while already closing, so the removal timer keeps running.
+        return current.closing ? current : { ...current, closing: true };
+      });
+    },
     promote: async (id: string) => {
       if (!getHelper(id) || !nav.hasPane(id)) throw new Error('Helper cannot be placed beside this terminal');
       const helper = await beginPromotion(id);

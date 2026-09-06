@@ -246,11 +246,7 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
             }
             triggerAlertButtonAction(activity.status, e.currentTarget);
           }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            context.open(id, { origin: { x: e.clientX, y: e.clientY } });
-          }}
+          onContextMenu={(e) => context.open(id, { origin: { x: e.clientX, y: e.clientY } })}
           ariaLabel={alertButtonAriaLabel}
           tooltip={alertButtonTooltip}
           tooltipDetail={alertButtonTooltipDetail}
