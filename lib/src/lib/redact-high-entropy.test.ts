@@ -5,6 +5,9 @@ describe('redactHighEntropyTokens', () => {
   it.each([
     ['hex', '8b7d0c4e9f2a61035e8c9d1f04a76b23'],
     ['uppercase hex', '8B7D0C4E9F2A61035E8C9D1F04A76B23'],
+    ['UUID', '3f2504e0-4f89-11d3-9a0c-0305e82c3301'],
+    ['grouped hex', '8b7d-0c4e-9f2a-6103'],
+    ['underscore-grouped hex', '8B7D_0C4E_9F2A_6103'],
     ['base32', 'K7QW2MXP5RZV3NAT6YHC4BSD'],
     ['lowercase base32', 'k7qw2mxp5rzv3nat6yhc4bsd'],
     ['padded base32', 'K7QW2MXP5RZV3NAT6YHC4BSD======'],
@@ -20,6 +23,20 @@ describe('redactHighEntropyTokens', () => {
     const token = '8b7d0c4e9f2a61035e8c9d1f04a76b23';
     expect(redactHighEntropyTokens(`first=${token}; second=${token}!`))
       .toBe('first=REDACTED; second=REDACTED!');
+  });
+
+  it('preserves equals separators while removing trailing padding', () => {
+    expect(redactHighEntropyTokens('CargoBuildFinished=ok BackgroundTaskScheduler==finished'))
+      .toBe('REDACTED=ok REDACTED==finished');
+    expect(redactHighEntropyTokens('CargoBuildFinished== next'))
+      .toBe('REDACTED next');
+  });
+
+  it('normalizes separators only for grouped hex, counting only its digits', () => {
+    expect(redactHighEntropyTokens('PostgreSQL_Connection_Manager implementation_details_v2'))
+      .toBe('PostgreSQL_Connection_Manager implementation_details_v2');
+    expect(redactHighEntropyTokens('8-b-7-d-0-c-4-e-9-f-2-a-6-1-0'))
+      .toBe('8-b-7-d-0-c-4-e-9-f-2-a-6-1-0');
   });
 
   it.each([

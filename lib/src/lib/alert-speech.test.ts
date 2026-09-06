@@ -155,6 +155,11 @@ describe('toSpokenText', () => {
     expect(toSpokenText(`${prefix}8b7d0c4e9f2a61035e8c9d1f04a76b23`))
       .toBe(`${prefix}REDACTED`);
   });
+
+  it('keeps words separate when a redacted token precedes an equals sign', () => {
+    expect(toSpokenText('CargoBuildFinished=ok BackgroundTaskScheduler==finished'))
+      .toBe('REDACTED ok REDACTED finished');
+  });
 });
 
 /**
