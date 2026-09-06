@@ -5,9 +5,9 @@ export interface DormouseTheme {
   label: string;
   /** Theme base type */
   type: 'dark' | 'light';
-  /** Background color for picker swatch (editor.background) */
+  /** Editor background metadata; the picker resolves its palette from vars. */
   swatch: string;
-  /** Accent color for picker dot (focusBorder) */
+  /** Focus-border metadata; the picker uses the resolved runtime focus color. */
   accent: string;
   /** --vscode-* CSS variable overrides */
   vars: Record<string, string>;

@@ -139,7 +139,7 @@ export function ThemePicker({
         onClick={() => setOpen(!open)}
         // The compact trigger stands alone on a touch surface, so it takes the
         // 44px minimum the dialog row inherits from the dialog around it.
-        className={`group/theme-preview flex min-w-0 items-center gap-2 rounded-full px-3 py-1 font-mono text-sm font-semibold focus-visible:outline-2 focus-visible:outline-current ${inDialog ? '' : 'min-h-11 min-w-11'}`}
+        className={`group/theme-preview flex min-w-0 items-center gap-2 rounded px-2 py-1 font-mono text-sm focus-visible:outline-2 focus-visible:outline-current ${inDialog ? '' : 'min-h-11 min-w-11'}`}
         style={activeTheme ? getThemePreviewStyle(activeTheme) : undefined}
       >
         {activeTheme

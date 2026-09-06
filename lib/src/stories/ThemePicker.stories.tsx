@@ -66,9 +66,18 @@ async function openMenu({ canvasElement }: { canvasElement: HTMLElement }) {
 /** Resting state: the trigger alone, which is all these pages show until clicked. */
 export const Closed: Story = {};
 
-/** The bundled set. Each pill previews its own palette; a heavier label marks selection. */
+/** The bundled set. Each entry previews its own palette; hover underlines its label. */
 export const Open: Story = {
   play: openMenu,
+};
+
+/** Its green headers and purple focus accent must both appear, including at rest. */
+export const QuietLight: Story = {
+  play: async (context) => {
+    await openMenu(context);
+    await userEvent.click(within(context.canvasElement).getByRole('menuitemradio', { name: 'Quiet Light' }));
+    await openMenu(context);
+  },
 };
 
 /**

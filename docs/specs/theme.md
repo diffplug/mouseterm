@@ -209,13 +209,17 @@ playground navbar — carries none**.
 - **Must share `ThemePicker` and its `ThemeList` across theme-selection placements.**
 - **Must preview each candidate with its resolved terminal foreground/background**,
   resolving omissions for its polarity.
-- **Must share swatches, labels,
-  and palettes between entries and triggers** through `ThemePreview`.
-- **Must mark selection with a heavier label and hover with an underline,
-  preserving preview colors.**
-- **Must separate theme pills with gaps of the active terminal background**,
-  also used by edge fades.
-- **Must show an edge fade only while entries overflow in that direction**,
+- **Must share swatches, labels, palettes, and foreground-tinted borders
+  across entries and triggers** through `ThemePreview`.
+- **Must underline hover without visually marking selection, preserving preview colors.**
+- **Must use the active terminal background for 8px entry gaps and fades.**
+  **Must use 4px corners for entries and triggers,
+  independent of the circular swatch** (Concentric-Corners exception).
+- **Must fill the swatch circle with the resolved active-header background
+  and its 7px dot with the runtime focus-ring pick**, compositing alpha over
+  the sidebar as in the app (rationale). Pinned by
+  `lib/src/components/theme-picker/ThemeSwatch.test.ts`.
+- **Must show 32px fades only toward overflowing entries**, at least twice the gap,
   updating on scroll, content changes, and resize. Pinned by `lib/src/components/theme-picker/ThemeList.test.tsx`.
 - **Must style surrounding picker chrome with `--color-*` utilities.** A host
   rendering library JSX scans `lib/src` and imports
@@ -253,7 +257,8 @@ playground navbar — carries none**.
 Source of truth: `ThemePicker` in `lib/src/components/ThemePicker.tsx`;
 `ThemeList` in `lib/src/components/theme-picker/ThemeList.tsx`;
 `ThemePreview` / `getThemePreviewStyle` in
-`lib/src/components/theme-picker/ThemePreview.tsx`;
+`lib/src/components/theme-picker/ThemePreview.tsx`; `getThemeSwatchColors` in
+`lib/src/components/theme-picker/ThemeSwatch.tsx`;
 `lib/src/components/SettingsDialog.tsx`; `setDefaultThemeId()` /
 `restoreActiveTheme()` in `lib/src/lib/themes/apply.ts`; `useRestoredTheme()` in
 `lib/src/lib/themes/use-restored-theme.ts`; `restorePocketTheme` in

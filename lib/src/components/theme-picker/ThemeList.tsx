@@ -51,14 +51,14 @@ export function ThemeList({
   return (
     <div className="relative flex max-h-80 min-h-0 flex-1 flex-col" style={{ backgroundColor }}>
       <div ref={scrollRef} className="min-h-0 overflow-y-auto">
-        <div ref={contentRef} className="flex flex-col gap-1 p-2">
+        <div ref={contentRef} className="flex flex-col gap-2 p-2">
           {previews.map(({ theme, style }) => {
             const isActive = theme.id === activeId;
             const isInstalled = theme.origin.kind === 'installed';
             return (
               <div
                 key={theme.id}
-                className="flex items-center overflow-hidden rounded-full"
+                className="flex items-center overflow-hidden rounded"
                 style={style}
               >
                 <button
@@ -67,7 +67,7 @@ export function ThemeList({
                   aria-checked={isActive}
                   title={theme.label}
                   onClick={() => onSelect(theme.id)}
-                  className={`group/theme-preview flex min-h-11 min-w-0 flex-1 items-center rounded-full py-2 pl-3 text-left text-sm focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-current ${isInstalled ? 'pr-1' : 'pr-3'} ${isActive ? 'font-semibold' : ''}`}
+                  className={`group/theme-preview flex min-h-8 min-w-0 flex-1 items-center rounded py-1 pl-2 text-left text-sm pointer-coarse:min-h-11 focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-current ${isInstalled ? 'pr-1' : 'pr-2'}`}
                   style={{ color: 'inherit' }}
                 >
                   <ThemePreview theme={theme} />
@@ -79,7 +79,7 @@ export function ThemeList({
                     title={`Uninstall ${theme.label}`}
                     // Keep a gap from selection: uninstall requires finding
                     // the extension again in OpenVSX to undo.
-                    className="mr-2 ml-1 flex min-h-11 shrink-0 items-center rounded-full px-1.5 hover:opacity-65 focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-current"
+                    className="mr-1 ml-1 flex min-h-8 shrink-0 items-center rounded px-1.5 pointer-coarse:min-h-11 hover:opacity-65 focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-current"
                     style={{ color: 'inherit' }}
                     onClick={() => onUninstall(theme)}
                   >
@@ -95,7 +95,7 @@ export function ThemeList({
         <div
           aria-hidden="true"
           data-scroll-fade="above"
-          className="pointer-events-none absolute inset-x-0 top-0 h-4"
+          className="pointer-events-none absolute inset-x-0 top-0 h-8"
           style={{ background: `linear-gradient(to bottom, ${backgroundColor}, transparent)` }}
         />
       ) : null}
@@ -103,7 +103,7 @@ export function ThemeList({
         <div
           aria-hidden="true"
           data-scroll-fade="below"
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-4"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-8"
           style={{ background: `linear-gradient(to top, ${backgroundColor}, transparent)` }}
         />
       ) : null}
