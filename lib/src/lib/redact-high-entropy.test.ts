@@ -52,6 +52,7 @@ describe('redactHighEntropyTokens', () => {
     expect(redactHighEntropyTokens(`8b7d0c4e9f2a6103_${'x'.repeat(100)}`)).toBe('REDACTED');
     expect(redactHighEntropyTokens(`${'0'.repeat(100)}_job_8b7d0c4e9f2a6103`)).toBe('REDACTED');
     expect(redactHighEntropyTokens('pod_8b7d0c4e9f2a610')).toBe('pod_8b7d0c4e9f2a610');
+    expect(redactHighEntropyTokens('8b7d0c4e9f2a610_dop')).toBe('8b7d0c4e9f2a610_dop');
   });
 
   it.each([
