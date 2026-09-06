@@ -1,4 +1,4 @@
-import { alertDiagnostic, diagnosticId, type DiagnosticFields } from './alert-diagnostics';
+import { alertDiagnostic, alertDiagnosticsEnabled, diagnosticId, type DiagnosticFields } from './alert-diagnostics';
 import { QuiesceDetector, type QuiesceStatus } from './quiesce-detector';
 import type { AlertSettings } from './alert-settings';
 import { cfg } from '../cfg';
@@ -214,6 +214,7 @@ export class AlertManager {
   private lastAttentionAt: number | null = null;
 
   private trace(event: string, id?: string, fields: DiagnosticFields = {}): void {
+    if (!alertDiagnosticsEnabled()) return;
     const entry = id === undefined ? undefined : this.entries.get(id);
     alertDiagnostic(event, {
       manager: this.diagnosticManager, sessionId: id ?? null,
@@ -447,31 +448,30 @@ export class AlertManager {
     // being offered this very event.
     const claimants = [...(this.claimants.get(id) ?? [])];
     const claimed = claimants.some((claimant) => claimant(event));
-    this.trace('manager.completion', id, {
-      kind: event.kind, claimed,
-      reason: claimed ? 'claimed' : this.hasAttention(id) ? 'attended'
-        : event.kind === 'settled' && !this.isWatching(entry) ? 'not-watched'
-        : event.kind === 'commandFinished' && !event.armed ? 'not-armed'
-        : event.kind === 'commandFinished' && event.ranMs < this.inactivityTimeoutMs ? 'short-command'
-        : 'eligible',
+    const traceDecision = (reason: string): void => this.trace('manager.completion', id, {
+      kind: event.kind, claimed, reason,
       ...(event.kind === 'commandFinished' ? { ranMs: event.ranMs, armed: event.armed, exitCode: event.exitCode ?? null } : {}),
       ...(event.kind === 'notification' ? { notificationSource: event.notification.source } : {}),
     });
-    if (claimed) return true;
+    if (claimed) { traceDecision('claimed'); return true; }
+    let reason = 'eligible';
 
     switch (event.kind) {
       case 'settled':
         // Only a watched command rings, and only if the user is not looking at
         // it right now. The originating command key latches here so the ring
         // outlives the command that raised it.
-        if (!this.isWatching(entry) || this.hasAttention(id)) break;
+        if (!this.isWatching(entry)) { reason = 'not-watched'; break; }
+        if (this.hasAttention(id)) { reason = 'attended'; break; }
         this.latchRing(entry, entry.watchingRingingCommand !== null);
         entry.watchingRingingCommand = entry.commandExitWatch?.argv0 ?? null;
         entry.outputSinceWatchingRing = false;
         this.notify(id);
         break;
       case 'commandFinished':
-        if (!event.armed || this.hasAttention(id) || event.ranMs < this.inactivityTimeoutMs) break;
+        if (!event.armed) { reason = 'not-armed'; break; }
+        if (this.hasAttention(id)) { reason = 'attended'; break; }
+        if (event.ranMs < this.inactivityTimeoutMs) { reason = 'short-command'; break; }
         // A shell-reported exit is authoritative, so recent animation never
         // delays it. The detector only gates in-band terminal notifications.
         this.applyCommandExitRinging(entry, event.displayCommand, event.exitCode);
@@ -482,6 +482,7 @@ export class AlertManager {
         break;
       case 'notification':
         if (this.hasAttention(id)) {
+          reason = 'attended';
           // A progress cycle was already cleared before dispatch, so publish
           // that; a plain direct notification changes nothing and dedupes away.
           this.notify(id);
@@ -490,6 +491,7 @@ export class AlertManager {
         this.deferOrDeliverNotification(id, entry, event.notification);
         break;
     }
+    traceDecision(reason);
     return false;
   }
 

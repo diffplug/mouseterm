@@ -428,19 +428,20 @@ fn pty_request_init(state: tauri::State<'_, SidecarState>) {
 // has no reason to know, so the payload rides through opaquely. Replies come
 // back on the sidecar's own stdout events, not from this invoke.
 #[tauri::command]
-fn alert_diagnostic(state: tauri::State<'_, SidecarState>, record: JsonValue) {
-    send_to_sidecar(&state, serde_json::json!({
-        "event": "alert:diagnostic", "data": record,
-    }).to_string());
-}
-
-#[tauri::command]
 fn burrow_command(state: tauri::State<'_, SidecarState>, payload: JsonValue) {
     let msg = serde_json::json!({
         "event": "burrow:command",
         "data": payload,
     });
     send_to_sidecar(&state, msg.to_string());
+}
+
+// Local alert diagnostics: one record forwarded to the sidecar journal.
+#[tauri::command]
+fn alert_diagnostic(state: tauri::State<'_, SidecarState>, record: JsonValue) {
+    send_to_sidecar(&state, serde_json::json!({
+        "event": "alert:diagnostic", "data": record,
+    }).to_string());
 }
 
 #[tauri::command]

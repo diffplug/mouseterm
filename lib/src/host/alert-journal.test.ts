@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createAlertJournal } from './alert-journal';
+import { createAlertJournal, isAlertDiagnostic } from './alert-journal';
 import type { AlertDiagnostic } from '../lib/alert-diagnostics';
 
 const dirs: string[] = [];
@@ -43,6 +43,7 @@ it('bounds an overloaded queue and writes a loss marker', async () => {
   const all = await records(journal.directory);
   expect(all.filter((r) => r.event === 'speech.request')).toHaveLength(512);
   expect(all.find((r) => r.event === 'journal.dropped')?.fields.count).toBe(488);
+  expect(all.every(isAlertDiagnostic)).toBe(true);
 });
 it('prunes only its own expired files', async () => {
   const { journal } = await setup();

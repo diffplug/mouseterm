@@ -17,6 +17,8 @@ let windowAt = 0;
 let windowCount = 0;
 let dropped = 0;
 
+export function alertDiagnosticsEnabled(): boolean { return sink !== undefined; }
+
 export function diagnosticId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

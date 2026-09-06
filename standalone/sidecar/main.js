@@ -1,5 +1,3 @@
-const { createAlertJournal } = require('./alert-journal.cjs');
-const alertJournal = createAlertJournal(process.env.DORMOUSE_STATE_DIR || '');
 /**
  * Tauri sidecar entry point — stdio JSON-lines transport over pty-core.
  *
@@ -24,6 +22,11 @@ const { createAgentBrowserHost } = require('./agent-browser-host.cjs');
 // the relay socket, the enrollment, the ACL, and remote-api v1 — running next to
 // the PTYs it serves. See docs/specs/remote-api.md.
 const { createSidecarBurrow } = require('./burrow.cjs');
+
+// Built from lib/src/host/alert-journal.ts (shared with the VS Code host) by
+// scripts/build-sidecar-proxy.mjs. See docs/specs/alert.md → Local alert diagnostics.
+const { createAlertJournal } = require('./alert-journal.cjs');
+const alertJournal = createAlertJournal(process.env.DORMOUSE_STATE_DIR || '');
 
 const agentBrowser = createAgentBrowserHost({
   writeClipboardText: (text) => clipboard.writeClipboardText(text),

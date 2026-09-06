@@ -1,6 +1,7 @@
 // Bundle the host-agnostic host modules (shared with the VS Code extension host)
 // into CommonJS files the Node sidecar can require. Keeps each as a single
 // TypeScript source while the sidecar itself stays plain CJS.
+//   - lib/src/host/alert-journal.ts       → sidecar/alert-journal.cjs
 //   - lib/src/host/iframe-proxy.ts        → sidecar/iframe-proxy.cjs
 //   - lib/src/host/agent-browser-host.ts  → sidecar/agent-browser-host.cjs
 //   - lib/src/host/remote/sidecar-entry.ts → sidecar/burrow.cjs

@@ -8,7 +8,7 @@
 
 ## Local alert diagnostics
 
-**Must append host decisions and renderer diagnostic messages to the same local journal**, under `context.globalStorageUri/alert-logs/`. The Dormouse output channel reports the directory. Never put these records in Settings Sync or restorable Session state. Behavior: `docs/specs/alert.md` → Local alert diagnostics.
+**Must append host decisions and renderer diagnostic messages to the same local journal**, under `context.globalStorageUri/alert-logs/`. The Dormouse output channel reports the directory. **Must keep the journal open through PTY teardown**, then give closing writes at most 250ms. Never put these records in Settings Sync or restorable Session state. Behavior: `docs/specs/alert.md` → Local alert diagnostics.
 
 Source of truth: `initAlertJournal` in `vscode-ext/src/alert-journal.ts`; `attachRouter` in `vscode-ext/src/message-router.ts`.
 

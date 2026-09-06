@@ -78,3 +78,16 @@ it('keeps alert delivery working when the diagnostic sink throws', () => {
   expect(() => manager.notifyFromProtocol('s', { source: 'OSC 9', title: 'done', body: null })).not.toThrow();
   expect(manager.getState('s').status).toBe('ALERT_RINGING');
 });
+
+it('reports the suppression branch actually taken when conditions overlap', () => {
+  manager.attend('s');
+  manager.applyTerminalSemanticEvents('s', [
+    { type: 'commandLine', commandLine: 'private command' },
+    { type: 'commandStart', source: 'osc633_E', startedAt: Date.now() },
+    { type: 'commandFinish', exitCode: 0 },
+  ]);
+  expect(records.find((r) => r.event === 'manager.completion')?.fields).toMatchObject({
+    kind: 'commandFinished', reason: 'not-armed', armed: false, ranMs: 0,
+  });
+  expect(JSON.stringify(records)).not.toContain('private command');
+});

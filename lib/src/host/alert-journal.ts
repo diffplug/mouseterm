@@ -14,6 +14,8 @@ const FILE_PATTERN = /^alerts-[\d-]+-[0-9a-f-]+\.jsonl$/;
 export function createAlertJournal(stateDir: string, warn: (message: string) => void = console.warn) {
   const directory = join(stateDir, 'alert-logs');
   const queue: string[] = [];
+  const source = `journal:${randomUUID()}`;
+  let seq = 0;
   let draining: Promise<void> | undefined;
   let file: Awaited<ReturnType<typeof open>> | undefined;
   let bytes = 0;
@@ -45,7 +47,7 @@ export function createAlertJournal(stateDir: string, warn: (message: string) => 
       while (queue.length || dropped) {
         const lost = dropped;
         const line = lost
-          ? JSON.stringify({ version: 1, event: 'journal.dropped', at: Date.now(), fields: { count: lost } }) + '\n'
+          ? JSON.stringify({ version: 1, source, seq: ++seq, monotonicMs: performance.now(), event: 'journal.dropped', at: Date.now(), fields: { count: lost } }) + '\n'
           : queue[0];
         const lineBytes = Buffer.byteLength(line);
         // Another window may prune an idle writer's file. Reopen instead of
