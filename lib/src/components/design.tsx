@@ -379,10 +379,15 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
  */
 export const UNDER_SWITCH_INDENT = 'ml-18';
 
-/** Quiet action tint and interaction treatment, shared by switches and context actions. */
+/**
+ * Quiet action tint and interaction treatment, shared by switches and context actions.
+ * Hover is gated on `not-aria-disabled` as well as `:enabled`, because a button that
+ * drops its clicks via `aria-disabled` (an in-flight `ContextAction`) is still `:enabled`.
+ * `focus-visible` is deliberately ungated: such a button keeps focus and must keep its ring.
+ */
 export const SUBTLE_ACTION_REST_COLOR_CLASS = 'text-[color:color-mix(in_srgb,var(--color-link)_35%,var(--color-muted))]';
-export const SUBTLE_ACTION_COLOR_CLASS = `${SUBTLE_ACTION_REST_COLOR_CLASS} enabled:hover:text-link enabled:focus-visible:text-link`;
-export const SUBTLE_ACTION_INTERACTION_CLASS = 'enabled:hover:bg-current/10 focus-visible:outline focus-visible:outline-focus-ring';
+export const SUBTLE_ACTION_COLOR_CLASS = `${SUBTLE_ACTION_REST_COLOR_CLASS} enabled:not-aria-disabled:hover:text-link enabled:focus-visible:text-link`;
+export const SUBTLE_ACTION_INTERACTION_CLASS = 'enabled:not-aria-disabled:hover:bg-current/10 focus-visible:outline focus-visible:outline-focus-ring';
 
 /**
  * The app's boolean control: compact track (off left, on right) and one state
@@ -656,6 +661,26 @@ export const chromeButton = tv({
 });
 
 export type ChromeButtonVariants = VariantProps<typeof chromeButton>;
+
+// Buttons that sit on a previewed theme rather than the host's: every theme
+// picker surface paints a *candidate* palette, so these inherit `currentColor`
+// where `modalIconButton` would reach for `text-muted`,
+// `hover:bg-foreground/10`, or `outline-focus-ring` — host tokens that would
+// read as a foreign color on the preview. Hover feedback is the label
+// underline, not a fill, for the same reason (docs/specs/theme.md).
+export const themePreviewButton = tv({
+  base: 'flex min-w-0 items-center rounded transition-colors focus-visible:outline-2 focus-visible:outline-current',
+  variants: {
+    kind: {
+      trigger: 'gap-2 px-2 py-1 font-mono text-sm',
+      // Inset so the ring stays inside the entry's own clipped corners.
+      entry: 'min-h-8 flex-1 py-1 pl-2 text-left text-sm pointer-coarse:min-h-11 focus-visible:-outline-offset-3',
+      uninstall: 'mx-1 min-h-8 shrink-0 justify-center px-1.5 pointer-coarse:min-h-11 hover:opacity-65 focus-visible:-outline-offset-3',
+    },
+  },
+});
+
+export type ThemePreviewButtonVariants = VariantProps<typeof themePreviewButton>;
 
 /** Pane-header zoom control. The zoomed pane swaps its header foreground and
  * background tokens so Unzoom reads as the active escape hatch in every theme. */
