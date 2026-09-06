@@ -566,17 +566,6 @@ export const LongTitleWithAlertAndTodo: Story = {
   }),
 };
 
-export const ReducedMotionRinging: Story = {
-  args: {
-    reducedMotion: true,
-  },
-  parameters: primedState({
-    status: 'ALERT_RINGING',
-
-    todo: false,
-  }),
-};
-
 export const RenameRejectedReserved: Story = {
   args: {
     title: 'build-server',
