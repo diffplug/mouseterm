@@ -144,7 +144,9 @@ it('keeps the focus ring on an in-flight button while withholding only its hover
   const rest = save.className;
   await click('Save default');
   // Hover is gated on aria-disabled; focus-visible is not, so the focused button keeps its ring.
-  for (const hover of rest.split(' ').filter(c => c.includes('hover:'))) expect(hover).toContain('not-aria-disabled:');
+  const hovers = rest.split(' ').filter(c => c.includes('hover:'));
+  expect(hovers.length).toBeGreaterThan(0);
+  for (const hover of hovers) expect(hover).toContain('not-aria-disabled:');
   for (const ring of ['focus-visible:outline', 'focus-visible:outline-focus-ring', 'enabled:focus-visible:text-link']) expect(save.className.split(' ')).toContain(ring);
   expect(save.className).toBe(rest);
 });
