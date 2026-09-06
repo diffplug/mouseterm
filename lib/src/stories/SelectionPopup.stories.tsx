@@ -120,16 +120,6 @@ const SELECTION: Omit<Selection, 'startedInScrollback'> = {
   dragging: false,
 };
 
-// Desktop: all three buttons carry their keyboard shortcuts and, for a downward
-// drag, sit below the selection. The fake adapter has an in-memory notepad
-// archive, so Add to notepad is present here as it is in every real desktop host.
-export const Desktop: Story = {
-  args: {
-    id: 'selection-popup-desktop',
-    selection: SELECTION,
-  },
-};
-
 // The website demo: the notepad is there, but the browser owns Cmd/Ctrl+N, so
 // the third button shows no shortcut while the two copy chords keep theirs.
 export const ChordReservedByBrowser: Story = {
