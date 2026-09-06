@@ -1,28 +1,45 @@
-/** Replace opaque ASCII tokens; this is a randomness heuristic, not a guarantee
- * that all secrets (or only secrets) are removed. Runs in linear time with a
- * fixed-size histogram, without dictionaries, network access, or platform APIs. */
-export function redactHighEntropyTokens(text: string): string {
-  return text.replace(/[A-Za-z0-9+/_-]+=*/g, (token) => {
-    // Keep padding in the replacement span, but not in the entropy estimate.
-    const value = token.replace(/=+$/, '');
-    if (value.length < 16) return token;
+/** One opaque-token shape: the alphabet, the length below which a sample is too
+ * short to judge, and the bits/character above which it reads as random. Ordered
+ * narrowest alphabet first, so a token is scored against the tightest one it fits.
+ * The cutoffs sit below each alphabet's ceiling because a finite sample never
+ * reaches it (rationale). */
+interface TokenTier {
+  readonly alphabet: RegExp;
+  readonly minLength: number;
+  readonly minEntropy: number;
+  /** Fold case before counting, so `A` and `a` are one symbol of a
+   * case-insensitive alphabet rather than two. */
+  readonly foldCase: boolean;
+}
 
-    // Use the narrowest matching alphabet. Hex/base32 are case-insensitive;
-    // base64/base64url are not. Minimum lengths and bits/character cutoffs:
-    // hex 16 / 3.0, base32 16 / 3.5, base64 20 / 4.0. These are heuristic
-    // thresholds: finite samples do not reach their alphabet's maximum entropy.
-    const hex = /^[0-9a-f]+$/i.test(value);
-    const base32 = !hex && /^[a-z2-7]+$/i.test(value);
-    if (!hex && !base32 && value.length < 20) return token;
-    const normalized = hex || base32 ? value.toLowerCase() : value;
-    const counts = new Uint32Array(128);
-    for (let i = 0; i < normalized.length; i++) counts[normalized.charCodeAt(i)]++;
-    let entropy = 0;
-    for (const count of counts) {
-      if (count === 0) continue;
-      const probability = count / normalized.length;
-      entropy -= probability * Math.log2(probability);
-    }
-    return entropy >= (hex ? 3 : base32 ? 3.5 : 4) ? 'REDACTED' : token;
+const TIERS: readonly TokenTier[] = [
+  { alphabet: /^[0-9a-f]+$/i, minLength: 16, minEntropy: 3, foldCase: true },
+  { alphabet: /^[a-z2-7]+$/i, minLength: 16, minEntropy: 3.5, foldCase: true },
+  { alphabet: /^[A-Za-z0-9+/_-]+$/, minLength: 20, minEntropy: 4, foldCase: false },
+];
+
+/** Shannon entropy in bits per character over an ASCII histogram. */
+function entropyOf(value: string): number {
+  const counts = new Uint32Array(128);
+  for (let i = 0; i < value.length; i++) counts[value.charCodeAt(i)]++;
+  let entropy = 0;
+  for (let code = 0; code < counts.length; code++) {
+    const count = counts[code];
+    if (count === 0) continue;
+    const probability = count / value.length;
+    entropy -= probability * Math.log2(probability);
+  }
+  return entropy;
+}
+
+/** Replace opaque ASCII tokens; this is a randomness heuristic, not a guarantee
+ * that all secrets (or only secrets) are removed (rationale). Padding joins the
+ * replaced span but not the entropy estimate. */
+export function redactHighEntropyTokens(text: string): string {
+  return text.replace(/([A-Za-z0-9+/_-]{16,})=*/g, (token, value: string) => {
+    const tier = TIERS.find((t) => value.length >= t.minLength && t.alphabet.test(value));
+    if (!tier) return token;
+    const counted = tier.foldCase ? value.toLowerCase() : value;
+    return entropyOf(counted) >= tier.minEntropy ? 'REDACTED' : token;
   });
 }
