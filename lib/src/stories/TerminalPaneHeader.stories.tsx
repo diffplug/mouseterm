@@ -631,15 +631,8 @@ export const NarrowWithMouseCaptureControlsVisible: Story = {
   play: assertControlsVisible,
 };
 
-// --- Notepad icon across the tiers -----------------------------------------
-//
-// Present at `full` and `compact`; at `minimal` an empty notepad yields its
-// 20px to the title, and one with notes keeps it (`docs/specs/notepad.md`).
-
-export const NotepadEmpty: Story = {
-  parameters: primedState({ status: 'NOTHING_TO_SHOW', todo: false }),
-};
-
+// Notepad icons with notes across the full, compact, and minimal tiers.
+// AlertEnabled and MinimalWidthWithAlert cover the empty notepad.
 export const NotepadWithNotes: Story = {
   args: { noteCount: 3 },
   parameters: primedState({ status: 'NOTHING_TO_SHOW', todo: false }),
