@@ -1,6 +1,6 @@
 ---
 name: debug-standalone-agent-browser
-description: Use when debugging Dormouse standalone behavior through the browser-based agent-browser harness instead of Tauri. Covers launching a fresh `pnpm dev:standalone:ab` run, observing sidecar and in-browser logs together, driving the UI with `agent-browser`, clearing stale nested browser sessions, and timing agent-browser screencast/tab behavior.
+description: Use when debugging Dormouse standalone behavior through the browser-based agent-browser harness instead of Tauri. Covers launching a fresh `pnpm innerdogfood` run, observing sidecar and in-browser logs together, driving the UI with `agent-browser`, clearing stale nested browser sessions, and timing agent-browser screencast/tab behavior.
 ---
 
 # Debug Standalone With Agent Browser
@@ -15,7 +15,7 @@ Run from the repo root:
 DORMOUSE_BROWSER_DEV_AB_SESSION=dormouse-debug-$(date +%s) \
 DORMOUSE_BROWSER_DEV_VITE_PORT=1550 \
 DORMOUSE_BROWSER_DEV_HOST_PORT=1552 \
-pnpm dev:standalone:ab
+pnpm innerdogfood
 ```
 
 The harness:
@@ -59,7 +59,7 @@ Stop any running harness with Ctrl-C (or `pkill -f dev-agent-browser.mjs`) befor
 
 ## Driving Dormouse
 
-Use the outer harness session printed by `dev:standalone:ab`:
+Use the outer harness session printed by `innerdogfood`:
 
 ```sh
 agent-browser --session <outer-session> snapshot -i

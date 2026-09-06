@@ -75,7 +75,7 @@ it.
 | # | Step | What happens |
 | --- | --- | --- |
 | 1 | `relay` | `pnpm dev:relay` with an isolated `DORMOUSE_STATE_DIR`, then waits for `:3000` to answer. |
-| 2 | `burrow` | `pnpm dev:standalone:ab` with `DORMOUSE_REMOTE_CONNECT_SRC` pointed at that Relay, then waits for the app's first terminal. → `01-burrow-booted.png` |
+| 2 | `burrow` | `pnpm innerdogfood` with `DORMOUSE_REMOTE_CONNECT_SRC` pointed at that Relay, then waits for the app's first terminal. → `01-burrow-booted.png` |
 | 3 | `settings` | Clicks the baseboard's Settings button and scrolls to Remote control. → `02-settings-open.png` |
 | 4 | `enroll` | Types the Relay URL, the setup password and the machine name into the real form, submits, and waits for **Connected**. → `03-enroll-form.png`, `04-enrolled.png` |
 | 5 | `qr` | Clicks **Set up a phone**, waits for the code, screenshots, crops to the QR, makes a camera-shaped Y4M, and decodes the crop to prove it is legible. → `qr-full.png`, `qr.png`, `qr.y4m`, `invitation-url.txt` |
@@ -125,7 +125,7 @@ at the end. **Nothing is written into the repo.**
 
 ```
 relay.log            the Relay's whole stdout/stderr
-burrow.log              the dev:standalone:ab harness, sidecar and Vite
+burrow.log              the innerdogfood harness, sidecar and Vite
 01-burrow-booted.png … one screenshot per UI step
 qr-full.png           the Burrow webview at the moment the QR was measured
 qr.png                the QR alone, cropped with a little padding

@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:agent-browser": "pnpm run stage && node scripts/dev-agent-browser.mjs",
+    "innerdogfood": "pnpm run stage && node scripts/dev-agent-browser.mjs",
     "prebuild": "pnpm --filter remote-lib-common build",
     "build": "pnpm run stage && tsc -b && vite build",
     "stage": "pnpm run stage:dor-cli && pnpm run stage:sidecar-proxy",

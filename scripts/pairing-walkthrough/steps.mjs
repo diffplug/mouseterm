@@ -38,7 +38,7 @@ const SCAN_LABEL = 'Scan a setup code';
 
 /**
  * The harness line that says where the Burrow keeps its enrollment + ACL. The
- * `[dev:standalone:ab]` prefix `log()` adds is deliberately not matched: it is
+ * `[innerdogfood]` prefix `log()` adds is deliberately not matched: it is
  * there for a human reading interleaved output, so pinning it would make a
  * cosmetic log change break this run.
  *
@@ -273,7 +273,7 @@ async function stepRelay(ctx) {
 }
 
 /**
- * Boot the real Burrow in the `dev:standalone:ab` harness and wait for the app.
+ * Boot the real Burrow in the `innerdogfood` harness and wait for the app.
  *
  * `DORMOUSE_REMOTE_CONNECT_SRC` has to be set *here*, at launch, not later: the
  * harness re-runs `pnpm stage` on the way up, which is what bakes the allowed
@@ -282,7 +282,7 @@ async function stepRelay(ctx) {
  */
 async function stepBurrow(ctx) {
   const { repoRoot, opts } = ctx;
-  const handle = spawnLogged('pnpm', ['dev:standalone:ab'], {
+  const handle = spawnLogged('pnpm', ['innerdogfood'], {
     cwd: repoRoot,
     logPath: ctx.path('burrow.log'),
     prefix: 'burrow',

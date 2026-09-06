@@ -538,7 +538,7 @@ Source of truth: `standalone/package.json` (package scripts),
   Frontend edits hot-reload, but changes to the sidecar, the staged dor CLI, or the
   bundled `lib/src/host/` sources need a manual re-stage and app restart — the dev
   loop does not watch them.
-- `pnpm dev:standalone:ab` runs the sidecar + webview in a normal browser via the
+- `pnpm innerdogfood` runs the sidecar + webview in a normal browser via the
   browser-dev harness instead of the Tauri WebView (`docs/specs/transport.md`,
   Standalone browser-dev harness).
 
