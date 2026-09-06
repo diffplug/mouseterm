@@ -148,6 +148,13 @@ describe('toSpokenText', () => {
   it('leaves an ordinary label alone', () => {
     expect(toSpokenText('pnpm test')).toBe('pnpm test');
   });
+
+  it('redacts whole tokens before punctuation cleanup and truncation', () => {
+    expect(toSpokenText('key=k8Xq+W2m/P5rZ9vN3aT6yA== done')).toBe('key REDACTED done');
+    const prefix = 'build '.repeat(18);
+    expect(toSpokenText(`${prefix}8b7d0c4e9f2a61035e8c9d1f04a76b23`))
+      .toBe(`${prefix}REDACTED`);
+  });
 });
 
 /**
@@ -196,7 +203,7 @@ describe('spoken alarms', () => {
       if (source === 'osc9') {
         setTerminalActivity(id, {
           status: 'ALERT_RINGING',
-          notification: { source: 'OSC 9', title: null, body: 'program title osc9' },
+          notification: { source: 'OSC 9', title: null, body: 'program title osc9 key=8b7d0c4e9f2a61035e8c9d1f04a76b23' },
         });
       } else {
         setStatus(id, 'ALERT_RINGING');
@@ -207,7 +214,7 @@ describe('spoken alarms', () => {
     expect(spoken).toEqual([
       'program title osc0',
       'program title osc2',
-      'program title osc9',
+      'program title osc9 key REDACTED',
     ]);
   });
 
