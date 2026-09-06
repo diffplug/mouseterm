@@ -319,11 +319,6 @@ const NOTIFICATIONS = {
     title: 'Claude is waiting',
     body: null,
   },
-  terminalBell: {
-    source: 'BEL',
-    title: 'Terminal bell',
-    body: null,
-  },
   longBody: {
     source: 'OSC 99',
     title: 'Long notification text should wrap without pushing controls out of the header',
@@ -487,12 +482,6 @@ export const NotificationDialogBodyOnly: Story = {
 export const NotificationDialogTitleOnly: Story = {
   render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.osc99TitleOnly, 'ALERT_RINGING'),
-  play: openAlertRightClickDialog,
-};
-
-export const NotificationDialogTerminalBell: Story = {
-  render: ContextWallStory,
-  parameters: primedNotificationState(NOTIFICATIONS.terminalBell, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
