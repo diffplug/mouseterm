@@ -23,7 +23,7 @@ export async function summarizeAlertLogs(directory) {
         || !record.fields || typeof record.fields !== 'object') { malformedLines++; continue; }
       firstAt = Math.min(firstAt, record.at);
       lastAt = Math.max(lastAt, record.at);
-      if (record.source) sources.add(record.source);
+      if (typeof record.source === 'string' && !record.source.startsWith('journal:')) sources.add(record.source);
       if (record.event.endsWith('.dropped')) droppedRecords += record.fields.count || 0;
       if (!record.event.startsWith('speech.') || !record.fields.attempt || !record.source) continue;
       const key = `${record.source}/${record.fields.attempt}`;

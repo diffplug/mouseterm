@@ -1,7 +1,7 @@
 import { mkdir, open, readdir, stat, unlink, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { AlertDiagnostic } from '../lib/alert-diagnostics';
+import type { AlertDiagnostic, DiagnosticFields } from '../lib/alert-diagnostics';
 
 const FILE_BYTES = 4 * 1024 * 1024;
 const TOTAL_BYTES = 64 * 1024 * 1024;
@@ -23,6 +23,10 @@ export function createAlertJournal(stateDir: string, warn: (message: string) => 
   let dropped = 0;
   let closed = false;
   let warned = false;
+
+  function writerRecord(event: string, fields: DiagnosticFields = {}): AlertDiagnostic {
+    return { version: 1, source, seq: ++seq, at: Date.now(), monotonicMs: performance.now(), event, fields };
+  }
 
   async function prune(): Promise<void> {
     const names = (await readdir(directory)).filter((name) => FILE_PATTERN.test(name));
@@ -47,7 +51,7 @@ export function createAlertJournal(stateDir: string, warn: (message: string) => 
       while (queue.length || dropped) {
         const lost = dropped;
         const line = lost
-          ? JSON.stringify({ version: 1, source, seq: ++seq, monotonicMs: performance.now(), event: 'journal.dropped', at: Date.now(), fields: { count: lost } }) + '\n'
+          ? JSON.stringify(writerRecord('journal.dropped', { count: lost })) + '\n'
           : queue[0];
         const lineBytes = Buffer.byteLength(line);
         // Another window may prune an idle writer's file. Reopen instead of
@@ -86,16 +90,19 @@ export function createAlertJournal(stateDir: string, warn: (message: string) => 
     });
   }
 
+  function append(value: unknown): void {
+    if (closed || !stateDir || !isAlertDiagnostic(value)) return;
+    const { version, source, seq, at, monotonicMs, event, fields } = value;
+    const line = JSON.stringify({ version, source, seq, at, monotonicMs, event, fields }) + '\n';
+    if (Buffer.byteLength(line) > 8192 || queue.length >= MAX_QUEUED) { dropped++; return; }
+    queue.push(line);
+    pump();
+  }
+
   return {
     directory,
-    append(value: unknown): void {
-      if (closed || !stateDir || !isAlertDiagnostic(value)) return;
-      const { version, source, seq, at, monotonicMs, event, fields } = value;
-      const line = JSON.stringify({ version, source, seq, at, monotonicMs, event, fields }) + '\n';
-      if (Buffer.byteLength(line) > 8192 || queue.length >= MAX_QUEUED) { dropped++; return; }
-      queue.push(line);
-      pump();
-    },
+    append,
+    recordLifecycle(event: 'host.stopping' | 'host.stopped'): void { append(writerRecord(event)); },
     async flush(): Promise<void> { while (draining) await draining; },
     async close(): Promise<void> {
       closed = true;

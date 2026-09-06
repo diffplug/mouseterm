@@ -93,3 +93,14 @@ it('reopens a file pruned by another host writer', async () => {
   await journal.flush();
   expect((await records(journal.directory)).map((r) => r.seq)).toEqual([2]);
 });
+
+it('keeps accepting teardown records between shutdown lifecycle markers', async () => {
+  const { journal } = await setup();
+  journal.recordLifecycle('host.stopping');
+  journal.append({ ...record(1), event: 'manager.onExit', fields: { sessionId: 's' } });
+  journal.recordLifecycle('host.stopped');
+  await journal.close();
+  const all = await records(journal.directory);
+  expect(all.map((r) => r.event)).toEqual(['host.stopping', 'manager.onExit', 'host.stopped']);
+  expect(all.every(isAlertDiagnostic)).toBe(true);
+});

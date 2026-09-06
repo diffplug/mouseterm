@@ -213,10 +213,10 @@ export class AlertManager {
   private readonly diagnosticManager = diagnosticId();
   private lastAttentionAt: number | null = null;
 
-  private trace(event: string, id?: string, fields: DiagnosticFields = {}): void {
-    if (!alertDiagnosticsEnabled()) return;
+  private traceFields(id?: string): DiagnosticFields {
+    if (!alertDiagnosticsEnabled()) return {};
     const entry = id === undefined ? undefined : this.entries.get(id);
-    alertDiagnostic(event, {
+    return {
       manager: this.diagnosticManager, sessionId: id ?? null,
       attentionId: this.attentionId, lastAttentionAt: this.lastAttentionAt,
       inactivityTimeoutMs: this.inactivityTimeoutMs, deferAlertsUntilQuiet: this.deferAlertsUntilQuiet,
@@ -229,8 +229,13 @@ export class AlertManager {
         commandSeenAt: entry.commandExitWatch?.seenWithAttentionAt ?? null,
         pendingNotification: entry.deferredNotification?.source ?? null,
         todo: entry.todo, attentionDismissedRing: entry.attentionDismissedRing,
-      } : {}), ...fields,
-    });
+      } : {}),
+    };
+  }
+
+  private trace(event: string, id?: string, fields: DiagnosticFields = {}): void {
+    if (!alertDiagnosticsEnabled()) return;
+    alertDiagnostic(event, { ...this.traceFields(id), ...fields });
   }
 
   private entries = new Map<string, AlertEntry>();
@@ -448,8 +453,10 @@ export class AlertManager {
     // being offered this very event.
     const claimants = [...(this.claimants.get(id) ?? [])];
     const claimed = claimants.some((claimant) => claimant(event));
-    const traceDecision = (reason: string): void => this.trace('manager.completion', id, {
-      kind: event.kind, claimed, reason,
+    // Decision records carry inputs; manager.publish records the resulting state.
+    const atDecision = this.traceFields(id);
+    const traceDecision = (reason: string): void => alertDiagnostic('manager.completion', {
+      ...atDecision, kind: event.kind, claimed, reason,
       ...(event.kind === 'commandFinished' ? { ranMs: event.ranMs, armed: event.armed, exitCode: event.exitCode ?? null } : {}),
       ...(event.kind === 'notification' ? { notificationSource: event.notification.source } : {}),
     });

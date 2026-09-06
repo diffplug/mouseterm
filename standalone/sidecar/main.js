@@ -226,6 +226,7 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  alertJournal.recordLifecycle('host.stopping');
   // Close any headed pop-out windows so quitting never orphans a real Chrome
   // window (spec → "Pop-Out" lifecycle). Bounded so a hung agent-browser
   // can't wedge the exit; mirrors the VS Code host's deactivate().
@@ -238,6 +239,7 @@ async function shutdown() {
   dorControl?.close();
   burrow.dispose();
   mgr.killAll();
+  alertJournal.recordLifecycle('host.stopped');
   await Promise.race([alertJournal.close(), new Promise((resolve) => setTimeout(resolve, 250))]);
   process.exit(0);
 }

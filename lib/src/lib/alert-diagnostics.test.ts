@@ -91,3 +91,23 @@ it('reports the suppression branch actually taken when conditions overlap', () =
   });
   expect(JSON.stringify(records)).not.toContain('private command');
 });
+
+it('preserves pending notification inputs before a command exit flushes and rings', () => {
+  manager.setInactivityTimeoutMs(100);
+  manager.setDeferAlertsUntilQuiet(true);
+  manager.applyTerminalSemanticEvents('s', [
+    { type: 'commandStart', source: 'osc633_E', startedAt: Date.now() },
+  ]);
+  manager.attend('s');
+  manager.onData('s');
+  vi.advanceTimersByTime(500);
+  manager.onData('s');
+  vi.advanceTimersByTime(1100);
+  manager.onData('s');
+  manager.notifyFromProtocol('s', { source: 'OSC 9', title: 'done', body: null });
+  manager.applyTerminalSemanticEvents('s', [{ type: 'commandFinish', exitCode: 0 }]);
+  const decision = records.find((r) => r.event === 'manager.completion' && r.fields.kind === 'commandFinished')!;
+  const publication = records.findLast((r) => r.event === 'manager.publish')!;
+  expect(decision.fields).toMatchObject({ reason: 'eligible', ringSeq: 0, pendingNotification: 'OSC 9', todo: false });
+  expect(publication.fields).toMatchObject({ status: 'ALERT_RINGING', pendingNotification: null, todo: true });
+});

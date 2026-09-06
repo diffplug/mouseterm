@@ -15,10 +15,11 @@ test('separates initial speech, retries, tests, outcomes, and incomplete data', 
       event('speech.request', '2', { reason: 'requeue', characters: 12 }),
       event('speech.request', '3', { reason: 'test', characters: 19 }),
       event('speech.unavailable', '3'),
-      event('diagnostics.dropped', null, { count: 4 }),
+      { ...event('journal.dropped', null, { count: 4 }), source: 'journal:writer' },
     ].map(JSON.stringify).join('\n') + '\n{"truncated":');
     const summary = await summarizeAlertLogs(dir);
     assert.equal(summary.droppedRecords, 4);
+    assert.equal(summary.sources, 1);
     assert.equal(summary.malformedLines, 1);
     assert.deepEqual(summary.days, [{ date: '2026-09-06', ringRequests: 1, ringCharacters: 12,
       requeues: 1, requeueCharacters: 12, tests: 1, testCharacters: 19,

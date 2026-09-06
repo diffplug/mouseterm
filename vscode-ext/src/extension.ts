@@ -243,6 +243,7 @@ export async function deactivate() {
   const t0 = Date.now();
   const step = (name: string) => log.info(`[deactivate] ${name} (+${Date.now() - t0}ms)`);
   step('starting');
+  alertDiagnostic('host.stopping');
   // Recovery gets the budget FIRST, and this ordering is load-bearing rather than
   // tidy. `[deactivate] done` has never once been reached in a real shutdown — VS
   // Code kills the extension host on a budget we do not control — so the single
@@ -300,7 +301,7 @@ export async function deactivate() {
   step('graceful kill');
   await ptyManager.gracefulKillAll(2000);
   ptyManager.killAll();
-  alertDiagnostic('host.stop');
+  alertDiagnostic('host.stopped');
   let journalDeadline: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
     closeAlertJournal(),
