@@ -37,7 +37,7 @@ export function ContextAction({ children, label, onClick, disabled = false, busy
   // `busy` must never reach native `disabled`: the browser blurs a button the moment it is disabled,
   // and this context's Escape and Tab handling both live on the <section> and need a focused descendant.
   return <button type="button" title={label} aria-label={label} aria-busy={busy || undefined} aria-disabled={busy || undefined} disabled={disabled} onClick={busy ? undefined : onClick}
-    className={`inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 disabled:opacity-40 ${!busy && windowFocused ? SUBTLE_ACTION_INTERACTION_CLASS : ''} ${color}`}>{children}</button>;
+    className={`inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 disabled:opacity-40 ${windowFocused ? SUBTLE_ACTION_INTERACTION_CLASS : ''} ${color}`}>{children}</button>;
 }
 
 function ContextCopyAction({ children, label, onCopy }: { children: ReactNode; label: string; onCopy: () => Promise<boolean> }) {

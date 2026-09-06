@@ -379,10 +379,15 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
  */
 export const UNDER_SWITCH_INDENT = 'ml-18';
 
-/** Quiet action tint and interaction treatment, shared by switches and context actions. */
+/**
+ * Quiet action tint and interaction treatment, shared by switches and context actions.
+ * Hover is gated on `not-aria-disabled` as well as `:enabled`, because a button that
+ * drops its clicks via `aria-disabled` (an in-flight `ContextAction`) is still `:enabled`.
+ * `focus-visible` is deliberately ungated: such a button keeps focus and must keep its ring.
+ */
 export const SUBTLE_ACTION_REST_COLOR_CLASS = 'text-[color:color-mix(in_srgb,var(--color-link)_35%,var(--color-muted))]';
-export const SUBTLE_ACTION_COLOR_CLASS = `${SUBTLE_ACTION_REST_COLOR_CLASS} enabled:hover:text-link enabled:focus-visible:text-link`;
-export const SUBTLE_ACTION_INTERACTION_CLASS = 'enabled:hover:bg-current/10 focus-visible:outline focus-visible:outline-focus-ring';
+export const SUBTLE_ACTION_COLOR_CLASS = `${SUBTLE_ACTION_REST_COLOR_CLASS} enabled:not-aria-disabled:hover:text-link enabled:focus-visible:text-link`;
+export const SUBTLE_ACTION_INTERACTION_CLASS = 'enabled:not-aria-disabled:hover:bg-current/10 focus-visible:outline focus-visible:outline-focus-ring';
 
 /**
  * The app's boolean control: compact track (off left, on right) and one state
