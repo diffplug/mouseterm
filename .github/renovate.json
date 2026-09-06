@@ -2,6 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "enabledManagers": ["github-actions", "npm", "cargo"],
   "dependencyDashboard": true,
+  "draftPR": true,
   "timezone": "America/Los_Angeles",
   "schedule": ["* * * * 1"],
   "vulnerabilityAlerts": {

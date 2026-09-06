@@ -9,6 +9,9 @@ pnpm install     # install deps
 pnpm build       # build lib, vscode extension, Pocket, and website
 ```
 
+**Open every PR as a draft.** Chromatic bills per snapshot and skips drafts, so
+marking a PR ready for review is what spends them.
+
 ## Architecture
 
 - **`lib/`** — Shared React + TailwindCSS frontend library: components, tests, Storybook.

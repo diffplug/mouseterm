@@ -8,6 +8,7 @@ on:
       - 'lib/**'
       - 'docs/stories/**'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'lib/**'
       - 'docs/stories/**'
@@ -15,9 +16,25 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # One in-flight build per PR: a push supersedes the build before it, and only
+  # the tip commit needs snapshots. Keyed by SHA on push so main never cancels —
+  # those builds establish the baselines every PR diffs against.
+  group: chromatic-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   chromatic:
     name: Visual Regression Tests
+    # A draft PR does not spend snapshots: marking it ready is the deliberate
+    # trigger. Safe as a required check even though a skipped job reports success —
+    # GitHub refuses to merge a draft at all, so the draft state is itself the gate.
+    # Fork PRs are skipped because secrets are withheld from them: the token would
+    # be empty and the action would fail red having captured nothing.
+    if: >-
+      github.event_name != 'pull_request'
+      || (github.event.pull_request.draft == false
+      && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
