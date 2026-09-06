@@ -255,7 +255,8 @@ Source of truth: `ThemePicker` in `lib/src/components/ThemePicker.tsx`;
 `ThemeList` in `lib/src/components/theme-picker/ThemeList.tsx`;
 `getThemePreview` in `lib/src/components/theme-picker/ThemePreview.tsx`;
 `getThemeSwatchColors` in `lib/src/components/theme-picker/ThemeSwatch.tsx` —
-each pinned by the test beside it; `resolveThemeVars` in
+each pinned by the test beside it except `getThemePreview`, covered by
+`lib/src/components/theme-picker/ThemeList.test.tsx`; `resolveThemeVars` in
 `lib/src/lib/themes/apply.ts`; `themePreviewButton` in `lib/src/components/design.tsx`;
 `lib/src/components/SettingsDialog.tsx`; `setDefaultThemeId()` /
 `restoreActiveTheme()` in `lib/src/lib/themes/apply.ts`; `useRestoredTheme()` in

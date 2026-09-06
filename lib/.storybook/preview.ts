@@ -288,6 +288,9 @@ const preview: Preview = {
         ? makeStubBurrowLink(primedBurrow)
         : undefined;
 
+      // A picker story's selection must not change later stories' theme restore.
+      window.localStorage.removeItem('dormouse:active-theme');
+
       // Installed themes normally arrive from OpenVSX and live in localStorage,
       // which every story shares — so a story that wants them names them, and
       // every other story clears them.

@@ -664,7 +664,7 @@ export type ChromeButtonVariants = VariantProps<typeof chromeButton>;
 
 // Buttons that sit on a previewed theme rather than the host's: every theme
 // picker surface paints a *candidate* palette, so these inherit `currentColor`
-// where `chromeButton` and `modalIconButton` would reach for `text-muted`,
+// where `modalIconButton` would reach for `text-muted`,
 // `hover:bg-foreground/10`, or `outline-focus-ring` — host tokens that would
 // read as a foreign color on the preview. Hover feedback is the label
 // underline, not a fill, for the same reason (docs/specs/theme.md).
