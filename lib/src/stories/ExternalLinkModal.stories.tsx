@@ -67,14 +67,6 @@ export const CustomScheme: Story = {
   },
 };
 
-// Custom scheme with a plain label.
-export const CustomSchemePlain: Story = {
-  args: {
-    uri: 'vscode://file/Users/dev/project/src/App.tsx:42:7',
-    displayText: 'open in editor',
-  },
-};
-
 // file:// URL — match case.
 export const FileUrl: Story = {
   args: {
