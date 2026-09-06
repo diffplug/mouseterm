@@ -40,6 +40,21 @@ describe('redactHighEntropyTokens', () => {
   });
 
   it.each([
+    'pod-3f2504e0-4f89-11d3-9a0c-0305e82c3301',
+    '3f2504e0-4f89-11d3-9a0c-0305e82c3301-log',
+    'session_8b7d0c4e9f2a61035e8c9d1f04a76b23',
+    'job_8b7d-0c4e-9f2a-6103_output',
+  ])('redacts a whole candidate containing an embedded hex key: %s', (token) => {
+    expect(redactHighEntropyTokens(token)).toBe('REDACTED');
+  });
+
+  it('checks every hex run without exempting the entire enclosing token', () => {
+    expect(redactHighEntropyTokens(`8b7d0c4e9f2a6103_${'x'.repeat(100)}`)).toBe('REDACTED');
+    expect(redactHighEntropyTokens(`${'0'.repeat(100)}_job_8b7d0c4e9f2a6103`)).toBe('REDACTED');
+    expect(redactHighEntropyTokens('pod_8b7d0c4e9f2a610')).toBe('pod_8b7d0c4e9f2a610');
+  });
+
+  it.each([
     ['ordinary text', 'pnpm test: build finished'],
     ['a long word under every entropy cutoff', 'internationalization configuration'],
     ['non-ASCII text', '构建完成。終了コード：０'],
