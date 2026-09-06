@@ -1,31 +1,37 @@
 /**
  * Dormouse Pocket — the phone-side app (docs/specs/pocket-app.md).
  *
- * Auth screens over {@link PocketClient} — sign in (or first-time passkey setup)
- * → pick a host (pair once, which continues straight into connect) — then, on
- * a successful connect, the real mobile experience: a {@link RemotePtyAdapter}
+ * Auth screens over {@link PocketClient} — scan a computer's code (or sign in,
+ * on a browser that has been here) → pick a paired computer → connect — then,
+ * on a successful connect, the real mobile experience: a {@link RemotePtyAdapter}
  * over the session drives `MobileTerminalUi`/`MobileWall` (the same composition
  * the website playground proves out with `FakePtyAdapter`). No bespoke terminal
  * UI.
  *
  * The whole shell — auth screens included — renders on the shared `--vscode-*`
  * design tokens, restored to <body> before first paint by restorePocketTheme()
- * in main.tsx. Chrome draws only on the three list pairs — see the vocabulary
- * below and docs/specs/theme.md.
+ * in main.tsx. Chrome draws only on the three list pairs — see
+ * `pocket-chrome.tsx` and docs/specs/theme.md.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { clsx } from 'clsx';
-import { tv } from 'tailwind-variants';
 import {
   PocketClient,
+  RelayRefusalError,
   SessionExpiredError,
-  type ConnectDecision,
+  PasskeyUnavailableError,
+  type ConnectResult,
   type PocketSocket,
 } from '../client/pocket-client';
-import { browserWebAuthn } from '../client/webauthn';
-import { pairingFingerprint } from 'server-lib-common';
-import { getOrCreateDeviceKey } from '../client/device-key';
+import { PasskeyAlreadyRegisteredError, browserWebAuthn } from '../client/webauthn';
+import { BURROW_IS_AN_APP, SCAN_LABEL } from '../setup-copy';
+import { probeNoiseSupport, type PairingInvitation } from 'remote-lib-common';
+import {
+  indexedDbKnownBurrowStore,
+  indexedDbPendingDeletionStore,
+  type KnownBurrowV1,
+} from '../client/pocket-db';
 import {
   getPushAvailability,
   hasCurrentPushSubscription,
@@ -38,38 +44,35 @@ import { RemotePtyAdapter } from '../client/remote-adapter';
 import { setPlatform } from '../../lib/platform';
 import { disposeAllSessions, initAlertStateReceiver } from '../../lib/terminal-registry';
 import { PocketWall } from './PocketWall';
-import '../../index.css';
+import { ScanInvitation, type StartScan } from './ScanInvitation';
+import { ErrorRow, PK, pkButton } from './pocket-chrome';
 
-type Phase = 'auth' | 'hosts' | 'wall';
+/**
+ * Which screen is up, carrying whatever only that screen has. The two pieces
+ * that used to sit beside it — the pairing digits and the connected Burrow — are
+ * in here because they are meaningless anywhere else, and keeping them in
+ * lockstep with a separate `phase` string was four places to get it wrong.
+ */
+type Phase =
+  | { readonly at: 'auth' }
+  | { readonly at: 'scan' }
+  /** `code` is null for the moment between the handshake and the sampled code. */
+  | { readonly at: 'pairing'; readonly code: string | null }
+  | { readonly at: 'burrows' }
+  | { readonly at: 'wall'; readonly burrow: BurrowView };
 
-export interface HostView {
-  hostId: string;
+/** One row of the Burrows view: a pinned record, plus what the Relay knows. */
+export interface BurrowView {
+  burrowId: string;
   label: string;
   online: boolean;
+  /**
+   * The pinned record has lost its authorization — an authenticated
+   * `pairing-required`, or a local removal that has not finished. The row
+   * offers *Pair again* rather than a Connect that can only fail.
+   */
+  needsPairing: boolean;
 }
-
-/**
- * What a Hosts row knows about this Client's standing with one Host.
- *
- * `stale` is `unpaired` the user has already been bitten by — a connect the
- * Host denied for an ACL miss — and differs only in saying "Pair again", so the
- * row explains itself instead of re-offering the tap that just failed.
- */
-export type HostPairState = 'paired' | 'unpaired' | 'stale';
-
-/**
- * One-way refinement: because `stale` refines `unpaired`, a sweep's plain
- * `unpaired` must not erase what a denial taught the row — only a pairing
- * clears it. Lives next to the state so no writer has to know the rule.
- */
-export function refinePairState(
-  prev: HostPairState | undefined,
-  next: HostPairState,
-): HostPairState {
-  return next === 'unpaired' && prev === 'stale' ? 'stale' : next;
-}
-
-export type PushConfigStatus = 'loading' | 'ready' | 'disabled' | 'error';
 
 type PushConfigState =
   | { status: 'loading' }
@@ -77,117 +80,39 @@ type PushConfigState =
   | { status: 'disabled' }
   | { status: 'error' };
 
+export type PushConfigStatus = PushConfigState['status'];
+
 /**
  * The label this Client suggests at pairing.
  *
  * One phone can hold two Client identities — a Safari tab and a Home Screen
- * install have separate storage and therefore separate device keys — and they
- * are genuinely separate delivery targets that cannot be merged. Naming the
- * mode is what lets the person approving on the laptop, and the alarm dialog
- * afterwards, tell them apart.
+ * install have separate storage and therefore separate per-Burrow statics — and
+ * they are genuinely separate delivery targets that cannot be merged. Naming
+ * the mode is what lets the person approving on the laptop, and the alarm
+ * dialog afterwards, tell them apart.
  */
 function deviceLabel(): string {
   return isInstalledWebApp() ? 'Dormouse Pocket (Home Screen)' : 'Dormouse Pocket (browser)';
 }
 
-// --- Pocket chrome vocabulary ------------------------------------------------
-//
-// Everything below is one of the three list pairs (app / header-active /
-// header-inactive) plus alpha-on-fg for secondary text. See theme.md.
+/** What a browser that cannot run the protocol is told, and the whole of it. */
+export const UNSUPPORTED_BROWSER_TITLE = 'This browser cannot run Dormouse Pocket';
+export const UNSUPPORTED_BROWSER_BODY =
+  'Dormouse Pocket needs X25519 in the Web Crypto API, which this browser does not have. ' +
+  'Update it, or open Dormouse Pocket in a newer browser.';
 
-/**
- * Buttons.
- *  - primary  = the active header pair (caramel): the one strong action.
- *  - secondary = recessed to the page bg; reads as a button when it sits on an
- *    inactive-header row via the guaranteed app↔inactive delta.
- *  - outline = the subordinate action *on* the page, where secondary would be
- *    bg-on-bg: an alpha-on-fg hairline, because panel-border is transparent in
- *    many themes. Drawn as an inset shadow rather than a border (DESIGN.md,
- *    the Inset-Over-Border Rule), and at /25 rather than `PK.divided`'s /15 —
- *    a tappable affordance has to hold its edge, where a divider only has to
- *    separate.
- *  - ghost = transparent, inherits the surrounding band fg (header actions).
- */
-const pkButton = tv({
-  base: 'inline-flex items-center justify-center rounded-lg font-medium transition-colors active:brightness-110 disabled:pointer-events-none disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring',
-  variants: {
-    tone: {
-      primary: 'bg-header-active-bg text-header-active-fg',
-      secondary: 'bg-app-bg text-app-fg',
-      outline: 'shadow-[inset_0_0_0_1px] shadow-app-fg/25 text-app-fg',
-      ghost: 'text-inherit hover:bg-current/10',
-    },
-    size: {
-      lg: 'min-h-[44px] px-4 text-[13px]',
-      sm: 'min-h-9 px-3 text-[12px]',
-    },
-    block: { true: 'w-full', false: '' },
-  },
-  defaultVariants: { tone: 'primary', size: 'lg', block: false },
-});
+/** The copy a run that arrived from the phone's own camera leads with. */
+export const CAMERA_BOOTSTRAP_MESSAGE = 'Scan again from inside Dormouse Pocket';
 
-const PK = {
-  app: 'flex h-full min-h-0 flex-col bg-app-bg text-app-fg',
-  // Header band = the ACTIVE header pair (the "titlebar").
-  header:
-    'flex shrink-0 items-center gap-2 bg-header-active-bg px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] text-header-active-fg',
-  headerTitle: 'm-0 min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[0.01em]',
-  body:
-    'flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]',
-  // Safe centering: the first-run screen (install notice + setup + the sign-in
-  // alternative) can outgrow a small phone, and plain `justify-center` in a
-  // scroll container puts the overflow above the scrollable area, unreachable.
-  // WebKit before Safari/iOS 17.6 does not parse the `safe` keyword and drops
-  // the declaration, so those devices render top-aligned — usable and
-  // scrollable, and accepted, because a plain `justify-center` fallback would
-  // reintroduce the unreachable overflow on exactly the devices that lack it.
-  bodyCenter: 'justify-center-safe',
-  wallHost: 'flex min-h-0 flex-1 flex-col',
-  // Host row = the INACTIVE header pair (a list item lifted off the page).
-  row: 'flex w-full items-center gap-3 rounded-lg bg-header-inactive-bg px-3.5 py-3 text-left text-header-inactive-fg',
-  rowOffline: 'opacity-55', // presence = intensity, no extra color
-  rowMain: 'min-w-0 flex-1',
-  rowTitle: 'truncate text-[13px] font-semibold',
-  rowSecondary: 'mt-0.5 truncate text-[11px] text-header-inactive-fg/70',
-  rowActions: 'flex shrink-0 items-center gap-2',
-  // An actionable notice: the inactive-header pair, so it reads as a raised
-  // block like a host row rather than as an error (which owns `text-error`).
-  notice: 'flex flex-col gap-2 rounded-lg bg-header-inactive-bg px-3.5 py-3 text-header-inactive-fg',
-  noticeTitle: 'text-[13px] font-semibold',
-  noticeBody: 'm-0 text-[12px] leading-relaxed text-header-inactive-fg/70',
-  field: 'flex flex-col gap-1.5',
-  fieldLabel: 'text-[11px] text-app-fg/60',
-  input:
-    'w-full rounded-lg bg-input-bg px-3.5 py-3 text-[16px] text-app-fg outline-none focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus-ring',
-  title: 'm-0 text-[20px] font-semibold',
-  lead: 'm-0 text-[13px] leading-relaxed text-app-fg/70',
-  // Error sits on the darker page bg (best red contrast) and is delineated by a
-  // reliable red inset hairline — panel-border is transparent in many themes.
-  error: 'rounded-lg px-3.5 py-2.5 text-[13px] text-error shadow-[inset_0_0_0_1px_var(--color-error)]',
-  empty: 'px-4 py-10 text-center text-[13px] text-app-fg/70',
-  // A settled fact about this browser, captioned rather than carded: the device
-  // key, and push once every paired Host can reach it.
-  deviceLine: 'px-4 pt-1 text-[11px] text-app-fg/60',
-  disclosure:
-    'w-fit cursor-pointer text-[12px] text-app-fg/70 underline underline-offset-2 transition-colors hover:text-app-fg',
-  // A group of form controls; `divided` sets one off from the action above it.
-  setup: 'flex flex-col gap-3',
-  divided: 'border-t border-app-fg/15 pt-4',
-} as const;
-
-/**
- * The one failure presentation, on all three screens. Announced everywhere,
- * because on each of them a failure is the only thing that changed.
- */
-function ErrorRow({ message }: { message: string }): React.ReactElement {
-  return (
-    <div className={PK.error} role="alert">
-      {message}
-    </div>
-  );
-}
-
-export default function App(): React.ReactElement {
+export default function App({
+  arrivedByCamera = false,
+  startScan,
+}: {
+  /** This run was opened from a `#pair?` link the native camera followed. */
+  arrivedByCamera?: boolean;
+  /** Test/story seam for the camera; see {@link ScanInvitation}. */
+  startScan?: StartScan;
+}): React.ReactElement {
   const client = useMemo(
     () =>
       new PocketClient({
@@ -195,28 +120,28 @@ export default function App(): React.ReactElement {
         fetch: window.fetch.bind(window),
         webauthn: browserWebAuthn,
         createWebSocket: (url) => new WebSocket(url) as unknown as PocketSocket,
-        deviceKey: () => getOrCreateDeviceKey(),
+        knownBurrows: indexedDbKnownBurrowStore(),
+        pendingDeletions: indexedDbPendingDeletionStore(),
       }),
     [],
   );
 
-  // This browser's own device-key fingerprint, shown on the Hosts screen so
-  // the laptop's approval modal can actually be checked against something. The
-  // pairing ceremony verifies no assertion — the human at the modal is the
-  // control, and until both ends showed the same 8 characters that human was
-  // being asked to approve a key they had no way to recognize.
-  const [deviceFingerprint, setDeviceFingerprint] = useState<string | null>(null);
+  /**
+   * Whether this runtime can run the protocol at all. **Null until the probe
+   * settles, and no remote operation happens before it does**: a runtime
+   * without X25519 is gated, never degraded
+   * (`docs/specs/remote-security-model.md` → Burrow identity).
+   */
+  const [noiseSupported, setNoiseSupported] = useState<boolean | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    void getOrCreateDeviceKey()
-      .then(({ devicePublicKey }) => {
-        if (!cancelled) setDeviceFingerprint(pairingFingerprint(devicePublicKey));
-      })
-      // A device key this browser cannot create is a failure the pair/connect
-      // paths already report; this display is not the place to raise it again.
-      .catch(() => undefined);
+    let live = true;
+    // The probe never throws — every rejection, a missing WebCrypto included,
+    // is `false`.
+    void probeNoiseSupport().then((ok) => {
+      if (live) setNoiseSupported(ok);
+    });
     return () => {
-      cancelled = true;
+      live = false;
     };
   }, []);
 
@@ -228,138 +153,138 @@ export default function App(): React.ReactElement {
    */
   const [needsInstall] = useState(needsHomeScreenInstall);
 
-  const [phase, setPhase] = useState<Phase>('auth');
+  /**
+   * The authenticator refused to register because it already holds a passkey
+   * the Relay has. Not stored: we learn that one exists, never its id or its
+   * key, and {@link PocketClient.hasPriorUse} answers from material this
+   * browser can actually use. So it lives here, for this screen, until the
+   * sign-in it steers to caches the real thing.
+   */
+  const [passkeyAlreadyRegistered, setPasskeyAlreadyRegistered] = useState(false);
+
+  const [phase, setPhase] = useState<Phase>({ at: 'auth' });
   /**
    * The last failure. Unkeyed, because every screen that reports one owns its
    * whole viewport: whatever failed last is the only thing there is to say.
    */
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [hosts, setHosts] = useState<HostView[]>([]);
-  const [pairStates, setPairStates] = useState<ReadonlyMap<string, HostPairState>>(
-    () => new Map(),
-  );
-  const [activeHost, setActiveHost] = useState<HostView | null>(null);
+  const [burrows, setBurrows] = useState<BurrowView[]>([]);
+  /** Set by Cancel on the waiting screen, so the abort is not reported as a failure. */
+  const cancelledPairingRef = useRef(false);
   const [pushState, setPushState] = useState<PushAvailability | null>(null);
-  /** Null while the Server's answer is unknown — see the effect below. */
-  const [pushSubscribedHostIds, setPushSubscribedHostIds] = useState<Set<string> | null>(null);
+  /** Null while the Relay's answer is unknown — see the effect below. */
+  const [pushSubscribedBurrowIds, setPushSubscribedBurrowIds] = useState<Set<string> | null>(null);
   const [pushSubscriptionCurrent, setPushSubscriptionCurrent] = useState(false);
   const [pushConfig, setPushConfig] = useState<PushConfigState>({ status: 'loading' });
   /**
-   * Advances at the start of every push load, and on a completed registration
-   * that supersedes one; see the effect below.
+   * A monotonic token: every push read commits only while it is still the
+   * current one, so anything newer — a later load, or a completed registration
+   * — supersedes a load whole rather than each continuation carrying a guard.
+   * Cheaper than a cleanup, and it survives the hop onto the wall.
    */
   const pushLoadRunRef = useRef(0);
   const adapterRef = useRef<RemotePtyAdapter | null>(null);
 
   /**
-   * Which auth screen leads. A browser with no stored passkey material has
-   * never completed anything here, so "Welcome back" would be a lie and the
-   * setup it needs would sit behind a disclosure.
-   *
-   * Derived, never latched, because both directions of staleness are bugs a
-   * user hits: a setup that registers the passkey but then fails before
-   * leaving `auth` (a cancelled second WebAuthn prompt, a socket error) must
-   * flip the screen to "Welcome back", so the retry signs in rather than
-   * minting a second server-side passkey; and a session expiry that drops back
-   * to `auth` must paint the returning screen on the first commit, not one
-   * effect tick later.
+   * The Relay's VAPID key, and whether this browser's subscription still
+   * matches it. One operation, two callers: the Burrows-entry load below (which
+   * commits only while its run token is current) and the Retry action.
    */
-  const firstRun = phase === 'auth' && !client.hasPriorUse();
-
-  const pairStateOf = (hostId: string): HostPairState => pairStates.get(hostId) ?? 'unpaired';
-  const isPaired = (hostId: string) => pairStateOf(hostId) === 'paired';
-
-  const setPairStateFor = useCallback((hostId: string, state: HostPairState) => {
-    setPairStates((prev) => {
-      const settled = refinePairState(prev.get(hostId), state);
-      if (prev.get(hostId) === settled) return prev;
-      const next = new Map(prev);
-      next.set(hostId, settled);
-      return next;
-    });
-  }, []);
+  const loadPushConfig = useCallback(
+    async (commit: () => boolean) => {
+      setPushConfig({ status: 'loading' });
+      try {
+        const key = await client.getPushConfig();
+        const subscriptionCurrent =
+          key !== null &&
+          (await hasCurrentPushSubscription(key, client.registeredPushEndpoint()).catch(
+            () => false,
+          ));
+        if (!commit()) return;
+        setPushConfig(key === null ? { status: 'disabled' } : { status: 'ready', key });
+        setPushSubscriptionCurrent(subscriptionCurrent);
+      } catch (err) {
+        if (commit()) setPushConfig({ status: 'error' });
+        throw err;
+      }
+    },
+    [client],
+  );
 
   // Availability depends on browser state the app cannot change (permission,
   // whether it was launched from the Home Screen), so it is read on entering the
-  // Hosts list rather than tracked as a store — that per-visit probe is the
+  // Burrows list rather than tracked as a store — that per-visit probe is the
   // authoritative one.
   //
-  // Keyed to the `hosts` phase alone, so the hop onto the wall neither refetches
-  // it nor throws it away. What a cleanup would have done, a monotonic run token
-  // does instead: every continuation commits only if its token is still the
-  // current one, so anything newer supersedes this load whole — a later load, or
-  // a completed registration (see `onEnablePush`) — without an in-flight read
-  // being dropped at the navigation. (`App` never unmounts between phases, so
-  // there is nothing to tear down on the way out.)
+  // Keyed to the `burrows` phase alone, so the hop onto the wall neither refetches
+  // it nor throws it away; the run token (above) is what supersedes an in-flight
+  // read instead of a cleanup. (`App` never unmounts between phases, so there is
+  // nothing to tear down on the way out.)
   //
   // The VAPID key is fetched here too, so the Enable tap has no network round
   // trip in front of the permission prompt — iOS drops transient activation
   // across one.
+  const at = phase.at;
   useEffect(() => {
-    if (phase !== 'hosts') return;
+    if (at !== 'burrows') return;
     const run = ++pushLoadRunRef.current;
     const current = () => pushLoadRunRef.current === run;
-    setPushConfig({ status: 'loading' });
     setPushSubscriptionCurrent(false);
     void getPushAvailability().then((state) => {
       if (current()) setPushState(state);
     });
+    void loadPushConfig(current).catch(() => {
+      // Reported by the card's Retry state; a failed prefetch is not an alert.
+    });
+    // Which Burrows this device already registered with, asked by presenting this
+    // browser's own delivery ids. Without it a reload re-offers Enable for every
+    // Burrow, including ones the Relay already holds a row for. Authoritative
+    // rather than merged, so a row pruned after a 410 stops claiming push is on.
+    // Null means unanswered, which `isPushOn` below reads as not-on rather than
+    // settling it at empty.
+    setPushSubscribedBurrowIds(null);
     void client
-      .getPushConfig()
-      .then(async (key) => {
-        const subscriptionCurrent =
-          key !== null ? await hasCurrentPushSubscription(key, client.registeredPushEndpoint()).catch(() => false) : false;
-        if (current()) {
-          setPushConfig(key === null ? { status: 'disabled' } : { status: 'ready', key });
-          setPushSubscriptionCurrent(subscriptionCurrent);
-        }
-      })
-      .catch(() => {
-        if (current()) setPushConfig({ status: 'error' });
-      });
-    // Which Hosts this device already registered with. Without it a reload
-    // re-offers Enable for every Host, including ones the Server already holds
-    // a row for. Authoritative rather than merged, so a row pruned after a 410
-    // stops claiming push notifications are on. Null means unanswered, which
-    // `isPushOn` below reads as not-on rather than settling it at empty.
-    setPushSubscribedHostIds(null);
-    void client
-      .listPushSubscribedHosts()
-      .then((hostIds) => {
-        if (current()) setPushSubscribedHostIds(new Set(hostIds));
+      .listPushSubscribedBurrows()
+      .then((burrowIds) => {
+        if (current()) setPushSubscribedBurrowIds(new Set(burrowIds));
       })
       .catch(() => {
         // Stay unanswered. A read that failed learned nothing, so the card
         // re-offers its idempotent Enable rather than claiming push is on; the
-        // next Hosts entry re-reads.
+        // next Burrows entry re-reads.
       });
-  }, [phase, client]);
+  }, [at, client, loadPushConfig]);
 
   /**
-   * Whether this device is registered for push notifications with one Host.
+   * Whether this device is registered for push notifications with one Burrow.
    *
-   * Demands both a Server row and a browser subscription that still matches it,
+   * Demands both a Relay row and a browser subscription that still matches it,
    * since either half missing means the repair path has to stay offered — and
    * an unanswered read (in flight, or failed) is not a row.
    */
-  const isPushOn = (hostId: string): boolean =>
-    pushSubscriptionCurrent && (pushSubscribedHostIds?.has(hostId) ?? false);
+  const isPushOn = (burrowId: string): boolean =>
+    pushSubscriptionCurrent && (pushSubscribedBurrowIds?.has(burrowId) ?? false);
 
-  // The client nulls its socket on any close, so an action taken after a
-  // server restart / network drop must reopen it rather than reuse a dead
-  // socket (which would throw 'relay socket is not open'). Every user action
-  // that sends a frame funnels through here so it self-heals.
-  const ensureSocket = useCallback(async () => {
-    if (!client.socketOpen) await client.openSocket();
-  }, [client]);
-
-  /** Tear down the live session and return to the hosts list. */
+  /** Tear down the live session and return to the burrows list. */
   const teardownAdapter = useCallback(() => {
     void adapterRef.current?.dispose();
     adapterRef.current = null;
     disposeAllSessions();
   }, []);
+
+  /**
+   * End the session outright: **no adapter without a socket, and no socket
+   * without an adapter.** Every way out of a live wall lands here — leaving it,
+   * an expired session, an adapter that could not stand up — so the three
+   * cannot drift into different ideas of what "ended" means. The two paths that
+   * deliberately do only half are `setOnBurrowGone` (the socket is already gone)
+   * and `onCancelPairing` (there is no adapter yet).
+   */
+  const endSession = useCallback(() => {
+    teardownAdapter();
+    client.close();
+  }, [client, teardownAdapter]);
 
   const run = useCallback(
     async (label: string, fn: () => Promise<void>) => {
@@ -372,12 +297,10 @@ export default function App(): React.ReactElement {
         // already discarded, so every view above sign-in would fail the same
         // way, and an installed Pocket has no reload affordance to escape with.
         // Drop to sign-in, where one passkey prompt restores everything —
-        // pairing and push registration both outlive the session.
-        if (err instanceof SessionExpiredError) {
-          teardownAdapter();
-          client.close();
-          setActiveHost(null);
-          setPhase('auth');
+        // the pinned Burrows and push registration both outlive the session.
+        if (err instanceof SessionExpiredError || err instanceof PasskeyUnavailableError) {
+          endSession();
+          setPhase({ at: 'auth' });
           setError(err.message);
           return;
         }
@@ -386,125 +309,191 @@ export default function App(): React.ReactElement {
         setBusy(null);
       }
     },
-    [client, teardownAdapter],
+    [endSession],
   );
 
-  const loadHosts = useCallback(async () => {
-    await ensureSocket();
-    const list = await client.listHosts();
-    setHosts(list);
-    // The cached marker, as the opening guess only — the effect below replaces
-    // it with what each online Host says about its own ACL. Reseeded through
-    // the refinement so a Refresh cannot decay "Pair again" either.
-    setPairStates(
-      (prev) =>
-        new Map(
-          list.map((h) => {
-            const guess: HostPairState = client.isPaired(h.hostId) ? 'paired' : 'unpaired';
-            return [h.hostId, refinePairState(prev.get(h.hostId), guess)];
-          }),
-        ),
-    );
-    setPhase('hosts');
-  }, [client, ensureSocket]);
+  /**
+   * The Burrows list: the pinned records, with online state stamped on from the
+   * Relay. **A Burrow with no record is not shown** — the Relay's list is
+   * discovery, and a row for a computer this phone holds no key for would offer
+   * an action that cannot exist.
+   */
+  const loadBurrows = useCallback(async () => {
+    const [records, enrolled] = await Promise.all([client.listKnownBurrows(), client.listBurrows()]);
+    const online = new Map(enrolled.map((burrow) => [burrow.burrowId, burrow.online]));
+    setBurrows(records.map((record) => toBurrowView(record, online.get(record.burrowId) ?? false)));
+    setPhase({ at: 'burrows' });
+    // Owed deletions retry here: this runs after every sign-in and on every
+    // return to the list, and a tombstone clears only on the Relay's answer.
+    // Never awaited: it is best-effort, never throws, and nothing on the list
+    // it just painted depends on it — a backlog is N serial DELETEs.
+    void client.retirePendingDeletions();
+  }, [client]);
 
-  // Ask each online Host whether it holds an ACL record for this Client, so a
-  // row offers Pair or Connect but never a Connect that can only fail. The
-  // marker is a local guess that a Host ACL reset, a hand-edited record, or a
-  // pairing done from another browser profile all falsify; the Host is the
-  // party that knows. Offline and unanswered rows keep the marker — it is the
-  // only thing there is.
-  //
-  // Serially, because the relay answers a frame naming a Host that went offline
-  // with an `error` that fails every waiter in flight: one at a time, that costs
-  // the row that asked rather than every row. The same fail-all blast radius is
-  // why the sweep yields to user actions — `busy` in the deps stops new asks
-  // the moment a pair/connect ceremony starts (one already in flight is the
-  // residual risk until error frames carry correlation) and restarts the sweep
-  // when the action ends.
+  // Socket drop / burrow-gone: dispose the adapter and fall back to Burrows.
   useEffect(() => {
-    if (phase !== 'hosts' || busy !== null) return;
-    let live = true;
-    void (async () => {
-      try {
-        // Reopen after leaveWall's close — otherwise every ask on this pass
-        // throws into the catch below and the sweep silently learns nothing.
-        await ensureSocket();
-      } catch {
-        return; // No socket, no truth; the cached markers stand.
-      }
-      for (const host of hosts) {
-        if (!live) return;
-        if (!host.online) continue;
-        try {
-          const paired = await client.queryPaired(host.hostId);
-          if (live) setPairStateFor(host.hostId, paired ? 'paired' : 'unpaired');
-        } catch {
-          // Display truth is best-effort: a Host that cannot be asked keeps the
-          // cached marker, and pair/connect still report the real failure.
-        }
-      }
-    })();
-    return () => {
-      live = false;
-    };
-  }, [phase, busy, hosts, client, ensureSocket, setPairStateFor]);
-
-  // Socket drop / host-gone: dispose the adapter and fall back to Hosts.
-  useEffect(() => {
-    client.setOnHostGone(() => {
+    client.setOnBurrowGone(() => {
       teardownAdapter();
-      setError('The host disconnected.');
-      setActiveHost(null);
-      setPhase('hosts');
+      setError('The connection to the computer ended.');
+      setPhase({ at: 'burrows' });
     });
-    return () => client.setOnHostGone(null);
+    return () => client.setOnBurrowGone(null);
   }, [client, teardownAdapter]);
 
   /** The connect half, shared so a fresh pairing can continue straight into it. */
   const connectTo = useCallback(
-    async (host: HostView) => {
-      await ensureSocket();
-      const decision: ConnectDecision = await client.connect(host.hostId);
-      if (!decision.allowed) {
-        // The Host does not recognize this credential/device pair, whatever the
-        // marker claimed. The client has already dropped the marker; the row
-        // says Pair again rather than re-offering the tap that just failed.
-        if (decision.pairingStale) setPairStateFor(host.hostId, 'stale');
-        throw new Error(`Connection denied${decision.failures ? `: ${decision.failures.join(', ')}` : ''}`);
+    async (burrow: BurrowView) => {
+      const decision: ConnectResult = await client.connect(burrow.burrowId);
+      if (!decision.ok) {
+        // The record has already been rewritten where the Burrow said
+        // `pairing-required`; re-reading is what puts *Pair again* on the row.
+        if (decision.pairingRequired) await loadBurrows();
+        throw new Error(decision.message);
       }
-      await client.hello();
+      try {
+        await client.hello();
 
-      // Stand up the remote adapter as the platform, prep a clean registry,
-      // then start watching the directory before the wall renders.
-      const adapter = new RemotePtyAdapter(client);
-      adapterRef.current = adapter;
-      setPlatform(adapter);
-      disposeAllSessions();
-      initAlertStateReceiver();
-      await adapter.init();
+        // Stand up the remote adapter as the platform, prep a clean registry,
+        // then start watching the directory before the wall renders.
+        const adapter = new RemotePtyAdapter(client);
+        adapterRef.current = adapter;
+        setPlatform(adapter);
+        disposeAllSessions();
+        initAlertStateReceiver();
+        await adapter.init();
+      } catch (err) {
+        // The session is already established, and the throw sends the user back
+        // to the Burrows list — where nothing can end it. Leaving it up keeps
+        // this phone keepaliving a Burrow it is not attached to and holding one
+        // of the Burrow's session slots, while the next Connect handshakes over
+        // the top of it.
+        endSession();
+        throw err;
+      }
 
-      setActiveHost(host);
-      setPhase('wall');
+      setPhase({ at: 'wall', burrow });
     },
-    [client, ensureSocket, setPairStateFor],
+    [client, endSession, loadBurrows],
   );
 
-  const onConnect = (host: HostView) => run('connect', () => connectTo(host));
+  const onConnect = (burrow: BurrowView) => run('connect', () => connectTo(burrow));
 
-  const onPair = (host: HostView) =>
-    run('pair', async () => {
-      await ensureSocket();
-      const result = await client.pair(host.hostId, deviceLabel());
-      if (!result.approved) throw new Error(result.error ?? 'Pairing was denied.');
-      // Recorded before connecting, so a connect that then fails leaves a row
-      // offering Connect rather than one asking to pair all over again.
-      setPairStateFor(host.hostId, 'paired');
-      // Approving on the laptop should land the phone in a terminal, not back
-      // on this list. Re-labelling busy is what keeps the row it swapped to
-      // showing progress instead of an idle-looking disabled Connect.
-      setBusy('connect');
-      await connectTo(host);
+  const onWallError = useCallback((error: unknown) => {
+    endSession();
+    setError(error instanceof Error ? error.message : String(error));
+    setPhase({ at: 'burrows' });
+  }, [endSession]);
+
+  /**
+   * A scanned or pasted invitation, from the moment it parses to the moment the
+   * ceremony ends. The invitation itself never leaves this call: it is a live
+   * credential, and the only place it is allowed to exist is the argument list
+   * of the pairing it starts.
+   */
+  const onScanned = useCallback(
+    (invitation: PairingInvitation) =>
+      run('pair', async () => {
+        cancelledPairingRef.current = false;
+        const label = deviceLabel();
+        let spentOnSetup = false;
+        if (client.sessionToken === null) {
+          // A browser with no usable passkey registers one with the scanned
+          // token; anything else signs in with what it already holds.
+          let mustRegister = !hasPriorUseNow(client, passkeyAlreadyRegistered);
+          if (!mustRegister) {
+            try {
+              await client.signin();
+            } catch (err) {
+              // **A Relay that says it has never heard of this credential
+              // outranks this browser's own record of prior use.** `setup`
+              // caches the passkey before `setupFinish`, so a first run whose
+              // `finish` never reached the Relay leaves a browser that reads
+              // as returning while holding a credential the account never got.
+              // Without this, every later scan signs in, fails, and clearing
+              // site data is the only way out.
+              //
+              // **Only the 404.** Every other refusal — a challenge that
+              // expired while the user sat at the Face ID prompt, a rejected
+              // assertion, a restarting Relay's 502 — refuses *this attempt*
+              // and proves nothing; registering on one would spend the
+              // single-use setup token and mint a redundant second passkey. A
+              // dismissed prompt or a dead radio propagates as before.
+              if (!(err instanceof RelayRefusalError) || err.status !== 404) throw err;
+              mustRegister = true;
+            }
+          }
+          if (mustRegister) {
+            try {
+              await client.setup({ setupToken: invitation.setupToken }, label);
+            } catch (err) {
+              // Registration can never succeed on this device, so the scan is
+              // over: sign-in leads, and is now known to work.
+              if (err instanceof PasskeyAlreadyRegisteredError) setPasskeyAlreadyRegistered(true);
+              throw err;
+            }
+            spentOnSetup = true;
+            await client.signin();
+          }
+        }
+        // A signed-in phone has no passkey to create, so it spends the code
+        // rather than leaving a photographed QR redeemable. A refusal aborts:
+        // the code is dead, and pairing with it would fail at the Burrow anyway.
+        if (!spentOnSetup) await client.retireSetupToken(invitation.setupToken);
+        await client.retirePendingDeletions();
+
+        setPhase({ at: 'pairing', code: null });
+        // **Nothing may throw out of here while the pairing screen is up.** It
+        // shows two digits and a Cancel button and renders no error, so a throw
+        // left standing hides the one sentence the path exists to deliver —
+        // `BurrowIdentityMismatchError` above all, but equally a dismissed
+        // authenticator prompt or a connect the Burrow refused after approving the
+        // pair. `pair` and `connect` report denials as results and throw for the
+        // rest, so the whole span is covered rather than either call.
+        try {
+          // The digits land on the screen already showing them, and only while it
+          // is still up — a code arriving after Cancel has nowhere to go.
+          const result = await client.pair(invitation, label, (code) =>
+            setPhase((current) => (current.at === 'pairing' ? { at: 'pairing', code } : current)),
+          );
+          if (cancelledPairingRef.current) {
+            // The user stopped waiting; whatever the ceremony answered afterwards
+            // is not a failure to report at them.
+            await loadBurrows();
+            return;
+          }
+          if (!result.ok) {
+            await loadBurrows();
+            throw new Error(result.message);
+          }
+          // Approving on the laptop should land the phone in a terminal, not back
+          // on a list. Re-labelling busy keeps the screen showing progress.
+          setBusy('connect');
+          setBurrows((prev) => withRecord(prev, result.record));
+          await connectTo(toBurrowView(result.record, true));
+        } catch (err) {
+          // Leave first, then re-read, so a failed re-read cannot strand them
+          // either. Both are no-ops once a successful connect has moved on.
+          setPhase((current) => (current.at === 'pairing' ? { at: 'burrows' } : current));
+          await loadBurrows().catch(() => undefined);
+          throw err;
+        }
+      }),
+    [client, connectTo, loadBurrows, passkeyAlreadyRegistered, run],
+  );
+
+  const onCancelPairing = () => {
+    cancelledPairingRef.current = true;
+    // Closing the socket is what ends a ceremony there is no other way out of:
+    // the Burrow's own invitation is spent by the outcome or by its TTL, and the
+    // waiter this drops is the only thing still holding the screen.
+    client.close();
+    setPhase({ at: 'burrows' });
+  };
+
+  const onForget = (burrow: BurrowView) =>
+    run('forget', async () => {
+      await client.forgetBurrow(burrow.burrowId);
+      await loadBurrows();
     });
 
   // Must stay free of network round trips before the permission prompt — see
@@ -512,22 +501,25 @@ export default function App(): React.ReactElement {
   const onEnablePush = () =>
     run(PUSH_OP, async () => {
       if (pushConfig.status !== 'ready') {
-        throw new Error('Check the server configuration before enabling push notifications.');
+        throw new Error('Could not read this Relay’s push settings. Try again.');
       }
       try {
         const subscription = await subscribeToPushInBrowser(pushConfig.key, () => {
-          // The scope no longer holds an address the Server can reach, so no Host
+          // The scope no longer holds an address the Relay can reach, so no Burrow
           // may keep claiming push notifications through it. The moment it becomes
           // true, which is what re-offers Enable if minting the replacement then
           // throws and there is no response to correct the UI with.
           setPushSubscriptionCurrent(false);
         });
-        // Every paired Host, not only the unregistered ones, so one tap also
+        // Owed deletions first: a replacement registered while a superseded
+        // delivery row is still on the Relay would leave that row reachable.
+        await client.retirePendingDeletions();
+        // Every paired Burrow, not only the unregistered ones, so one tap also
         // repairs a rotated endpoint everywhere. Each response commits as it
         // lands rather than after the loop: a registration that fails on the
-        // third Host must not throw away the first two.
-        for (const hostId of hosts.map((h) => h.hostId).filter(isPaired)) {
-          const { hostIds } = await client.subscribeToPush(hostId, subscription);
+        // third Burrow must not throw away the first two.
+        for (const burrow of burrows.filter((h) => !h.needsPairing)) {
+          const { burrowIds } = await client.subscribeToPush(burrow.burrowId, subscription);
           // Newer than any load still in flight — it answered the same question
           // about the same device, later — so it takes the token from the load
           // whole, dropping every continuation at once rather than each carrying
@@ -535,11 +527,11 @@ export default function App(): React.ReactElement {
           // device, so it replaces the set rather than adding to it.
           pushLoadRunRef.current++;
           setPushSubscriptionCurrent(true);
-          setPushSubscribedHostIds(new Set(hostIds));
+          setPushSubscribedBurrowIds(new Set(burrowIds));
         }
       } catch (err) {
         // A denied permission prompt is a failure that changes availability, and
-        // availability is only probed on entering Hosts — so without this the
+        // availability is only probed on entering Burrows — so without this the
         // card stays up offering an Enable that can only throw again. Re-probed
         // before rethrowing, so the error still gets its one showing.
         void getPushAvailability().then(setPushState);
@@ -549,81 +541,101 @@ export default function App(): React.ReactElement {
 
   // A config retry deliberately stops after caching the key. The next Enable
   // tap is the fresh user gesture the iOS permission prompt requires.
-  const onRetryPushConfig = () =>
-    run('push-config', async () => {
-      setPushConfig({ status: 'loading' });
-      try {
-        const key = await client.getPushConfig();
-        const subscriptionCurrent =
-          key !== null ? await hasCurrentPushSubscription(key, client.registeredPushEndpoint()).catch(() => false) : false;
-        setPushConfig(key === null ? { status: 'disabled' } : { status: 'ready', key });
-        setPushSubscriptionCurrent(subscriptionCurrent);
-      } catch (err) {
-        setPushConfig({ status: 'error' });
-        throw err;
-      }
-    });
-
-  const onSetup = useCallback(
-    (password: string, label: string) =>
-      run('setup', async () => {
-        await client.setup(password, label);
-        await client.signin();
-        await loadHosts();
-      }),
-    [client, loadHosts, run],
-  );
+  const onRetryPushConfig = () => run('push-config', () => loadPushConfig(() => true));
 
   const leaveWall = () => {
-    teardownAdapter();
-    client.close();
-    setActiveHost(null);
-    setPhase('hosts');
+    endSession();
+    setPhase({ at: 'burrows' });
   };
 
   // --- Views ---------------------------------------------------------------
 
-  if (phase === 'auth') {
-    return (
-      <SetupOrSignin
-        busy={busy}
-        error={error}
-        firstRun={firstRun}
-        needsInstall={needsInstall}
-        onSignin={() =>
-          run('signin', async () => {
-            await client.signin();
-            await loadHosts();
-          })}
-        onSetup={onSetup}
-      />
-    );
-  }
+  // Gated, not degraded: nothing above has performed a remote operation, and
+  // nothing below is reachable until the probe answers.
+  if (noiseSupported === false) return <UnsupportedBrowser />;
+  if (noiseSupported === null) return <Waiting />;
 
-  if (phase === 'hosts') {
-    return (
-      <HostsView
-        hosts={hosts}
-        busy={busy}
-        error={error}
-        pairState={pairStateOf}
-        isPushSubscribed={isPushOn}
-        pushState={pushState}
-        pushConfigStatus={pushConfig.status}
-        onRefresh={() => run('refresh', loadHosts)}
-        deviceFingerprint={deviceFingerprint}
-        onPair={onPair}
-        onConnect={onConnect}
-        onEnablePush={onEnablePush}
-        onRetryPushConfig={onRetryPushConfig}
-      />
-    );
-  }
+  const openScanner = () => {
+    setError(null);
+    setPhase({ at: 'scan' });
+  };
 
-  if (phase === 'wall' && activeHost && adapterRef.current) {
-    return <ConnectedView host={activeHost} adapter={adapterRef.current} onLeave={leaveWall} />;
+  switch (phase.at) {
+    case 'scan':
+      return (
+        <ScanInvitation
+          busy={busy}
+          error={error}
+          appOrigin={location.origin}
+          startScan={startScan}
+          onScanned={onScanned}
+          onCancel={() => {
+            // A scan that signed in but failed afterwards has a session and no
+            // list: `onScanned` only reads one on a path that reaches pairing.
+            // So the way back is the read, not a bare phase change — otherwise
+            // the Burrows view claims nothing is paired until Refresh.
+            if (client.sessionToken === null) {
+              setError(null);
+              setPhase({ at: 'auth' });
+              return;
+            }
+            void run('refresh', loadBurrows);
+          }}
+        />
+      );
+    case 'pairing':
+      return <PairingCodeView code={phase.code} onCancel={onCancelPairing} />;
+    case 'auth':
+      return (
+        <SetupOrSignin
+          busy={busy}
+          error={error}
+          // Read here, never latched: a scan that registers a passkey has to
+          // flip this screen on the next commit, so a later drop back to auth
+          // offers sign-in rather than a second registration.
+          hasPriorUse={client.hasPriorUse()}
+          arrivedByCamera={arrivedByCamera}
+          passkeyAlreadyRegistered={passkeyAlreadyRegistered}
+          needsInstall={needsInstall}
+          onScan={openScanner}
+          onSignin={() =>
+            run('signin', async () => {
+              await client.signin();
+              await loadBurrows();
+            })
+          }
+        />
+      );
+    case 'wall':
+      // The adapter is stood up before the phase moves, so the ref is set
+      // whenever this branch is reachable.
+      return adapterRef.current ? (
+        <ConnectedView burrow={phase.burrow} adapter={adapterRef.current} onLeave={leaveWall} onError={onWallError} />
+      ) : (
+        <Waiting />
+      );
+    case 'burrows':
+      return (
+        <BurrowsView
+          burrows={burrows}
+          busy={busy}
+          error={error}
+          isPushSubscribed={isPushOn}
+          pushState={pushState}
+          pushConfigStatus={pushConfig.status}
+          onRefresh={() => run('refresh', loadBurrows)}
+          onScan={openScanner}
+          onConnect={onConnect}
+          onForget={onForget}
+          onEnablePush={onEnablePush}
+          onRetryPushConfig={onRetryPushConfig}
+        />
+      );
   }
+}
 
+/** The whole shell with nothing in it yet; the capability probe's screen too. */
+function Waiting(): React.ReactElement {
   return (
     <div className={PK.app}>
       <div className={clsx(PK.body, PK.bodyCenter)}>…</div>
@@ -631,28 +643,146 @@ export default function App(): React.ReactElement {
   );
 }
 
+/** One pinned record as the list renders it. */
+function toBurrowView(record: KnownBurrowV1, online: boolean): BurrowView {
+  return {
+    burrowId: record.burrowId,
+    label: record.label || record.burrowId,
+    online,
+    needsPairing: record.authorization.state !== 'paired',
+  };
+}
+
+/** Splice a freshly paired record into the list without waiting for a re-read. */
+function withRecord(burrows: BurrowView[], record: KnownBurrowV1): BurrowView[] {
+  const view = toBurrowView(record, true);
+  const index = burrows.findIndex((burrow) => burrow.burrowId === record.burrowId);
+  if (index < 0) return [...burrows, view];
+  return burrows.map((burrow, at) => (at === index ? view : burrow));
+}
+
+/**
+ * Whether a sign-in from this browser is a real path. `hasPriorUse` is stored
+ * passkey material; the authenticator's own refusal to duplicate a registered
+ * credential is the stronger evidence, and outranks it.
+ */
+function hasPriorUseNow(client: PocketClient, passkeyAlreadyRegistered: boolean): boolean {
+  return passkeyAlreadyRegistered || client.hasPriorUse();
+}
+
+// --- The capability gate ----------------------------------------------------
+
+/**
+ * The whole of what a runtime without X25519 gets. **No action, and no remote
+ * operation behind it**: every ceremony this app has needs the primitive this
+ * browser lacks, so an offer here would be one that cannot work
+ * (`docs/specs/remote-security-model.md` → Burrow identity).
+ */
+export function UnsupportedBrowser(): React.ReactElement {
+  return (
+    <div className={PK.app}>
+      <header className={PK.header}>
+        <h1 className={PK.headerTitle}>Dormouse Pocket</h1>
+      </header>
+      <div className={clsx(PK.body, PK.bodyCenter)}>
+        <p className={PK.title}>{UNSUPPORTED_BROWSER_TITLE}</p>
+        <p className={PK.lead}>{UNSUPPORTED_BROWSER_BODY}</p>
+      </div>
+    </div>
+  );
+}
+
+// --- The two-digit waiting screen -------------------------------------------
+
+/** The accessible name of the digits; see {@link PairingCodeView}. */
+export const PAIRING_CODE_LABEL = 'Pairing code';
+
+/**
+ * The digits the person has to type on the computer, and nothing else.
+ *
+ * **The code is on screen before the outcome is known, and stays until it
+ * lands.** The laptop's modal tells the user to cancel if the phone shows no
+ * code, so a screen that waited for anything before painting the digits would
+ * teach exactly the reflex the ceremony is built to punish
+ * (`docs/specs/remote-security-model.md` → Pairing).
+ */
+export function PairingCodeView({
+  code,
+  onCancel,
+}: {
+  /** Null for the moment between the handshake and the sampled code. */
+  code: string | null;
+  onCancel: () => void;
+}): React.ReactElement {
+  return (
+    <div className={PK.app}>
+      <header className={PK.header}>
+        <h1 className={PK.headerTitle}>Pairing</h1>
+      </header>
+      <div className={clsx(PK.body, PK.bodyCenter)}>
+        {/* Named and announced structurally, so what identifies this screen — to
+            a screen reader, to the tests, and to the walkthrough harness — is
+            not a sentence the next copy pass is free to rewrite. */}
+        <p className={PK.code} role="status" aria-label={PAIRING_CODE_LABEL} aria-live="polite">
+          {code ?? '··'}
+        </p>
+        <p className={clsx(PK.lead, 'text-center')}>
+          Type these digits on the computer to approve.
+        </p>
+        <button
+          type="button"
+          className={pkButton({ tone: 'outline', block: true })}
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // --- ConnectedView ---------------------------------------------------------
 
-/** The connected Pocket shell: host navigation chrome over the remote wall. */
+/**
+ * What the list of paired machines is called, on its own header and on the back
+ * button that returns to it, so the two cannot drift
+ * (`docs/specs/pocket-app.md` → The seam: the remote session is a platform
+ * adapter).
+ */
+export const BURROWS_TITLE = 'Burrows';
+
+/**
+ * The empty list, which is also where the noun gets introduced — this is the
+ * first screen a signed-in phone with nothing paired lands on. Exported so the
+ * tests that assert "the list is empty" match the shipped sentence rather than
+ * a copy of it.
+ */
+export const BURROWS_EMPTY =
+  `No Burrows paired yet. ${BURROW_IS_AN_APP} On the computer, open Settings → `
+  + 'Remote control → Set up a phone, then scan the code.';
+
+/** The connected Pocket shell: Burrow navigation chrome over the remote wall. */
 export function ConnectedView({
-  host,
+  burrow,
   adapter,
   onLeave,
+  onError,
 }: {
-  host: HostView;
+  burrow: BurrowView;
   adapter: RemotePtyAdapter;
   onLeave: () => void;
+  onError?: (error: unknown) => void;
 }): React.ReactElement {
   return (
     <div className={PK.app}>
       <header className={PK.header}>
         <button type="button" className={pkButton({ tone: 'ghost', size: 'sm' })} onClick={onLeave}>
-          ‹ Hosts
+          ‹ {BURROWS_TITLE}
         </button>
-        <h1 className={PK.headerTitle}>{host.label || host.hostId}</h1>
+        <h1 className={PK.headerTitle}>{burrow.label || burrow.burrowId}</h1>
       </header>
       <div className={PK.wallHost}>
-        <PocketWall adapter={adapter} />
+        <PocketWall adapter={adapter} onError={onError} />
       </div>
     </div>
   );
@@ -660,49 +790,68 @@ export function ConnectedView({
 
 // --- SetupOrSignin ---------------------------------------------------------
 
+// This screen owns the button the laptop's panel names, so the label lives in
+// the leaf both bundles import. Re-exported because the tests press it here.
+export { SCAN_LABEL };
+
 /**
- * The auth screen, in two layouts on one question: has this browser been used
- * here before?
+ * The auth screen, in two layouts on one question: does this browser hold a
+ * passkey it could sign in with?
  *
- * **First run** leads with setup — the only thing a browser holding nothing can
- * actually complete — with sign-in kept as a plain secondary action, since a
- * passkey syncs and a fresh browser may already have one. **Returning** keeps
- * sign-in primary and folds setup back behind the disclosure.
+ * **Scanning is the only way in.** There is no setup password and no typed
+ * credential: a first run leads with the scanner, because pointing this phone
+ * at the computer is both the account setup and the pairing, and a browser that
+ * holds a passkey leads with sign-in and keeps the scan beside it — a signed-in
+ * phone still scans to pair a *new* computer.
  *
  * The install guidance goes here rather than after sign-in because this is the
  * screen that mints the partition-bound *passkey* it warns about — the last
- * point at which the advice is still free to take. Not the device key: `App`'s
- * fingerprint effect already minted that at boot, a gap staged in
- * `docs/specs/remote-security-model.md` -> Future.
+ * point at which the advice is still free to take.
  */
 export function SetupOrSignin({
   busy,
   error,
-  firstRun,
+  hasPriorUse,
+  arrivedByCamera = false,
+  passkeyAlreadyRegistered = false,
   needsInstall,
+  onScan,
   onSignin,
-  onSetup,
 }: {
   busy: string | null;
   error: string | null;
-  /** No stored passkey material — no evidence this browser was ever set up. */
-  firstRun: boolean;
+  /** Stored passkey material — evidence a sign-in from here can work. */
+  hasPriorUse: boolean;
+  /**
+   * This run was opened by the phone's own camera. The fragment is already
+   * gone and nothing was kept from it, so the only thing left to do is say
+   * where the scan actually has to happen.
+   */
+  arrivedByCamera?: boolean;
+  /**
+   * The authenticator holds a passkey the Relay already registered. The only
+   * evidence that outranks everything else on this screen: it is proof a
+   * sign-in from this device succeeds, where `hasPriorUse` is merely stored
+   * material, so sign-in leads even on a browser that stored nothing.
+   */
+  passkeyAlreadyRegistered?: boolean;
   /** iOS in a browser tab; see {@link InstallFirstNotice}. */
   needsInstall: boolean;
+  onScan: () => void;
   onSignin: () => void;
-  onSetup: (password: string, label: string) => void;
 }): React.ReactElement {
-  const [showSetup, setShowSetup] = useState(false);
+  const signinLeads = hasPriorUse || passkeyAlreadyRegistered;
   const signinLabel = busy === 'signin' ? 'Signing in…' : 'Sign in with passkey';
-  const setupFields = (
-    <PasskeySetupFields
-      idPrefix="pocket-setup"
-      busy={busy}
-      submitLabel="Create passkey & sign in"
-      onSubmit={onSetup}
-    />
+  const scanButton = (tone: 'primary' | 'outline') => (
+    <button
+      type="button"
+      className={pkButton({ tone, block: true })}
+      disabled={busy !== null}
+      onClick={onScan}
+    >
+      {busy === 'pair' ? '…' : SCAN_LABEL}
+    </button>
   );
-  // Shared by both layouts; only its prominence differs.
   const signinButton = (tone: 'primary' | 'outline') => (
     <button
       type="button"
@@ -721,56 +870,51 @@ export function SetupOrSignin({
       </header>
       <div className={clsx(PK.body, PK.bodyCenter)}>
         <div>
-          <p className={PK.title}>{firstRun ? 'Set up this phone' : 'Welcome back'}</p>
+          <p className={PK.title}>{signinLeads ? 'Welcome back' : 'Set up this phone'}</p>
           <p className={clsx(PK.lead, 'mt-1')}>
-            {firstRun
-              ? "Register this browser's passkey with the server's setup password, then approve it from your laptop."
-              : 'Sign in with your passkey to reach your enrolled hosts and pick up a terminal session.'}
+            {signinLeads
+              ? 'Sign in with your passkey to reach the Burrows this phone is paired with, or scan a code to pair a new one.'
+              : 'On the computer: Settings → Remote control → Set up a phone. Scan the code it shows.'}
           </p>
         </div>
         {/* Above the actions, never below: the passkey this screen mints
             belongs to whichever partition creates it, so guidance that arrives
-            after setup arrives after the trap. The returning layout carries
-            the same notice inside its disclosure instead — see below. */}
-        {firstRun && needsInstall ? <InstallFirstNotice /> : null}
+            after setup arrives after the trap. **Above the camera notice too**,
+            on the one arrival where both render — iOS Safari, reached from the
+            phone's own camera — because that notice sends the reader to the
+            scan button, and doing that before installing walks into the trap
+            this one is here to prevent. */}
+        {!signinLeads && needsInstall ? <InstallFirstNotice /> : null}
+        {/* The one thing a native-camera arrival is for: saying where the scan
+            has to happen. The code it carried is already gone and unspent. */}
+        {arrivedByCamera ? (
+          <div className={PK.notice}>
+            <div className={PK.noticeTitle}>{CAMERA_BOOTSTRAP_MESSAGE}</div>
+            <p className={PK.noticeBody}>
+              The code your camera opened was not used, so nothing has been set up yet. Scanning
+              from inside Pocket is what creates the keys this phone will keep.
+            </p>
+          </div>
+        ) : null}
         {error ? <ErrorRow message={error} /> : null}
 
-        {firstRun ? (
+        {signinLeads ? (
           <>
-            <div className={PK.setup}>{setupFields}</div>
-            {/* Not a disclosure: a synced passkey makes sign-in a real path out
-                of a browser that has never stored anything. */}
+            {signinButton('primary')}
             <div className={clsx(PK.setup, PK.divided)}>
-              <p className={PK.lead}>Already made a passkey? It syncs — sign in with it instead.</p>
-              {signinButton('outline')}
+              <p className={PK.lead}>Pairing a new computer? Scan the code it is showing.</p>
+              {scanButton('outline')}
             </div>
           </>
         ) : (
           <>
-            {signinButton('primary')}
-
-            <button
-              type="button"
-              className={PK.disclosure}
-              onClick={() => setShowSetup((v) => !v)}
-            >
-              {showSetup ? '− First-time setup' : '+ First-time setup'}
-            </button>
-
-            {showSetup ? (
-              <div className={clsx(PK.setup, PK.divided)}>
-                <p className={PK.lead}>
-                  Create the account and register this device's passkey. Requires the server's setup
-                  password.
-                </p>
-                {/* The notice is written for someone about to make a passkey,
-                    so under "Welcome back" it rides with the fields rather
-                    than the screen — this is the other place setup can happen
-                    before an install. */}
-                {needsInstall ? <InstallFirstNotice /> : null}
-                {setupFields}
-              </div>
-            ) : null}
+            {scanButton('primary')}
+            {/* Not a disclosure: a synced passkey makes sign-in a real path out
+                of a browser that has never stored anything. */}
+            <div className={clsx(PK.setup, PK.divided)}>
+              <p className={PK.lead}>Set this phone up before? Passkeys sync — sign in instead.</p>
+              {signinButton('outline')}
+            </div>
           </>
         )}
       </div>
@@ -782,6 +926,10 @@ export function SetupOrSignin({
  * The one iOS install gesture, written once so the two notices cannot drift on
  * it — everything else in them differs on purpose (identity vs push-notification
  * framing).
+ *
+ * Both notices close with a line for someone who installed the app already and
+ * opened the wrong window. It is not optional: storage partitions share no
+ * signal, so a tab cannot detect the install and the copy has to allow for it.
  */
 const INSTALL_RITUAL = (
   <>
@@ -791,7 +939,7 @@ const INSTALL_RITUAL = (
 
 /**
  * iOS, in a browser tab, on the screen about to mint this Client's identity.
- * The installed app is a separate storage partition, so a passkey and device
+ * The installed app is a separate storage partition, so a passkey and per-Burrow
  * key created in the tab are not the ones it will hold — setting up here means
  * doing all of it, the laptop's pairing approval included, a second time.
  *
@@ -799,12 +947,8 @@ const INSTALL_RITUAL = (
  * does not want push notifications and never installs is still entitled to a
  * terminal.
  *
- * The second line is not optional. A tab cannot see whether the app is *also*
- * installed (separate storage, no shared signal), so this shows to someone who
- * installed it already and simply opened the wrong window.
- *
  * Push notifications are deliberately not mentioned: whether they work at all
- * depends on the Server's push config, which {@link InstallNotice} and the Hosts
+ * depends on the Relay's push config, which {@link InstallNotice} and the Burrows
  * view's push rows gate on. Identity is true regardless, and carries the notice.
  */
 function InstallFirstNotice(): React.ReactElement {
@@ -812,9 +956,8 @@ function InstallFirstNotice(): React.ReactElement {
     <div className={PK.notice}>
       <div className={PK.noticeTitle}>Add Dormouse to your Home Screen first</div>
       <p className={PK.noticeBody}>
-        {INSTALL_RITUAL}, and set up from there. iOS keeps the
-        installed app&rsquo;s data separate from this tab, so a passkey made here has to be made and
-        approved all over again.
+        {INSTALL_RITUAL}, and set up from there. iOS keeps the installed app&rsquo;s data separate
+        from this tab, so a passkey made here has to be made and approved all over again.
       </p>
       <p className={PK.noticeBody}>
         Already added it? Set up from the Home Screen app rather than this tab.
@@ -823,7 +966,7 @@ function InstallFirstNotice(): React.ReactElement {
   );
 }
 
-// --- HostsView -------------------------------------------------------------
+// --- BurrowsView -------------------------------------------------------------
 
 /**
  * The same advice on the surface that offers push notifications, for a tab that
@@ -831,10 +974,6 @@ function InstallFirstNotice(): React.ReactElement {
  * there is anything to regret). Web Push is granted only to a Home Screen web app,
  * and there is no API to prompt for that install — it can only be described,
  * which is why the push rows below point up here.
- *
- * The second line matters: a tab cannot see whether the app is *also* installed
- * (separate storage, no shared signal), so this notice shows even to someone
- * who already installed it and simply opened the wrong window.
  */
 function InstallNotice(): React.ReactElement {
   return (
@@ -846,75 +985,6 @@ function InstallNotice(): React.ReactElement {
       </p>
       <p className={PK.noticeBody}>Already added it? Open it from your Home Screen instead of this tab.</p>
     </div>
-  );
-}
-
-/**
- * The setup-password + label pair and its submit button. Kept separate from its
- * caller so the credential form's ids, autocomplete rules, and disabled logic
- * have one definition; `idPrefix` keeps those ids unique if it is ever rendered
- * more than once on a screen.
- *
- * A real `<form>`, so the phone keyboard's Go key submits — on the first-run
- * screen these fields are the primary path, and a Go that does nothing reads as
- * a broken app. `display: contents` keeps the caller's flex column owning the
- * layout, and one `blocked` condition drives both the button's disabled state
- * (which is what the HTML spec makes suppress implicit submission) and the
- * handler, so no submit path can outrun a busy ceremony or an empty password.
- */
-function PasskeySetupFields({
-  idPrefix,
-  busy,
-  submitLabel,
-  onSubmit,
-}: {
-  idPrefix: string;
-  busy: string | null;
-  submitLabel: string;
-  onSubmit: (password: string, label: string) => void;
-}): React.ReactElement {
-  const [password, setPassword] = useState('');
-  const [label, setLabel] = useState('My Phone');
-  const blocked = busy !== null || password.length === 0;
-
-  return (
-    <form
-      className="contents"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (blocked) return;
-        onSubmit(password, label);
-      }}
-    >
-      <div className={PK.field}>
-        <label className={PK.fieldLabel} htmlFor={`${idPrefix}-password`}>Setup password</label>
-        <input
-          id={`${idPrefix}-password`}
-          className={PK.input}
-          type="password"
-          autoComplete="off"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-      </div>
-      <div className={PK.field}>
-        <label className={PK.fieldLabel} htmlFor={`${idPrefix}-label`}>Passkey label</label>
-        <input
-          id={`${idPrefix}-label`}
-          className={PK.input}
-          type="text"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-        />
-      </div>
-      <button
-        type="submit"
-        className={pkButton({ tone: 'primary', block: true })}
-        disabled={blocked}
-      >
-        {busy === 'setup' ? 'Creating…' : submitLabel}
-      </button>
-    </form>
   );
 }
 
@@ -935,8 +1005,17 @@ const PUSH_PITCH =
 const PUSH_BLOCKED: Record<Exclude<PushAvailability, 'ready' | 'needs-install'>, string> = {
   denied: 'Notifications are blocked for this site in your browser settings.',
   unsupported: 'This browser cannot receive push notifications.',
-  'no-worker': 'Background worker unavailable — the server must be served over https.',
+  'no-worker': 'Push needs the Relay to be reached over https.',
 };
+
+/**
+ * The fourth blocked reason, and the only one with nothing behind it for the
+ * person holding the phone: it is the Relay's config, so say so rather than
+ * leave them hunting through iOS settings for a switch that would not help.
+ * Not in {@link PUSH_BLOCKED}, which is keyed by browser availability.
+ */
+export const PUSH_RELAY_DISABLED =
+  'This Relay has push notifications turned off. Nothing on this phone can turn them on.';
 
 /** What the one push card says; `on` is the settled state and carries no action. */
 export type PushNoticeState =
@@ -949,10 +1028,10 @@ export type PushNoticeState =
 /**
  * What the push card says, or `null` for nothing to say.
  *
- * **Push is asked for once per device, never once per Host.** The permission
+ * **Push is asked for once per device, never once per Burrow.** The permission
  * prompt and the `PushSubscription` belong to the whole service-worker scope;
- * only the Server row is per (Host, device), and that is bookkeeping the user
- * has no reason to perform once per Host. So the paired Hosts are read as a set:
+ * only the Relay row is per (Burrow, device), and that is bookkeeping the user
+ * has no reason to perform once per Burrow. So the paired Burrows are read as a set:
  * one card offering Enable while any of them lacks a row, one quiet line once
  * they all have one.
  *
@@ -960,27 +1039,25 @@ export type PushNoticeState =
  * on is the whole feature; the rendering half only reads it.
  */
 export function pushNoticeState({
-  pairedHostIds,
+  pairedBurrowIds,
   isPushSubscribed,
   availability,
   configStatus,
 }: {
-  pairedHostIds: readonly string[];
-  isPushSubscribed: (hostId: string) => boolean;
+  pairedBurrowIds: readonly string[];
+  isPushSubscribed: (burrowId: string) => boolean;
   /** Null until the browser has been asked; see the effect in `App`. */
   availability: PushAvailability | null;
   configStatus: PushConfigStatus;
 }): PushNoticeState | null {
   // Nothing to register against, and pairing is the step that comes first.
-  if (pairedHostIds.length === 0) return null;
+  if (pairedBurrowIds.length === 0) return null;
   // An unprobed browser is not a claim about anything, in either direction.
   if (availability === null) return null;
-  // Outranks every browser state, a settled `on` included: a Server that no
+  // Outranks every browser state, a settled `on` included: a Relay that no
   // longer holds VAPID keys cannot deliver through the rows it still stores.
-  if (configStatus === 'disabled') {
-    return { kind: 'blocked', reason: 'This server has push notifications disabled.' };
-  }
-  if (pairedHostIds.every(isPushSubscribed)) return { kind: 'on' };
+  if (configStatus === 'disabled') return { kind: 'blocked', reason: PUSH_RELAY_DISABLED };
+  if (pairedBurrowIds.every(isPushSubscribed)) return { kind: 'on' };
   // `InstallNotice` is the push card for this state, and it is on screen
   // exactly when this branch is reached — a second card saying "see above"
   // would be the whole of its contribution.
@@ -1028,9 +1105,9 @@ function PushNotice({
     state.kind === 'blocked'
       ? state.reason
       : state.kind === 'checking'
-        ? 'Checking whether this server can send push notifications…'
+        ? 'Checking whether this Relay can send push notifications…'
         : state.kind === 'retry'
-          ? 'Could not check whether this server can send push notifications.'
+          ? 'Could not check whether this Relay can send push notifications.'
           : PUSH_PITCH;
   return (
     <div className={PK.notice}>
@@ -1052,43 +1129,41 @@ function PushNotice({
   );
 }
 
-export function HostsView({
-  hosts,
+export function BurrowsView({
+  burrows,
   busy,
   error,
-  pairState,
   isPushSubscribed,
   pushState,
   pushConfigStatus = 'ready',
-  deviceFingerprint,
   onRefresh,
-  onPair,
+  onScan,
   onConnect,
+  onForget,
   onEnablePush,
   onRetryPushConfig,
 }: {
-  hosts: HostView[];
+  /** The pinned records; a Burrow with no record is not one of these. */
+  burrows: BurrowView[];
   busy: string | null;
   error: string | null;
-  /** The Host's own answer where it could be asked; the cached marker otherwise. */
-  pairState: (hostId: string) => HostPairState;
-  /** True only where this device holds a Server push row for that Host. */
-  isPushSubscribed: (hostId: string) => boolean;
+  /** True only where this device holds a Relay push row for that Burrow. */
+  isPushSubscribed: (burrowId: string) => boolean;
   /** Null until the browser has been asked; see the effect in `App`. */
   pushState: PushAvailability | null;
-  /** Whether the Server's VAPID public key is already cached for a permission tap. */
+  /** Whether the Relay's VAPID public key is already cached for a permission tap. */
   pushConfigStatus?: PushConfigStatus;
-  /** This browser's device-key fingerprint; null until the key is loaded. */
-  deviceFingerprint: string | null;
   onRefresh: () => void;
-  onPair: (host: HostView) => void;
-  onConnect: (host: HostView) => void;
-  /** Registers every paired Host at once — see {@link pushNoticeState}. */
+  onScan: () => void;
+  onConnect: (burrow: BurrowView) => void;
+  /** Remove this phone's record for one computer, tombstoning its delivery id. */
+  onForget: (burrow: BurrowView) => void;
+  /** Registers every paired Burrow at once — see {@link pushNoticeState}. */
   onEnablePush: () => void;
   onRetryPushConfig: () => void;
 }): React.ReactElement {
   const pushNotice = pushNoticeState({
-    pairedHostIds: hosts.filter((h) => pairState(h.hostId) === 'paired').map((h) => h.hostId),
+    pairedBurrowIds: burrows.filter((h) => !h.needsPairing).map((h) => h.burrowId),
     isPushSubscribed,
     availability: pushState,
     configStatus: pushConfigStatus,
@@ -1096,7 +1171,7 @@ export function HostsView({
   return (
     <div className={PK.app}>
       <header className={PK.header}>
-        <h1 className={PK.headerTitle}>Hosts</h1>
+        <h1 className={PK.headerTitle}>{BURROWS_TITLE}</h1>
         <button
           type="button"
           className={pkButton({ tone: 'ghost', size: 'sm' })}
@@ -1107,17 +1182,8 @@ export function HostsView({
         </button>
       </header>
       <div className={PK.body}>
-        {deviceFingerprint ? (
-          // Compare this against the Key line in the approval dialog on the
-          // laptop before approving. Rendered even when nothing is pairable,
-          // so it reads as a property of this browser rather than a step in a
-          // flow.
-          <div className={PK.deviceLine}>
-            This device&rsquo;s key: <span className="font-mono">{deviceFingerprint}…</span>
-          </div>
-        ) : null}
         {error ? <ErrorRow message={error} /> : null}
-        {/* Install advice is moot when the server cannot push at all — the
+        {/* Install advice is moot when the Relay cannot push at all — the
             rows below already say push is disabled, and the ritual the notice
             describes would end at that same message. */}
         {pushConfigStatus !== 'disabled' && pushState === 'needs-install' ? (
@@ -1131,50 +1197,67 @@ export function HostsView({
             onRetryConfig={onRetryPushConfig}
           />
         ) : null}
-        {hosts.length === 0 ? (
-          <div className={PK.empty}>No hosts enrolled yet. Enroll one from your laptop.</div>
+        {burrows.length === 0 ? (
+          <div className={PK.empty}>{BURROWS_EMPTY}</div>
         ) : (
-          hosts.map((host) => {
-            const pairing = pairState(host.hostId);
-            const paired = pairing === 'paired';
-            // Push is device-wide to turn on but per-Host to hold, so the row
-            // carries the marker: it is the only thing that says *which* Host
+          burrows.map((burrow) => {
+            // Push is device-wide to turn on but per-Burrow to hold, so the row
+            // carries the marker: it is the only thing that says *which* Burrow
             // the card above is still offering to register.
             const status = [
-              !host.online ? 'Offline' : paired ? 'Paired' : 'Not paired',
-              ...(paired && isPushSubscribed(host.hostId) ? ['Push on'] : []),
+              !burrow.online ? 'Offline' : burrow.needsPairing ? 'Pairing needed' : 'Paired',
+              ...(!burrow.needsPairing && isPushSubscribed(burrow.burrowId) ? ['Push on'] : []),
             ].join(' · ');
-            // The one-action invariant, stated once: which verb this row
-            // offers and what its button says, on a single paired split.
-            const action = paired
-              ? { label: busy === 'connect' ? '…' : 'Connect', run: onConnect }
-              : {
-                  label: busy === 'pair' ? '…' : pairing === 'stale' ? 'Pair again' : 'Pair',
-                  run: onPair,
-                };
+            // The one-action invariant, stated once: which verb this row offers
+            // and what its button says, on a single split. The local record is
+            // what picks it — the Burrow is never asked, because an authenticated
+            // `pairing-required` is the only thing that can move a row here.
+            const action = burrow.needsPairing
+              ? { label: busy === 'pair' ? '…' : 'Pair again', run: () => onScan() }
+              : { label: busy === 'connect' ? '…' : 'Connect', run: () => onConnect(burrow) };
             return (
-              <div key={host.hostId} className={clsx(PK.row, !host.online && PK.rowOffline)}>
+              <div key={burrow.burrowId} className={clsx(PK.row, !burrow.online && PK.rowOffline)}>
                 <div className={PK.rowMain}>
-                  <div className={PK.rowTitle}>{host.label || host.hostId}</div>
+                  <div className={PK.rowTitle}>{burrow.label || burrow.burrowId}</div>
                   <div className={PK.rowSecondary}>{status}</div>
                 </div>
-                {/* One action, never both. The Host's ACL is what picks it,
-                    so Connect is offered only where it can succeed and Pair
-                    only where it is the actual next step. */}
                 <div className={PK.rowActions}>
                   <button
                     type="button"
                     className={pkButton({ tone: 'primary', size: 'sm' })}
-                    disabled={busy !== null || !host.online}
-                    onClick={() => action.run(host)}
+                    // Pairing again starts at the scanner, which needs no relay
+                    // socket and no online Burrow — the code on the computer's
+                    // screen is what says whether it is there.
+                    disabled={busy !== null || (!burrow.online && !burrow.needsPairing)}
+                    onClick={action.run}
                   >
                     {action.label}
+                  </button>
+                  {/* Removal is local and always available: it is how a phone
+                      forgets a computer it will not see again, and it is what
+                      queues the delivery row's deletion. */}
+                  <button
+                    type="button"
+                    className={pkButton({ tone: 'outline', size: 'sm' })}
+                    disabled={busy !== null}
+                    aria-label={`Remove ${burrow.label || burrow.burrowId}`}
+                    onClick={() => onForget(burrow)}
+                  >
+                    {busy === 'forget' ? '…' : 'Remove'}
                   </button>
                 </div>
               </div>
             );
           })
         )}
+        <button
+          type="button"
+          className={pkButton({ tone: 'outline', block: true })}
+          disabled={busy !== null}
+          onClick={onScan}
+        >
+          {SCAN_LABEL}
+        </button>
       </div>
     </div>
   );

@@ -1,3 +1,5 @@
+import { POSIX_ESCAPABLE } from './posix-escape';
+
 export type CwdSource = 'osc7' | 'osc9_9' | 'osc633' | 'osc1337' | 'process' | 'manual';
 export type PathKind = 'posix' | 'windows' | 'unknown';
 
@@ -79,7 +81,7 @@ export type TerminalSemanticEvent =
   | { type: 'promptEnd' }
   | { type: 'commandLine'; commandLine: string }
   | { type: 'commandStart'; source?: CommandRunSource; startedAt?: number }
-  | { type: 'commandFinish'; exitCode?: number }
+  | { type: 'commandFinish'; exitCode?: number; finishedAt?: number }
   | { type: 'title'; title: TerminalTitle };
 
 export interface DirectoryDisplayOptions {
@@ -212,7 +214,7 @@ export function reduceTerminalState(
         if (sameActivity(state.activity, next)) return state;
         return { ...state, activity: next };
       }
-      const finishedAt = now();
+      const finishedAt = event.finishedAt ?? now();
       const finalTerminalTitle = snapshotInRunTerminalTitle(state, state.currentCommand, finishedAt);
       const finishedCommand: CommandRun = {
         ...state.currentCommand,
@@ -258,7 +260,10 @@ function sameActivity(a: ShellActivity, b: ShellActivity): boolean {
   return true;
 }
 
-export function cwdFromOsc7(rawUri: string, now = Date.now()): CwdState | null {
+export function cwdFromOsc7(rawUriInput: string, now = Date.now()): CwdState | null {
+  // Bounded before the URL parse and the percent-decode, not after: every value
+  // below is retained per Session (see `boundedCwdValue`).
+  const rawUri = boundedCwdValue(rawUriInput);
   let parsed: URL;
   try {
     parsed = new URL(rawUri);
@@ -267,7 +272,7 @@ export function cwdFromOsc7(rawUri: string, now = Date.now()): CwdState | null {
   }
   if (parsed.protocol !== 'file:') return null;
 
-  const decodedPath = normalizeFileUriPath(safeDecodeURIComponent(parsed.pathname));
+  const decodedPath = boundedCwdValue(normalizeFileUriPath(safeDecodeURIComponent(parsed.pathname)));
   const host = extractFileUriHost(rawUri) || parsed.hostname || undefined;
   return {
     uri: rawUri,
@@ -282,7 +287,7 @@ export function cwdFromOsc7(rawUri: string, now = Date.now()): CwdState | null {
 }
 
 export function cwdFromOsc9_9(rawPath: string, now = Date.now()): CwdState | null {
-  const path = safeDecodeURIComponent(rawPath.trim());
+  const path = boundedCwdValue(rawPath);
   if (!path) return null;
   return {
     path,
@@ -307,6 +312,14 @@ export function cwdFromProcessPath(rawPath: string, now = Date.now()): CwdState 
 
 export function cwdFromManualPath(rawPath: string, now = Date.now()): CwdState | null {
   return cwdFromDecodedPath(rawPath, 'manual', now);
+}
+
+/** Whether inspecting the live process may replace a CWD from this source. A
+ *  shell integration escape is the shell's own answer and always wins; nothing
+ *  reported, an earlier inspection, and a launch-time seed are all fillable.
+ *  The one rule for it, so a caller can also decline to *ask*. */
+export function processCwdMayReplace(source: CwdSource | undefined): boolean {
+  return source === undefined || source === 'process' || source === 'manual';
 }
 
 export function cwdIdentity(cwd: CwdState): string {
@@ -381,13 +394,20 @@ export function summarizeCommandLine(raw: string): string {
  * all yield `claude`; `foo | claude` yields `foo`. Returns null when the line
  * holds no runnable word.
  *
+ * A Windows launcher suffix is not part of the name: `C:\tools\claude.exe`,
+ * `npm.cmd` and `build.ps1` yield `claude`, `npm` and `build`. `.exe` / `.cmd`
+ * is how one program spells itself when PATHEXT resolves it, so keeping the
+ * suffix would leave `npm` and `npm.cmd` as two rules for one program — the
+ * miss this whole path exists to close. Accepted: `foo.bat` and `foo.exe` in
+ * one directory cannot be watched separately.
+ *
  * This is the key WATCHING rules are stored under — see `docs/specs/alert.md`.
  */
 export function commandArgv0(raw: string): string | null {
   const commandTokens = primaryCommandTokens(raw);
   const command = commandTokens[0];
   if (!command) return null;
-  return command.split(/[\\/]/).pop() || null;
+  return commandProgramName(command) || null;
 }
 
 /**
@@ -528,15 +548,15 @@ export function deriveHeader(
 /** A single surface's display label: the derived header primary, with the
  *  saved/fallback title substituted when the primary is the generic command
  *  title. The one place to compose `deriveHeader` + `resolveDisplayPrimary` for
- *  one pane; callers that also need `secondary`/`lastCommandFailed` use
- *  `deriveHeader` directly. */
+ *  one pane. **Takes no sibling set**: only `deriveHeader`'s `secondary`
+ *  disambiguates against siblings, and this drops it — callers that need
+ *  `secondary`/`lastCommandFailed` use `deriveHeader` directly. */
 export function deriveSurfaceLabel(
   pane: TerminalPaneState,
-  visiblePanes: TerminalPaneState[],
   appTitleForPane: HeaderOptions['appTitleForPane'],
   fallbackTitle: string | null | undefined,
 ): string {
-  return resolveDisplayPrimary(deriveHeader(pane, visiblePanes, { appTitleForPane }).primary, fallbackTitle);
+  return resolveDisplayPrimary(deriveHeader(pane, [], { appTitleForPane }).primary, fallbackTitle);
 }
 
 export function notificationDisplayTitle(
@@ -579,6 +599,28 @@ export function buildAppTitleResolver(
     if (title) titlesByPane.set(pane, title);
   }
   return (pane) => titlesByPane.get(pane) ?? null;
+}
+
+/** Explanation uses the same winning-title functions as headerPrimary. */
+export function explainTerminalTitle(pane: TerminalPaneState, options: HeaderOptions = {}): { source: string; value: string; note: string }[] {
+  const user = titleCandidateForSource(pane, 'user')?.title.trim();
+  const command = pane.currentCommand ?? pane.lastCommand;
+  const app = options.appTitleForPane?.(pane)?.trim();
+  const appWins = !user && !!command && !!app && isAppTitleFreshFor(pane, command);
+  const terminal = !user && !appWins && command ? terminalTitleForCommand(pane, command) : null;
+  const winner = terminal && command ? (command.finishedAt !== undefined && command.finalTerminalTitle && meaningfulTerminalTitle(command.finalTerminalTitle.title) ? command.finalTerminalTitle : findInRunTerminalTitle(pane, command)) : null;
+  const candidates = titleCandidatesForDisplay(pane);
+  const rows = candidates.map(candidate => ({
+    source: titleSourceLabel(candidate.source), value: candidate.title,
+    note: candidate.source === 'user' && user ? 'Used' : winner && candidate.source === winner.source && candidate.updatedAt === winner.updatedAt ? 'Used by command title' : 'Not used',
+  }));
+  if (winner && !candidates.some(candidate => candidate.source === winner.source && candidate.updatedAt === winner.updatedAt)) {
+    rows.push({ source: `${titleSourceLabel(winner.source)} (command)`, value: winner.title, note: 'Used by command title' });
+  }
+  if (appWins) rows.push({ source: 'Notification', value: app!, note: 'Used' });
+  if (command) rows.push({ source: 'Command', value: command.displayCommand, note: !user && !appWins && !terminal ? 'Used' : 'Fallback' });
+  rows.push({ source: 'Result', value: headerPrimary(pane, options).text, note: pane.currentCommand ? 'Running' : 'Idle' });
+  return rows;
 }
 
 export function titleCandidatesForDisplay(pane: TerminalPaneState): TerminalTitle[] {
@@ -651,7 +693,7 @@ function statusBucket(kind: ShellActivity['kind']): 'unknown' | 'idle' | 'runnin
 }
 
 function cwdFromDecodedPath(rawPath: string, source: CwdSource, now: number): CwdState | null {
-  const path = safeDecodeURIComponent(rawPath.trim());
+  const path = boundedCwdValue(rawPath);
   if (!path) return null;
   return {
     path,
@@ -690,6 +732,33 @@ function safeDecodeURIComponent(value: string): string {
   }
 }
 
+/**
+ * The longest CWD any source may report. PATH_MAX is 4096 on Linux and 1024 on
+ * macOS; a directory nobody can `cd` into is not one worth retaining.
+ */
+export const MAX_CWD_LENGTH = 4096;
+
+/**
+ * Strip control characters and cap the length of a reported CWD.
+ *
+ * A CWD is retained per Session, rendered in the pane header, and used as a
+ * grouping key, so it is held state rather than a transient — the same reason
+ * titles and notification bodies are sanitized (`terminal-protocol.ts`). The
+ * emit-side scripts already remove control characters
+ * (`docs/specs/terminal-escapes.md` → the `Cwd=` rule), but the parser accepts
+ * OSC 7 / OSC 9;9 / OSC 1337 from any program, not only from those scripts.
+ *
+ * Interior whitespace is preserved rather than collapsed: a path may legally
+ * contain runs of spaces, and this value is compared against real filesystem
+ * paths.
+ */
+function boundedCwdValue(value: string): string {
+  const stripped = value.replace(/[\x00-\x1f\x7f-\x9f]+/g, '');
+  return stripped.length <= MAX_CWD_LENGTH
+    ? stripped
+    : Array.from(stripped).slice(0, MAX_CWD_LENGTH).join('');
+}
+
 function inferPathKind(path: string): PathKind {
   if (isWindowsPath(path)) return 'windows';
   if (path.startsWith('/') || path.startsWith('~/')) return 'posix';
@@ -709,10 +778,14 @@ function isRemoteFileHost(host: string | undefined): boolean {
 }
 
 function formatFullPath(path: string, homePath?: string): string {
-  if (homePath && (path === homePath || path.startsWith(`${homePath}/`))) {
-    return `~${path.slice(homePath.length)}`;
-  }
-  return path;
+  if (!homePath) return path;
+  // Windows homes compare case-insensitively with either separator; a sibling
+  // such as `/home/username` never abbreviates under `/home/user`.
+  const windows = isWindowsPath(homePath);
+  const normalize = (value: string) => (windows ? value.replace(/\\/g, '/').toLowerCase() : value);
+  const home = normalize(homePath).replace(/\/$/, '');
+  const candidate = normalize(path);
+  return candidate === home || candidate.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }
 
 function formatTrailingPath(path: string, kind: PathKind, depth: number): string {
@@ -799,6 +872,23 @@ function withRequiredHostPrefixes(
   return result;
 }
 
+/**
+ * Split a command line into words, honoring quotes, POSIX backslash escapes,
+ * and the pipeline/compound separators `| || && ; &`, which are emitted as
+ * their own tokens.
+ *
+ * A `\` escapes exactly the `POSIX_ESCAPABLE` set (`foo\ bar` is one token,
+ * `\*.ts` passes a literal glob, and a path Dormouse escaped for paste reads
+ * back as itself); before anything else it is a literal, so a native Windows
+ * program path survives tokenizing intact and `commandProgramName` still has
+ * separators to split on. Two accepted costs of one dialect-free set: a Windows
+ * segment that starts with a metacharacter (`C:\$Recycle.Bin`) still loses its
+ * separator, and a POSIX escape of an ordinary character (`grep \-v`) keeps a
+ * backslash bash would drop. Outside argv[0] both costs are display-only. Inside
+ * it, the retained POSIX backslash becomes a basename separator (`foo\-bar` ->
+ * `-bar`), while an eaten Windows separator leaves `C:\tools\$claude.exe`
+ * keyed as `tools$claude.exe`.
+ */
 function tokenizeCommand(input: string): string[] {
   const tokens: string[] = [];
   let current = '';
@@ -820,7 +910,12 @@ function tokenizeCommand(input: string): string[] {
       continue;
     }
     if (char === '\\' && quote !== "'") {
-      escaping = true;
+      const next = input[i + 1];
+      if (next !== undefined && POSIX_ESCAPABLE.test(next)) {
+        escaping = true;
+        continue;
+      }
+      current += char;
       continue;
     }
     if (quote) {
@@ -861,8 +956,13 @@ function tokenizeCommand(input: string): string[] {
 }
 
 function takePrimaryCommandTokens(tokens: string[]): string[] {
-  const firstBoundary = tokens.findIndex((token) => token === '|' || token === '&&' || token === '||' || token === ';' || token === '&');
-  const command = (firstBoundary === -1 ? tokens : tokens.slice(0, firstBoundary)).filter(Boolean);
+  // PowerShell's call operator. `& "C:\Program Files\nodejs\npm.cmd" run dev`
+  // is the only way that shell runs a quoted program path, and a leading `&` is
+  // never a POSIX background suffix, so drop it rather than read it as a
+  // boundary that leaves no command at all.
+  const words = tokens[0] === '&' ? tokens.slice(1) : tokens;
+  const firstBoundary = words.findIndex((token) => token === '|' || token === '&&' || token === '||' || token === ';' || token === '&');
+  const command = (firstBoundary === -1 ? words : words.slice(0, firstBoundary)).filter(Boolean);
   let index = 0;
   while (isEnvAssignment(command[index])) index += 1;
   if (command[index] === 'env') {
@@ -876,19 +976,37 @@ function isEnvAssignment(token: string | undefined): boolean {
   return !!token && /^[A-Za-z_][A-Za-z0-9_]*=/.test(token);
 }
 
+/** A path reduced to its last segment, in either dialect. */
+function commandBasename(command: string): string {
+  return command.replace(/^.*[\\/]/, '');
+}
+
+/** PATHEXT's spellings of one program. Exported for `watched-commands.ts`,
+ *  which drops a stored key ending in one: `commandArgv0` cannot produce one. */
+export const WINDOWS_EXECUTABLE_SUFFIX = /\.(?:exe|cmd|bat|com|ps1)$/i;
+
+/**
+ * argv[0] reduced to the one name a program answers to: no path, no launcher
+ * suffix. The single answer to "which program is this", so the header, the
+ * WATCHING rule row and the bell tooltip cannot disagree about it.
+ */
+function commandProgramName(command: string): string {
+  return commandBasename(command).replace(WINDOWS_EXECUTABLE_SUFFIX, '');
+}
+
 function commandTitleTokens(tokens: string[]): string[] {
   const command = tokens[0];
   if (!command) return [];
-  const basename = command.split(/[\\/]/).pop() ?? command;
+  const program = commandProgramName(command);
   const rest = tokens.slice(1);
 
-  if (basename === 'npm' && rest[0] === 'run') return [basename, ...rest.slice(0, 2)];
-  if (basename === 'pnpm' || basename === 'yarn' || basename === 'bun') return [basename, ...rest.slice(0, 2)];
-  if (basename === 'docker' && rest[0] === 'compose') return [basename, ...rest.slice(0, 2)];
-  if (basename === 'cargo' && rest[0] === 'watch') return [basename, ...rest.slice(0, 3)];
-  if (basename === 'ssh') return [basename, ...rest.slice(0, 1)];
-  if (basename === 'vim' || basename === 'nvim' || basename === 'vi' || basename === 'pytest') return [basename];
-  return [basename, ...rest.slice(0, 2)];
+  if (program === 'npm' && rest[0] === 'run') return [program, ...rest.slice(0, 2)];
+  if (program === 'pnpm' || program === 'yarn' || program === 'bun') return [program, ...rest.slice(0, 2)];
+  if (program === 'docker' && rest[0] === 'compose') return [program, ...rest.slice(0, 2)];
+  if (program === 'cargo' && rest[0] === 'watch') return [program, ...rest.slice(0, 3)];
+  if (program === 'ssh') return [program, ...rest.slice(0, 1)];
+  if (program === 'vim' || program === 'nvim' || program === 'vi' || program === 'pytest') return [program];
+  return [program, ...rest.slice(0, 2)];
 }
 
 function truncateCommandTitle(title: string): string {
@@ -960,9 +1078,11 @@ const GENERIC_PROCESS_TITLE_NAMES = new Set([
 function isGenericProcessTitle(title: string): boolean {
   const trimmed = title.trim();
   if (!trimmed) return false;
-  const basename = trimmed.split(/[\\/]/).pop() ?? trimmed;
+  // Basename, not program name: the suffix is the evidence this test is looking
+  // for, so stripping it would leave every `.exe` title indistinguishable.
+  const basename = commandBasename(trimmed);
   if (/\s/.test(basename)) return false; // carries arguments/description → meaningful
-  if (/\.(?:exe|com|bat|cmd|ps1)$/i.test(basename)) return true; // bare executable path
+  if (WINDOWS_EXECUTABLE_SUFFIX.test(basename)) return true; // bare executable path
   return GENERIC_PROCESS_TITLE_NAMES.has(basename.toLowerCase()); // bare shell/interpreter name
 }
 
@@ -1052,7 +1172,7 @@ function latestTerminalTitleCandidate(state: TerminalPaneState | null | undefine
   if (!state) return null;
   let latest: TerminalTitle | null = null;
   for (const candidate of Object.values(state.titleCandidates)) {
-    if (!candidate || candidate.source === 'user') continue;
+    if (!candidate || !HEADER_APP_TITLE_SOURCES.includes(candidate.source)) continue;
     if (!latest || candidate.updatedAt > latest.updatedAt) latest = candidate;
   }
   return latest;

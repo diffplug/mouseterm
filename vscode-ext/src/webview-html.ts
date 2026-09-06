@@ -6,7 +6,9 @@ import * as fs from 'fs';
 import { randomBytes } from 'crypto';
 import { CSP_NONCE_PLACEHOLDER } from './csp-nonce-placeholder';
 import { HOST_MESSAGE_TOKEN_GLOBAL } from '../../lib/src/lib/vscode-message-token';
+import { NOTEPAD_VOLATILE_GLOBAL } from '../../lib/src/lib/vscode-notepad-global';
 import { RECOVERY_COMMANDS_GLOBAL } from '../../lib/src/lib/vscode-recovery-global';
+import type { VolatileNotepadSnapshot } from '../../lib/src/lib/notepad/types';
 
 function serializeForInlineScript(value: unknown): string {
   return JSON.stringify(value ?? null)
@@ -32,6 +34,15 @@ export function getWebviewHtml(
    * replay it (docs/specs/transport.md -> "Consuming it").
    */
   recoveryCommands?: Record<string, string> | null,
+  /**
+   * The extension host's volatile notepad mirror for this webview's live PTYs.
+   * Rides the boot payload for the same reason the recovery commands do — it is
+   * host-owned and must never enter a save/restore cycle — and is non-null on
+   * exactly one path, a live resume (docs/specs/notepad.md → Archive and
+   * Lifecycle). An editor panel always gets `null`: its own disposal archived
+   * whatever it had mirrored.
+   */
+  notepadVolatile?: VolatileNotepadSnapshot | null,
 ): { html: string; messageToken: string } {
   const indexPath = path.join(mediaPath, 'index.html');
   let html = fs.readFileSync(indexPath, 'utf-8');
@@ -55,13 +66,18 @@ export function getWebviewHtml(
     // a lazy `import()` — are blocked. `strict-dynamic` also makes host-source
     // expressions inert, so `webview.cspSource` beside it would be dead weight;
     // inline scripts stay blocked, since nothing here grants `unsafe-inline`.
-    `script-src 'nonce-${nonce}' 'strict-dynamic'`,
+    //
+    // `wasm-unsafe-eval` is what `@xterm/addon-image` needs to compile the SIXEL
+    // decoder it vendors, at Session creation. It permits WebAssembly
+    // compilation and nothing else — `eval` and friends stay blocked, which
+    // `unsafe-eval` would not have done (docs/specs/vscode.md → "CSP policy").
+    `script-src 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'`,
     `font-src ${webview.cspSource}`,
     `img-src ${webview.cspSource} data: blob:`,
     // ws: entries cover the agent-browser stream relay (frames + input for
     // browser surfaces; see docs/specs/dor-browser.md). No relay origin here:
-    // the remote Host holds its `/ws/host` socket from the extension host, so
-    // the origin allowlist is enforced there instead (remote-host.ts).
+    // the Burrow holds its `/ws/burrow` socket from the extension host, so
+    // the origin allowlist is enforced there instead (burrow.ts).
     `connect-src ${webview.cspSource} ws://127.0.0.1:* ws://localhost:*`,
     // `dor iframe` frames its target through a loopback transparent proxy that
     // the extension host stands up (iframe-proxy-host.ts), so the only origin we
@@ -100,7 +116,7 @@ export function getWebviewHtml(
   // substituted a second time.
   html = html.replace(
     '</head>',
-    `    <script nonce="${nonce}">globalThis.${HOST_MESSAGE_TOKEN_GLOBAL} = ${serializeForInlineScript(messageToken)};\nglobalThis.__DORMOUSE_HOST_STATE__ = ${serializeForInlineScript(initialState)};\nglobalThis.__DORMOUSE_SELECTED_SHELL__ = ${serializeForInlineScript(selectedShell ?? null)};\nglobalThis.${RECOVERY_COMMANDS_GLOBAL} = ${serializeForInlineScript(recoveryCommands ?? null)};</script>\n  </head>`,
+    `    <script nonce="${nonce}">globalThis.${HOST_MESSAGE_TOKEN_GLOBAL} = ${serializeForInlineScript(messageToken)};\nglobalThis.__DORMOUSE_HOST_STATE__ = ${serializeForInlineScript(initialState)};\nglobalThis.__DORMOUSE_SELECTED_SHELL__ = ${serializeForInlineScript(selectedShell ?? null)};\nglobalThis.${RECOVERY_COMMANDS_GLOBAL} = ${serializeForInlineScript(recoveryCommands ?? null)};\nglobalThis.${NOTEPAD_VOLATILE_GLOBAL} = ${serializeForInlineScript(notepadVolatile ?? null)};</script>\n  </head>`,
   );
 
   return { html, messageToken };

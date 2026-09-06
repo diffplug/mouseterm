@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { NOTEPAD_VOLATILE_GLOBAL } from '../../lib/src/lib/vscode-notepad-global';
 import { CSP_NONCE_PLACEHOLDER } from '../src/csp-nonce-placeholder';
 import { getWebviewHtml } from '../src/webview-html';
 import { removeDir, tempStorageDir } from './helpers';
@@ -57,16 +58,38 @@ function nonceOf(html: string): string {
   return match[1];
 }
 
+/**
+ * One CSP directive's sources, as a list. Split rather than substring-matched:
+ * `'unsafe-eval'` is a suffix of `'wasm-unsafe-eval'`, so a `toContain` check
+ * for the dangerous one would read the safe one as a hit — or, worse, miss a
+ * real widening that happened to sit next to it.
+ */
+function cspSources(html: string, directive: string): string[] {
+  const csp = /content="([^"]*)"/.exec(html)?.[1] ?? '';
+  const found = csp
+    .split(';')
+    .map((part) => part.trim().split(/\s+/))
+    .find((parts) => parts[0] === directive);
+  if (!found) throw new Error(`no ${directive} in the CSP`);
+  return found.slice(1);
+}
+
 describe('getWebviewHtml', () => {
   it("pairs the nonce with 'strict-dynamic' so split chunks can load", () => {
     const { html } = getWebviewHtml(webview, mediaPath);
     // A lazy `import()` carries no nonce — a nonce is not inherited through the
     // module graph — so without `strict-dynamic` it is blocked, surfacing as a
     // render error naming a chunk that is present on disk.
-    expect(html).toContain(`script-src 'nonce-${nonceOf(html)}' 'strict-dynamic'`);
-    // `strict-dynamic` widens what a trusted script may load, never what may be
-    // written into the document.
-    expect(/script-src[^;]*'unsafe-inline'/.test(html)).toBe(false);
+    // The whole source list, not a substring: `strict-dynamic` widens what a
+    // trusted script may load and `wasm-unsafe-eval` permits WebAssembly
+    // compilation, but neither is a way to run injected script text — and an
+    // exact list is what makes `'unsafe-inline'` or `'unsafe-eval'` appearing
+    // beside them a failure rather than an unnoticed addition.
+    expect(cspSources(html, 'script-src')).toEqual([
+      `'nonce-${nonceOf(html)}'`,
+      `'strict-dynamic'`,
+      `'wasm-unsafe-eval'`,
+    ]);
   });
 
   it('carries the real nonce on every tag Vite marked, and leaves no placeholder', () => {
@@ -123,6 +146,32 @@ describe('getWebviewHtml', () => {
     expect(html).not.toContain('"./assets/');
     expect(html).toContain(`${CSP_SOURCE}${mediaPath}/assets/index-AAAAAAAA.js`);
     expect(html).toContain(`${CSP_SOURCE}${mediaPath}/assets/rolldown-runtime-BBBBBBBB.js`);
+  });
+
+  it('boots with no notepad mirror unless one is handed to it', () => {
+    // Only a live resume gets one; every other document — a cold restore, an
+    // editor panel — must find `null` there (docs/specs/notepad.md).
+    const { html } = getWebviewHtml(webview, mediaPath);
+    expect(html).toContain(`globalThis.${NOTEPAD_VOLATILE_GLOBAL} = null;`);
+  });
+
+  it('cannot be broken out of by a captured note', () => {
+    // Notes carry arbitrary terminal output, and this payload is an inline
+    // script. `</script>` inside a note would otherwise end the tag early,
+    // leaving the rest of the archive as markup in the document.
+    const note = { id: 'n1', createdAt: 1, content: { kind: 'plain' as const, text: '</script><img src=x>' } };
+    const { html } = getWebviewHtml(webview, mediaPath, undefined, null, null, {
+      surfaces: [{
+        surfaceId: 'pane-1', surfaceTitle: 'zsh', surfaceKind: 'terminal', cwd: null, notes: [note],
+      }],
+      stagedDeletions: { deleteBatchIds: [], deleteNotes: [] },
+    });
+
+    const inline = /<script nonce="[^"]+">([\s\S]*?)<\/script>/.exec(html);
+    expect(inline, 'the boot payload script was cut short').not.toBeNull();
+    expect(inline![1]).toContain(NOTEPAD_VOLATILE_GLOBAL);
+    expect(inline![1]).toContain('\\u003c/script>');
+    expect(html).not.toContain('<img src=x>');
   });
 
   it('mints a fresh nonce and message token per document', () => {

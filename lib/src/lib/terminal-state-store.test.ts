@@ -1,15 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { TerminalProtocolParser } from './terminal-protocol';
 import {
   applyTerminalSemanticEvents,
   countRunningSessions,
   fillTerminalProcessCwd,
-  fillTerminalProcessCwdByPtyId,
   getTerminalPaneState,
   getTerminalPaneStateSnapshot,
   recordTerminalOutput,
-  recordTerminalOutputByPtyId,
   recordTerminalUserInput,
-  recordTerminalUserInputByPtyId,
   removeTerminalPaneState,
   resetTerminalPaneState,
   seedLaunchedCommand,
@@ -17,7 +15,6 @@ import {
   seedTerminalManualCwd,
   setTerminalUserTitle,
 } from './terminal-state-store';
-import { registry, type TerminalEntry } from './terminal-store';
 import { DEFAULT_IDLE_TITLE, surfaceRunsCommand, UNNAMED_PANEL_TITLE } from './terminal-state';
 
 const PROMPT = 'user@host repo % ';
@@ -40,7 +37,6 @@ describe('terminal semantic state store command input fallback', () => {
     removeTerminalPaneState('pane');
     removeTerminalPaneState('pane-a');
     removeTerminalPaneState('pane-b');
-    registry.delete('pane-b');
   });
 
   it('promotes a submitted prompt line into the current command immediately', () => {
@@ -126,6 +122,29 @@ describe('terminal semantic state store command input fallback', () => {
     expect(getTerminalPaneState('pane').currentCommand?.displayCommand).toBe('lazygit');
   });
 
+  it('keeps chunked inline-image payloads out of the prompt window', () => {
+    // End to end over the real boundary: raw PTY bytes through the parser, its
+    // `textData` into the store, exactly as `wirePtyEvents` wires them.
+    const parser = new TerminalProtocolParser();
+    const feed = (raw: string) => {
+      const parsed = parser.process(raw);
+      // The heuristic is offered no part of an image, however it is chunked.
+      recordTerminalOutput('pane', parsed.textData);
+      return parsed.textData;
+    };
+
+    submit('pane', 'lazygit');
+    // Split so the middle chunk carries no introducer of its own — the case a
+    // stateless stripper cannot classify once the introducer leaves the window.
+    expect(feed(`\x1bPq${'~'.repeat(1_200)}`)).toBe('');
+    expect(feed('~~~~ user@host repo % ')).toBe('');
+    expect(getTerminalPaneState('pane').currentCommand?.displayCommand).toBe('lazygit');
+
+    // Ground text resumes at the terminator, and the real prompt still lands.
+    expect(feed(`\x1b\\\r\n${PROMPT}`)).toBe(`\r\n${PROMPT}`);
+    expect(getTerminalPaneState('pane').currentCommand).toBeNull();
+  });
+
   it('still sees a real prompt trailed by a half-arrived title OSC', () => {
     submit('pane', 'lazygit');
     recordTerminalOutput('pane', '\r\nuser@host repo % \x1b]0;~/re');
@@ -141,6 +160,38 @@ describe('terminal semantic state store command input fallback', () => {
     );
 
     expect(getTerminalPaneState('pane').currentCommand?.displayCommand).toBe('lazygit');
+  });
+
+  it.each(['\x1b[?1049', '\x1b[?1047', '\x9b?47', '\x1b[?25;1049'])('keeps long chunked alternate-screen output out of the prompt heuristic (%s)', (mode) => {
+    submit('pane', 'lazygit');
+    // Split the mode sequence itself, then force its introducer out of the
+    // old 1024-character window before drawing a prompt-shaped TUI line.
+    for (const char of `${mode}h`) recordTerminalOutput('pane', char);
+    recordTerminalOutput('pane', 'x'.repeat(2_000));
+    recordTerminalOutput('pane', `\r\n${PROMPT}`);
+    expect(getTerminalPaneState('pane').currentCommand?.displayCommand).toBe('lazygit');
+    for (const char of `${mode}l`) recordTerminalOutput('pane', char);
+    recordTerminalOutput('pane', `\r\n${PROMPT}`);
+    expect(getTerminalPaneState('pane').currentCommand).toBeNull();
+  });
+
+  it('recognizes a returned prompt after RIS resets the alternate screen', () => {
+    submit('pane', 'lazygit');
+    recordTerminalOutput('pane', '\x1b[?1049h');
+    recordTerminalOutput('pane', '\x1b');
+    recordTerminalOutput('pane', `c${PROMPT}`);
+    expect(getTerminalPaneState('pane').currentCommand).toBeNull();
+  });
+
+  it('seeds alternate-screen state on replay and clears it on reset', () => {
+    seedPromptShapeFromScrollback('pane', `\x1b[?1049h${'x'.repeat(2_000)}\r\n${PROMPT}`);
+    seedLaunchedCommand('pane', 'lazygit');
+    recordTerminalOutput('pane', `\r\n${PROMPT}`);
+    expect(getTerminalPaneState('pane').currentCommand?.displayCommand).toBe('lazygit');
+    resetTerminalPaneState('pane');
+    submit('pane', 'echo restored');
+    recordTerminalOutput('pane', `\r\n${PROMPT}`);
+    expect(getTerminalPaneState('pane').currentCommand).toBeNull();
   });
 
   it('does not resurrect a disposed pane when a late process CWD arrives', () => {
@@ -176,36 +227,37 @@ describe('terminal semantic state store command input fallback', () => {
     expect(getTerminalPaneState('pane').titleCandidates.user?.title).toBe(UNNAMED_PANEL_TITLE);
   });
 
-  it('records PTY fallback state under the current pane after a swap', () => {
-    registry.set('pane-b', { ptyId: 'pane-a' } as unknown as TerminalEntry);
+  it('keys prompt and command state by Session id', () => {
+    recordTerminalOutput('pane-a', PROMPT);
+    submit('pane-b', 'npm run build');
 
-    recordTerminalOutputByPtyId('pane-a', PROMPT);
-    recordTerminalUserInputByPtyId('pane-a', '\r', lineReader(`${PROMPT}lazygit`));
+    recordTerminalUserInput('pane-a', '\r', lineReader(`${PROMPT}lazygit`));
 
-    expect(getTerminalPaneState('pane-a').currentCommand).toBeNull();
-    expect(getTerminalPaneState('pane-b').currentCommand).toMatchObject({
+    expect(getTerminalPaneState('pane-a').currentCommand).toMatchObject({
       rawCommandLine: 'lazygit',
       displayCommand: 'lazygit',
       source: 'user_input',
     });
+    expect(getTerminalPaneState('pane-b').currentCommand?.rawCommandLine).toBe('npm run build');
 
-    recordTerminalOutputByPtyId('pane-a', '\r\nuser@host repo % ');
+    recordTerminalOutput('pane-a', '\r\nuser@host repo % ');
 
-    expect(getTerminalPaneState('pane-b').currentCommand).toBeNull();
-    expect(getTerminalPaneState('pane-b').activity).toEqual({ kind: 'editing' });
+    expect(getTerminalPaneState('pane-a').currentCommand).toBeNull();
+    expect(getTerminalPaneState('pane-a').activity).toEqual({ kind: 'editing' });
+    expect(getTerminalPaneState('pane-b').activity).toEqual({ kind: 'running' });
   });
 
-  it('records process CWD under the current pane after a swap', () => {
-    registry.set('pane-b', { ptyId: 'pane-a' } as unknown as TerminalEntry);
-    applyTerminalSemanticEvents('pane-b', [{ type: 'promptStart' }]);
+  it('applies process CWD only to the originating Session', () => {
+    resetTerminalPaneState('pane-a');
+    resetTerminalPaneState('pane-b');
 
-    fillTerminalProcessCwdByPtyId('pane-a', '/Users/me/project');
+    fillTerminalProcessCwd('pane-a', '/Users/me/project');
 
-    expect(getTerminalPaneState('pane-a').cwd).toBeNull();
-    expect(getTerminalPaneState('pane-b').cwd).toMatchObject({
+    expect(getTerminalPaneState('pane-a').cwd).toMatchObject({
       path: '/Users/me/project',
       source: 'process',
     });
+    expect(getTerminalPaneState('pane-b').cwd).toBeNull();
   });
 });
 
@@ -267,15 +319,23 @@ describe('terminal command input via rendered buffer', () => {
     expect(getTerminalPaneState('pane').currentCommand?.rawCommandLine).toBe('pnpm build');
   });
 
+  it('seeds through image payloads longer than the prompt scan window', () => {
+    const image = `\x1b]1337;File=inline=1:${'A'.repeat(2_000)}\x07`;
+    seedPromptShapeFromScrollback('pane', `earlier output\r\n${image}${PROMPT}`);
+    recordTerminalUserInput('pane', 'pnpm build\r', lineReader(`${PROMPT}pnpm build`));
+
+    expect(getTerminalPaneState('pane').currentCommand?.rawCommandLine).toBe('pnpm build');
+  });
+
   it('detects a cmd.exe prompt (terminator with no trailing space) and titles the command', () => {
-    recordTerminalOutput('pane', 'C:\\Users\\ntwigg>');
-    recordTerminalUserInput('pane', 'claude\r', lineReader('C:\\Users\\ntwigg>claude'));
+    recordTerminalOutput('pane', 'C:\\Users\\dormouse>');
+    recordTerminalUserInput('pane', 'claude\r', lineReader('C:\\Users\\dormouse>claude'));
 
     expect(getTerminalPaneState('pane').currentCommand?.rawCommandLine).toBe('claude');
   });
 
   it('detects a Git Bash two-line prompt (bare `$ ` under a context line)', () => {
-    recordTerminalOutput('pane', 'ntwigg@PC MINGW64 /c/proj (main)\r\n$ ');
+    recordTerminalOutput('pane', 'dormouse@PC MINGW64 /c/proj (main)\r\n$ ');
     recordTerminalUserInput('pane', 'claude\r', lineReader('$ claude'));
 
     expect(getTerminalPaneState('pane').currentCommand?.rawCommandLine).toBe('claude');
@@ -297,12 +357,12 @@ describe('terminal command input via rendered buffer', () => {
 
   it('reads a prompt painted after a redraw, not welded to the output above it', () => {
     // The same seam `detectResumeCommand` guards against. Deleting the cursor
-    // move leaves the single line `building...C:\Users\ntwigg>`, which no longer
+    // move leaves the single line `building...C:\Users\dormouse>`, which no longer
     // starts with a drive letter — so the anchored cmd.exe shape stops matching
     // and the pane never looks idle. Verified to return null without the
     // boundary strip.
-    recordTerminalOutput('pane', 'building...\x1b[1;1HC:\\Users\\ntwigg>');
-    recordTerminalUserInput('pane', 'claude\r', lineReader('C:\\Users\\ntwigg>claude'));
+    recordTerminalOutput('pane', 'building...\x1b[1;1HC:\\Users\\dormouse>');
+    recordTerminalUserInput('pane', 'claude\r', lineReader('C:\\Users\\dormouse>claude'));
 
     expect(getTerminalPaneState('pane').currentCommand?.rawCommandLine).toBe('claude');
   });
@@ -312,8 +372,8 @@ describe('terminal command input via rendered buffer', () => {
     // boundary is trimmed: `\x1b[K` closes the line, so splitting on it naively
     // leaves an empty last line and hides every self-clearing prompt. Verified to
     // return null with that trim removed.
-    recordTerminalOutput('pane', 'C:\\Users\\ntwigg>\x1b[K');
-    recordTerminalUserInput('pane', 'claude\r', lineReader('C:\\Users\\ntwigg>claude'));
+    recordTerminalOutput('pane', 'C:\\Users\\dormouse>\x1b[K');
+    recordTerminalUserInput('pane', 'claude\r', lineReader('C:\\Users\\dormouse>claude'));
 
     expect(getTerminalPaneState('pane').currentCommand?.rawCommandLine).toBe('claude');
   });

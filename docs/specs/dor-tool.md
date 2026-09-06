@@ -1,440 +1,184 @@
 # Dor Tools
 
-> Status: the `tool` Surface is implemented, behind the `dormouse.flags.tools`
-> localStorage flag (`lib/src/lib/feature-flags.ts`) — off by default, so
-> nothing is designated a tool and no pane can transform. The glob table,
-> `dor open`, reaping, and dehydrate/rehydrate remain under
-> [Future](#future).
+> See `docs/specs/glossary.md` for Surface / Session / Pane / Door vocabulary.
+> Owns tool designation, configuration, trust workflow, serving, and command lifecycle. Browser chrome belongs to `docs/specs/dor-browser.md`; notes and closure belong to `docs/specs/notepad.md`; helpers belong to `docs/specs/terminal-context.md`.
+> Status: implemented behind `dormouse.flags.tools`, off by default. Unbuilt design is under [Future](#future).
 
-> See `docs/specs/glossary.md` for canonical Surface / Session / Pane
-> vocabulary. Builds on `docs/specs/dor-cli.md` (surface handles, the `ensure`
-> spawn path) and `docs/specs/dor-browser.md` (render modes, the iframe proxy,
-> the Dev-Server Chip port scan); this design subsumes the "plugin/backend
-> target axis" staged in that spec's Future.
+## Files
 
-**Pitch**: a Dor Tool is a console app that opens a web port. Dormouse frames
-it in a pane where the human and the agent both see it and both drive it — the
-human clicks, the agent sees the click; the agent types, the human sees the
-typing. No SDK, no protocol, and in the common case no cooperation: Dormouse
-already watches the ports its Sessions bind.
+- `dor/src/commands/tool.ts` — CLI entry and generated help.
+- `lib/src/host/tool-host.ts` — shared host lookup and trust entry.
+- `lib/src/components/wall/use-dor-control.ts` — launch, approval placement, dedupe, and response orchestration.
+- `lib/src/components/wall/use-tool-serving.ts` — port discovery and browser lifetime.
+- `lib/src/components/wall/ToolPanel.tsx` — terminal/browser composition.
 
 ## Capability gating
 
-Phase A of the ledger below is implemented, and nothing in it is
-`tool`-specific, so it is documented where it belongs: the capability model and
-its `hasTerminal` / `hasBrowser` predicates in `docs/specs/glossary.md` → Panes
-and Surfaces, the `dor list --json` `has_terminal` / `has_browser` row fields
-and the matching `has no terminal` / `has no browser` failures in
-`docs/specs/dor-cli.md` → `dor list`.
+**Must gate tool creation on `isToolsEnabled`.** The flag disables designation, not parsing of inert announcements or the capability predicates. Capability semantics belong to `docs/specs/glossary.md` → Panes and Surfaces; CLI reporting belongs to `docs/specs/dor-cli.md` → `dor list`.
 
-Source of truth: `dor/src/commands/types.ts` (the `KIND_CAPABILITIES` table
-both predicates read, and `SURFACE_KINDS` derived from it so `--kind` parsing
-cannot drift), `dor/src/commands/list.ts`,
-`lib/src/components/wall/use-dor-control.ts` (`requireTerminalSurface` /
-`requireBrowserSurface`, the host-side gates that emit those failures).
-
-The kind that has both is [`tool`](#the-tool-capability-set).
+Source of truth: `isToolsEnabled` in `lib/src/lib/feature-flags.ts`; `surface.tool` in `lib/src/components/wall/use-dor-control.ts`.
 
 ## The tool capability set
 
-`tool` = terminal + browser, the third kind in the live gating. Verbs stay
-gated on the capability they need, and browser verbs stay renderMode-gated (an
-iframe-rendered tool cannot be agent-driven). `kill` / `rename` stay universal;
-kinds remain **disjoint** for `dor list --kind`.
+**Must designate the Surface as `tool` before its command starts serving.** A Tool has terminal and browser capabilities, including while booting, awaiting approval, showing a port conflict, or resting at a prompt after command exit. Browser operations still require the renderer/session they operate on.
 
-- **Identity**: a tool Surface's id is its SessionId (I1 extends to tools).
-  Capabilities and render modes change over its life without changing identity
-  — the tool counterpart of I10, stronger than browsers have today.
-- **Render swaps bypass `replaceSurface`.** A tool's browser is a param of its
-  own leaf: swapping `iframe` ⇄ `ab-*` mutates `renderMode` in place instead of
-  routing through the browser-surface replacement path, which is what makes the
-  invariant above true.
-- **Axes**: the tool column of the six-axis table reads terminal-column
-  semantics for its terminal, browser-column for its browser.
-- **Activity**: full machine via the PTY; WATCHING defaults off for
-  tool-spawned commands (`lib/src/lib/watched-commands.ts` rules).
-- **Untouched**: input to **either** capability touches. A tool never takes the
-  untouched blank-shell kill or shell-replacement shortcuts: its command and
-  browser may already hold live resources before the first human input.
+- **Must retain the Session id, public Surface ref, terminal and notes across serving and renderer changes.** These are changes within one Surface.
+- **Must bypass browser `replaceSurface` for Tool renderer swaps**, mutating the Tool's params and releasing the retired browser resources.
+- **Must run the terminal Activity model for a Tool**, including when its browser is visible. Watched-command defaults belong to `docs/specs/alert.md`.
+- **Must mark input to either capability as touching the Tool.** Never apply the untouched-shell kill or shell-replacement shortcut to a Tool.
+- **Must classify Tool params before browser params**, since a serving Tool carries `renderMode` too.
+
+Source of truth: `surfaceKindFromParams` / `isToolParams` in `lib/src/components/wall/browser-surface.ts`; `onSwapRenderMode` / `requestKill` in `lib/src/components/Wall.tsx`; `lib/src/components/wall/tool-surface.test.ts`.
 
 ## Declaring tools
 
-A repo declares its tools in a `dormouse.yml` at its root: a name → entry map
-whose only required field is the command.
+**Must resolve a named Tool from the nearest ancestor `dormouse.yml`.** The host owns discovery, bounded reads, YAML parsing, and substitutions; the renderer receives the resolved result. Canonical field shapes are `ToolEntry` in `lib/src/host/tool-registry.ts`.
 
-```yaml
-tools:
-  storybook:
-    run: pnpm storybook
-    prespawn_dedupe: [storybook, $PROJECT_ROOT]
-```
+| Field | Behavior |
+| --- | --- |
+| `run` | Required command, typed into the configured shell after integration readiness |
+| `render` | `iframe` by default, or `ab-screencast` |
+| `port` | `announced` by default, or `auto`; [Serving](#serving) owns selection |
+| `prespawn_dedupe` | Optional scalar or list of literal key elements with substitutions |
 
-- **`run`** — typed into the spawned shell exactly as `dor ensure` types one.
-- **`render`** — `iframe` (default) or `ab-screencast`. The repo declares the
-  renderer, not the tool: which one suits a tool is a Dormouse-side judgement,
-  and `ab-screencast` is what makes a tool agent-drivable, since browser verbs
-  stay renderMode-gated. **The Display modal never offers pop-out on a tool** —
-  there is no third renderer to land in, so the swap would only re-derive the
-  one it has.
-- **`port`** — `announced` (default) or `auto`, deciding how a port is chosen
-  when the tool has not announced one; an announcement always wins over either.
-  See [Serving](#serving) for what each does.
-- **`prespawn_dedupe`** — the dedupe key, evaluated before anything spawns (see
-  [Identity and dedupe](#identity-and-dedupe)). Optional; absence means no
-  dedupe.
-- **`dormouse.yml` holds static facts; OSC 367 carries what changes at
-  runtime.** A title, or a key that changes when a scratch document is saved,
-  is [OSC](#osc-367), never a file field.
-- **Never give `prespawn_dedupe` a second value shape.** `prespawn_*` is
-  reserved, and staged additions each take their own field name (rationale).
-- **Must reject an unrecognized `$NAME` at parse**, never keep it as a literal
-  (rationale). Substitutions are a closed set: `$PROJECT_ROOT` (the directory
-  holding the declaring `dormouse.yml`) and `$CWD` (the caller's resolved PWD);
-  phase C adds argument substitution.
-- **Must reject `$PROJECT_ROOT` in the phase-C user-global file**, where no
-  project root is defined.
-- **Should warn on a repo-local key without `$PROJECT_ROOT`**, naming the file:
-  it dedupes across every checkout declaring that name. Warning, not error — a
-  repo-declared machine-wide singleton is legitimate.
+- **Must reject unknown `prespawn_*` fields and unknown substitutions**; unknown ordinary fields produce warnings. The substitution set is `$PROJECT_ROOT`, the declaring directory, and `$CWD`, the caller's resolved directory. (rationale)
+- **Must preserve scalar `prespawn_dedupe` as a one-element literal list**, never interpret it as a command to execute. Reserve separate fields for future computed keys. (rationale)
+- **Must warn when a repo-local key omits `$PROJECT_ROOT`**, while allowing intentional cross-checkout dedupe.
+- Reserved: **Must reject `$PROJECT_ROOT` in the future user-global configuration**, which has no project root; see scope **dor-tools** under [Future](#future).
 
-- **An unknown `prespawn_*` field is a parse error**, where an unknown ordinary
-  field only warns. Silently dropping a dedupe directive is the destructive
-  failure; failing to parse is the loud one.
-
-A bare scalar is one element (`prespawn_dedupe: clock`).
-
-Source of truth: `lib/src/host/tool-registry.ts` (parsing, substitution, key
-rendering), `lib/src/host/tool-trust.ts` (discovery — the walk up to the
-nearest file), `lib/src/host/tool-host.ts` (the entry both hosts install). The
-repo's own `dormouse.yml` is pinned against the parser in
-`lib/src/host/tool-registry.test.ts`.
+Source of truth: `lookupTool` in `lib/src/host/tool-trust.ts`; `parseToolFile` / `resolveDedupeKey` in `lib/src/host/tool-registry.ts`; `lib/src/host/tool-registry.test.ts`.
 
 ## Identity and dedupe
 
-**A tool has an identity if and only if it was given one.** No key is derived
-from the command, the cwd, or anything else the host can see; an entry with no
-`prespawn_dedupe`, and every `dor tool -- <command>`, spawns a fresh Surface
-every time (rationale).
+**Must dedupe only when an explicit key exists and `--fresh` is absent.** Neither a command nor its CWD implicitly creates identity; anonymous `dor tool -- <command>` invocations create fresh Surfaces. (rationale)
 
-- **Namespacing is host-enforced.** Keys compare within the tool identity the
-  host resolved from the spawn; the declared list is scope inside that
-  namespace, and a key's first element is never trusted as a tool name.
-  Without this the runtime re-key of [OSC 367](#osc-367) is an impersonation
-  primitive.
-- **Dedupe at spawn time only.** A key matching a live Surface means the new
-  spawn is redundant by construction, so it never starts: the survivor is
-  revealed and its handle reported with an `ensure`-style reuse note.
-- **A runtime re-key never dedupes.** It re-labels its own Surface and nothing
-  else — killing either side of a late collision would destroy work.
-- **Scope is a slot, not a convention.** Keys are lists so parallel worktrees
-  differ by `$PROJECT_ROOT` rather than by an author remembering to concatenate
-  one in (rationale).
-- **A key match only reveals**, never transferring state, grants, or input; the
-  worst case for a spoofed key is a wrong pane getting focus.
-- **A match whose command has exited is re-run in place**, keeping the pane's
-  position and scrollback, and reported as `adopted`. `ensure` stops matching a
-  dead command because it targets arbitrary shells that may be busy with
-  something else; a tool Surface is dedicated, so that ambiguity does not exist.
-- **Races**: concurrent spawns serialize on the key; first wins.
+- **Must namespace keys by the host-resolved Tool name**; runtime output supplies scope elements, never another Tool's namespace.
+- **Must serialize Tool launch requests in the renderer**, covering lookup, matching, creation, and startup. The current lock serializes all Tool requests, not only matching keys.
+- **Must reveal a live matching Tool and report `existing` without sending input.** An idle match restarts its stored command in its own directory and reports `adopted`; a failed restart reports an error.
+- **Must reuse and reveal a matching pending approval Surface**, preserving its approval state and reporting `pending`.
+- **Must apply runtime re-keys only to the announcing Tool**, without merging Surfaces, transferring state, or killing either side of a collision. (rationale)
 
-Source of truth: the `surface.tool` handler in
-`lib/src/components/wall/use-dor-control.ts`; `resolveDedupeKey` in
-`lib/src/host/tool-registry.ts`; `toolKeysEqual` in
-`lib/src/components/wall/browser-surface.ts`.
+Source of truth: `acquireToolSpawnLock` / the `surface.tool` handler in `lib/src/components/wall/use-dor-control.ts`; `namespacedToolKey` / `toolKeysEqual` in `lib/src/components/wall/browser-surface.ts`; `lib/src/components/Wall.test.tsx`.
 
 ## Trust
 
-`dormouse.yml` is repo-controlled and its entries execute, so it is inert until
-the repo is trusted. The phase-C user-global file needs none of this.
+**Must obtain a recorded grant before executing a repo-local named Tool.** Anonymous command invocations carry the caller's explicit command and require no repo-config grant. The local authority boundary belongs to `docs/specs/security-local.md` → Dor Tool configuration.
 
-1. **Keyed on the branch's upstream remote URL**, canonicalized, so every
-   worktree and clone of one repo shares a grant. A folder grant covers one
-   project root instead, for a repo with no resolvable remote or a checkout the
-   user wants scoped. Either key satisfies the check.
-2. **Only a gesture in Dormouse's own chrome grants it** — a prompt in the
-   tool's own pane naming the command, never one rendered as terminal output. The
-   [naked-prompt test](#cli) signals human intent but is not a security
-   boundary (rationale). Same shape as the local-approval ceremony in
-   `docs/specs/remote-security-model.md`.
-3. **Agents cannot grant trust.** `dor tool <name>` against an unapproved repo
-   creates the Surface and reports `pending`, never minimized — a pane the user
-   cannot see is a pane they cannot approve, so a requested `--minimize` is
-   applied after approval instead. A pending Surface is not persisted: it
-   restores as a plain terminal, since the grant it was asking for was never
-   made. Its pane shows what would run and waits; approval re-resolves the
-   entry, so the tool runs with the `render`, `port` and key its file
-   declares. **Nothing from the repo executes until a human chooses** — no PTY is
-   spawned, so not even a shell starts. **Declining closes the pane and records
-   nothing** (rationale).
-4. **Anything `prespawn_*` is behind the same gate**, since it executes — the
-   natural implementation order, probe-then-prompt, is backwards.
-5. **The phase-C glob table stays user-global and may only name user-global
-   tools.** Implicit dispatch reaching repo-local entries is the
-   `dor open README.md`-in-a-malicious-repo attack.
-6. **Never content-hashed.** A `dormouse.yml` that changes under a granted key
-   does not re-prompt (rationale).
-7. **The upstream comes from the repo and is not verified.** `.git/config` is
-   repo-controlled, so a directory shipping its own `.git` inherits whatever
-   grant its claimed URL has. **Accepted risk** — cloning is unaffected, since
-   there the user chose the URL (rationale).
-8. **Must serialize grants across host processes** and merge each against the
-   latest global trust file; concurrent windows cannot overwrite decisions.
+1. **Must derive grant keys host-side from the canonical upstream remote URL or project-root folder.** Either recorded key satisfies lookup; upstream trust spans clones and worktrees. (rationale)
+2. **Must present unapproved named invocations in a visible pending Tool pane**, returning `pending` without spawning a PTY. Defer requested minimization until approval. Pending approval is never persisted as a runnable Tool.
+3. **Must grant only through the approval controls in Dormouse chrome**, never through a `dor` verb or terminal output. The prompt names the proposed command; it is not itself executable terminal content. (rationale)
+4. **Must re-resolve the named entry after the grant is written**, then stage the resolved command, renderer, port strategy, and key before exposing its terminal. A Surface closed during the host calls must not start later.
+5. **Must close a declined approval through the ordinary close coordinator and record no denial.** Archive failure may retain the pane. (rationale)
+6. **Must share grant updates safely across host processes**, merging against the latest file under the existing lock and atomic-write protocol.
+7. **Never content-hash grants or re-prompt solely because the config changed.** (rationale)
 
-Source of truth: `lib/src/host/tool-trust.ts` (the record and its two key
-kinds), `lib/src/host/git-upstream.ts` + `lib/src/host/git-remote-url.ts` (how a
-project resolves to an upstream key), and
-`lib/src/components/wall/ToolApproval.tsx` (the only grant path).
+Reserved: **Must keep future implicit glob dispatch user-global and limited to user-global Tools**, and gate any future repo `prespawn_*` execution on the same approval; see scope **dor-tools** under [Future](#future).
+
+Source of truth: `createToolHost` in `lib/src/host/tool-host.ts`; `FileToolTrustStore` / `lookupTool` in `lib/src/host/tool-trust.ts`; `resolveUpstreamUrl` in `lib/src/host/git-upstream.ts`; `ToolApproval` in `lib/src/components/wall/ToolApproval.tsx`; `resolveToolApproval` in `lib/src/components/Wall.tsx`. Tests: `lib/src/host/tool-trust.test.ts`, `lib/src/components/Wall.test.tsx`.
 
 ## Serving
 
-A tool's browser appears when Dormouse learns the tool is serving. Two triggers
-feed one internal upgrade path; the atom does not care which fired.
+**Must frame only a port returned by the Tool Session's process-tree scan while its designated command is current.** An OSC announcement selects a discovered port; it cannot supply an arbitrary listening service or designate an ordinary terminal as a Tool. Recheck the command run after asynchronous discovery and browser startup.
 
-- **The port scan is the primary trigger** and the only one correct under
-  contention: it reports the port actually **bound**, where an announcement
-  states intent (rationale). Already shipped for the Dev-Server Chip, scanning
-  a Session's own process tree.
-- **OSC 367 is the disambiguator, never the trigger.** It names *which* of a
-  multi-port tool's ports to frame, plus ssh transparency, a name, and a
-  runtime re-key. The hint names the port; the scan supplies the number.
-- **`port: announced` frames nothing without OSC 367**; `port: auto` autobinds.
-- **Autobind never chooses among ports.** Exactly one bound port is framed;
-  **two or more frames nothing** and the pane shows the conflict where the
-  browser would have gone (rationale).
-- **Autobind waits for the port set to settle** — one unchanged tick — before it
-  commits, since ports appear one at a time during boot (rationale). A changed
-  OSC 367 port re-points a live browser; an unchanged one never overrides
-  URL-bar navigation. Accepted limit: an unannounced port opening after settle
-  is not noticed.
-- **`dor tool -- <command>` autobinds**, having nowhere to declare otherwise;
-  a declared tool opts in with one line.
-- **Upgrade requires a tool-designated Session with its spawned command still
-  in the foreground** (see [Security](#security)).
+| Policy | Selection |
+| --- | --- |
+| Announced port present | Match that exact port in the scan; absent match frames nothing |
+| `port: announced`, no announced port | Frame nothing |
+| `port: auto`, no announced port | Wait for one unchanged scan tick; one port frames, several show a conflict, zero keeps waiting |
+| Anonymous command | Uses `auto` |
 
-**Reserved:** a tool's URL is derived, never restored verbatim (see
-[Persistence and hosts](#persistence-and-hosts)) — a precondition for
-`prespawn_port` in the scope **dor-tools** [Later](#future), where Dormouse
-picks a free port and exports
-`DORMOUSE_TOOL_PORT`, so `storybook dev -p ${DORMOUSE_TOOL_PORT:-6006}` cannot
-collide across worktrees. It supplements the scan rather than replacing it.
+- **Must poll unbound Tools every 1.5 seconds while their command runs.** Reset settle memory on command exit. (rationale)
+- **Must let a changed announced port override a committed conflict or browser**, but only after a matching scan. An unchanged announcement never undoes URL-bar navigation. (rationale)
+- **Must stop ordinary port scans once a browser or conflict is committed.** An unannounced additional port appearing after settle is not detected.
+- **Must display the browser destination before awaiting agent-browser startup**, leaving the session-less renderer inert until the binding arrives. Close any browser session whose Tool disappeared or changed command during startup.
+- **Must retain a runtime re-key within the Tool's namespace**, following [Identity and dedupe](#identity-and-dedupe).
 
-Source of truth: `lib/src/components/wall/use-tool-serving.ts` (the trigger,
-the renderer split, and the agent-browser session binding),
-`listenerUrlsByPort` in `lib/src/components/wall/port-url.ts`,
-`lib/src/lib/tool-announce-store.ts`.
+Reserved: **Must derive a Tool's URL again on cold restore**, compatible with future `prespawn_port` and `DORMOUSE_TOOL_PORT` in scope **dor-tools**; [Persistence and hosts](#persistence-and-hosts) owns the saved projection.
+
+Source of truth: `useToolServing` in `lib/src/components/wall/use-tool-serving.ts`; `attachAgentBrowserSession` in `lib/src/components/wall/tool-browser-session.ts`; `listenerUrlsByPort` in `lib/src/components/wall/port-url.ts`. Tests: `lib/src/components/wall/use-tool-serving.test.tsx`.
 
 ## Lifecycle
 
-**Spawn** — a shell-hosted PTY using the `ensure` spawn path's mechanics
-(`dor/src/commands/ensure.ts`: prompt-wait typing, per-shell quoting via
-`dor/src/commands/shell-quote.ts`, command-exit tracking) but **not** its
-command+cwd matching. Terminal front from spawn; a command that never serves is
-a terminal running a TUI, which is a complete outcome.
+**Must create a shell-hosted PTY and type the command only after integration readiness.** An unsupported shell fails before launch; integration timeout or cancellation closes the temporary Surface through the notepad close coordinator, retaining it if closure fails.
 
-**Serving** → the Surface **grows a browser in place**: no replacement, no ref
-transfer, no new id — params gain the browser and `surfaceType` flips by
-derivation. The pane flips to the browser, terminal behind the header's
-far-left chip. Accepted: a fast tool flashes its terminal for ~100ms.
+| Transition | Result |
+| --- | --- |
+| Spawn | Terminal visible; Tool identity already established |
+| Serving | Browser becomes visible in the same Surface |
+| Port conflict | Explanation occupies the browser half; terminal remains available |
+| Command exit or different command | Browser resources retire and terminal becomes visible |
+| Re-run stored command | Same Surface may serve again |
+| Kill | Notes archive and helper guards settle before PTY/browser teardown |
 
-**Command exit** → the browser retires and the pane flips back to a prompt
-above the tool's dying words; re-running revives it on the same Surface. A port
-conflict retires with it, so a re-run gets a fresh verdict.
-**Kill** → universal, reaping the process and the browser's resources.
+**Must show the full terminal before serving and after command exit.** A serving Tool shows its browser, and Terminal Context reveals the same primary terminal (`docs/specs/terminal-context.md` → Tool context). Keep the browser mounted behind context, and keep the hidden terminal sized with `visibility` and `inert`, never `display: none`. Pending approval mounts neither capability.
 
-**`surfaceKindFromParams` must test for a tool before it tests for a browser**,
-because a serving tool also carries a `renderMode`. The compiler cannot force
-that edit — a boolean-derived return type-checks against a widened
-`SurfaceKind` — so it is pinned by
-`lib/src/components/wall/tool-surface.test.ts`.
+Notepad follows `docs/specs/notepad.md` → Notepad UI. Tool context follows `docs/specs/terminal-context.md` → Tool context.
 
-Source of truth: `lib/src/components/wall/ToolPanel.tsx` (both halves mounted,
-visibility flipped), `ToolPaneHeader.tsx` (the leading chip plus the delegated
-header), `isToolParams` / `toolFace` in `browser-surface.ts`,
-`toolLeafMeta` + `shouldParkOnMinimize` in `lath-wall-engine.ts`.
+Source of truth: `ToolPanel` in `lib/src/components/wall/ToolPanel.tsx`; `ToolPaneHeader` in `lib/src/components/wall/ToolPaneHeader.tsx`; `toolLeafMeta` / `shouldParkOnMinimize` in `lib/src/components/wall/lath-wall-engine.ts`; `closeSurface` in `lib/src/components/Wall.tsx`. Tests: `lib/src/components/wall/ToolPanel.test.tsx`, `lib/src/components/Wall.test.tsx`.
 
 ## CLI
 
-- **`dor tool -- <command>`** — designate an arbitrary command as a tool. No
-  key, always a fresh Surface; distinct from `dor split` because it arms the
-  [serving](#serving) trigger.
-- **`dor tool <name>`** — run a `dormouse.yml` entry with whatever
-  `prespawn_dedupe` it declares.
-- **Splits focus-neutrally** and returns a handle, except when it
-  [takes over the calling pane](#take-over).
-- **A keyed invocation that matches reveals and reports**, in both placements,
-  so the calling pane never appears to do nothing.
-- `dor list`: rows report `kind: tool` with `render_mode`; JSON carries command
-  + cwd + url. The location column shows the cwd, pending the announce name.
+**Must split focus-neutrally for a new Tool and return its Surface handle.** Calling-pane take-over is staged under [Future](#future). A matching Tool follows [Identity and dedupe](#identity-and-dedupe).
 
-Source of truth: `dor/src/commands/tool.ts` and its help snapshot
-`dor/test/snapshots/help/tool.md`; `surface.tool` in `dor/src/protocol.ts`.
+**Must retain `dor tool` as a Surface-producing command on every supported host**, never route it to a native editor. Generated help owns syntax and response types own shape.
+
+Source of truth: `toolCommand` in `dor/src/commands/tool.ts`; `dor/test/snapshots/help/tool.md`; `ToolSurfaceResponse` in `dor/src/commands/types.ts`.
 
 ## Take-over
 
-**`dor tool` typed alone at a prompt runs in that pane** rather than splitting —
-same Surface, same id, same scrollback. Typing a command at a prompt is how a
-terminal works. Nothing else about the invocation changes: same trust gate, same
-dedupe, same serving trigger.
+**Must run a standalone `dor tool` invocation in its calling pane when every takeover condition holds.** Otherwise use the ordinary split path. Trust approval and keyed reuse take precedence. (rationale)
 
-Every condition holds or it splits, and a split is never wrong — only more panes
-than were asked for (rationale):
+| Condition | Required state |
+| --- | --- |
+| Caller | Visible, integrated plain terminal; not closing or dying |
+| Command line | OSC 633 reports `dor tool` alone; compound shell syntax rejects takeover |
+| Directory | Resolved Tool CWD equals the caller's reported CWD |
+| Placement | Neither `--surface` nor `--minimize` supplied |
+| Helper | No existing auxiliary helper; preserve it by splitting |
+| Trust | Already approved; pending approval always uses its own pane |
 
-- **The line is naked**: the caller's OSC 633 command line is one command and
-  that command is `dor tool`. An agent's invocation runs under whatever it
-  launched, so the pane reports *that* line instead. Human intent, never a
-  security boundary — see [Trust](#trust) rule 2.
-- **The caller is a visible pane whose leaf is a plain terminal.** A Door is not
-  a pane a human is typing in; a tool or browser leaf is not one to transform.
-- **The tool's directory is that pane's own.** The command is typed into the
-  caller's shell and runs where that shell already is, so a `--cwd` naming
-  anywhere else has to spawn its own.
-- **The placement was not asked for.** `--surface` names a split reference and
-  `--minimize` asks for a background Surface.
-- **A pending approval never takes over** — it needs a pane that has spawned
-  nothing ([Trust](#trust) rule 3).
-- **A key match reveals its survivor** ([CLI](#cli)) — unless the survivor *is*
-  the calling pane, the place take-over makes normal to retype in. Its command
-  is live only when the tool spawned this `dor` itself; otherwise `dor` is what
-  its shell is running, so the tool is idle however the pane reads, and it
-  **re-runs there through the same handshake**, reported `adopted`. Never
-  through the interrupt-and-retype restart: Ctrl+C would kill the `dor` still
-  waiting for the answer.
-- **A re-run is a placement of nothing**, so only the two conditions that govern
-  typing apply — the naked line and integration. It runs in the tool's own
-  directory, like an `adopted` match from any other pane, and `--surface` /
-  `--minimize` / a `--cwd` elsewhere do not change that.
-- **A caller that is the match but cannot be typed behind fails loudly.** There
-  is no survivor to reveal — the user is sitting in it — so reporting `existing`
-  would be a silent no-op. It says so instead.
+**Must answer `takeover` before waiting for the calling shell's prompt**, then transform and type the command. The answer promises placement, not successful command startup.
 
-**Respond, then wait for the prompt.** `dor` is the caller's foreground process
-when the host answers it, so the host answers `takeover` first, waits for the
-shell to report itself back at a prompt, and types the command only then.
-Waiting first deadlocks: the prompt cannot return until `dor` exits, and `dor`
-cannot exit until it is answered.
+- **Must leave the caller unchanged on prompt timeout or cancellation**, and recheck visibility, closing state, CWD, kind, and helper presence after the wait. A helper opened during the handshake prevents transformation.
+- **Must change components and params in one metadata commit**, retaining the Session id, Surface ref, scrollback, notes, source pins, and any user rename.
+- **Must clear previous OSC 367 hints before typing the new command.**
+- **Must retain the spawn lock until the typed command is observed running or a new completed run is observed**, or the wait ends. A command that starts and exits between samples releases the lock too.
+- **Must rerun a keyed match in the caller through the same answer/prompt handshake**, reporting `adopted`, when its line is standalone and integrated. Never interrupt the waiting `dor` process. Placement flags do not relocate an existing match; run in its current directory.
+- **Must report an error when the caller is the keyed match but its command line cannot be typed behind**, instead of reporting a misleading `existing` result.
+- **May interleave user keystrokes arriving between the prompt and command injection.** Takeover does not reserve the shell input buffer.
+- **Must include already-owned background listeners in the usual process-tree scan.** Under `auto`, they can become the sole candidate or cause a conflict.
 
-- **The response promises the placement, not the run** — it is sent before the
-  command is typed, because the caller is gone by the time it runs. Failure
-  after it shows in the pane.
-- **A shell that never comes back to its prompt is left alone**: nothing typed,
-  leaf still a terminal. The transformation happens on the way *in* to typing,
-  so a timeout costs nothing.
-- **The spawn lock is held past the response** until the shell has processed the
-  line — the command live, or already finished. The key reaches the leaf's params
-  at the meta write, but a pane typed into and not yet reporting reads as an idle
-  tool, which a queued invocation of the same key would interrupt and retype.
-  Waiting for *live* alone would pin the lock for the full timeout on every tool
-  that dies on boot: it can start and finish between two samples.
-- **The transformation is one meta write**, so the component pair and the params
-  commit together, and the leaf id — the SessionId — never changes. That is what
-  keeps the terminal, its buffer, and its PTY untouched.
-- **The Session's [OSC 367](#osc-367) hint is cleared as it transforms.** What
-  the pane announced under an earlier command is not this tool's, and would
-  otherwise name its port or re-key it.
-- Accepted: **keystrokes in the window between `dor` exiting and the command
-  landing** interleave with it. The window is one control round trip.
-- Accepted: **a listener the taken-over shell already owned** (a backgrounded
-  server, an `ssh -L`) is in the [scan](#serving)'s process tree, so `port: auto`
-  can frame it or refuse the pair as a conflict. A shell that never ran a server
-  before — every split-spawned tool — cannot hit this.
-
-Source of truth: `lib/src/components/wall/tool-takeover.ts` (the gate), the
-take-over arm of `surface.tool` in `lib/src/components/wall/use-dor-control.ts`
-(the handshake), `setMeta` in `lib/src/components/wall/lath-wall-store.ts`.
+Source of truth: `toolTakesOverCaller` / `toolRerunsInCaller` in `lib/src/components/wall/tool-takeover.ts`; `runToolInCallerPane` in `lib/src/components/wall/use-dor-control.ts`; `setMeta` in `lib/src/components/wall/lath-wall-store.ts`. Tests: `lib/src/components/wall/tool-takeover.test.ts`, `lib/src/components/Wall.test.tsx`.
 
 ## OSC 367
 
-`DOR` on a phone keypad. Verb-multiplexed (the OSC 633 pattern): one registry
-entry, extensible without burning numbers. Tools emit ST; the parser accepts
-BEL. Registered in `docs/specs/terminal-escapes.md`, parsed and stripped at the
-PTY data boundary (`lib/src/lib/terminal-protocol.ts`), replay-filtered like
-the other reports, sanitized and size-capped under the rules
-`docs/specs/alert.md` applies to OSC 9/99/777.
+**Must consume OSC 367 at the PTY owner's parser**, including malformed and unknown verbs, and emit no reply. `serve` is the only implemented verb. The escape registry is `docs/specs/terminal-escapes.md`.
 
-```
-ESC ] 367 ; serve ; {"port":4242,"name":"…","key":["…"],"dehydrate":true,"persist":"respawn","v":1} ESC \
-ESC ] 367 ; dehydrate ; {"v":1, …} ESC \
-```
+- **Must sanitize and bound the payload before retaining it.** `ToolAnnounce` and `parseToolAnnounce` own the field shapes and validation limits.
+- **Must forward parsed announcements from the host to the owning renderer**, which records the latest announcement per Session. Standalone uses `terminal:protocolEvents`; VS Code uses `terminal:toolAnnounce` scoped to the owning webview. The fake adapter applies locally.
+- **Must reconstruct announcements from raw replay without emitting replies**, and clear the renderer record on Session disposal. Ordinary terminal announcements stay inert.
+- Reserved: **Must retain `name`, `dehydrate`, and `persist` as inert parsed fields**, serving the announced-name and D1/D2 items under [Future](#future). Neither `persist: never` nor a `dehydrate` verb changes current persistence.
+- Reserved: **Never assign a third OSC 367 verb**; `dehydrate` belongs to D2 under [Future](#future), while existing title/progress protocols keep those roles.
 
-- `serve` — refines what the scan found, never mints a tool. `port` names which
-  port to frame; `name` is **reserved**: parsed,
-  sanitized, and recorded, but nothing consumes it yet — it will feed the title
-  candidates of `docs/specs/terminal-state.md` (priority user pin > announce
-  name > command), see [Future](#future); `key` re-keys under the host's namespace; `dehydrate` capability
-  flag; `persist` (`respawn` default | `never`); contract version.
-  **Re-emittable, last-write-wins.**
-- `dehydrate` — emitted on graceful stop; captured, size-capped, stored in the
-  pane's persisted params.
-- **Never add a third verb.** Titles are OSC 0/2, progress is OSC 9;4; the
-  existing escape registry is the rest of the API.
-- **Safe to emit unconditionally** — well-behaved terminals drop unknown OSCs,
-  so checking `DORMOUSE_SURFACE_ID` is an optimization only. ssh-transparency is
-  why this is an OSC and not a control-socket call; tmux needs
-  `allow-passthrough` (tool-author docs, one line).
-- No replay filter: 367 elicits no response, and replaying the hint after a
-  reconnect is what restores it.
-- Before freezing: sweep xterm ctlseqs and the iTerm2/kitty/WezTerm/ConEmu
-  private ranges. Runners-up: 3676 (`DORM`), 4242.
-
-Source of truth: `lib/src/lib/tool-announce.ts`, `lib/src/lib/osc-sanitize.ts`
-(shared with OSC 9/99/777), `lib/src/lib/tool-announce-store.ts`, and the `367`
-arm of `lib/src/lib/terminal-protocol.ts`. The harness's own announcement is
-pinned by `standalone/scripts/dev-agent-browser-announce.test.mjs`.
+Source of truth: `TerminalProtocolParser` / `collectTerminalProtocolAlerts` in `lib/src/lib/terminal-protocol.ts`; `parseToolAnnounce` in `lib/src/lib/tool-announce.ts`; `recordToolAnnounce` in `lib/src/lib/tool-announce-store.ts`; `createOwnerPtyStream` in `vscode-ext/src/message-router.ts`; `ownerStream` in `lib/src/host/remote/sidecar-entry.ts`. Tests: `lib/src/lib/tool-announce.test.ts`, `standalone/scripts/dev-agent-browser-announce.test.mjs`.
 
 ## Security
 
-Three gates, one per actor:
-
-1. **Repo-controlled config executes only after a human approves the repo** —
-   see [Trust](#trust).
-2. **Only a tool-designated Session upgrades in place**, designation being the
-   `dor tool` spawn. Elsewhere the [serving](#serving) trigger is ignored and
-   the announcement lights the inert Dev-Server Chip, whose click is the
-   gesture that connects. **Output alone never creates surfaces.**
-3. **Upgrade requires the spawned command to still be the foreground process**,
-   so an exited tool's pane cannot be re-pointed by whatever runs next.
-
-**Accepted risk — content-driven announce inside a blessed tool.** A tool
-rendering hostile bytes (a pager on a malicious file) passes the foreground
-gate, so embedded bytes can name an attacker-chosen port and re-point the
-browser at a service already listening locally, under the tool's name. The
-residual is a mislabeled view of the user's own service, inert without further
-gestures (rationale). Escalations if that changes: gesture-gate re-announces
-that move the port, or constrain the framed port to the session's process tree
-— not the default, since it breaks tools wrapping double-forking daemons.
+The Tool-specific local boundaries are `docs/specs/security-local.md` → Dor Tool configuration. Browser content follows `docs/specs/security-local.md` → Browser panes. Serving authority follows [Serving](#serving); approval workflow follows [Trust](#trust).
 
 ## Persistence and hosts
 
-`PersistedSurfaceType` includes `'tool'`. Its `PersistedPane` row carries the
-command plus stable tool metadata (name, declared renderer and port strategy,
-and optional key); cwd remains the pane's normal field. The Lath leaf carries
-the equivalent render params. Because `'tool'` is a new type rather than an
-edit to an existing one, no snapshot migration is required.
+**Must persist the command and stable Tool metadata with `surfaceType: 'tool'`**, retaining the ordinary CWD field. Never persist a derived URL, browser session binding, conflict, pending approval, or visibility toggle as runnable Tool state. Live notes follow `docs/specs/notepad.md` → Live resume.
 
-**The URL is never persisted.** A tool's port is whatever it bound this time,
-so the URL is re-derived from the [scan](#serving) after respawn. A restored
-tool is a terminal running its command until it serves again — the same state a
-cold spawn passes through.
+**Must cold-restore an approved Tool by starting its saved command through integration-gated shell readiness**, then rediscover its port. Agent-resume commands do not override the saved Tool command. Pending approvals restore as ordinary terminals and execute nothing. **Must rebuild visible Tool metadata from its pane row when layout geometry is unusable**, rather than starting the command in a plain terminal with no serving behavior.
 
-The dehydrated payload is in-session state, not persisted params. Cold restore
-follows each host's session-restore story: `persist: "never"` rows drop silently
-and the default respawns from bare args. Remote: the terminal rides protocol-v1
-as-is; the browser inherits the staged browser-surface gap.
+**Must provide Tool host operations in standalone and VS Code.** Remote terminal transport remains protocol-v1; remote browser presentation is staged in `docs/specs/remote-api.md`.
 
-**`dor tool` is never routed to a native editor** — a verb returning a handle
-on one host and a note on another is one command with two types (rationale).
-Handing a target to the host's editor is a separate additive verb.
-
-Source of truth: `PersistedSurfaceType` in `lib/src/lib/session-types.ts`;
-`toolControl` in `lib/src/lib/platform/types.ts` with its host implementations
-(`vscode-ext/src/tool-host.ts`, and `tool_control` in
-`standalone/src-tauri/src/lib.rs` bridging to `standalone/sidecar/main.js`).
+Source of truth: `PersistedToolMetadata` in `lib/src/lib/session-types.ts`; `saveSession` in `lib/src/lib/session-save.ts`; `restoreSession` in `lib/src/lib/session-restore.ts`; `restoreTerminal` in `lib/src/lib/terminal-lifecycle.ts`; `toolControl` in `lib/src/lib/platform/types.ts`. Tests: `lib/src/lib/session-save.test.ts`, `lib/src/lib/session-restore.test.ts`.
 
 ## Future
 
-**Scope: dor-tools** — what remains, staged, one phase per PR. The atom (both
-`dor tool` forms, `dormouse.yml`, trust, the serving trigger, OSC 367, and
-`ab-*` rendering) is implemented and described above.
+**Scope: dor-tools** — remaining design, in implementation order.
 
 - **C — glob table + `dor open`.** The user-global tools file, glob rules
   (pattern → tool name), `dor open <target>` as sugar over `dor tool`, argument
@@ -452,8 +196,7 @@ Source of truth: `PersistedSurfaceType` in `lib/src/lib/session-types.ts`;
   the title-candidates channel and `dor list`'s location column.
 - **Later** — `prespawn_*` beyond the dedupe literal: a computed key, and
   `prespawn_port`. Pocket/remote browser view (rides the browser-surface
-  staging in `docs/specs/remote-api.md`; reserve the kind on the wire now). The
-  VS Code pipeline. An in-pane terminal/browser strip (decide against the
+  staging in `docs/specs/remote-api.md`; reserve the kind on the wire now). An in-pane terminal/browser strip (decide against the
   glossary's reserved multiple-Surfaces-per-Pane). A `boots: web` hint if the
   terminal flash grates. `--has terminal` / `--has browser` for `dor list`.
 

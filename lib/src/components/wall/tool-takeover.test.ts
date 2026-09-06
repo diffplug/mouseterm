@@ -50,6 +50,7 @@ describe('toolTakesOverCaller', () => {
     oscDriven: true,
     rawCommandLine: 'dor tool storybook',
     cwdMatches: true,
+    helperPresent: false,
   };
 
   it('takes over the pane the invocation was typed in', () => {
@@ -61,6 +62,7 @@ describe('toolTakesOverCaller', () => {
       ['--surface named a reference', { explicitSurface: true }],
       ['--minimize asked for a background surface', { minimized: true }],
       ['the caller is minimized', { visible: false }],
+      ['the caller has an auxiliary helper', { helperPresent: true }],
       ['the caller is already a tool', { kind: 'tool' }],
       ['the caller is a browser', { kind: 'browser' }],
       ['the shell reports no OSC 633', { oscDriven: false }],

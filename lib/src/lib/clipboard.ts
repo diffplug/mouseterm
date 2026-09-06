@@ -6,36 +6,36 @@ import { getPlatform, PLATFORM_STRING } from './platform';
 import { shellEscapePath } from './shell-escape';
 import { getDefaultShellOpts, getTerminalInstance, getTerminalShellKind, markSessionTouched } from './terminal-registry';
 
-/** Write plain text to the system clipboard, swallowing the failures a webview
- *  raises when the document lacks focus or the Permissions API said no — the
- *  user sees nothing was copied and retries. */
-export async function writeTextToClipboard(text: string): Promise<void> {
-  if (!text) return;
+/** Report failure without throwing so callers retain the selection for retry. */
+export async function writeTextToClipboard(text: string): Promise<boolean> {
+  if (!text) return false;
   try {
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
+      return true;
     }
   } catch {
-    // Best effort by contract above.
+    // Clipboard access can be denied or the webview can lose focus.
   }
+  return false;
 }
 
 /** Copy the current selection as-is; no-op without one. */
-export async function copyRaw(terminalId: string): Promise<void> {
+export async function copyRaw(terminalId: string): Promise<boolean> {
   const terminal = getTerminalInstance(terminalId);
   const sel = getMouseSelectionState(terminalId).selection;
-  if (!terminal || !sel) return;
-  await writeTextToClipboard(extractSelectionText(terminal, sel));
+  if (!terminal || !sel) return false;
+  return writeTextToClipboard(extractSelectionText(terminal, sel));
 }
 
 /** Copy with rewrap, except for rectangular block selections. */
-export async function copyRewrapped(terminalId: string): Promise<void> {
+export async function copyRewrapped(terminalId: string): Promise<boolean> {
   const terminal = getTerminalInstance(terminalId);
   const sel = getMouseSelectionState(terminalId).selection;
-  if (!terminal || !sel) return;
+  if (!terminal || !sel) return false;
   const raw = extractSelectionText(terminal, sel);
   const out = sel.shape === 'block' ? raw : rewrap(raw);
-  await writeTextToClipboard(out);
+  return writeTextToClipboard(out);
 }
 
 /** Replace ESC with visible U+241B so clipboard text cannot close a bracketed

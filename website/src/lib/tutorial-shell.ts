@@ -137,16 +137,16 @@ export class TutorialShell {
         this.sendOutput('\r\n');
         const command = this.lineBuffer.trim();
         this.pushHistory(command);
-        this.processCommand(command);
+        const launchedProgram = this.processCommand(command);
         this.lineBuffer = '';
         this.historyIndex = null;
         this.historyDraft = '';
         // `processCommand` may have launched an interactive program. Any bytes
         // left in this chunk (e.g. a paste of `cmd\rinput`) belong to that
         // program, not the shell line editor — forward them and stop parsing.
-        if (this.activeProgram) {
+        if (launchedProgram) {
           const rest = data.slice(index + 1);
-          if (rest) this.activeProgram.handleInput(rest);
+          if (rest) launchedProgram.handleInput(rest);
           return;
         }
       } else if (ch === '\x7f' || ch === '\b') {
@@ -202,10 +202,10 @@ export class TutorialShell {
     this.sendOutput(`\r${CLEAR_LINE}${PROMPT}${this.lineBuffer}`);
   }
 
-  private processCommand(cmd: string): void {
+  private processCommand(cmd: string): InteractiveProgram | null {
     if (cmd === '') {
       this.showPrompt();
-      return;
+      return null;
     }
     const [name, ...args] = cmd.split(/\s+/);
     if (!this.launch(name, args, cmd)) {
@@ -214,6 +214,7 @@ export class TutorialShell {
       );
       this.finishCommand(EXIT_COMMAND_NOT_FOUND);
     }
+    return this.activeProgram;
   }
 
   private showPrompt(): void {

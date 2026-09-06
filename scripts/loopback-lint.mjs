@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Mechanical check for the loopback-listener invariant in `SECURITY.md`
+ * Mechanical check for the loopback-listener invariant in `docs/specs/security-local.md`
  * ("Loopback Listeners"). Runs from the repo root via `pnpm test` (see the root
  * package.json). Exits non-zero with a per-violation report.
  *
@@ -17,16 +17,23 @@
  * for shipped code, `standalone/scripts/dev-host-guard.mjs` for the dev
  * harness — or sit on ALLOWED below with a stated reason.
  *
+ * `scripts/loopback-lint-selftest.mjs` proves each bind form is load-bearing by
+ * adding one and requiring this lint to go red, and goes red itself on a form in
+ * BIND_FORMS it has no fixture for.
+ *
  * What it deliberately does NOT do, so nobody mistakes it for the whole rule:
  *   - It cannot tell whether the guard is actually *called* on every request,
  *     only that the file knows the guard exists. The audit still owns that.
- *   - It matches only an explicit loopback host, in either of Node's two
- *     spellings (positional and options-object). A listener that binds every
- *     interface (`.listen(port)` with no host) is a different and larger
- *     problem, and `server/` does it deliberately from config, so flagging it
- *     here would be noise. A host built at runtime (`.listen(port, hostVar)`)
- *     is invisible to a regex and always will be — that is the ceiling of a
- *     textual check, and the audit is what covers above it.
+ *   - It knows the bind forms listed at BIND_FORMS and no others. A library
+ *     nobody has added yet spells its bind some way this file has never seen,
+ *     so adding a server dependency means adding its spelling here.
+ *   - Outside `ws`, it matches only an explicit loopback host. A listener that
+ *     binds every interface (`.listen(port)` with no host) is a different and
+ *     larger problem, and `relay/` does it deliberately from config, so
+ *     flagging it here would be noise. A host built at runtime
+ *     (`.listen(port, hostVar)`, `serve({ hostname: bindHost })`) is invisible
+ *     to a regex and always will be — that is the ceiling of a textual check,
+ *     and the audit is what covers above it.
  *   - Unix-domain sockets and named pipes are out of scope by design: no
  *     browser can reach one, which is why the `dor` control channel is bounded
  *     by socket permissions instead.
@@ -48,9 +55,9 @@
  *      shape moved and this lint has quietly stopped checking anything.
  */
 import { readFileSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { trackedFiles } from './lint-kit.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -69,37 +76,59 @@ const ALLOWED = {
 };
 
 const GUARD_REFERENCES = ['loopback-guard', 'dev-host-guard'];
-// Node accepts two spellings of a loopback TCP bind, and both must match:
-//   .listen(<port>, '127.0.0.1', …)      positional
-//   .listen({ host: '127.0.0.1', … })    options object, either key order
-// The host argument is what distinguishes a TCP bind from a UDS/named-pipe
-// listen, which passes a single path and must not match. Applied to the whole
-// file rather than line by line — `.listen(` is routinely wrapped across lines,
-// and the `\s*`/`[^)]*?` spans already cross newlines.
+// A TCP listener is not only `.listen(`. Every library in this tree that can
+// bind one gets its own spelling, because a check that sees one API is a check
+// an author leaves by picking another — which is what an audit found: `ws` and
+// `@hono/node-server` binds were invisible here while `docs/specs/security-local.md` claimed a
+// new loopback bind fails the build.
+//
+// For `.listen` the host argument is what separates a TCP bind from a
+// UDS/named-pipe listen, which passes a single path and must not match. `ws` is
+// the exception: a `WebSocketServer` given a `port` binds every interface,
+// loopback included, and it is the one API `docs/specs/security-local.md`'s "HTTP **and
+// WebSocket**" names — so it matches on the port alone, while the `noServer`
+// form (no port, no bind) does not match. Applied to the whole file rather than
+// line by line: a bind is routinely wrapped across lines, and the `\s*` /
+// `[^}]*?` spans already cross newlines.
 const LOOPBACK = "['\"](?:127\\.0\\.0\\.1|localhost)['\"]";
-const LISTEN_RE = new RegExp(
-  `\\.listen\\(\\s*(?:`
-  + `[^,)]+,\\s*${LOOPBACK}`                        // positional
-  + `|\\{[^}]*?host\\s*:\\s*${LOOPBACK}`             // options object
-  + `)`,
-  's',
-);
+// One branch for both `ws` spellings, not one each: a per-spelling branch is a
+// branch that can rot alone, which is how `WebSocket\.Relay` sat here matching
+// nothing while the `WebSocketServer` branch beside it kept the lint green.
+const WS_NEW = '\\bnew\\s+WebSocket\\.?Server\\(\\s*\\{[^}]*?';
+
+/**
+ * Every bind form `LISTEN_RE` looks for, one entry per alternative — the
+ * inventory `docs/specs/security-local.md` -> "Loopback Listeners" points at
+ * rather than repeats. `scripts/loopback-lint-selftest.mjs` reads these labels
+ * and goes red on any form it has no fixture for: an alternative that nothing
+ * exercises is a claim, not a check.
+ */
+const BIND_FORMS = [
+  { label: 'node, positional', re: `\\.listen\\(\\s*[^,)]+,\\s*${LOOPBACK}` },
+  { label: 'node, options object', re: `\\.listen\\(\\s*\\{[^}]*?host\\s*:\\s*${LOOPBACK}` },
+  { label: '@hono/node-server', re: `\\bserve\\(\\s*\\{[^}]*?hostname\\s*:\\s*${LOOPBACK}` },
+  { label: 'ws, explicit loopback host', re: `${WS_NEW}host\\s*:\\s*${LOOPBACK}` },
+  { label: 'ws, port only', re: `${WS_NEW}port\\s*:` },
+];
+
+const LISTEN_RE = new RegExp(BIND_FORMS.map((form) => form.re).join('|'), 's');
 
 const SOURCE_EXT = /\.(?:ts|tsx|js|jsx|mjs|cjs)$/;
 const IS_TEST = /(?:\.test\.|\.spec\.|[\\/]tests?[\\/])/;
-// This file documents the pattern it looks for, so it matches itself.
-const SELF = 'scripts/loopback-lint.mjs';
+// These two files spell out the pattern this lint looks for — one documenting
+// it, one adding each form to prove it is load-bearing — so they match
+// themselves. Excluded by name rather than exempted by a guard reference: an
+// exemption would leave them counted as listeners, which is a count nobody can
+// read.
+const SELF = new Set([
+  'scripts/loopback-lint.mjs',
+  'scripts/loopback-lint-selftest.mjs',
+]);
 
 /** Every tracked, non-test source file, as repo-relative POSIX paths. */
 function sourceFiles() {
-  // -z because a path may contain anything; git would otherwise quote it.
-  const out = execFileSync('git', ['ls-files', '-z'], {
-    cwd: ROOT,
-    encoding: 'utf-8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  return out.split('\0').filter((rel) => (
-    rel && rel !== SELF && SOURCE_EXT.test(rel) && !IS_TEST.test(rel)
+  return trackedFiles().filter((rel) => (
+    !SELF.has(rel) && SOURCE_EXT.test(rel) && !IS_TEST.test(rel)
   ));
 }
 
@@ -127,7 +156,7 @@ for (const rel of sourceFiles()) {
     + '      A loopback bind is not an access control: a page in the user\'s own browser\n'
     + '      reaches 127.0.0.1 too, and the port is not a secret. Check Host and\n'
     + '      authenticate the caller — see lib/src/host/loopback-guard.ts and\n'
-    + '      SECURITY.md -> "Loopback Listeners" — or add an ALLOWED entry in this\n'
+    + '      docs/specs/security-local.md -> "Loopback Listeners" — or add an ALLOWED entry in this\n'
     + '      script saying why this one is safe without them.',
   );
 }
@@ -155,7 +184,7 @@ if (listeners.length === 0) {
 if (problems.length > 0) {
   console.error(`loopback-lint: ${problems.length} problem(s)\n`);
   for (const p of problems) console.error(`  ${p}`);
-  console.error('\nThe rule is in SECURITY.md ("Loopback Listeners").');
+  console.error('\nThe rule is in docs/specs/security-local.md ("Loopback Listeners").');
   process.exit(1);
 }
 console.log(

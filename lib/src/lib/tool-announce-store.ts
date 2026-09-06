@@ -2,9 +2,9 @@
  * Per-Session record of the latest OSC 367 `serve` announcement
  * (`docs/specs/dor-tool.md` -> Serving, OSC 367).
  *
- * A module store rather than adapter plumbing: every adapter already funnels
- * PTY data through `applyTerminalProtocolEvents`, so recording here reaches the
- * Wall without a new message on four transports.
+ * Host-parsed live events and renderer-parsed raw replay feed this store.
+ * It is renderer state; owners forward announcements rather than keep a second
+ * copy that cannot reach the Wall.
  *
  * **Recording is not acting.** An announcement from an ordinary terminal lands
  * here and does nothing — only a tool-designated Session reads it, and even

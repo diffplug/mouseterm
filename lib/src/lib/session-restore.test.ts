@@ -172,6 +172,17 @@ describe('restoreSession', () => {
   it('does not spawn a terminal for a browser surface, but keeps it in paneIds', () => {
     const saved: PersistedSession = {
       version: 3,
+      lathLayout: {
+        version: 1,
+        tree: { root: { kind: 'split', dir: 'row', children: [
+          { node: { kind: 'leaf', id: 'pane-term' }, weight: 0.5 },
+          { node: { kind: 'leaf', id: 'pane-web' }, weight: 0.5 },
+        ] } },
+        leafMeta: {
+          'pane-term': { component: 'terminal', tabComponent: 'terminal', title: 'Terminal' },
+          'pane-web': { component: 'browser', tabComponent: 'terminal', title: 'localhost', params: { renderMode: 'iframe', url: 'http://localhost:5173' } },
+        },
+      },
       panes: [
         { id: 'pane-term', title: 'Terminal', cwd: null, untouched: false },
         { id: 'pane-web', title: 'localhost', cwd: null, untouched: false, surfaceType: 'browser' },
@@ -207,6 +218,28 @@ describe('restoreSession', () => {
       requireIntegration: true,
       resumeCommand: null,
     }));
+  });
+
+  it.each([undefined, { version: 1 }, {
+    version: 1,
+    tree: { root: { kind: 'leaf', id: 'stale-pane' } },
+    leafMeta: { 'stale-pane': { component: 'terminal', tabComponent: 'terminal', title: 'Stale' } },
+  }])('omits visible browsers from terminal fallback for an unusable layout: %j', (lathLayout) => {
+    const doors = [{ id: 'door-web', title: 'Browser door', component: 'browser', params: { renderMode: 'iframe', url: 'http://localhost:5173' } }];
+    const result = restoreSession(createPlatform({
+      version: 3,
+      lathLayout,
+      doors,
+      panes: [
+        { id: 'pane-term', title: 'Terminal', cwd: null, untouched: false },
+        { id: 'pane-web', title: 'Browser', cwd: null, untouched: false, surfaceType: 'browser' },
+        { id: 'door-web', title: 'Browser door', cwd: null, untouched: false, surfaceType: 'browser' },
+      ],
+    }));
+
+    expect(result).toMatchObject({ paneIds: ['pane-term'], lathLayout: undefined, doors });
+    expect(terminalRegistryMocks.restoreTerminal).toHaveBeenCalledTimes(1);
+    expect(terminalRegistryMocks.restoreTerminal).toHaveBeenCalledWith('pane-term', expect.anything());
   });
 
   it('passes the native lathLayout through untouched', () => {
@@ -303,4 +336,15 @@ describe('restoreSession', () => {
       }),
     );
   });
+});
+
+
+it('recovers Tool metadata from pane rows when its layout is unusable', () => {
+  const restored = restoreSession(createPlatform({ version: 3, panes: [
+    { id: 'tool', title: 'Storybook', cwd: '/repo', untouched: false, surfaceType: 'tool', command: 'pnpm storybook', tool: { render: 'iframe', port: 'auto', name: 'storybook', key: ['storybook', '/repo'] } },
+    { id: 'web', title: 'Web', cwd: null, untouched: false, surfaceType: 'browser' },
+  ] }));
+  expect(restored?.paneIds).toEqual(['tool']);
+  expect(restored?.lathLayout?.leafMeta.tool).toMatchObject({ component: 'tool', tabComponent: 'tool', params: { command: 'pnpm storybook', toolRender: 'iframe', toolPort: 'auto', toolName: 'storybook' } });
+  expect(restored?.lathLayout?.leafMeta.tool.params?.url).toBeUndefined();
 });

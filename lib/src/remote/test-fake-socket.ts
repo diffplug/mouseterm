@@ -1,9 +1,9 @@
 /**
  * The fake `WebSocket` both ends of the remote stack are tested against.
  *
- * Test-only, and shared on purpose: the Host controller, the Host service, and
+ * Test-only, and shared on purpose: the Burrow controller, the Burrow service, and
  * the Pocket client all speak {@link RemoteWebSocket} and all need the same four
- * things — record what was sent, deliver a server frame, open, and close with a
+ * things — record what was sent, deliver a Relay frame, open, and close with a
  * code. Three private copies drifted into three different ideas of what a close
  * does, which is exactly the behavior the close-code policy turns on.
  */
@@ -19,6 +19,13 @@ export class FakeSocket implements RemoteWebSocket {
    */
   closeEmits = true;
   readonly sent: Array<Record<string, unknown>> = [];
+  /**
+   * Called with every frame this socket is asked to send. The seam the relay
+   * stub (`test-relay.ts`) bridges two of these sockets through; without it a
+   * test would have to poll {@link sent}, which turns a routing rule into a
+   * timing one.
+   */
+  onSend: ((frame: Record<string, unknown>) => void) | null = null;
   readonly #handlers = new Map<string, Array<(ev: unknown) => void>>();
 
   addEventListener(type: string, handler: (ev: unknown) => void): void {
@@ -28,7 +35,9 @@ export class FakeSocket implements RemoteWebSocket {
   }
 
   send(data: string): void {
-    this.sent.push(JSON.parse(data) as Record<string, unknown>);
+    const frame = JSON.parse(data) as Record<string, unknown>;
+    this.sent.push(frame);
+    this.onSend?.(frame);
   }
 
   close(): void {
@@ -47,7 +56,7 @@ export class FakeSocket implements RemoteWebSocket {
     this.#emit('close', { code });
   }
 
-  /** The server or the network dropped the connection — no `close()` from us. */
+  /** The Relay or the network dropped the connection — no `close()` from us. */
   drop(): void {
     this.closeWith(1006);
   }
@@ -60,7 +69,16 @@ export class FakeSocket implements RemoteWebSocket {
 
   /** Deliver one frame from the far end. */
   receive(frame: unknown): void {
-    this.#emit('message', { data: JSON.stringify(frame) });
+    this.receiveRaw(JSON.stringify(frame));
+  }
+
+  /**
+   * Deliver the exact bytes the far end sent, unserialized. `receive` can only
+   * express a frame that is already a well-formed object, so it never reaches
+   * the size and parse guards that run *before* the shape guards.
+   */
+  receiveRaw(data: unknown): void {
+    this.#emit('message', { data });
   }
 
   /** Every frame this socket was asked to send of one wire type. */

@@ -1,22 +1,22 @@
 /**
- * The half of a {@link HostSurfaceProvider} that is the same wherever the Host
+ * The half of a {@link BurrowSurfaceProvider} that is the same wherever the Burrow
  * runs: everything it has to *ask* for, because only a webview knows what its
  * panes are called and how big its terminals are.
  *
  * The two installations — the Tauri sidecar (`sidecar-entry.ts`) and the VS Code
- * extension host (`vscode-ext/src/remote-host.ts`) — differ in how an ask
+ * extension host (`vscode-ext/src/burrow.ts`) — differ in how an ask
  * travels and in who owns the PTYs, and in nothing else. So those two are
- * injected and the protocol-shaped middle lives here once: a Host that answered
+ * injected and the protocol-shaped middle lives here once: a Burrow that answered
  * an attach differently in one host than the other would be a protocol-v1
  * divergence nobody would see until a phone attached.
  */
 
 import type {
   DirectoryEntry,
-  HostSurfaceProvider,
+  BurrowSurfaceProvider,
   SurfaceHandle,
-} from '../../remote/host/host-surface-provider';
-import type { PeerSurfaceResult } from '../../remote/host/peer-surfaces';
+} from '../../remote/burrow/burrow-surface-provider';
+import type { PeerSurfaceResult } from '../../remote/burrow/peer-surfaces';
 
 /**
  * Fan one operation out to whoever can answer it and collect the answers. Who
@@ -32,9 +32,9 @@ export type SurfaceAsk = (
 ) => Promise<unknown[]>;
 
 export interface AskSurfaceProvider {
-  provider: HostSurfaceProvider;
+  provider: BurrowSurfaceProvider;
   /**
-   * Something a future {@link HostSurfaceProvider.collectDirectory} could depend
+   * Something a future {@link BurrowSurfaceProvider.collectDirectory} could depend
    * on changed — a pane, an alert, a focus move, a peer joining. The directory
    * is the only thing a peer answers, so there is nothing to name: the cheap
    * direction is always to re-collect.
@@ -44,11 +44,11 @@ export interface AskSurfaceProvider {
 
 export function createAskSurfaceProvider(
   ask: SurfaceAsk,
-  pty: Pick<HostSurfaceProvider, 'writePty' | 'resizePty' | 'streamPty'>,
+  pty: Pick<BurrowSurfaceProvider, 'writePty' | 'resizePty' | 'streamPty'>,
 ): AskSurfaceProvider {
   const directoryWatchers = new Set<() => void>();
 
-  const provider: HostSurfaceProvider = {
+  const provider: BurrowSurfaceProvider = {
     async collectDirectory(): Promise<DirectoryEntry[]> {
       // Each answerer replies with its whole snapshot, so the results *are* the
       // entries — with one exception: duplicated cold-restored windows can hold
@@ -96,9 +96,8 @@ export function createAskSurfaceProvider(
         get rows() {
           return rows;
         },
-        // The owner is the only one that can read the pane back, so remember
-        // what it reported; a resize nobody answered leaves the last known size
-        // standing.
+        // Only an owner response proves the resize happened. A vanished owner
+        // must fail the request rather than acknowledge its cached dimensions.
         resize: async (nextCols, nextRows) => {
           const [settled] = (await ask(
             'surfaceOp',
@@ -110,15 +109,11 @@ export function createAskSurfaceProvider(
             },
             owner.ptyId,
           )) as PeerSurfaceResult[];
-          if (settled) {
-            cols = settled.cols;
-            rows = settled.rows;
-          }
+          if (!settled) throw new Error('surface owner unavailable');
+          cols = settled.cols;
+          rows = settled.rows;
           return { cols, rows };
         },
-        // Nothing to unwind: the stream is owned by the `streamPty`
-        // subscription, not by holding the surface.
-        release: () => {},
       };
     },
 

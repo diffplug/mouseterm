@@ -1,41 +1,71 @@
 /**
- * UI-free Pocket protocol client; `docs/specs/server.md` owns authentication
- * and pairing, while `remote-api.md` owns request/event correlation.
+ * UI-free Pocket protocol client. It speaks exactly one wire: the `e2e`
+ * envelope of `docs/specs/relay.md` → "Routing", carrying the two end-to-end
+ * ceremonies of `docs/specs/remote-security-model.md` (Pairing, Connection) and
+ * — once a connection is established — protocol-v1 as application messages on
+ * the same Noise session (`docs/specs/remote-api.md` owns their correlation).
+ *
+ * There is no plaintext path, no fallback, and no runtime selector: a Burrow that
+ * cannot complete a ceremony is a Burrow this Client cannot reach.
  */
 
 import {
   API_ROUTES,
-  PAIRING_STALE_PRESENCE_ERROR,
+  DEFAULT_CHALLENGE_TTL_MS,
+  DEFAULT_PAIRING_TTL_MS,
+  E2E_ID_BYTE_LENGTH,
+  E2E_KEEPALIVE_INTERVAL_MS,
+  ESTABLISHED_E2E_IDLE_TIMEOUT_MS,
+  MAX_PUSH_QUERY_DELIVERY_IDS,
+  NoiseTransportSession,
   REMOTE_EVENTS,
   REMOTE_METHODS,
   SELFHOST_ACCOUNT_ID,
+  SETUP_TOKEN_INVALID_ERROR,
   UNAUTHORIZED_ERROR,
   WS_ROUTES,
   WS_TOKEN_PARAM,
+  createNoiseInitiator,
+  e2eConnectionPrologue,
+  fromBase64Url,
+  generateNoiseKeyPair,
   hashPasskeyPublicKey,
+  isConnectionOutcomeV1,
+  isE2eRelayToClientFrame,
+  isNoisePublicKey,
+  isPairingOutcomeV1,
+  pairingInvitationPrologue,
   pushEndpointFingerprint,
-  signDeviceChallenge,
-  signPushSubscribe,
-  type ClientFrame,
-  type ConnectionFailure,
-  type ConnectionRequest,
-  type DeviceKeyPair,
+  pushSubscriptionDeletePath,
+  randomBase64Url,
+  samplePairingCode,
+  toBase64Url,
+  utf8Decode,
+  utf8Encode,
+  type ConnectionDenialCode,
+  type ConnectionRequestV1,
   type DirectoryEntry,
   type DirectorySnapshot,
+  type E2eClientFrame,
+  type E2eClientStep,
+  type E2eKind,
+  type E2eRelayToClientFrame,
   type HelloResult,
-  type HostAclRecord,
-  type HostsResponse,
-  type PairStatusQuery,
-  type PairingRequest,
-  type PushChallengeResponse,
+  type BurrowsResponse,
+  type PairingDenialCode,
+  type PairingInvitation,
+  type PairingRequestV1,
+  type PresenceBinding,
+  type PresenceProofV1,
   type PushConfigResponse,
   type PushSubscribeResponse,
   type PushSubscriptionPayload,
-  type PushSubscriptionsResponse,
+  type PushSubscriptionsQueryResponse,
+  type ReauthBeginResponse,
   type ReauthFinishResponse,
   type RemoteEventMsg,
   type RemoteResponse,
-  type ServerToClientFrame,
+  type RelayToClientFrame,
   type SetupBeginResponse,
   type SetupFinishResponse,
   type SigninBeginResponse,
@@ -43,35 +73,60 @@ import {
   type TerminalAttachResult,
   type TerminalClosedEvent,
   type TerminalDataEvent,
-} from 'server-lib-common';
-import type { WebAuthnClient } from './webauthn';
-import type { RemoteWebSocket } from '../ws';
+} from 'remote-lib-common';
+import {
+  PasskeyAlreadyRegisteredError,
+  isPasskeyAlreadyRegistered,
+  type PasskeyRegistration,
+  type WebAuthnClient,
+} from './webauthn';
+import {
+  type KnownBurrowStore,
+  type KnownBurrowV1,
+  type PendingDeletionStore,
+} from './pocket-db';
+import { realTimer, type RemoteTimer, type RemoteWebSocket } from '../ws';
 
 /** The slice of a WebSocket the client uses; a browser `WebSocket` satisfies it. */
 export type PocketSocket = RemoteWebSocket;
 
 /**
- * Persistent per-device state. Passkey public keys are cached by credential id
- * at registration *and* at sign-in — the Server returns the asserted key — so
- * any browser profile holding a synced passkey can build pair and connect
- * requests, not only the one that performed the registration.
+ * Persistent per-device state that is *not* an end-to-end identity — those live
+ * in IndexedDB ({@link KnownBurrowStore}). Passkey public keys are cached by
+ * credential id at registration *and* at sign-in — the Relay returns the
+ * asserted key — so any browser profile holding a synced passkey can build a
+ * presence proof, not only the one that performed the registration.
  */
 export interface PocketStorage {
   getPasskeyPublicKey(credentialId: string): string | null;
   setPasskeyPublicKey(credentialId: string, publicKey: string): void;
+  /**
+   * Drop a cached key again. Only {@link PocketClient.setup} calls it, for a
+   * credential it cached moments earlier and the Relay then refused, so it
+   * never has an older visit's key to lose.
+   */
+  forgetPasskeyPublicKey(credentialId: string): void;
   /** Credential ids this device has stored a public key for (may be empty). */
   knownCredentialIds(): string[];
-  isPaired(hostId: string): boolean;
-  markPaired(hostId: string): void;
-  unmarkPaired(hostId: string): void;
   /**
-   * Digest of the delivery address last registered with the Server, or null if
-   * this device has never registered one. Per device, not per Host: one
-   * service-worker scope holds one subscription, so if it rotates, every Host
+   * Digest of the delivery address last registered with the Relay, or null if
+   * this device has never registered one. Per device, not per Burrow: one
+   * service-worker scope holds one subscription, so if it rotates, every Burrow
    * row for this device is stale at once.
    */
   getRegisteredPushEndpoint(): string | null;
   setRegisteredPushEndpoint(fingerprint: string): void;
+}
+
+/**
+ * Whether this page is in front of the user, and a way to be told when that
+ * changes. Injectable because keepalives are the one thing Pocket does on a
+ * timer, and a test must not wait thirty real seconds to see one.
+ */
+export interface PocketVisibility {
+  isVisible(): boolean;
+  /** Subscribe to visibility changes; returns an unsubscribe. */
+  subscribe(onChange: () => void): () => void;
 }
 
 export interface PocketClientDeps {
@@ -82,54 +137,179 @@ export interface PocketClientDeps {
   readonly fetch: typeof fetch;
   readonly webauthn: WebAuthnClient;
   readonly createWebSocket: (url: string) => PocketSocket;
-  /** This device's key; memoized after the first call. */
-  readonly deviceKey: () => Promise<DeviceKeyPair>;
+  /** The pinned per-Burrow records: this Client's whole authorization state. */
+  readonly knownBurrows: KnownBurrowStore;
+  /** Delivery ids owed a deletion; see {@link PocketClient.retirePendingDeletions}. */
+  readonly pendingDeletions: PendingDeletionStore;
   readonly storage?: PocketStorage;
+  readonly now?: () => number;
+  /** The keepalive timer; see {@link RemoteTimer}. */
+  readonly setTimer?: RemoteTimer;
+  readonly visibility?: PocketVisibility;
 }
 
 /** Terminal stream callbacks for {@link PocketClient.attach}. */
 export interface TerminalHandlers {
-  /** Base64url PTY output bytes. */
-  onData(bytes: string): void;
+  /** One `terminal.data` payload: the renderer projection, and the text one
+   *  when it differs. Passed whole rather than as bytes so the pair cannot be
+   *  split here (`docs/specs/remote-api.md` → "Terminal surfaces"). */
+  onData(event: TerminalDataEvent): void;
   onClosed?(exitCode?: number): void;
 }
 
-export interface ConnectDecision {
-  readonly allowed: boolean;
-  readonly failures?: readonly ConnectionFailure[];
-  /** True when a denial means the local paired marker is stale and the user can re-pair. */
-  readonly pairingStale?: boolean;
+/**
+ * A failure the Relay *answered* with — any response it rejected — as opposed
+ * to a request that never got an answer at all (DNS, TLS, the radio), which
+ * leaves `fetch`'s own `TypeError` to propagate untouched. The distinction is
+ * load-bearing exactly once, in {@link PocketClient.setup}: it decides whether
+ * the Relay can be assumed to hold nothing.
+ */
+export class RelayRefusalError extends Error {
+  /**
+   * The HTTP status behind the refusal, `0` where none was read.
+   *
+   * Carried because "the Relay answered" and "the Relay answered *this*" are
+   * different facts, and a caller that acts on a refusal usually means one
+   * status: a 404 is proof the Relay holds nothing, while a 400, a 401, or a
+   * 502 is a refusal of this attempt and proof of nothing at all.
+   */
+  readonly status: number;
+
+  constructor(message: string, status = 0) {
+    super(message);
+    this.name = 'RelayRefusalError';
+    this.status = status;
+  }
 }
 
-export interface PairResult {
-  readonly approved: boolean;
-  readonly record?: HostAclRecord;
-  readonly error?: string;
-}
+/**
+ * Shown when the Burrow reaped this session while the page was backgrounded.
+ * Not a failure — the price of the Burrow being able to reclaim state a hostile
+ * relay would otherwise never let it reclaim (`docs/specs/pocket-app.md`).
+ */
+export const BURROW_SESSION_REAPED_MESSAGE =
+  'This phone was away too long, so the computer let the session go. Connect again to resume.';
 
-/** Shown when the Server no longer accepts our session token. */
+/** Shown when the Relay no longer accepts our session token. */
 export const SESSION_EXPIRED_MESSAGE = 'Your session expired. Sign in again to continue.';
 
 /**
- * The Server rejected our session token, so nothing works until the user signs
+ * The Relay rejected our session token, so nothing works until the user signs
  * in again. Distinct from an ordinary failure because the UI must react rather
- * than report: sessions live only in the Server's memory (docs/specs/server.md),
- * so they die on a 12h expiry *and* on every Server restart, and an installed
+ * than report: sessions live only in the Relay's memory (docs/specs/relay.md),
+ * so they die on a 12h expiry *and* on every Relay restart, and an installed
  * Pocket has no address bar to reload from. Left as a message, the user is
  * stuck holding a dead token with force-quitting the app as the only way out.
  *
  * {@link PocketClient} clears the token before throwing this, so recovery is
- * exactly "sign in again" with the passkey and paired-host markers intact.
+ * exactly "sign in again" with the passkey cache and the pinned Burrows intact.
  */
-export class SessionExpiredError extends Error {
+export class SessionExpiredError extends RelayRefusalError {
   constructor() {
-    super(SESSION_EXPIRED_MESSAGE);
+    super(SESSION_EXPIRED_MESSAGE, 401);
     this.name = 'SessionExpiredError';
   }
 }
 
-interface Waiter {
-  resolve(frame: ServerToClientFrame): void;
+/** Shown when the scanned code is expired, spent, or otherwise unknown. */
+export const SETUP_CODE_DEAD_MESSAGE =
+  'That setup code has expired. Show a new one on the computer and scan it again.';
+
+/**
+ * The Relay refused the `setupToken` off a scanned code
+ * ({@link SETUP_TOKEN_INVALID_ERROR}). Its own class for the reason
+ * {@link SessionExpiredError} is: the UI must react rather than report — drop
+ * the dead code and send the user back to the computer for a fresh one — and
+ * the Relay answers 401 for an unknown session too, so only the body
+ * separates them ({@link SETUP_CODE_DEAD_MESSAGE} is what the user reads).
+ */
+export class SetupTokenInvalidError extends RelayRefusalError {
+  constructor() {
+    super(SETUP_CODE_DEAD_MESSAGE, 401);
+    this.name = 'SetupTokenInvalidError';
+  }
+}
+
+/** Shown when a Burrow presents a static this Client has already pinned differently. */
+export const BURROW_IDENTITY_MISMATCH_MESSAGE =
+  'This computer is presenting a different identity than the one this phone paired with. ' +
+  'Pairing was stopped. Remove it from this phone only if you know why it changed.';
+
+/**
+ * The Burrow answered a pairing with a static that is not the one already pinned
+ * for that `burrowId`. Terminal, and the old record is left exactly as it was:
+ * the pin is what a connection authenticates against, so replacing it on the
+ * word of the party that failed the compare would be the whole attack
+ * (`docs/specs/remote-security-model.md` → Pairing).
+ */
+export class BurrowIdentityMismatchError extends Error {
+  constructor() {
+    super(BURROW_IDENTITY_MISMATCH_MESSAGE);
+    this.name = 'BurrowIdentityMismatchError';
+  }
+}
+
+export const PASSKEY_UNAVAILABLE_MESSAGE =
+  "This app no longer has the signed-in passkey's public key, so it cannot pair or connect. " +
+  'Sign in again to restore it.';
+
+/** Missing cached proof material requires a fresh sign-in, just like expiry. */
+export class PasskeyUnavailableError extends Error {
+  constructor() {
+    super(PASSKEY_UNAVAILABLE_MESSAGE);
+    this.name = 'PasskeyUnavailableError';
+  }
+}
+
+/**
+ * What the user reads for each Burrow-sent denial.
+ *
+ * **Fixed copy, never Burrow- or relay-supplied text.** The outcome is
+ * authenticated but its contents are still a remote party's, and a denial is
+ * one of a closed set — so the code selects a sentence written here rather than
+ * rendering one that arrived on the wire.
+ */
+export const PAIRING_DENIAL_MESSAGES: Record<PairingDenialCode, string> = {
+  'user-denied':
+    'Pairing was cancelled on the computer. Show a new code there and scan it again to retry.',
+  'confirmation-mismatch': 'The digits typed on the computer did not match. Show a new code and scan it again.',
+  'presence-rejected': 'The computer could not verify your passkey. Sign in again, then scan a new code.',
+  'invitation-expired': SETUP_CODE_DEAD_MESSAGE,
+  superseded: 'Another pairing request replaced this one. Show a new code and scan it again.',
+  'burrow-error': 'The computer could not finish pairing. Show a new code and scan it again.',
+};
+
+export const CONNECTION_DENIAL_MESSAGES: Record<ConnectionDenialCode, string> = {
+  'pairing-required': 'This computer no longer recognizes this phone. Scan a new code to pair again.',
+  'presence-rejected': 'The computer could not verify your passkey. Sign in again and try Connect.',
+  'protocol-rejected': 'The computer refused this connection.',
+  'burrow-busy': 'The computer is already handling as many phones as it can. Try again shortly.',
+  'burrow-error': 'The computer could not finish the connection.',
+};
+
+/**
+ * What a ceremony that simply never answered reports.
+ *
+ * **A timer expiring is unavailability, not a denial.** A Burrow that is asleep,
+ * a relay that dropped the frame, and a person who never looked at the laptop
+ * are indistinguishable from here, and calling any of them a refusal would send
+ * the user to fix the wrong thing.
+ */
+export const BURROW_UNAVAILABLE_MESSAGE =
+  'The computer did not answer. Check that it is awake and connected, then try again.';
+
+/** Where a pairing ended, as the UI reports it. */
+export type PairingResult =
+  | { readonly ok: true; readonly record: KnownBurrowV1 }
+  | { readonly ok: false; readonly message: string };
+
+/** Where a connection attempt ended, as the UI reports it. */
+export type ConnectResult =
+  | { readonly ok: true; readonly burrowLabel: string }
+  | { readonly ok: false; readonly message: string; readonly pairingRequired: boolean };
+
+interface CiphertextWaiter {
+  resolve(ct: string): void;
   reject(error: Error): void;
 }
 
@@ -138,37 +318,50 @@ interface PendingRequest {
   reject(error: Error): void;
 }
 
+/** An authorized session: the connection's id and its two cipher states. */
+interface EstablishedSession {
+  readonly connectionId: string;
+  readonly session: NoiseTransportSession;
+  /**
+   * When this Client last put a byte on this session — the mirror of the
+   * Burrow's `lastClientActivityAt`, because that is the clock the Burrow reaps on
+   * (`docs/specs/remote-security-model.md` → Burrow bounds).
+   */
+  lastSentAt: number;
+}
+
 export class PocketClient {
   readonly #baseUrl: string;
   readonly #wsBase: string;
   readonly #fetch: typeof fetch;
   readonly #webauthn: WebAuthnClient;
   readonly #createWebSocket: (url: string) => PocketSocket;
-  readonly #deviceKeyFactory: () => Promise<DeviceKeyPair>;
+  readonly #knownBurrows: KnownBurrowStore;
+  readonly #pendingDeletions: PendingDeletionStore;
   readonly #storage: PocketStorage;
+  readonly #now: () => number;
+  readonly #setTimer: RemoteTimer;
+  readonly #visibility: PocketVisibility;
 
   #ws: PocketSocket | null = null;
   #sessionToken: string | null = null;
-  #rpId: string | null = null;
   /** The credential id from the most recent sign-in (or registration). */
   #credentialId: string | null = null;
-  #connectedHostId: string | null = null;
-  #deviceKey: DeviceKeyPair | null = null;
-  #onHostGone: (() => void) | null = null;
+  #established: EstablishedSession | null = null;
+  #connectedBurrowId: string | null = null;
+  #onBurrowGone: (() => void) | null = null;
+  /** Cancels the armed keepalive, and the visibility subscription behind it. */
+  #cancelKeepalive: (() => void) | null = null;
+  #cancelVisibility: (() => void) | null = null;
 
   /**
-   * In-flight frame waiters, keyed by what identifies the answer.
+   * In-flight `e2e` waiters, keyed by `${kind}:${id}:${step}`.
    *
-   * For the handshake (`pair-result`/`challenge`/`decision`) that is the frame
-   * type alone: it awaits exactly one of each in strict sequence and the App's
-   * single-flight guard forbids overlap, so at most one waiter per type is ever
-   * pending — {@link #expect} throws if a second is registered rather than
-   * silently queueing it. Pair-status answers key on the host as well, since
-   * the Hosts view asks every online Host at once.
+   * A ceremony awaits exactly one frame at a time and every id is fresh, so at
+   * most one waiter per key is ever pending — {@link #expect} throws if a
+   * second is registered rather than silently queueing it.
    */
-  readonly #waiters = new Map<string, Waiter>();
-  /** In-flight advisory pair-status asks, keyed by hostId, so overlapping callers join one. */
-  readonly #pairStatusAsks = new Map<string, Promise<boolean>>();
+  readonly #waiters = new Map<string, CiphertextWaiter>();
   /** In-flight remote-api requests, keyed by `requestId`. */
   readonly #pending = new Map<string, PendingRequest>();
   /** Live event subscriptions, keyed by `subId`. */
@@ -180,32 +373,30 @@ export class PocketClient {
     this.#fetch = deps.fetch;
     this.#webauthn = deps.webauthn;
     this.#createWebSocket = deps.createWebSocket;
-    this.#deviceKeyFactory = deps.deviceKey;
+    this.#knownBurrows = deps.knownBurrows;
+    this.#pendingDeletions = deps.pendingDeletions;
     this.#storage = deps.storage ?? localStoragePocketStorage();
+    this.#now = deps.now ?? (() => Date.now());
+    this.#setTimer = deps.setTimer ?? realTimer;
+    this.#visibility = deps.visibility ?? documentVisibility();
   }
 
   get sessionToken(): string | null {
     return this.#sessionToken;
   }
 
-  get connectedHostId(): string | null {
-    return this.#connectedHostId;
-  }
-
-  isPaired(hostId: string): boolean {
-    return this.#storage.isPaired(hostId);
+  get connectedBurrowId(): string | null {
+    return this.#connectedBurrowId;
   }
 
   /**
    * Whether this browser has been used with Dormouse before, which decides
-   * whether the auth screen leads with setup or with sign-in
+   * whether the auth screen offers sign-in at all
    * (docs/specs/pocket-app.md). The evidence is stored passkey material: setup
-   * and sign-in both cache the asserted public key, so anything else this
-   * device holds — a paired marker, a push endpoint — was preceded by one of
-   * them. Blocked site data does not throw past
-   * {@link localStoragePocketStorage}'s mirror, so a setup completed in this
-   * tab still flips the screen; a storage that throws anyway reads as a first
-   * visit — the screen that can still get somewhere from nothing.
+   * and sign-in both cache the asserted public key. Blocked site data does not
+   * throw past {@link localStoragePocketStorage}'s mirror, so a setup completed
+   * in this tab still flips the screen; a storage that throws anyway reads as a
+   * first visit — the screen that can still get somewhere from nothing.
    */
   hasPriorUse(): boolean {
     try {
@@ -225,137 +416,241 @@ export class PocketClient {
     return this.#storage.getRegisteredPushEndpoint();
   }
 
-  /** Notified when the Host drops (a `host-gone` frame or a closed socket). */
-  setOnHostGone(callback: (() => void) | null): void {
-    this.#onHostGone = callback;
+  /**
+   * Notified when the Burrow drops: a `burrow-gone` frame, a closed socket, or a
+   * session the Burrow's idle reaper took while this page was hidden.
+   */
+  setOnBurrowGone(callback: (() => void) | null): void {
+    this.#onBurrowGone = callback;
   }
 
   // --- Account: first-time setup + sign-in ---------------------------------
 
-  /** First-time setup: password-gated passkey registration. Follow with {@link signin}. */
-  async setup(password: string, label: string): Promise<SetupFinishResponse> {
-    const begin = await this.#api<SetupBeginResponse>(API_ROUTES.setupBegin, { password });
-    this.#rpId = begin.rpId;
-    const registration = await this.#webauthn.registerPasskey(
-      begin.challenge,
-      begin.rpId,
-      begin.accountId,
-    );
-    const finish = await this.#api<SetupFinishResponse>(API_ROUTES.setupFinish, {
-      password,
-      credentialId: registration.credentialId,
-      publicKey: registration.publicKey,
-      clientDataJSON: registration.clientDataJSON,
-      label,
-    });
-    // Cache immediately so this profile can build pairing/connect requests;
-    // sign-in also refreshes this value from the Server's verified response.
+  /**
+   * First-time setup: passkey registration gated by the single-use `setupToken`
+   * off a scanned setup code. Follow with {@link signin}.
+   */
+  async setup({ setupToken }: { setupToken: string }, label: string): Promise<SetupFinishResponse> {
+    const begin = await this.#setupApi<SetupBeginResponse>(API_ROUTES.setupBegin, { setupToken });
+    // Excluded from the Relay's list, not this browser's: a retry — after a
+    // refusal, or on a device that stored nothing — must not silently mint a
+    // duplicate of a credential the account already holds, while an orphan the
+    // Relay never registered is absent from it and is replaced as it should be.
+    let registration: PasskeyRegistration;
+    try {
+      registration = await this.#webauthn.registerPasskey(
+        begin.challenge,
+        begin.rpId,
+        begin.accountId,
+        begin.existingCredentialIds,
+      );
+    } catch (err) {
+      // Translated at this seam, not inside the browser wrapper, so every
+      // `WebAuthnClient` — the real one and the fakes — reports the refusal the
+      // same way. It is actionable: the list came from the Relay, so the
+      // credential blocking us is one that can sign in from this device.
+      if (isPasskeyAlreadyRegistered(err)) throw new PasskeyAlreadyRegisteredError();
+      throw err;
+    }
+    // Cached before `finish`, never after. Creating the authenticator credential
+    // is the irreversible act and its public key is knowable the moment it
+    // returns, so a `finish` whose answer is lost still leaves a browser that
+    // reads as returning and can sign in, rather than one minting a second
+    // passkey.
     this.#storage.setPasskeyPublicKey(registration.credentialId, registration.publicKey);
+    let finish: SetupFinishResponse;
+    try {
+      finish = await this.#setupApi<SetupFinishResponse>(API_ROUTES.setupFinish, {
+        setupToken,
+        credentialId: registration.credentialId,
+        publicKey: registration.publicKey,
+        clientDataJSON: registration.clientDataJSON,
+        label,
+      });
+    } catch (err) {
+      // A refusal is proof the Relay has nothing; a lost answer is not. So a
+      // rejected `finish` (a dead `setupToken`, any answered error) takes the
+      // cache back down — kept, it would make `hasPriorUse` promise a sign-in
+      // that cannot succeed — while an unanswered one leaves it standing.
+      if (err instanceof RelayRefusalError) {
+        this.#storage.forgetPasskeyPublicKey(registration.credentialId);
+      }
+      throw err;
+    }
+    // Only once the Relay has acknowledged it: this names the credential a
+    // pairing's presence proof is built from. Sign-in refreshes it.
     this.#credentialId = registration.credentialId;
     return finish;
+  }
+
+  /**
+   * Spend a scanned setup token without registering anything.
+   *
+   * A phone that is already signed in has no passkey to create, and a code left
+   * redeemable is one a photograph of the laptop's screen could still register
+   * with (`docs/specs/relay.md` → Setup tokens).
+   */
+  async retireSetupToken(setupToken: string): Promise<void> {
+    await this.#setupApi<unknown>(API_ROUTES.setupRetire, { setupToken }, this.#auth());
+  }
+
+  /**
+   * The setup-gated routes, with the one 401 body only they can earn mapped to
+   * {@link SetupTokenInvalidError}. Classified here rather than in {@link #api}
+   * so no other route's 401 can be read as a dead code.
+   */
+  async #setupApi<T>(route: string, body: unknown, init?: RequestInit): Promise<T> {
+    try {
+      return await this.#api<T>(route, body, init);
+    } catch (err) {
+      // What `#api` throws for a non-ok response is the body's own `error`.
+      if (err instanceof Error && err.message === SETUP_TOKEN_INVALID_ERROR) {
+        throw new SetupTokenInvalidError();
+      }
+      throw err;
+    }
   }
 
   /** Sign in with a discoverable passkey; keeps the session token in memory. */
   async signin(): Promise<SigninFinishResponse> {
     const begin = await this.#api<SigninBeginResponse>(API_ROUTES.signinBegin, {});
-    this.#rpId = begin.rpId;
     const assertion = await this.#webauthn.getAssertion(begin.challenge, begin.rpId);
     const finish = await this.#api<SigninFinishResponse>(API_ROUTES.signinFinish, { assertion });
     this.#sessionToken = finish.sessionToken;
     this.#credentialId = assertion.credentialId;
-    // Signing in is enough to pair from here. The Server returns the asserted
+    // Signing in is enough to pair from here. The Relay returns the asserted
     // passkey's public key, so a browser profile that never performed the
     // registration — an iOS Home Screen install, a second browser — can still
-    // build pair and connect requests instead of being pushed into creating a
-    // redundant second passkey.
+    // build presence proofs instead of being pushed into creating a redundant
+    // second passkey.
     this.#storage.setPasskeyPublicKey(assertion.credentialId, finish.passkeyPublicKey);
     return finish;
   }
 
-  async listHosts(): Promise<HostsResponse['hosts']> {
-    const response = await this.#api<HostsResponse>(
-      API_ROUTES.hosts,
-      undefined,
-      { method: 'GET', headers: { authorization: `Bearer ${this.#requireToken()}` } },
-    );
-    return response.hosts;
+  async listBurrows(): Promise<BurrowsResponse['burrows']> {
+    const response = await this.#api<BurrowsResponse>(API_ROUTES.burrows, undefined, {
+      method: 'GET',
+      ...this.#auth(),
+    });
+    return response.burrows;
+  }
+
+  // --- The pinned Burrows ----------------------------------------------------
+
+  /** Every Burrow this browser holds a record for, paired or not. */
+  listKnownBurrows(): Promise<KnownBurrowV1[]> {
+    return this.#knownBurrows.list();
+  }
+
+  /**
+   * Forget one Burrow locally: the tombstone is written *before* the record that
+   * holds the delivery id is deleted, so an unreachable Relay cannot strand a
+   * push row nothing can name again.
+   */
+  async forgetBurrow(burrowId: string): Promise<void> {
+    const record = await this.#knownBurrows.get(burrowId);
+    if (record?.authorization.state === 'paired') {
+      await this.#tombstone(burrowId, record.authorization.deliveryId);
+    }
+    await this.#knownBurrows.delete(burrowId);
+    await this.retirePendingDeletions();
   }
 
   // --- Web Push ------------------------------------------------------------
 
   /**
    * The VAPID public key a browser needs before it can subscribe, or `null`
-   * when the server has push disabled. Unauthenticated — the key is public by
+   * when the Relay has push disabled. Unauthenticated — the key is public by
    * construction.
    */
   async getPushConfig(): Promise<string | null> {
-    const response = await this.#api<PushConfigResponse>(
-      API_ROUTES.pushConfig,
-      undefined,
-      { method: 'GET' },
-    );
+    const response = await this.#api<PushConfigResponse>(API_ROUTES.pushConfig, undefined, {
+      method: 'GET',
+    });
     return response.applicationServerKey;
   }
 
   /**
-   * The Hosts **this device** is already registered to receive push from.
+   * The Burrows **this device** is already registered to receive push from.
    *
-   * The Server answers with the whole account's registrations and the filter
-   * happens here, so there is no endpoint that reports on a `devicePublicKey`
-   * the caller does not hold. Lets a reloaded Pocket show "Push notifications
-   * on." instead of re-offering an action already taken.
+   * Asked by capability rather than by identity: the query names this browser's
+   * own delivery ids and the Relay reports only on those, so there is no
+   * endpoint that reports on a row the caller does not already hold the
+   * capability for (`docs/specs/relay.md` → Web Push).
    */
-  async listPushSubscribedHosts(): Promise<string[]> {
-    const response = await this.#api<PushSubscriptionsResponse>(
-      API_ROUTES.pushSubscriptions,
-      undefined,
-      { method: 'GET', headers: { authorization: `Bearer ${this.#requireToken()}` } },
+  async listPushSubscribedBurrows(): Promise<string[]> {
+    const deliveryIds = (await this.#knownBurrows.list())
+      .flatMap((record) =>
+        record.authorization.state === 'paired' ? [record.authorization.deliveryId] : [],
+      )
+      // The route refuses more than this, and a browser holding that many
+      // paired Burrows has bigger problems than a truncated readback.
+      .slice(0, MAX_PUSH_QUERY_DELIVERY_IDS);
+    if (deliveryIds.length === 0) return [];
+    const response = await this.#api<PushSubscriptionsQueryResponse>(
+      API_ROUTES.pushSubscriptionsQuery,
+      { deliveryIds },
+      this.#auth(),
     );
-    const { devicePublicKey } = await this.#getDeviceKey();
-    return response.subscriptions
-      .filter((s) => s.devicePublicKey === devicePublicKey)
-      .map((s) => s.hostId);
+    return response.registered.map((row) => row.burrowId);
   }
 
   /**
-   * Register a browser push subscription against `hostId`, signing it with this
-   * device's key so the Server can bind it to the same Client identity the
-   * Host's ACL records. Subscriptions are per (host, device): a phone paired
-   * with two laptops subscribes twice.
-   *
-   * The signature covers the endpoint, so a captured one cannot be reused to
-   * register a different endpoint under this identity.
+   * Register a browser push subscription against `burrowId`, presenting the
+   * delivery id that Burrow minted for this Client at pairing. Possession of the
+   * id is the whole authorization — there is no challenge and no signature.
    */
   async subscribeToPush(
-    hostId: string,
+    burrowId: string,
     subscription: PushSubscriptionPayload,
   ): Promise<PushSubscribeResponse> {
-    const token = this.#requireToken();
-    const auth = { authorization: `Bearer ${token}` };
-    const { challenge } = await this.#api<PushChallengeResponse>(
-      API_ROUTES.pushChallenge,
-      undefined,
-      { headers: auth },
-    );
-    const deviceKey = await this.#getDeviceKey();
-    const signature = await signPushSubscribe(deviceKey.privateKey, {
-      hostId,
-      challenge,
-      devicePublicKey: deviceKey.devicePublicKey,
-      endpoint: subscription.endpoint,
-    });
+    const record = await this.#knownBurrows.get(burrowId);
+    if (record?.authorization.state !== 'paired') {
+      throw new Error('this phone is not paired with that computer');
+    }
     const result = await this.#api<PushSubscribeResponse>(
       API_ROUTES.pushSubscribe,
-      { hostId, devicePublicKey: deviceKey.devicePublicKey, challenge, signature, subscription },
-      { headers: auth },
+      { burrowId, deliveryId: record.authorization.deliveryId, subscription },
+      this.#auth(),
     );
-    // Recorded only once the Server has the row, mirroring how `pair` marks a
-    // Host paired: this is a note about what the Server holds, not about what
-    // the browser minted.
-    this.#storage.setRegisteredPushEndpoint(
-      await pushEndpointFingerprint(subscription.endpoint),
-    );
+    // Recorded only once the Relay has the row: this is a note about what the
+    // Relay holds, not about what the browser minted.
+    this.#storage.setRegisteredPushEndpoint(await pushEndpointFingerprint(subscription.endpoint));
     return result;
+  }
+
+  /** Idempotent, and the Relay always answers 204. */
+  async deletePushSubscription(deliveryId: string): Promise<void> {
+    await this.#api<unknown>(pushSubscriptionDeletePath(deliveryId), undefined, {
+      method: 'DELETE',
+      ...this.#auth(),
+    });
+  }
+
+  /**
+   * Drain the tombstone queue, clearing each entry only on a Relay answer.
+   *
+   * Best-effort and never throws: its callers are boot, sign-in, and the step
+   * before registering a replacement, none of which may fail over a deletion
+   * that can simply be retried on the next one.
+   */
+  async retirePendingDeletions(): Promise<void> {
+    if (this.#sessionToken === null) return;
+    let queued;
+    try {
+      queued = await this.#pendingDeletions.list();
+    } catch {
+      return;
+    }
+    for (const tombstone of queued) {
+      try {
+        await this.deletePushSubscription(tombstone.deliveryId);
+        await this.#pendingDeletions.delete(tombstone.burrowId, tombstone.deliveryId);
+      } catch {
+        // Kept for the next drain: the id in the tombstone is the only handle
+        // that can ever delete this row.
+      }
+    }
   }
 
   // --- Relay socket --------------------------------------------------------
@@ -400,179 +695,227 @@ export class PocketClient {
     });
   }
 
-  // --- Pairing + connect handshake -----------------------------------------
-
-  /** Send a pairing request built from this device's key + passkey; awaits the Host's decision. */
-  async pair(hostId: string, label: string): Promise<PairResult> {
-    const { credentialId, publicKey } = this.#passkeyForRequest();
-    const device = await this.#getDeviceKey();
-    const request: PairingRequest = {
-      accountId: SELFHOST_ACCOUNT_ID,
-      passkeyCredentialId: credentialId,
-      passkeyPublicKeyHash: await hashPasskeyPublicKey(publicKey),
-      devicePublicKey: device.devicePublicKey,
-      requestedLabel: label,
-    };
-    let result = await this.#sendPair(hostId, request);
-    if (!result.approved && result.error === PAIRING_STALE_PRESENCE_ERROR) {
-      // Pairing presence went stale (> PAIRING_PRESENCE_WINDOW_MS since the
-      // last server-verified assertion). One WebAuthn prompt refreshes the
-      // session's stamp; then retry once. (remote-security-model.md, Pairing.)
-      await this.#reauth();
-      result = await this.#sendPair(hostId, request);
-    }
-    if (result.approved) this.#storage.markPaired(hostId);
-    return result;
-  }
+  // --- Pairing -------------------------------------------------------------
 
   /**
-   * Ask a connected Host whether it already holds an ACL record for this
-   * Client, and reconcile the local marker with the answer.
+   * The whole pairing ceremony against one scanned invitation
+   * (`docs/specs/remote-security-model.md` → Pairing).
    *
-   * The marker alone is a guess — a Host ACL reset, a hand-edited record, or a
-   * pairing approved from a different browser profile all leave it wrong — so
-   * the Host's answer wins and the cache converges on it. Advisory only: it
-   * decides which button the row offers, never whether a connection is allowed
-   * (`docs/specs/remote-security-model.md`). Rejects when the Host cannot be
-   * asked, which leaves the marker untouched as the fallback.
-   *
-   * Overlapping asks about one Host join the in-flight query — a re-rendered
-   * Hosts view (StrictMode's doubled effects, a Refresh mid-sweep) must not
-   * trip the single-waiter guard and lose the row's answer.
+   * The per-Burrow static is minted here and held only in memory until the Burrow
+   * approves: a key persisted for a pairing that was denied would be a Client
+   * identity nothing authorized. `onCode` fires the moment the two digits
+   * exist, because the screen has to show them while the outcome is pending.
    */
-  queryPaired(hostId: string): Promise<boolean> {
-    const inflight = this.#pairStatusAsks.get(hostId);
-    if (inflight) return inflight;
-    const ask = this.#queryPairedNow(hostId).finally(() => {
-      this.#pairStatusAsks.delete(hostId);
+  async pair(
+    invitation: PairingInvitation,
+    label: string,
+    onCode?: (code: string) => void,
+  ): Promise<PairingResult> {
+    await this.#ensureSocket();
+    const deadline = this.#now() + DEFAULT_PAIRING_TTL_MS;
+    const { burrowId, inviteId } = invitation;
+    const route = { kind: 'pairing', id: inviteId, burrowId } as const;
+    const clientStatic = await generateNoiseKeyPair();
+    const handshake = await createNoiseInitiator({
+      prologue: pairingInvitationPrologue(invitation),
+      staticKeyPair: clientStatic,
+      remoteStaticPublicKey: invitation.ephPub,
     });
-    this.#pairStatusAsks.set(hostId, ask);
-    return ask;
+    const message1 = await handshake.writeMessage();
+    let session: NoiseTransportSession;
+    try {
+      const response = await this.#exchange(route, message1, deadline);
+      // Both handshake payloads are empty; anything else is a peer this Client
+      // does not speak the same protocol as.
+      const payload = await handshake.readMessage(fromBase64Url(response));
+      if (payload.length !== 0) throw new Error('pairing message 2 carries a payload');
+      session = new NoiseTransportSession(handshake.session);
+    } catch (err) {
+      return this.#unavailable(err);
+    }
+    const handshakeHash = toBase64Url(session.handshakeHash);
+    const code = samplePairingCode();
+    // Before the WebAuthn prompt: the person is about to be asked for a
+    // biometric *and* to read two digits off this screen, and the digits have
+    // to already be there when they look.
+    onCode?.(code);
+
+    const passkeyCredentialId = this.#requireCredentialId();
+    const presence = await this.#provePresence({
+      kind: 'pairing',
+      burrowId,
+      handshakeHash,
+      passkeyCredentialId,
+    });
+    const request: PairingRequestV1 = { code, label, presence };
+    let outcome: unknown;
+    try {
+      outcome = await this.#exchangeControl(route, session, { ...request }, deadline);
+    } catch (err) {
+      return this.#unavailable(err);
+    }
+    if (!isPairingOutcomeV1(outcome)) {
+      return { ok: false, message: PAIRING_DENIAL_MESSAGES['burrow-error'] };
+    }
+    if (!outcome.ok) return { ok: false, message: PAIRING_DENIAL_MESSAGES[outcome.code] };
+
+    // The outcome is authenticated, which proves who sent it and nothing about
+    // what it says: an approval naming another account, credential, or key is
+    // not this ceremony's, and storing it would pin an authorization this phone
+    // never asked for.
+    const passkeyPublicKeyHash = await hashPasskeyPublicKey(
+      this.#requirePasskeyPublicKey(passkeyCredentialId),
+    );
+    // The static's shape is checked here rather than trusted: the wire guard
+    // bounds it as a string, and a pin that is not an importable X25519 point
+    // is one no later connection can build a handshake from — a record that
+    // fails at the *next* attempt, with nothing left on screen to explain it.
+    if (
+      outcome.accountId !== SELFHOST_ACCOUNT_ID ||
+      outcome.passkeyCredentialId !== passkeyCredentialId ||
+      outcome.passkeyPublicKeyHash !== passkeyPublicKeyHash ||
+      !isNoisePublicKey(outcome.burrowStaticPublicKey)
+    ) {
+      return { ok: false, message: PAIRING_DENIAL_MESSAGES['burrow-error'] };
+    }
+    const existing = await this.#knownBurrows.get(burrowId);
+    if (existing && existing.burrowStaticPublicKey !== outcome.burrowStaticPublicKey) {
+      // Terminal, and the old record is untouched — see BurrowIdentityMismatchError.
+      throw new BurrowIdentityMismatchError();
+    }
+    // A re-pair mints a fresh delivery id, so the one this record is about to
+    // forget has to be queued before the write that forgets it.
+    if (
+      existing?.authorization.state === 'paired' &&
+      existing.authorization.deliveryId !== outcome.deliveryId
+    ) {
+      await this.#tombstone(burrowId, existing.authorization.deliveryId);
+    }
+    const record: KnownBurrowV1 = {
+      burrowId,
+      accountId: outcome.accountId,
+      label: outcome.burrowLabel,
+      burrowStaticPublicKey: outcome.burrowStaticPublicKey,
+      clientStaticKeyPair: {
+        privateKey: clientStatic.privateKey as CryptoKey,
+        publicKeyRaw: toBase64Url(clientStatic.publicKey),
+      },
+      passkeyCredentialId: outcome.passkeyCredentialId,
+      passkeyPublicKeyHash: outcome.passkeyPublicKeyHash,
+      authorization: {
+        state: 'paired',
+        deliveryId: outcome.deliveryId,
+        approvedAt: this.#now(),
+      },
+    };
+    await this.#knownBurrows.put(record);
+    return { ok: true, record };
   }
 
-  async #queryPairedNow(hostId: string): Promise<boolean> {
-    const { credentialId } = this.#passkeyForRequest();
-    const device = await this.#getDeviceKey();
-    // Ask about every credential this browser holds a public key for — the
-    // same set `connect` scopes its assertion to — signed-in first as the
-    // near-certain hit. Asking only the signed-in one would offer Pair on a
-    // row whose Connect would succeed through an older credential.
-    const credentialIds = [
-      credentialId,
-      ...this.#storage.knownCredentialIds().filter((id) => id !== credentialId),
-    ];
-    let paired = false;
-    for (const passkeyCredentialId of credentialIds) {
-      const frame = await this.#askPairStatus(hostId, {
-        passkeyCredentialId,
-        devicePublicKey: device.devicePublicKey,
-      });
-      if (frame.paired) {
-        paired = true;
-        break;
+  // --- Connection ----------------------------------------------------------
+
+  /**
+   * Connect to a paired Burrow: IK against the pinned static, one presence proof
+   * over this handshake's own transcript, and the Burrow's single outcome
+   * (`docs/specs/remote-security-model.md` → Connection).
+   */
+  async connect(burrowId: string): Promise<ConnectResult> {
+    await this.#ensureSocket();
+    const record = await this.#knownBurrows.get(burrowId);
+    if (!record) {
+      return { ok: false, message: CONNECTION_DENIAL_MESSAGES['pairing-required'], pairingRequired: true };
+    }
+    if (record.authorization.state !== 'paired') {
+      return { ok: false, message: CONNECTION_DENIAL_MESSAGES['pairing-required'], pairingRequired: true };
+    }
+    const deadline = this.#now() + DEFAULT_CHALLENGE_TTL_MS;
+    const connectionId = randomBase64Url(E2E_ID_BYTE_LENGTH);
+    const route = { kind: 'connection', id: connectionId, burrowId } as const;
+    const handshake = await createNoiseInitiator({
+      prologue: e2eConnectionPrologue(burrowId, connectionId),
+      staticKeyPair: {
+        privateKey: record.clientStaticKeyPair.privateKey,
+        publicKey: fromBase64Url(record.clientStaticKeyPair.publicKeyRaw),
+      },
+      remoteStaticPublicKey: fromBase64Url(record.burrowStaticPublicKey),
+    });
+    let session: NoiseTransportSession;
+    let burrowChallenge: string;
+    try {
+      const response = await this.#exchange(route, await handshake.writeMessage(), deadline);
+      // Message 2's payload is the Burrow's fresh single-use challenge, which the
+      // presence binding must name.
+      burrowChallenge = toBase64Url(await handshake.readMessage(fromBase64Url(response)));
+      session = new NoiseTransportSession(handshake.session);
+    } catch (err) {
+      return this.#connectionUnavailable(err);
+    }
+    const presence = await this.#provePresence({
+      kind: 'connection',
+      burrowId,
+      connectionId,
+      burrowChallenge,
+      handshakeHash: toBase64Url(session.handshakeHash),
+      passkeyCredentialId: record.passkeyCredentialId,
+    });
+    let outcome: unknown;
+    try {
+      const request: ConnectionRequestV1 = { presence };
+      outcome = await this.#exchangeControl(route, session, { ...request }, deadline);
+    } catch (err) {
+      return this.#connectionUnavailable(err);
+    }
+    if (!isConnectionOutcomeV1(outcome)) {
+      return { ok: false, message: CONNECTION_DENIAL_MESSAGES['burrow-error'], pairingRequired: false };
+    }
+    if (outcome.ok) {
+      this.#established = { connectionId, session, lastSentAt: this.#now() };
+      this.#connectedBurrowId = burrowId;
+      this.#startKeepalives();
+      return { ok: true, burrowLabel: outcome.burrowLabel };
+    }
+    if (outcome.code === 'pairing-required') {
+      // Best-effort: the outcome is authenticated and the row has to move to
+      // *Pair again* whatever the local stores do. A tombstone write that
+      // throws leaves the record `paired`, which is the safe half — the next
+      // Connect earns the same authenticated denial and retries this.
+      try {
+        await this.#dropAuthorization(record);
+      } catch {
+        this.#disposeCeremony();
       }
     }
-    // Write-on-change only: the common answer confirms the marker, and
-    // localStorage writes are synchronous.
-    if (paired !== this.#storage.isPaired(hostId)) {
-      if (paired) this.#storage.markPaired(hostId);
-      else this.#storage.unmarkPaired(hostId);
-    }
-    return paired;
-  }
-
-  async #askPairStatus(
-    hostId: string,
-    query: PairStatusQuery,
-  ): Promise<Extract<ServerToClientFrame, { t: 'pair-status-result' }>> {
-    const key = pairStatusKey(hostId);
-    const awaited = this.#expect(key, PAIR_STATUS_TIMEOUT_MS);
-    try {
-      this.#send({ t: 'pair-status', hostId, query });
-    } catch (error) {
-      // The frame never left, so nothing will settle the waiter; reclaim it
-      // (and its deadline timer) rather than leaking an unhandled rejection
-      // when the deadline fires.
-      this.#waiters.get(key)?.reject(error instanceof Error ? error : new Error(String(error)));
-      this.#waiters.delete(key);
-      void awaited.catch(() => undefined);
-      throw error;
-    }
-    return (await awaited) as Extract<ServerToClientFrame, { t: 'pair-status-result' }>;
-  }
-
-  async #sendPair(hostId: string, request: PairingRequest): Promise<PairResult> {
-    const awaited = this.#expect('pair-result');
-    this.#send({ t: 'pair', hostId, request });
-    const frame = (await awaited) as Extract<ServerToClientFrame, { t: 'pair-result' }>;
-    return { approved: frame.approved, record: frame.record, error: frame.error };
-  }
-
-  /** Refresh the session's server-verified presence with one WebAuthn prompt. */
-  async #reauth(): Promise<void> {
-    const auth = { authorization: `Bearer ${this.#requireToken()}` };
-    const begin = await this.#api<SigninBeginResponse>(API_ROUTES.reauthBegin, {}, { headers: auth });
-    const assertion = await this.#webauthn.getAssertion(begin.challenge, begin.rpId);
-    await this.#api<ReauthFinishResponse>(API_ROUTES.reauthFinish, { assertion }, { headers: auth });
+    return {
+      ok: false,
+      message: CONNECTION_DENIAL_MESSAGES[outcome.code],
+      pairingRequired: outcome.code === 'pairing-required',
+    };
   }
 
   /**
-   * Connect to a paired Host: request a challenge, then produce ONE passkey
-   * assertion + one device-key signature over it (one biometric prompt), send
-   * `connect2`, and await the Host's final decision.
+   * An authenticated `pairing-required` removes local authorization without
+   * discarding the pin, and the delivery row goes with it — tombstone first,
+   * because the record about to be rewritten holds the only id that can name
+   * that row again.
    */
-  async connect(hostId: string): Promise<ConnectDecision> {
-    const device = await this.#getDeviceKey();
-    const challengeAwaited = this.#expect('challenge');
-    this.#send({ t: 'connect', hostId });
-    const challengeFrame = (await challengeAwaited) as Extract<
-      ServerToClientFrame,
-      { t: 'challenge' }
-    >;
-    const challenge = challengeFrame.challenge;
-
-    // Scope the assertion to credentials this device has a stored public key for.
-    // With several synced passkeys for one rpId, an empty allowCredentials lets
-    // the OS pick a credential whose public key we never stored — an unverifiable
-    // dead end below. An empty list here (first-time flows) preserves discovery.
-    const assertion = await this.#webauthn.getAssertion(
-      challenge,
-      this.#requireRpId(),
-      this.#storage.knownCredentialIds(),
-    );
-    const deviceSignature = await signDeviceChallenge(device.privateKey, {
-      hostId,
-      challenge,
-      devicePublicKey: device.devicePublicKey,
-    });
-    const publicKey = this.#storage.getPasskeyPublicKey(assertion.credentialId);
-    if (!publicKey) throw new Error(PASSKEY_UNAVAILABLE_MESSAGE);
-
-    const request: ConnectionRequest = {
-      accountId: SELFHOST_ACCOUNT_ID,
-      devicePublicKey: device.devicePublicKey,
-      challenge,
-      deviceSignature,
-      passkey: { publicKey, assertion },
-    };
-    const decisionAwaited = this.#expect('decision');
-    this.#send({ t: 'connect2', hostId, request });
-    const decisionFrame = (await decisionAwaited) as Extract<
-      ServerToClientFrame,
-      { t: 'decision' }
-    >;
-    const pairingStale =
-      !decisionFrame.allowed && hasRecoverablePairingFailure(decisionFrame.failures);
-    if (decisionFrame.allowed) {
-      this.#connectedHostId = hostId;
-    } else if (pairingStale) {
-      this.#storage.unmarkPaired(hostId);
+  async #dropAuthorization(record: KnownBurrowV1): Promise<void> {
+    if (record.authorization.state !== 'paired') return;
+    const { deliveryId } = record.authorization;
+    await this.#tombstone(record.burrowId, deliveryId);
+    await this.#knownBurrows.put({ ...record, authorization: { state: 'pairing-required' } });
+    // Best-effort: the tombstone is what makes this retryable, so a failure
+    // here costs a later drain rather than the row.
+    try {
+      await this.deletePushSubscription(deliveryId);
+      await this.#pendingDeletions.delete(record.burrowId, deliveryId);
+    } catch {
+      // Left queued.
     }
-    return {
-      allowed: decisionFrame.allowed,
-      failures: decisionFrame.failures,
-      ...(pairingStale ? { pairingStale: true } : {}),
-    };
+    this.#disposeCeremony();
+  }
+
+  async #tombstone(burrowId: string, deliveryId: string): Promise<void> {
+    await this.#pendingDeletions.put({ burrowId, deliveryId, queuedAt: this.#now() });
   }
 
   // --- Remote-api v1 -------------------------------------------------------
@@ -604,7 +947,7 @@ export class PocketClient {
       (event) => {
         switch (event.event) {
           case REMOTE_EVENTS.terminalData:
-            handlers.onData((event.data as TerminalDataEvent).bytes);
+            handlers.onData(event.data as TerminalDataEvent);
             return;
           case REMOTE_EVENTS.terminalClosed:
             handlers.onClosed?.((event.data as TerminalClosedEvent).exitCode);
@@ -629,16 +972,21 @@ export class PocketClient {
     return this.request(REMOTE_METHODS.surfaceDetach, { surfaceId });
   }
 
-  /** Correlated request over a `msg` frame; resolves with `result` or rejects on `ok:false`. */
+  /** Correlated request on the established session; resolves with `result`. */
   request<T = unknown>(method: string, params?: unknown, requestId: string = uuid()): Promise<T> {
     const promise = new Promise<T>((resolve, reject) => {
       this.#pending.set(requestId, { resolve: resolve as (r: unknown) => void, reject });
     });
-    this.#send({ t: 'msg', data: { requestId, method, params } });
+    try {
+      this.#sendApp({ requestId, method, params });
+    } catch (error) {
+      this.#pending.get(requestId)?.reject(error instanceof Error ? error : new Error(String(error)));
+      this.#pending.delete(requestId);
+    }
     return promise;
   }
 
-  /** Request that also opens an event subscription (Host reuses `requestId` as `subId`). */
+  /** Request that also opens an event subscription (Burrow reuses `requestId` as `subId`). */
   async subscribe<T = unknown>(
     method: string,
     params: unknown,
@@ -663,7 +1011,7 @@ export class PocketClient {
     const ws = this.#ws;
     // Tear down BEFORE closing the socket: nulling #ws is what makes #onClose's
     // generation guard reject the close that follows, which is the only thing
-    // keeping an intentional close from firing `host-gone`. Real sockets emit
+    // keeping an intentional close from firing `burrow-gone`. Real sockets emit
     // that event asynchronously, but test fakes may emit it synchronously from
     // close(), so the ordering has to hold rather than merely usually hold.
     this.#teardown('relay socket closed', { notifyGone: false });
@@ -676,43 +1024,238 @@ export class PocketClient {
 
   // --- Internals -----------------------------------------------------------
 
-  async #getDeviceKey(): Promise<DeviceKeyPair> {
-    if (!this.#deviceKey) this.#deviceKey = await this.#deviceKeyFactory();
-    return this.#deviceKey;
+  async #ensureSocket(): Promise<void> {
+    if (!this.socketOpen) await this.openSocket();
   }
 
-  #passkeyForRequest(): { credentialId: string; publicKey: string } {
-    const credentialId = this.#credentialId;
-    if (!credentialId) throw new Error('sign in before pairing or connecting');
-    const publicKey = this.#storage.getPasskeyPublicKey(credentialId);
-    if (!publicKey) throw new Error(PASSKEY_UNAVAILABLE_MESSAGE);
-    return { credentialId, publicKey };
+  #auth(): { headers: Record<string, string> } {
+    return { headers: { authorization: `Bearer ${this.#requireToken()}` } };
   }
 
-  #send(frame: ClientFrame): void {
+  /**
+   * One WebAuthn assertion, bound to this ceremony and to nothing else
+   * (`docs/specs/remote-security-model.md` → Presence proofs).
+   *
+   * **One authenticator prompt per proof, never cached and never reused.** The
+   * challenge is derived from the binding, so an assertion produced here
+   * authenticates no other pairing or connection; the Relay's `finish` proves
+   * nothing to the Burrow, which recomputes the challenge and verifies the same
+   * assertion itself.
+   */
+  async #provePresence(binding: PresenceBinding): Promise<PresenceProofV1> {
+    const auth = this.#auth();
+    const begin = await this.#api<ReauthBeginResponse>(
+      API_ROUTES.reauthBegin,
+      { binding },
+      auth,
+    );
+    const assertion = await this.#webauthn.getAssertion(
+      begin.challenge,
+      begin.rpId,
+      begin.allowCredentials,
+    );
+    await this.#api<ReauthFinishResponse>(
+      API_ROUTES.reauthFinish,
+      { relayNonce: begin.relayNonce, assertion },
+      auth,
+    );
+    return {
+      binding,
+      relayNonce: begin.relayNonce,
+      accountId: SELFHOST_ACCOUNT_ID,
+      passkeyCredentialId: binding.passkeyCredentialId,
+      passkeyPublicKey: this.#requirePasskeyPublicKey(binding.passkeyCredentialId),
+      assertion,
+    };
+  }
+
+  /** Send message 1 and await the Burrow's message 2 for the same ceremony. */
+  async #exchange(route: E2eRoute, message1: Uint8Array, deadline: number): Promise<string> {
+    const key = waiterKey(route.kind, route.id, 'response');
+    const awaited = this.#expect(key, deadline);
+    try {
+      this.#sendE2e(route, 'init', message1);
+    } catch (error) {
+      this.#reclaim(key, awaited, error);
+      throw error;
+    }
+    return await awaited;
+  }
+
+  /**
+   * A ceremony's one control message, and the Burrow's single answer to it. Both
+   * ceremonies are this shape, so the send and the await share a `try`.
+   *
+   * **The waiter is registered before the send**, as {@link #exchange} does it:
+   * an answer that arrives with no await in between — a relay that delivers
+   * synchronously — would otherwise reach {@link #onE2e} with nobody waiting,
+   * be dropped as an answer nobody asked for, and hang the ceremony to its
+   * deadline. Keepalives are accepted and skipped; the first control message is
+   * the outcome, whatever it says, and anything else is a peer this Client does
+   * not speak the same protocol as.
+   */
+  async #exchangeControl(
+    route: E2eRoute,
+    session: NoiseTransportSession,
+    request: Record<string, unknown>,
+    deadline: number,
+  ): Promise<unknown> {
+    const key = waiterKey(route.kind, route.id, 'transport');
+    let awaited = this.#expect(key, deadline);
+    try {
+      this.#sendE2e(route, 'transport', session.sendControl(request));
+    } catch (error) {
+      this.#reclaim(key, awaited, error);
+      throw error;
+    }
+    for (;;) {
+      const receipt = session.receive(fromBase64Url(await awaited));
+      if (receipt.kind === 'control') return receipt.value;
+      if (receipt.kind !== 'keepalive') throw new Error('expected a control message');
+      awaited = this.#expect(key, deadline);
+    }
+  }
+
+  // --- Keepalives ----------------------------------------------------------
+
+  /**
+   * One fixed-size keepalive on the established session, or nothing if there
+   * is none. **The only thing that refreshes the Burrow's idle deadline** other
+   * than real traffic (`docs/specs/remote-security-model.md` → Burrow bounds).
+   */
+  sendKeepalive(): void {
+    const established = this.#established;
+    const burrowId = this.#connectedBurrowId;
+    if (!established || burrowId === null) return;
+    if (this.#reapedByBurrow(established)) return;
+    try {
+      this.#sendE2e(
+        { kind: 'connection', id: established.connectionId, burrowId },
+        'transport',
+        established.session.sendKeepalive(),
+      );
+      established.lastSentAt = this.#now();
+    } catch {
+      // A closed socket or a poisoned session; both have their own teardown,
+      // and a keepalive must not be what reports burrow loss.
+    }
+  }
+
+  /**
+   * **A session the Burrow has already reaped, ended here too.**
+   *
+   * The Burrow disposes an established session it has not decrypted a Client
+   * message on for `ESTABLISHED_E2E_IDLE_TIMEOUT_MS` and sends nothing when it
+   * does — there is no frame to send, and the relay socket this Client holds is
+   * to the *Relay*, so nothing closes. Keepalives pause while the page is
+   * hidden, so a phone in a pocket crosses that line on its own, and without
+   * this check it comes back to a wall whose every request hangs forever with
+   * no error and no way out but a reload
+   * ([pocket-app.md](../../../docs/specs/pocket-app.md)).
+   *
+   * The Burrow's deadline runs from the message it last decrypted, which is the
+   * one this Client last sent, so the same constant answers the question on
+   * both sides. Reports burrow loss and leaves the relay socket alone: what died
+   * is the end-to-end session, and reconnecting is a fresh handshake over the
+   * socket already open.
+   */
+  #reapedByBurrow(established: EstablishedSession): boolean {
+    if (this.#now() - established.lastSentAt < ESTABLISHED_E2E_IDLE_TIMEOUT_MS) return false;
+    this.#disposeCeremony();
+    this.#rejectAll(new Error(BURROW_SESSION_REAPED_MESSAGE));
+    this.#onBurrowGone?.();
+    return true;
+  }
+
+  /**
+   * Keepalives run **only while the page is visible**, and returning to the
+   * foreground sends one immediately — a tab hidden for less than the idle
+   * timeout still has a session worth keeping
+   * ([pocket-app.md](../../../docs/specs/pocket-app.md)).
+   */
+  #startKeepalives(): void {
+    this.#stopKeepalives();
+    this.#cancelVisibility = this.#visibility.subscribe(() => {
+      if (this.#established && this.#visibility.isVisible()) this.sendKeepalive();
+      // Re-arms while visible and cancels while hidden; one place decides.
+      this.#armKeepalive();
+    });
+    this.#armKeepalive();
+  }
+
+  #armKeepalive(): void {
+    this.#cancelKeepaliveTimer();
+    if (!this.#established || !this.#visibility.isVisible()) return;
+    this.#cancelKeepalive = this.#setTimer(() => {
+      this.#cancelKeepalive = null;
+      this.sendKeepalive();
+      this.#armKeepalive();
+    }, E2E_KEEPALIVE_INTERVAL_MS);
+  }
+
+  #cancelKeepaliveTimer(): void {
+    this.#cancelKeepalive?.();
+    this.#cancelKeepalive = null;
+  }
+
+  #stopKeepalives(): void {
+    this.#cancelKeepaliveTimer();
+    this.#cancelVisibility?.();
+    this.#cancelVisibility = null;
+  }
+
+  /** One `e2e` envelope. Every Client→Burrow byte in this file goes through here. */
+  #sendE2e(route: E2eRoute, step: E2eClientStep, ciphertext: Uint8Array): void {
+    this.#send({
+      t: 'e2e',
+      burrowId: route.burrowId,
+      kind: route.kind,
+      id: route.id,
+      step,
+      ct: toBase64Url(ciphertext),
+    });
+  }
+
+  /** One protocol-v1 message on the established session, chunked as it needs. */
+  #sendApp(payload: unknown): void {
+    const established = this.#established;
+    if (!established) throw new Error('not connected to a burrow');
+    const burrowId = this.#connectedBurrowId;
+    if (burrowId === null) throw new Error('not connected to a burrow');
+    if (this.#reapedByBurrow(established)) throw new Error(BURROW_SESSION_REAPED_MESSAGE);
+    const route = { kind: 'connection', id: established.connectionId, burrowId } as const;
+    for (const ciphertext of established.session.sendApp(utf8Encode(JSON.stringify(payload)))) {
+      this.#sendE2e(route, 'transport', ciphertext);
+    }
+    established.lastSentAt = this.#now();
+  }
+
+  #send(frame: E2eClientFrame): void {
     if (!this.#ws) throw new Error('relay socket is not open');
     this.#ws.send(JSON.stringify(frame));
   }
 
-  #expect(key: string, timeoutMs?: number): Promise<ServerToClientFrame> {
-    if (this.#waiters.has(key)) throw new Error(`already awaiting a '${key}' frame`);
+  /**
+   * Await one ciphertext for `key`, bounded by the ceremony's own deadline.
+   *
+   * A Burrow that never answers must not strand the key — and throw on the next
+   * ask — until the socket dies. The expiry reports
+   * {@link BURROW_UNAVAILABLE_MESSAGE}, never a denial.
+   */
+  #expect(key: string, deadline: number): Promise<string> {
+    if (this.#waiters.has(key)) throw new Error(`already awaiting '${key}'`);
     return new Promise((resolve, reject) => {
-      if (timeoutMs === undefined) {
-        this.#waiters.set(key, { resolve, reject });
-        return;
-      }
-      // A Host that predates the frame silently drops it, so an undeadlined
-      // waiter would strand this key (and throw on the next ask) until the
-      // socket died. The deadline reclaims the key; #settle's drop-unawaited
-      // guard absorbs an answer that arrives after it.
-      const timer = setTimeout(() => {
-        this.#waiters.delete(key);
-        reject(new Error(`timed out awaiting a '${key}' frame`));
-      }, timeoutMs);
+      const timer = setTimeout(
+        () => {
+          this.#waiters.delete(key);
+          reject(new BurrowUnavailableError());
+        },
+        Math.max(0, deadline - this.#now()),
+      );
       this.#waiters.set(key, {
-        resolve: (frame) => {
+        resolve: (ct) => {
           clearTimeout(timer);
-          resolve(frame);
+          resolve(ct);
         },
         reject: (error) => {
           clearTimeout(timer);
@@ -722,45 +1265,91 @@ export class PocketClient {
     });
   }
 
+  /** Reclaim a waiter whose frame never left, so its deadline cannot fire unheard. */
+  #reclaim(key: string, awaited: Promise<string>, error: unknown): void {
+    this.#waiters.get(key)?.reject(error instanceof Error ? error : new Error(String(error)));
+    this.#waiters.delete(key);
+    void awaited.catch(() => undefined);
+  }
+
   #onFrame(raw: unknown): void {
-    let frame: ServerToClientFrame;
+    let frame: RelayToClientFrame;
     try {
-      frame = JSON.parse(typeof raw === 'string' ? raw : '') as ServerToClientFrame;
+      frame = JSON.parse(typeof raw === 'string' ? raw : '') as RelayToClientFrame;
     } catch {
       return;
     }
     if (!frame || typeof (frame as { t?: unknown }).t !== 'string') return;
     switch (frame.t) {
-      case 'pair-result':
-      case 'challenge':
-      case 'decision':
-        this.#settle(frame.t, frame);
+      case 'e2e':
+        // The shared guard bounds every routing value before any of them is
+        // used as a map key or decoded; this Client runs it rather than
+        // trusting the relay to have (`docs/specs/relay.md` → "Routing").
+        if (isE2eRelayToClientFrame(frame)) this.#onE2e(frame);
         return;
-      case 'pair-status-result':
-        this.#settle(pairStatusKey(frame.hostId), frame);
-        return;
-      case 'msg':
-        this.#onMsg(frame.data);
-        return;
-      case 'host-gone':
-        this.#connectedHostId = null;
-        this.#onHostGone?.();
-        this.#rejectAll(new Error('host disconnected'));
+      case 'burrow-gone':
+        this.#disposeCeremony();
+        this.#rejectAll(new Error('burrow disconnected'));
+        this.#onBurrowGone?.();
         return;
       case 'error':
-        this.#rejectAll(new Error(frame.error));
+        // Fixed copy, for the reason the denial tables are: the text is the
+        // relay's, unbounded and unshaped, and `#rejectAll` fails in-flight
+        // protocol-v1 requests whose message the app renders verbatim — so a
+        // hostile relay would be choosing the sentence the user reads. The
+        // relay's own words go to the console instead.
+        console.warn('[pocket] relay error frame', frame.error);
+        this.#rejectAll(new Error(BURROW_UNAVAILABLE_MESSAGE));
         return;
       default:
+        // Every legacy frame is ignored: this Client speaks one protocol.
         return;
     }
   }
 
-  /** Hand a frame to whoever is awaiting `key`; an unawaited answer is dropped. */
-  #settle(key: string, frame: ServerToClientFrame): void {
+  #onE2e(frame: E2eRelayToClientFrame): void {
+    const established = this.#established;
+    if (
+      established &&
+      frame.kind === 'connection' &&
+      frame.id === established.connectionId &&
+      frame.step === 'transport'
+    ) {
+      this.#onEstablishedFrame(established, frame.ct);
+      return;
+    }
+    const key = waiterKey(frame.kind, frame.id, frame.step);
     const waiter = this.#waiters.get(key);
-    if (!waiter) return;
+    if (!waiter) return; // an answer nobody is awaiting
     this.#waiters.delete(key);
-    waiter.resolve(frame);
+    waiter.resolve(frame.ct);
+  }
+
+  /**
+   * One transport frame on an authorized session. **Any decrypt or framing
+   * failure ends it**: there is no resynchronization point in a stream cipher,
+   * so a poisoned session is burrow loss and the app must leave the wall.
+   */
+  #onEstablishedFrame(established: EstablishedSession, ct: string): void {
+    let receipt;
+    try {
+      receipt = established.session.receive(fromBase64Url(ct));
+    } catch {
+      this.#teardown('the end-to-end session failed', { notifyGone: true });
+      return;
+    }
+    // A keepalive is accepted and ignored; a control message on an established
+    // session is not part of protocol-v1 and says nothing this can act on.
+    if (receipt.kind !== 'app') return;
+    for (const message of receipt.messages) {
+      let payload: unknown;
+      try {
+        payload = JSON.parse(utf8Decode(message));
+      } catch {
+        continue;
+      }
+      this.#onMsg(payload);
+    }
   }
 
   #onMsg(data: unknown): void {
@@ -786,25 +1375,32 @@ export class PocketClient {
     // close nor a superseded socket's late close gets past this line. Anything
     // that does is the socket dying on us (server restart, network drop).
     if (this.#ws !== ws) return;
-    // An unexpected drop of an established session is still host loss — the app
+    // An unexpected drop of an established session is still burrow loss — the app
     // must leave the wall instead of idling on a dead stream — even without a
-    // `host-gone` frame.
-    this.#teardown('relay socket closed', { notifyGone: this.#connectedHostId !== null });
+    // `burrow-gone` frame.
+    this.#teardown('relay socket closed', { notifyGone: this.#connectedBurrowId !== null });
   }
 
   /**
    * Reset all socket-bound state and fail pending work. The one real difference
    * between an intentional {@link close} and an unexpected drop is whether to
-   * fire `onHostGone`, made explicit here via `notifyGone`.
+   * fire `onBurrowGone`, made explicit here via `notifyGone`.
    */
   #teardown(reason: string, { notifyGone }: { notifyGone: boolean }): void {
     this.#ws = null; // never reuse a closed socket; openSocket() makes a fresh one
-    this.#connectedHostId = null;
+    this.#disposeCeremony();
     this.#rejectAll(new Error(reason));
-    if (notifyGone) this.#onHostGone?.();
+    if (notifyGone) this.#onBurrowGone?.();
   }
 
-  /** Fail every awaited handshake frame and in-flight request (avoids hangs). */
+  /** Erase every session's cipher state; a new ceremony starts from a handshake. */
+  #disposeCeremony(): void {
+    this.#stopKeepalives();
+    this.#connectedBurrowId = null;
+    this.#established = null;
+  }
+
+  /** Fail every awaited ceremony frame and in-flight request (avoids hangs). */
   #rejectAll(error: Error): void {
     for (const waiter of this.#waiters.values()) waiter.reject(error);
     this.#waiters.clear();
@@ -812,17 +1408,31 @@ export class PocketClient {
     this.#pending.clear();
   }
 
+  /**
+   * A ceremony that failed before an outcome: relay error, dropped socket, or
+   * expired timer, all of them {@link BURROW_UNAVAILABLE_MESSAGE}.
+   */
+  #unavailable(error: unknown): { readonly ok: false; readonly message: string } {
+    this.#disposeCeremony();
+    if (error instanceof SessionExpiredError) throw error;
+    return { ok: false, message: BURROW_UNAVAILABLE_MESSAGE };
+  }
+
+  #connectionUnavailable(error: unknown): ConnectResult {
+    return { ...this.#unavailable(error), pairingRequired: false };
+  }
+
   async #api<T>(route: string, body?: unknown, init?: RequestInit): Promise<T> {
     const method = init?.method ?? 'POST';
     const response = await this.#fetch(`${this.#baseUrl}${route}`, {
       method,
       headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
-      ...(method === 'GET' ? {} : { body: JSON.stringify(body ?? {}) }),
+      ...(method === 'GET' || method === 'DELETE' ? {} : { body: JSON.stringify(body ?? {}) }),
     });
     const parsed = (await response.json().catch(() => ({}))) as T & { error?: string };
-    // Only the session gate's 401 means "sign in again" — a wrong setup
-    // password and a rejected device signature answer 401 too, and bouncing the
-    // user to sign-in for those would be a worse bug than the one this fixes.
+    // Only the session gate's 401 means "sign in again" — a refused setup token
+    // answers 401 too, and bouncing the user to sign-in for that would be a
+    // worse bug than the one this fixes.
     if (response.status === 401 && parsed.error === UNAUTHORIZED_ERROR) {
       // Drop the token here rather than at the call site: every later request
       // and every relay upgrade would fail the same way, and keeping it would
@@ -830,7 +1440,14 @@ export class PocketClient {
       this.#sessionToken = null;
       throw new SessionExpiredError();
     }
-    if (!response.ok) throw new Error(parsed.error ?? `request failed (${response.status})`);
+    // A refusal, not a bare Error: an answer arrived, which is what `setup`
+    // reads to decide whether the Relay can be assumed to hold nothing.
+    if (!response.ok) {
+      throw new RelayRefusalError(
+        parsed.error ?? `request failed (${response.status})`,
+        response.status,
+      );
+    }
     return parsed;
   }
 
@@ -844,7 +1461,7 @@ export class PocketClient {
   async #diagnoseSocketFailure(original: Error): Promise<never> {
     if (this.#sessionToken === null) throw original;
     try {
-      await this.#api<HostsResponse>(API_ROUTES.hosts, undefined, {
+      await this.#api<BurrowsResponse>(API_ROUTES.burrows, undefined, {
         method: 'GET',
         headers: { authorization: `Bearer ${this.#sessionToken}` },
       });
@@ -861,42 +1478,63 @@ export class PocketClient {
     return this.#sessionToken;
   }
 
-  #requireRpId(): string {
-    if (!this.#rpId) throw new Error('rpId unknown — begin a sign-in or setup first');
-    return this.#rpId;
+  #requireCredentialId(): string {
+    const credentialId = this.#credentialId;
+    if (!credentialId) throw new Error('sign in before pairing or connecting');
+    return credentialId;
+  }
+
+  #requirePasskeyPublicKey(credentialId: string): string {
+    const publicKey = this.#storage.getPasskeyPublicKey(credentialId);
+    if (!publicKey) {
+      this.#sessionToken = null;
+      throw new PasskeyUnavailableError();
+    }
+    return publicKey;
   }
 }
 
-export const PASSKEY_UNAVAILABLE_MESSAGE =
-  "This app no longer has the signed-in passkey's public key, so it cannot pair or connect. " +
-  'Sign in again to restore it.';
-
-const RECOVERABLE_PAIRING_FAILURES = new Set<ConnectionFailure>([
-  'passkey-not-paired',
-  'device-not-paired',
-  'pairing-mismatch',
-]);
-
-export function hasRecoverablePairingFailure(
-  failures: readonly ConnectionFailure[] | undefined,
-): boolean {
-  return failures?.some((failure) => RECOVERABLE_PAIRING_FAILURES.has(failure)) ?? false;
+/** Where one ceremony's frames are addressed; the envelope's routing triple. */
+interface E2eRoute {
+  readonly kind: E2eKind;
+  readonly id: string;
+  readonly burrowId: string;
 }
 
-/** Waiter key for a pair-status answer; several hosts may be in flight at once. */
-function pairStatusKey(hostId: string): string {
-  return `pair-status:${hostId}`;
+/** A ceremony frame is awaited by its kind, its id, **and** its step. */
+function waiterKey(kind: string, id: string, step: string): string {
+  return `${kind}:${id}:${step}`;
 }
 
-/**
- * Deadline on the advisory pair-status ask. Generous for a tailnet round trip,
- * short enough that one unanswering Host cannot starve the serial Hosts-view
- * sweep for the whole visit.
- */
-const PAIR_STATUS_TIMEOUT_MS = 5_000;
+/** Internal: a deadline expired with no answer. Never reaches the UI as itself. */
+class BurrowUnavailableError extends Error {
+  constructor() {
+    super(BURROW_UNAVAILABLE_MESSAGE);
+    this.name = 'BurrowUnavailableError';
+  }
+}
 
 function uuid(): string {
   return globalThis.crypto.randomUUID();
+}
+
+/**
+ * The browser's own visibility, as {@link PocketVisibility}.
+ *
+ * A runtime with no `document` — a test, a worker — reads as visible: the
+ * alternative is a client that silently never keepalives, and the only place
+ * this default runs is the app, which always has one.
+ */
+function documentVisibility(): PocketVisibility {
+  const doc: Document | undefined = globalThis.document;
+  return {
+    isVisible: () => doc === undefined || doc.visibilityState === 'visible',
+    subscribe(onChange) {
+      if (!doc) return () => {};
+      doc.addEventListener('visibilitychange', onChange);
+      return () => doc.removeEventListener('visibilitychange', onChange);
+    },
+  };
 }
 
 /**
@@ -905,26 +1543,21 @@ function uuid(): string {
  *
  * Every localStorage touch is best-effort — a browser with site data blocked
  * (Safari's Lockdown/private modes, an enterprise policy) throws on `getItem`
- * and `setItem` alike, and `setup` commits the Server's passkey *before* it
- * caches the public key. Left to throw, that failure would strand the visit: the
- * cache write blows up after the registration is already durable, and every
- * retry mints another orphan passkey server-side.
+ * and `setItem` alike, and `setup` caches the public key only once the
+ * authenticator credential behind it exists. Left to throw, that failure would
+ * strand the visit: the cache write blows up after the registration is already
+ * irreversible, and every retry mints another orphan passkey.
  *
  * So the mirror is the primary copy — writes land there first, reads consult it
  * before storage — and localStorage is a cache that may silently do nothing.
  * Setup and sign-in then complete normally for the life of the tab; only
- * surviving a reload is lost. The mirror also shadows storage on `unmarkPaired`,
- * so a removal that could not be persisted is still honored while this instance
- * lives.
+ * surviving a reload is lost.
  */
 export function localStoragePocketStorage(): PocketStorage {
   const PASSKEY_PREFIX = 'dormouse-pocket:passkey:';
-  const PAIRED_PREFIX = 'dormouse-pocket:paired:';
   const PUSH_ENDPOINT_KEY = 'dormouse-pocket:push-endpoint';
 
   const passkeys = new Map<string, string>();
-  /** `false` records an unpair, which must outrank whatever storage still says. */
-  const paired = new Map<string, boolean>();
   let pushEndpoint: string | undefined;
 
   const read = (key: string): string | null => {
@@ -956,29 +1589,22 @@ export function localStoragePocketStorage(): PocketStorage {
       passkeys.set(credentialId, publicKey);
       write(PASSKEY_PREFIX + credentialId, publicKey);
     },
+    // No tombstone: the only key ever forgotten was written by this same run,
+    // so storage holds it only if that write worked — in which case this
+    // removal does too.
+    forgetPasskeyPublicKey: (credentialId) => {
+      passkeys.delete(credentialId);
+      drop(PASSKEY_PREFIX + credentialId);
+    },
     knownCredentialIds: () => {
       // Union, not either-or: storage holds earlier visits, the mirror holds
-      // this one's writes, and `connect` scopes its assertion to the whole set.
+      // this one's writes. Blocked storage contributes nothing and the mirror
+      // still answers.
       const ids = new Set(passkeys.keys());
-      try {
-        const store = globalThis.localStorage;
-        for (let i = 0; i < store.length; i++) {
-          const key = store.key(i);
-          if (key?.startsWith(PASSKEY_PREFIX)) ids.add(key.slice(PASSKEY_PREFIX.length));
-        }
-      } catch {
-        // Blocked storage contributes nothing; the mirror still answers.
+      for (const key of keysWithPrefix(PASSKEY_PREFIX)) {
+        ids.add(key.slice(PASSKEY_PREFIX.length));
       }
       return [...ids];
-    },
-    isPaired: (hostId) => paired.get(hostId) ?? read(PAIRED_PREFIX + hostId) === '1',
-    markPaired: (hostId) => {
-      paired.set(hostId, true);
-      write(PAIRED_PREFIX + hostId, '1');
-    },
-    unmarkPaired: (hostId) => {
-      paired.set(hostId, false);
-      drop(PAIRED_PREFIX + hostId);
     },
     getRegisteredPushEndpoint: () => pushEndpoint ?? read(PUSH_ENDPOINT_KEY),
     setRegisteredPushEndpoint: (fingerprint) => {
@@ -986,4 +1612,41 @@ export function localStoragePocketStorage(): PocketStorage {
       write(PUSH_ENDPOINT_KEY, fingerprint);
     },
   };
+}
+
+/**
+ * The legacy per-Burrow markers, removed once per page life.
+ *
+ * `dormouse-pocket:paired:*` was the local guess the pre-end-to-end Burrows view
+ * offered a button from; the `KnownBurrowV1` records replaced it, and a marker
+ * left behind is a claim about authorization that nothing checks. Best-effort,
+ * like every other touch of this storage.
+ */
+export function purgeLegacyPairedMarkers(): void {
+  // Collected before removing: mutating while enumerating by index skips keys.
+  const stale = keysWithPrefix('dormouse-pocket:paired:');
+  try {
+    for (const key of stale) globalThis.localStorage.removeItem(key);
+  } catch {
+    // Blocked or absent storage holds no markers to remove.
+  }
+}
+
+/**
+ * Every `localStorage` key under `prefix`, or none when the store cannot be
+ * read at all — a browser with site data blocked throws on the property access
+ * itself, not merely on `getItem`.
+ */
+function keysWithPrefix(prefix: string): string[] {
+  const found: string[] = [];
+  try {
+    const store = globalThis.localStorage;
+    for (let i = 0; i < store.length; i++) {
+      const key = store.key(i);
+      if (key?.startsWith(prefix)) found.push(key);
+    }
+  } catch {
+    // Nothing readable is nothing to report.
+  }
+  return found;
 }

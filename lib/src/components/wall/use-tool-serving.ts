@@ -16,7 +16,7 @@ import {
   toolKeysEqual,
   toolPortConflictFromParams,
 } from './browser-surface';
-import { attachAgentBrowserSession } from './connect-port';
+import { attachAgentBrowserSession } from './tool-browser-session';
 import { listenerUrlsByPort } from './port-url';
 import { getToolAnnounce } from '../../lib/tool-announce-store';
 import { sessionForKey } from 'dor-lib-common/agent-browser';
@@ -85,7 +85,9 @@ export function useToolServing({
 
       for (const leaf of leaves) {
         if (cancelled) return;
-        const announce = getToolAnnounce(leaf.id);
+        const run = getTerminalPaneState(leaf.id).currentCommand;
+        const running = run !== null && run.rawCommandLine === leaf.params?.command;
+        const announce = running ? getToolAnnounce(leaf.id) : null;
 
         // A runtime re-key re-labels this Surface and nothing else — it never
         // dedupes (docs/specs/dor-tool.md -> Identity and dedupe). The
@@ -98,7 +100,6 @@ export function useToolServing({
 
         const hasUrl = browserUrlFromParams(leaf.params) !== null;
         const hasConflict = toolPortConflictFromParams(leaf.params) !== null;
-        const running = getTerminalPaneState(leaf.id).currentCommand !== null;
 
         // Command exit retires the browser and the pane flips back to a prompt
         // above the tool's dying words. Re-running revives it on the same
@@ -162,6 +163,7 @@ export function useToolServing({
           continue; // A scan that fails is a scan that finds nothing yet.
         }
         if (cancelled) return;
+        if (!lath.getMeta(leaf.id) || getTerminalPaneState(leaf.id).currentCommand?.id !== run?.id) continue;
         const entries = listenerUrlsByPort(ports);
         let entry;
 
@@ -223,17 +225,16 @@ export function useToolServing({
           session,
           surfaceId: leaf.id,
           refreshSurface: (id, patch) => {
-            if (!cancelled) lath.store.updateParams(id, patch);
+            if (!cancelled && getTerminalPaneState(id).currentCommand?.id === run?.id) lath.store.updateParams(id, patch);
           },
         });
-        if (cancelled) return;
         // The Surface can be killed while the daemon boots. Param writes no-op
         // on a dead leaf, but the daemon would keep running with nothing bound
         // to it and no teardown path — `closeAgentBrowserSession` reads a
         // `session` param this leaf no longer has. Close it here instead
         // (docs/specs/dor-tool.md -> Lifecycle: kill reaps the browser's
         // resources).
-        if (!lath.getMeta(leaf.id)) {
+        if (cancelled || !lath.getMeta(leaf.id) || getTerminalPaneState(leaf.id).currentCommand?.id !== run?.id) {
           void platform.agentBrowserCommand?.(session, ['close']).catch(() => {});
         }
       }

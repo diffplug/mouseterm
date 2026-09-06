@@ -49,9 +49,11 @@ export function getActiveWorkspaceId(): WorkspaceId {
   return state.activeId;
 }
 
-/** A process-unique WorkspaceId. The random suffix never equals `DEFAULT_WORKSPACE_ID`. */
+let workspaceSequence = 0;
+
+/** A process-unique WorkspaceId, even when the random source repeats. */
 export function generateWorkspaceId(): WorkspaceId {
-  return `workspace-${Math.random().toString(36).slice(2, 10)}`;
+  return `workspace-${Math.random().toString(36).slice(2, 10)}-${++workspaceSequence}`;
 }
 
 /** "Workspace N", one past the highest existing `Workspace <n>` name. */
@@ -66,6 +68,10 @@ function nextDefaultName(): string {
 
 /** Replace the whole model (used on restore to load the persisted Window). */
 export function setWorkspaces(next: WorkspacesState): void {
+  // Duplicate identities would let closeWorkspace remove the entire list despite
+  // its last-Workspace guard. Reject the whole update before notifying listeners.
+  const ids = new Set(next.workspaces.map((workspace) => workspace.id));
+  if (ids.size !== next.workspaces.length) throw new Error('Duplicate Workspace id');
   if (next.workspaces.length === 0) {
     emit(defaultState());
     return;
@@ -83,7 +89,12 @@ export function setActiveWorkspace(id: WorkspaceId): void {
 }
 
 export function createWorkspace(opts?: { id?: WorkspaceId; name?: string; activate?: boolean }): WorkspaceMeta {
-  const meta: WorkspaceMeta = { id: opts?.id ?? generateWorkspaceId(), name: opts?.name ?? nextDefaultName() };
+  let id = opts?.id ?? generateWorkspaceId();
+  while (state.workspaces.some((workspace) => workspace.id === id)) {
+    if (opts?.id !== undefined) throw new Error(`Duplicate Workspace id: ${id}`);
+    id = generateWorkspaceId();
+  }
+  const meta: WorkspaceMeta = { id, name: opts?.name ?? nextDefaultName() };
   const activeId = opts?.activate === false ? state.activeId : meta.id;
   emit({ workspaces: [...state.workspaces, meta], activeId });
   return meta;

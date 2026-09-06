@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { useEffect, useRef } from 'react';
-import { toBase64Url, utf8Encode, type DirectoryEntry } from 'server-lib-common';
+import { toBase64Url, utf8Encode, type DirectoryEntry } from 'remote-lib-common';
 import { ConnectedView } from '../remote/pocket-app/App';
 import { PocketWall } from '../remote/pocket-app/PocketWall';
 import { RemotePtyAdapter, type RemoteAdapterClient } from '../remote/client/remote-adapter';
@@ -28,7 +28,7 @@ const SINGLE_SESSION: DirectoryEntry[] = [
   },
 ];
 
-// Streamed once the wall attaches the pane — stands in for the Host's repaint.
+// Streamed once the wall attaches the pane — stands in for the Burrow's repaint.
 const SPLASH = b64(
   [
     '\x1b[32mDormouse Pocket\x1b[0m connected to \x1b[36mStudio iMac\x1b[0m\r\n',
@@ -41,7 +41,7 @@ const SPLASH = b64(
 /**
  * Network-free {@link RemoteAdapterClient}: serves a fixed directory snapshot and
  * echoes a splash through the attach handlers, so `PocketWall` renders its real
- * `MobileTerminalUi` + `MobileWall` composition without a live Host.
+ * `MobileTerminalUi` + `MobileWall` composition without a live Burrow.
  */
 class FakeRemoteClient implements RemoteAdapterClient {
   #snapshot: DirectoryEntry[];
@@ -61,7 +61,7 @@ class FakeRemoteClient implements RemoteAdapterClient {
   async attach(_surfaceId: string, cols: number, rows: number, handlers: TerminalHandlers) {
     const subId = `attach-${++this.#n}`;
     // Push after the pane's xterm (and its onPtyData handler) is mounted.
-    queueMicrotask(() => handlers.onData(SPLASH));
+    queueMicrotask(() => handlers.onData({ bytes: SPLASH }));
     return { subId, result: { cols, rows } };
   }
 
@@ -99,10 +99,11 @@ function PocketWallStory({ connected = false }: { connected?: boolean }) {
     >
       {connected ? (
         <ConnectedView
-          host={{
-            hostId: 'host-studio',
-            label: 'Studio iMac with a deliberately long connected-host title',
+          burrow={{
+            burrowId: 'burrow-studio',
+            label: 'Studio iMac with a deliberately long connected-burrow title',
             online: true,
+            needsPairing: false,
           }}
           adapter={adapterRef.current}
           onLeave={() => {}}

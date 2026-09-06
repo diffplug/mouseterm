@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { DirectoryEntry } from 'server-lib-common';
+import type { DirectoryEntry } from 'remote-lib-common';
 
 import {
   activatePane,
@@ -30,7 +30,7 @@ function entry(surfaceId: string, over: Partial<DirectoryEntry> = {}): Directory
 }
 
 describe('directoryWallSessions', () => {
-  it('maps id = surfaceId and title from the entry, in Host order', () => {
+  it('maps id = surfaceId and title from the entry, in Burrow order', () => {
     const sessions = directoryWallSessions([entry('s1', { title: 'zsh' }), entry('s2', { title: 'vim' })]);
     expect(sessions).toEqual([
       { id: 's1', title: 'zsh' },
@@ -38,7 +38,7 @@ describe('directoryWallSessions', () => {
     ]);
   });
 
-  it('falls back to a default title when the Host sends an empty one', () => {
+  it('falls back to a default title when the Burrow sends an empty one', () => {
     expect(directoryWallSessions([entry('s1', { title: '' })])).toEqual([{ id: 's1', title: 'Terminal' }]);
   });
 
@@ -53,7 +53,7 @@ describe('directoryWallSessions', () => {
 });
 
 describe('attachableDirectoryEntries', () => {
-  it('keeps only alive entries in Host order', () => {
+  it('keeps only alive entries in Burrow order', () => {
     expect(
       attachableDirectoryEntries([
         entry('dead-a', { alive: false }),
@@ -72,8 +72,8 @@ describe('directorySessionItems', () => {
       's2',
     );
     expect(items).toEqual([
-      { id: 's1', title: 'zsh', secondary: '/home/me', active: false, status: undefined, todo: false },
-      { id: 's2', title: 'vim', secondary: null, active: true, status: undefined, todo: false },
+      { id: 's1', title: 'zsh', secondary: '/home/me', active: false, status: undefined, ringSeq: 0, todo: false },
+      { id: 's2', title: 'vim', secondary: null, active: true, status: undefined, ringSeq: 0, todo: false },
     ]);
   });
 
@@ -104,7 +104,7 @@ describe('directorySessionItems', () => {
       's1',
     );
     expect(items).toEqual([
-      { id: 's2', title: 'alive', secondary: null, active: false, status: undefined, todo: false },
+      { id: 's2', title: 'alive', secondary: null, active: false, status: undefined, ringSeq: 0, todo: false },
     ]);
   });
 });

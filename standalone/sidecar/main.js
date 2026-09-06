@@ -19,10 +19,10 @@ const { createToolHost } = require('./tool-host.cjs');
 // for the agent-browser host capabilities, run here exactly as the VS Code
 // extension host runs it. See docs/specs/dor-browser.md → "Agent-Browser Host Capabilities".
 const { createAgentBrowserHost } = require('./agent-browser-host.cjs');
-// Same pattern again: lib/src/host/remote/sidecar-entry.ts is the remote Host —
+// Same pattern again: lib/src/host/remote/sidecar-entry.ts is the Burrow —
 // the relay socket, the enrollment, the ACL, and remote-api v1 — running next to
 // the PTYs it serves. See docs/specs/remote-api.md.
-const { createSidecarRemoteHost } = require('./remote-host.cjs');
+const { createSidecarBurrow } = require('./burrow.cjs');
 
 const agentBrowser = createAgentBrowserHost({
   writeClipboardText: (text) => clipboard.writeClipboardText(text),
@@ -34,18 +34,20 @@ function send(event, data) {
 }
 
 const mgr = create((event, data) => {
-  // Tap output and exits for the remote Host before they go to the webview. A
-  // remote listener must never be able to break the local pipe, so its failure
-  // is logged and the send happens either way.
+  // Output goes through the host's parser — one per PTY, feeding the webview
+  // and every attached Client from the same pass (docs/specs/terminal-escapes.md
+  // → "Parsing location") — so a `data` event reaches the webview as the
+  // `pty:data` the host emits, never raw. A remote sink runs only after that
+  // send, and the whole tap is wrapped so a throw is logged rather than fatal.
   try {
-    remoteHost.onPtyEvent(event, data);
+    burrow.onPtyEvent(event, data);
   } catch (err) {
-    console.error(`[sidecar] remote host ${event} tap failed:`, err && err.message || err);
+    console.error(`[sidecar] burrow ${event} tap failed:`, err && err.message || err);
   }
-  send(`pty:${event}`, data);
-}, nodePty);
+  if (event !== 'data') send(`pty:${event}`, data);
+}, nodePty, { replay: true });
 
-const remoteHost = createSidecarRemoteHost({
+const burrow = createSidecarBurrow({
   send,
   stateDir: process.env.DORMOUSE_STATE_DIR,
   mgr,
@@ -120,24 +122,29 @@ function handleLine(line) {
   try {
     const { event, data } = JSON.parse(line);
     switch (event) {
-      case 'pty:spawn':   mgr.spawn(data.id, data.options); break;
+      // Told before the spawn: the id may be a live PTY's, and the parser for
+      // that generation must not carry a half-read sequence into the new one.
+      case 'pty:spawn':   burrow.onPtySpawn(data.id); mgr.spawn(data.id, data.options); break;
       case 'pty:input':   mgr.write(data.id, data.data); break;
       case 'pty:resize':  mgr.resize(data.id, data.cols, data.rows); break;
       case 'pty:kill':    mgr.kill(data.id); break;
       case 'pty:requestInit': mgr.list(); break;
+      case 'pty:context': mgr.context(data, data.requestId); break;
       case 'pty:getCwd':  mgr.getCwd(data.id, data.requestId); break;
       case 'pty:getOpenPorts': mgr.getOpenPorts(data.id, data.requestId); break;
-      case 'pty:getScrollback': mgr.getScrollback(data.id, data.requestId); break;
       case 'pty:getShells':  mgr.getShells(data.requestId); break;
       // Reserved: no standalone caller yet — recovery capture ships for VS Code
       // only, which reaches the same `pty-core` through its own `pty-host.js`
-      // rather than this route (docs/specs/transport.md -> `## Future`, scope
-      // codex-recovery).
+      // rather than this route (docs/specs/vscode.md -> "Capturing agent
+      // recovery").
       case 'pty:interrupt': mgr.interrupt(data.ids, data.requestId); break;
       case 'pty:gracefulKillAll': mgr.gracefulKillAll(data.timeout, data.requestId); break;
+      // The webview's resolved terminal theme, so the parser here can answer
+      // OSC 10/11/12 (docs/specs/terminal-escapes.md → Supported OSCs).
+      case 'pty:themeColors': burrow.setThemeColors(data); break;
       case 'sidecar:shutdown': shutdown(); break;
       case 'dor:controlResponse': dorControl?.respond(data); break;
-      case 'remoteHost:command': remoteHost.handleCommand(data); break;
+      case 'burrow:command': burrow.handleCommand(data); break;
       case 'tool:control':
         respondAsync('tool:result', data.requestId, async () => ({
           result: await toolHost.handle(data.request),
@@ -146,7 +153,12 @@ function handleLine(line) {
       case 'iframe:createProxyUrl':
         // Log to stderr — stdout is the JSON-lines protocol channel.
         respondAsync('iframe:proxyUrl', data.requestId, async () => ({
-          result: await createIframeProxyUrl(data.target, { log: (m) => console.error(m) }),
+          result: await createIframeProxyUrl(data.target, {
+            log: (m) => console.error(m),
+            // Validated inside the proxy (`normalizeEmbedderOrigins`); an
+            // unusable chain costs the shim, never a wider grant.
+            embedderOrigins: data.embedderOrigins,
+          }),
         }));
         break;
       case 'agentBrowser:command':
@@ -228,7 +240,7 @@ async function shutdown() {
     ]);
   } catch {}
   dorControl?.close();
-  remoteHost.dispose();
+  burrow.dispose();
   mgr.killAll();
   process.exit(0);
 }

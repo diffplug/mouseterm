@@ -8,6 +8,7 @@ on:
       - 'lib/**'
       - 'docs/stories/**'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'lib/**'
       - 'docs/stories/**'
@@ -15,9 +16,28 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # One in-flight build per PR, so a superseded push stops burning runner time.
+  # Whether it also stops the snapshot bill depends on the CLI cancelling the build
+  # server-side after upload, which is unverified. Keyed by SHA on push so main
+  # never cancels — those builds establish the baselines every PR diffs against.
+  group: chromatic-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   chromatic:
     name: Visual Regression Tests
+    # A draft PR does not spend snapshots: marking it ready is the deliberate
+    # trigger. A skipped job reports success, but GitHub refuses to merge a draft at
+    # all, so for that clause the draft state is itself the gate.
+    # Fork PRs are skipped because secrets are withheld from them: the token would be
+    # empty and the action would fail red having captured nothing. That clause has no
+    # such backstop — if this check is ever made required, a fork PR touching `lib/**`
+    # merges with it green rather than blocking as it does today.
+    if: >-
+      github.event_name != 'pull_request'
+      || (github.event.pull_request.draft == false
+      && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,9 +55,10 @@ jobs:
 
       - name: Install dependencies
         # Frozen, like every other workflow: a bare `pnpm install` resolves
-        # afresh, which bypasses both the lockfile and the `minimumReleaseAge`
-        # cooldown that SECURITY.md's supply-chain section rests on — in a job
-        # that holds CHROMATIC_PROJECT_TOKEN.
+        # afresh, so the lockfile stops pinning what actually runs — in a job
+        # that holds CHROMATIC_PROJECT_TOKEN. Not `minimumReleaseAge`, which is
+        # applied during resolution and so binds a fresh resolve too; the
+        # lockfile pin is the whole of what freezing buys.
         run: pnpm install --frozen-lockfile
         working-directory: lib
 

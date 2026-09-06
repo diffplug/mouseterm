@@ -1,9 +1,11 @@
+import { registry } from './terminal-store';
 import {
   commandArgv0,
   createTerminalPaneState,
   cwdFromManualPath,
   cwdFromProcessPath,
   DEFAULT_IDLE_TITLE,
+  processCwdMayReplace,
   reduceTerminalState,
   type CwdState,
   type TerminalPaneState,
@@ -16,13 +18,13 @@ import {
   type PromptSubmitState,
 } from './terminal-command-input';
 import { derivePromptShape, extractCommand, type PromptShape } from './terminal-prompt-shape';
-import { stripTerminalControls } from './terminal-controls';
-import { getSessionIdByPtyId } from './terminal-store';
+import { stripTerminalControls, TerminalControlStreamFilter } from './terminal-controls';
 
 const paneStates = new Map<string, TerminalPaneState>();
 const promptSubmitStates = new Map<string, PromptSubmitState>();
 const promptShapes = new Map<string, PromptShape>();
 const promptOutputBuffers = new Map<string, string>();
+const promptAltScreenFilters = new Map<string, PromptAltScreenFilter>();
 // Panes with authentic OSC 633/133 boundaries; the keystroke fallback stands
 // down for each id here until the pane is reset or removed.
 const oscDrivenPanes = new Set<string>();
@@ -76,8 +78,9 @@ export function getRunningCommandArgv0(id: string): string | null {
 // whether a quit needs a confirmation (docs/specs/standalone.md §Quit flow).
 export function countRunningSessions(): number {
   let count = 0;
-  for (const state of paneStates.values()) {
-    if (state.activity.kind === 'running') count++;
+  for (const [id, state] of paneStates) {
+    const entry = registry.get(id);
+    if (state.activity.kind === 'running' || (entry?.helper && !entry.exited && entry.helperBusy !== false)) count++;
   }
   return count;
 }
@@ -97,27 +100,26 @@ export function ensureTerminalPaneState(id: string, initial?: Partial<TerminalPa
   return next;
 }
 
-export function resetTerminalPaneState(id: string, initial?: Partial<TerminalPaneState>): void {
+/** Drops every per-pane scratch map keyed by `id`; `paneStates` is the caller's
+ * to set or delete. Add new per-pane state here, not at the two call sites. */
+function clearPaneScratch(id: string): void {
   promptSubmitStates.delete(id);
   promptShapes.delete(id);
   promptOutputBuffers.delete(id);
+  promptAltScreenFilters.delete(id);
   oscDrivenPanes.delete(id);
+}
+
+export function resetTerminalPaneState(id: string, initial?: Partial<TerminalPaneState>): void {
+  clearPaneScratch(id);
   paneStates.set(id, createTerminalPaneState(initial));
   notifyTerminalPaneStateListeners();
 }
 
 export function removeTerminalPaneState(id: string): void {
-  promptSubmitStates.delete(id);
-  promptShapes.delete(id);
-  promptOutputBuffers.delete(id);
-  oscDrivenPanes.delete(id);
+  clearPaneScratch(id);
   if (!paneStates.delete(id)) return;
   notifyTerminalPaneStateListeners();
-}
-
-export function applyTerminalSemanticEventsByPtyId(ptyId: string, events: TerminalSemanticEvent[]): void {
-  const id = resolvePaneStateIdByPtyId(ptyId);
-  applyTerminalSemanticEvents(id, events);
 }
 
 export function applyTerminalSemanticEvents(
@@ -182,10 +184,6 @@ export function recordTerminalUserInput(id: string, input: string, reader?: Prom
   }
 }
 
-export function recordTerminalUserInputByPtyId(ptyId: string, input: string, reader?: PromptLineReader): void {
-  recordTerminalUserInput(resolvePaneStateIdByPtyId(ptyId), input, reader);
-}
-
 // Programmatic launches bypass onData, so seed before the PTY write. For split /
 // ensure this run is also the readiness sentinel: the first prompt clears it,
 // then typing bridges the gap until authentic OSC re-reports the command.
@@ -199,14 +197,24 @@ export function seedLaunchedCommand(id: string, command: string, cwdPath?: strin
   applyTerminalSemanticEvents(id, events);
 }
 
-export function finishLaunchedCommandByPtyId(ptyId: string, exitCode: number): void {
-  applyTerminalSemanticEventsByPtyId(ptyId, [{ type: 'commandFinish', exitCode }]);
-}
-
+/**
+ * Records a chunk of a pane's output for the keystroke prompt heuristic.
+ * **Takes `TerminalProtocolParseResult.textData`, not the raw chunk** — the
+ * parser has already dropped string-control payloads, so a chunked inline image
+ * can never reach the 1,024-character prompt window
+ * (`docs/specs/terminal-state.md`).
+ */
 export function recordTerminalOutput(id: string, output: string): void {
   if (!output) return;
 
-  const buffer = `${promptOutputBuffers.get(id) ?? ''}${output}`.slice(-1024);
+  let filter = promptAltScreenFilters.get(id);
+  if (!filter) {
+    filter = new PromptAltScreenFilter();
+    promptAltScreenFilters.set(id, filter);
+  }
+  const visible = filter.process(output);
+  if (!visible) return;
+  const buffer = `${promptOutputBuffers.get(id) ?? ''}${visible}`.slice(-1024);
   promptOutputBuffers.set(id, buffer);
   const promptLine = detectReturnedShellPrompt(buffer);
   if (!promptLine) return;
@@ -228,10 +236,6 @@ export function recordTerminalOutput(id: string, output: string): void {
   }
 }
 
-export function recordTerminalOutputByPtyId(ptyId: string, output: string): void {
-  recordTerminalOutput(resolvePaneStateIdByPtyId(ptyId), output);
-}
-
 // Pre-seed the prompt shape from restored scrollback. On reconnect to a live
 // pty the shell won't re-emit its prompt, so without this the first command
 // after a restore has no shape to strip and goes untitled until the next
@@ -240,7 +244,16 @@ export function recordTerminalOutputByPtyId(ptyId: string, output: string): void
 // prompt. Learn-only — fires no idle transition.
 export function seedPromptShapeFromScrollback(id: string, scrollback: string): void {
   if (!scrollback) return;
-  const promptLine = detectReturnedShellPrompt(scrollback.slice(-1024));
+  // Replay arrives as `visibleData`, which still carries the string controls the
+  // parser forwards, so this path filters for itself. It is one shot over a
+  // bounded tail rather than the live stream: the prompt is in the last few
+  // hundred characters, and 64 KiB is ample runway to resync the control state
+  // before the 1024 the result is cut to.
+  const text = new TerminalControlStreamFilter().process(scrollback.slice(-65_536));
+  const filter = new PromptAltScreenFilter();
+  const visible = filter.process(text);
+  promptAltScreenFilters.set(id, filter);
+  const promptLine = detectReturnedShellPrompt(visible.slice(-1024));
   if (!promptLine) return;
   const shape = derivePromptShape(promptLine);
   if (shape) promptShapes.set(id, shape);
@@ -295,21 +308,12 @@ export function fillTerminalProcessCwd(id: string, path: string | null | undefin
   updateCwdIfAllowed(id, cwd);
 }
 
-export function fillTerminalProcessCwdByPtyId(ptyId: string, path: string | null | undefined): void {
-  fillTerminalProcessCwd(resolvePaneStateIdByPtyId(ptyId), path);
-}
-
 function updateCwdIfAllowed(id: string, cwd: CwdState): void {
   const current = paneStates.get(id);
   if (!current) return;
-  const currentSource = current.cwd?.source;
-  if (currentSource && currentSource !== 'manual' && currentSource !== 'process') return;
+  if (!processCwdMayReplace(current.cwd?.source)) return;
   paneStates.set(id, { ...current, cwd });
   notifyTerminalPaneStateListeners();
-}
-
-function resolvePaneStateIdByPtyId(ptyId: string): string {
-  return getSessionIdByPtyId(ptyId) ?? ptyId;
 }
 
 // Detect a returned/idle shell prompt for shells without OSC 133/633
@@ -321,8 +325,7 @@ function resolvePaneStateIdByPtyId(ptyId: string): string {
 // shared `stripTerminalControls` swallows an unterminated string control: a
 // buffer ending in a half-arrived title OSC would otherwise offer its payload
 // up as the last visible line.
-function detectReturnedShellPrompt(output: string): string | null {
-  const visible = stripAltScreenSpans(output);
+function detectReturnedShellPrompt(visible: string): string | null {
   const normalizeBreaks = (value: string) => value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   // Boundary mode, for the same reason `detectResumeCommand` uses it: deleting a
   // redraw's cursor move welds text that was never adjacent on screen, and this
@@ -387,31 +390,80 @@ function precedingLineHasPromptContext(text: string, lastNewlineIndex: number): 
   return false;
 }
 
-function stripAltScreenSpans(input: string): string {
-  // Drop content between alt-screen enter (`\x1b[?1049h`) and exit (`\x1b[?1049l`).
-  // Fullscreen TUIs (vim, lazygit, less) render into the alt buffer, which is
-  // not the user's prompt, so anything inside that span must not match.
-  let result = '';
-  let cursor = 0;
-  let inAlt = false;
-  while (cursor < input.length) {
-    if (!inAlt) {
-      const next = input.indexOf('\x1b[?1049h', cursor);
-      if (next === -1) {
-        result += input.slice(cursor);
-        break;
+// Sticky so the ground-state jump costs no copy of the chunk tail.
+const ALT_GROUND_SCAN = /[\x1b\x9b]/g;
+
+// Elide alternate-buffer output before truncating the prompt window. Keep mode
+// state across chunks and command boundaries: neither can imply a buffer switch.
+// CSI parameters are accumulated numerically with a cap, so arbitrary-length
+// incomplete controls never retain arbitrary amounts of PTY output. Ordinary
+// controls remain available to the presentation stripper's boundary handling.
+class PromptAltScreenFilter {
+  private inAlt = false;
+  private state: 'ground' | 'escape' | 'csiStart' | 'parameters' | 'ignore' = 'ground';
+  private parameter = 0;
+  private hasAltParameter = false;
+
+  process(input: string): string {
+    let output = '';
+    let cursor = 0;
+    // Start of an unflushed verbatim run, or -1 while output is suppressed.
+    // Emitting by slice rather than per character keeps an escape-dense chunk
+    // from costing a string concat per byte.
+    let runStart = -1;
+    while (cursor < input.length) {
+      if (this.state === 'ground') {
+        ALT_GROUND_SCAN.lastIndex = cursor;
+        const introducer = ALT_GROUND_SCAN.exec(input);
+        const end = introducer ? introducer.index : input.length;
+        if (!this.inAlt && runStart < 0) runStart = cursor;
+        cursor = end;
+        if (cursor === input.length) break;
       }
-      result += input.slice(cursor, next);
-      cursor = next + 8;
-      inAlt = true;
-    } else {
-      const next = input.indexOf('\x1b[?1049l', cursor);
-      if (next === -1) return result;
-      cursor = next + 8;
-      inAlt = false;
+      const code = input.charCodeAt(cursor);
+      if (this.inAlt) {
+        if (runStart >= 0) { output += input.slice(runStart, cursor); runStart = -1; }
+      } else if (runStart < 0) {
+        runStart = cursor;
+      }
+      cursor++;
+      if (code === 0x1b) {
+        this.state = 'escape';
+      } else if (code === 0x9b || (this.state === 'escape' && code === 0x5b /* [ */)) {
+        this.state = 'csiStart';
+        this.parameter = 0;
+        this.hasAltParameter = false;
+      } else if (this.state === 'csiStart' && code === 0x3f /* ? */) {
+        this.state = 'parameters';
+      } else if (this.state === 'parameters' && code >= 0x30 && code <= 0x39 /* 0-9 */) {
+        this.parameter = Math.min(1050, this.parameter * 10 + (code - 0x30));
+      } else if (this.state === 'parameters' && (code === 0x3b /* ; */ || code === 0x68 /* h */ || code === 0x6c /* l */)) {
+        this.hasAltParameter ||= this.parameter === 47 || this.parameter === 1047 || this.parameter === 1049;
+        this.parameter = 0;
+        if (code !== 0x3b) {
+          if (this.hasAltParameter) {
+            this.inAlt = code === 0x68;
+            // Separate normal-buffer regions across a screen switch, and avoid
+            // retaining a partial CSI from an enter split over output chunks.
+            if (runStart >= 0) { output += input.slice(runStart, cursor); runStart = -1; }
+            output += '\n';
+          }
+          this.state = 'ground';
+        }
+      } else if (this.state === 'escape' && code === 0x63 /* c */) {
+        this.inAlt = false;
+        this.state = 'ground';
+        if (runStart >= 0) { output += input.slice(runStart, cursor); runStart = -1; }
+        output += '\n';
+      } else if (this.state === 'escape' || (code >= 0x40 && code <= 0x7e) || code === 0x18 || code === 0x1a) {
+        this.state = 'ground';
+      } else {
+        this.state = 'ignore';
+      }
     }
+    if (runStart >= 0) output += input.slice(runStart, cursor);
+    return output;
   }
-  return result;
 }
 
 function notifyTerminalPaneStateListeners(): void {

@@ -1,13 +1,34 @@
 import { forwardRef } from "react";
+import { DOCS_PAGES } from "../lib/docs-pages";
+import { sitePath } from "../lib/site-meta";
 
 export const STATIC_PAGE_HEADER_STYLE: React.CSSProperties = {
   background: "rgba(10, 10, 10, 0.85)",
   backdropFilter: "blur(12px)",
 };
 
-const NAV_LINKS: readonly { href: string; label: string; external?: boolean; hideOnMobile?: boolean }[] = [
-  { href: "/playground", label: "Playground" },
+const NAV_LINKS: readonly {
+  href: string;
+  label: string;
+  external?: boolean;
+  hideOnMobile?: boolean;
+  /** Paths this entry highlights for, when the href itself is never a page. */
+  covers?: readonly string[];
+}[] = [
+  { href: sitePath("/playground"), label: "Playground" },
   { href: "/#download", label: "Download", hideOnMobile: true },
+  // Desktop only: on a phone the docs are reached from the homepage's own
+  // links, and the four marketing destinations earn the narrow bar first.
+  // `/docs` only ever redirects, so it can never equal the current path — it
+  // highlights for the pages it leads to instead. Left bare for that reason:
+  // it is an entrypoint `website/public/_redirects` owns, not a served page,
+  // so `sitePath` has nothing to point it at.
+  {
+    href: "/docs",
+    label: "Docs",
+    hideOnMobile: true,
+    covers: DOCS_PAGES.map((page) => page.path),
+  },
   { href: "https://github.com/diffplug/dormouse", label: "GitHub", external: true },
 ];
 
@@ -47,7 +68,7 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
     style,
   }, ref) {
     const navLinks = activePath === "/playground"
-      ? NAV_LINKS.filter(({ href }) => href !== "/playground")
+      ? NAV_LINKS.filter(({ href }) => href !== sitePath("/playground"))
       : NAV_LINKS;
 
     const headerStyle: React.CSSProperties = themeAware
@@ -95,8 +116,8 @@ const SiteHeader = forwardRef<HTMLElement, SiteHeaderProps>(
           <div className="ml-auto flex min-w-0 items-center gap-3 md:gap-8">
             {controls ? <div className="min-w-0">{controls}</div> : null}
             <nav className="flex shrink-0 items-center gap-5 md:gap-10">
-              {navLinks.map(({ href, label, external, hideOnMobile }) => {
-                const isActive = activePath === href;
+              {navLinks.map(({ href, label, external, hideOnMobile, covers }) => {
+                const isActive = activePath === href || (activePath !== undefined && (covers?.includes(activePath) ?? false));
                 return (
                   <a
                     key={href}

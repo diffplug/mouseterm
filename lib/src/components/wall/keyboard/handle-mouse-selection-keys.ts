@@ -1,4 +1,5 @@
-import { copyRaw, copyRewrapped, doPaste } from '../../../lib/clipboard';
+import { doPaste } from '../../../lib/clipboard';
+import { copySelection } from '../../../lib/copy-selection';
 import { isEditableTarget, isTerminalInputProxy } from '../../../lib/dom';
 import {
   extendSelectionToToken,
@@ -6,6 +7,7 @@ import {
   getMouseSelectionState,
   setSelection as setMouseSelection,
 } from '../../../lib/mouse-selection';
+import { addSelectionToNotepad, isNotepadChordBound } from '../../../lib/notepad/capture';
 import { hasCopyModifier, hasPasteModifier } from './chords';
 import { hasTerminal } from 'dor/commands/types';
 import { surfaceKindFromParams, toolFace } from '../browser-surface';
@@ -13,7 +15,7 @@ import type { WallKeyboardCtx } from './types';
 
 /**
  * Mouse-selection-aware shortcuts: token extension + Escape during drag,
- * Cmd-C / Cmd-Shift-C / Cmd-V outside drag. Returns true if handled.
+ * Cmd-C / Cmd-Shift-C / Cmd-N / Cmd-V outside drag. Returns true if handled.
  */
 export function handleMouseSelectionKeys(e: KeyboardEvent, ctx: WallKeyboardCtx): boolean {
   // Don't shadow native clipboard ops when focus is inside a real text
@@ -31,7 +33,8 @@ export function handleMouseSelectionKeys(e: KeyboardEvent, ctx: WallKeyboardCtx)
   // These chords copy/paste against a terminal's pty and mouse selection.
   // Non-terminal surfaces (agent-browser, iframe) own their clipboard keys —
   // e.g. AgentBrowserPanel forwards cmd-V to the embedded page — so yield.
-  if (!hasActiveTerminal(ctx, sid)) return false;
+  const contextTerminal = tgt?.closest?.<HTMLElement>('[data-context-terminal]');
+  if (contextTerminal?.dataset.contextTerminal !== sid && !hasActiveTerminal(ctx, sid)) return false;
 
   const mouseState = getMouseSelectionState(sid);
   const sel = mouseState.selection;
@@ -62,10 +65,19 @@ export function handleMouseSelectionKeys(e: KeyboardEvent, ctx: WallKeyboardCtx)
   if (sel && !sel.dragging && hasCopyModifier(e) && keyLower === 'c') {
     e.preventDefault();
     e.stopImmediatePropagation();
-    const rewrapped = e.shiftKey;
-    void (rewrapped ? copyRewrapped(sid) : copyRaw(sid)).then(() => {
-      flashCopy(sid, rewrapped ? 'rewrapped' : 'raw');
-    });
+    void copySelection(sid, e.shiftKey);
+    return true;
+  }
+  // Only ever with a finalized selection: with none, Ctrl+N has to reach the
+  // program as readline's next-history. `stopImmediatePropagation` on this
+  // capture-phase window listener (`use-wall-keyboard.ts`) is also what keeps
+  // the chord out of VS Code's keydown forwarding to the workbench
+  // (`docs/specs/vscode.md` → "Webview hosting").
+  const notepadChord = !!sel && !sel.dragging && hasCopyModifier(e) && !e.shiftKey && keyLower === 'n';
+  if (notepadChord && isNotepadChordBound()) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (addSelectionToNotepad(sid)) flashCopy(sid, 'notepad');
     return true;
   }
   // Paste takes either modifier on every platform (see `hasPasteModifier`).

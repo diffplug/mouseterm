@@ -1,19 +1,12 @@
+import type { HelperIdentity } from './terminal-context-types';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { ShellCommandKind } from 'dor/commands/shell-quote';
-import type { ActivityNotification, SessionStatus, TodoState } from './alert-manager';
-
-export interface ActivityState {
-  status: SessionStatus;
-  watchingEnabled: boolean;
-  todo: TodoState;
-  notification: ActivityNotification | null;
-  /** A `dor await` is parked on this Session (`docs/specs/alert.md` -> Await). */
-  awaited: boolean;
-}
 
 export interface TerminalEntry {
-  ptyId: string;
+  helper?: HelperIdentity;
+  helperBusy?: boolean;
+  inputVersion?: number;
   /** Parser family of the shell this Session launched. Unlike the app-global
    *  default, this remains stable when the user selects a different shell for
    *  future Sessions. */
@@ -22,12 +15,9 @@ export interface TerminalEntry {
   fit: FitAddon;
   element: HTMLDivElement;
   cleanup: () => void;
-  alertStatus: SessionStatus;
-  watchingEnabled: boolean;
-  todo: TodoState;
-  notification: ActivityNotification | null;
-  attentionDismissedRing: boolean;
-  awaited: boolean;
+  /** Replace the text snapshot the render handler compares a finalized Dormouse
+   *  selection against; `null` stops it watching. */
+  setSelectionBaseline: (baseline: string | null) => void;
   isReplaying: boolean;
   untouched: boolean;
   /**
@@ -59,6 +49,7 @@ export interface TerminalOverlayDims {
 }
 
 export interface PendingShellOpts {
+  helper?: HelperIdentity;
   shell?: string;
   args?: string[];
   cwd?: string;
@@ -76,24 +67,11 @@ export interface PendingShellOpts {
 }
 
 export const registry = new Map<string, TerminalEntry>();
+/** Helper Sessions are private to their source: excluded from alerts, `dor`, remote projections, and cross-pane derivations. */
+export const isHelperSession = (id: string): boolean => !!registry.get(id)?.helper;
 export const pendingShellOpts = new Map<string, PendingShellOpts>();
-
-export function getEntryByPtyId(ptyId: string): TerminalEntry | null {
-  for (const entry of registry.values()) {
-    if (entry.ptyId === ptyId) {
-      return entry;
-    }
-  }
-  return null;
-}
-
-export function getSessionIdByPtyId(ptyId: string): string | null {
-  for (const [id, entry] of registry) {
-    if (entry.ptyId === ptyId) return id;
-  }
-  return null;
-}
-
-export function resolveTerminalSessionId(id: string): string {
-  return registry.get(id)?.ptyId ?? id;
+/** Arm render-tick invalidation for a selection some other module just set, so
+ *  it is dropped when the text under it changes (a pin's restored range). */
+export function setTerminalSelectionBaseline(id: string, baseline: string | null): void {
+  registry.get(id)?.setSelectionBaseline(baseline);
 }

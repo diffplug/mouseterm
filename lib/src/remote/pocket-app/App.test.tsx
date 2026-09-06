@@ -6,23 +6,26 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  HostsView,
+  BURROWS_EMPTY,
+  CAMERA_BOOTSTRAP_MESSAGE,
+  BurrowsView,
+  PUSH_RELAY_DISABLED,
+  SCAN_LABEL,
+  PairingCodeView,
   SetupOrSignin,
   pushNoticeState,
-  refinePairState,
-  type HostPairState,
-  type HostView,
+  type BurrowView,
   type PushConfigStatus,
 } from './App';
 import type { PushAvailability } from '../client/push-subscribe';
-import { setNativeFieldValue } from '../../lib/dom';
+import {
+  BURROWS,
+  buttonNamed as buttonNamedIn,
+  pairingCode as pairingCodeIn,
+  rowFor as rowForIn,
+} from './app-test-utils';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-
-const HOSTS: HostView[] = [
-  { hostId: 'host-1', label: 'First laptop', online: true },
-  { hostId: 'host-2', label: 'Second laptop', online: true },
-];
 
 let container: HTMLDivElement;
 let root: Root;
@@ -38,16 +41,16 @@ afterEach(() => {
   container.remove();
 });
 
-function renderHosts(
+function renderBurrows(
   overrides: {
-    hosts?: HostView[];
+    burrows?: BurrowView[];
     busy?: string | null;
-    pairState?: (hostId: string) => HostPairState;
-    isPushSubscribed?: (hostId: string) => boolean;
+    isPushSubscribed?: (burrowId: string) => boolean;
     pushState?: PushAvailability | null;
     pushConfigStatus?: PushConfigStatus;
-    onPair?: (host: HostView) => void;
-    onConnect?: (host: HostView) => void;
+    onScan?: () => void;
+    onConnect?: (burrow: BurrowView) => void;
+    onForget?: (burrow: BurrowView) => void;
     onEnablePush?: () => void;
     onRetryPushConfig?: () => void;
   } = {},
@@ -55,19 +58,19 @@ function renderHosts(
   act(() => {
     root.render(
       <StrictMode>
-        <HostsView
-          hosts={overrides.hosts ?? HOSTS}
+        <BurrowsView
+          burrows={overrides.burrows ?? BURROWS}
           busy={overrides.busy ?? null}
           error={null}
-          pairState={overrides.pairState ?? (() => 'paired')}
           isPushSubscribed={overrides.isPushSubscribed ?? (() => false)}
           // Not `??`: an explicit null is "the browser has not been asked yet",
           // which is one of the states under test.
           pushState={overrides.pushState !== undefined ? overrides.pushState : 'ready'}
           pushConfigStatus={overrides.pushConfigStatus ?? 'ready'}
           onRefresh={() => undefined}
-          onPair={overrides.onPair ?? (() => undefined)}
+          onScan={overrides.onScan ?? (() => undefined)}
           onConnect={overrides.onConnect ?? (() => undefined)}
+          onForget={overrides.onForget ?? (() => undefined)}
           onEnablePush={overrides.onEnablePush ?? (() => undefined)}
           onRetryPushConfig={overrides.onRetryPushConfig ?? (() => undefined)}
         />
@@ -76,16 +79,19 @@ function renderHosts(
   });
 }
 
+/** Two Burrows, the second of which the laptop has forgotten. */
+const NEEDS_PAIRING: BurrowView[] = [
+  BURROWS[0]!,
+  { ...BURROWS[1]!, needsPairing: true },
+];
+
 /**
- * One Host's row, found through that Host's label rather than by document
- * order — the assertions are about which Host owns which state, so they must
+ * One Burrow's row, found through that Burrow's label rather than by document
+ * order — the assertions are about which Burrow owns which state, so they must
  * not silently pass if the rows are reordered.
  */
 function rowFor(label: string): HTMLElement {
-  const title = [...container.querySelectorAll('div')].find((el) => el.textContent === label);
-  const row = title?.closest('div.rounded-lg');
-  if (!(row instanceof HTMLElement)) throw new Error(`no host row for ${label}`);
-  return row;
+  return rowForIn(container, label);
 }
 
 /** The labels of a row's action buttons, in order. */
@@ -109,12 +115,14 @@ function pushCard(): HTMLElement | null {
 
 function renderAuth(
   overrides: {
-    firstRun?: boolean;
+    hasPriorUse?: boolean;
+    arrivedByCamera?: boolean;
+    passkeyAlreadyRegistered?: boolean;
     needsInstall?: boolean;
     busy?: string | null;
     error?: string | null;
+    onScan?: () => void;
     onSignin?: () => void;
-    onSetup?: (password: string, label: string) => void;
   } = {},
 ) {
   act(() => {
@@ -123,27 +131,20 @@ function renderAuth(
         <SetupOrSignin
           busy={overrides.busy ?? null}
           error={overrides.error ?? null}
-          firstRun={overrides.firstRun ?? true}
+          hasPriorUse={overrides.hasPriorUse ?? false}
+          arrivedByCamera={overrides.arrivedByCamera ?? false}
+          passkeyAlreadyRegistered={overrides.passkeyAlreadyRegistered ?? false}
           needsInstall={overrides.needsInstall ?? false}
+          onScan={overrides.onScan ?? (() => undefined)}
           onSignin={overrides.onSignin ?? (() => undefined)}
-          onSetup={overrides.onSetup ?? (() => undefined)}
         />
       </StrictMode>,
     );
   });
 }
 
-/** The setup password field, which is present only when setup is on screen. */
-function setupPasswordField(): HTMLInputElement | null {
-  return container.querySelector<HTMLInputElement>('#pocket-setup-password');
-}
-
 function buttonNamed(label: string | RegExp): HTMLButtonElement | null {
-  return (
-    [...container.querySelectorAll('button')].find((button) =>
-      typeof label === 'string' ? button.textContent === label : label.test(button.textContent ?? ''),
-    ) ?? null
-  );
+  return buttonNamedIn(container, label);
 }
 
 /**
@@ -159,272 +160,289 @@ function installNotice(): HTMLElement | null {
   );
 }
 
-/** The setup `<form>`, reached through the field it owns. */
-function setupForm(): HTMLFormElement {
-  const form = setupPasswordField()?.closest('form');
-  if (!form) throw new Error('setup fields are not inside a form');
-  return form;
-}
+describe('SetupOrSignin: scanning versus signing in', () => {
+  /**
+   * There is no setup password and no typed credential left: pointing the
+   * phone at the computer is both the account setup and the pairing, so a
+   * browser holding nothing has exactly one thing it can do.
+   */
+  it('leads with the scanner when this browser holds no passkey material', () => {
+    const onScan = vi.fn();
+    renderAuth({ hasPriorUse: false, onScan });
 
-/**
- * Submit the form the way the phone keyboard's Go key does. jsdom implements no
- * implicit submission, so the event is dispatched directly — which exercises
- * the handler, the half a `type="button"` did not have at all.
- */
-function submitSetupForm() {
-  act(() => {
-    setupForm().dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-  });
-}
-
-/** Type into a controlled input the way a user would — React listens for `input`. */
-function typeInto(input: HTMLInputElement, value: string) {
-  act(() => setNativeFieldValue(input, value));
-}
-
-describe('SetupOrSignin first run vs return visit', () => {
-  it('leads with setup when this browser holds no passkey material', () => {
-    // Nothing stored means nothing to sign in with by default, so the fields
-    // the visit actually needs must not be behind a disclosure tap.
-    renderAuth({ firstRun: true });
-
-    expect(setupPasswordField()).not.toBeNull();
+    expect(container.textContent).toContain('Set up this phone');
     expect(container.textContent).not.toContain('Welcome back');
-    expect(buttonNamed('Create passkey & sign in')).not.toBeNull();
-    expect(buttonNamed(/First-time setup/)).toBeNull();
+    expect(container.querySelector('input')).toBeNull();
+
+    act(() => buttonNamed(SCAN_LABEL)!.click());
+    expect(onScan).toHaveBeenCalledOnce();
   });
 
   it('keeps sign-in reachable on a first run, for a passkey that synced here', () => {
     const onSignin = vi.fn();
-    renderAuth({ firstRun: true, onSignin });
+    renderAuth({ hasPriorUse: false, onSignin });
 
     act(() => buttonNamed('Sign in with passkey')!.click());
 
     expect(onSignin).toHaveBeenCalledOnce();
   });
 
-  it('leads with sign-in and keeps setup behind the disclosure on a return visit', () => {
-    renderAuth({ firstRun: false });
+  it('leads with sign-in on a return visit, and still offers the scanner', () => {
+    const onScan = vi.fn();
+    renderAuth({ hasPriorUse: true, onScan });
 
     expect(container.textContent).toContain('Welcome back');
-    expect(buttonNamed('Sign in with passkey')).not.toBeNull();
-    expect(setupPasswordField()).toBeNull();
-
-    act(() => buttonNamed(/First-time setup/)!.click());
-
-    expect(setupPasswordField()).not.toBeNull();
+    // A signed-in phone still scans — to pair a computer it has not met.
+    act(() => buttonNamed(SCAN_LABEL)!.click());
+    expect(onScan).toHaveBeenCalledOnce();
   });
 
   /**
-   * The Go key is the primary submit on a phone, and on the now-leading
-   * first-run screen these fields *are* the path — so the form has to own the
-   * submission rather than a lone `type="button"` click handler.
+   * `excludeCredentials` carries what the *Relay* holds, so an authenticator
+   * refusing over it is proof a sign-in from this device works — where an empty
+   * store is merely unproven.
    */
-  it('submits the typed values when the form is submitted, not only on a tap', () => {
-    const onSetup = vi.fn();
-    renderAuth({ firstRun: true, onSetup });
+  it('lets a registered passkey outrank an empty store', () => {
+    renderAuth({ hasPriorUse: false, passkeyAlreadyRegistered: true });
 
-    typeInto(setupPasswordField()!, 'hunter2');
-    typeInto(container.querySelector<HTMLInputElement>('#pocket-setup-label')!, 'Work phone');
-    submitSetupForm();
-
-    expect(onSetup).toHaveBeenCalledWith('hunter2', 'Work phone');
+    expect(container.textContent).toContain('Welcome back');
   });
 
-  it('refuses a submit with no password, the same condition that disables the button', () => {
-    const onSetup = vi.fn();
-    renderAuth({ firstRun: true, onSetup });
+  it('locks every action while a ceremony this screen started is running', () => {
+    renderAuth({ busy: 'pair' });
 
-    expect(buttonNamed('Create passkey & sign in')!.disabled).toBe(true);
-    submitSetupForm();
+    expect(buttonNamed(SCAN_LABEL)).toBeNull();
+    expect(buttonNamed('…')!.disabled).toBe(true);
+    expect(buttonNamed('Sign in with passkey')!.disabled).toBe(true);
+  });
+});
 
-    expect(onSetup).not.toHaveBeenCalled();
+describe('SetupOrSignin after a native-camera arrival', () => {
+  /**
+   * The fragment is already erased and its token unspent, so the only thing
+   * this run can do is say where the scan actually has to happen — on iOS the
+   * installed app is a different storage partition from the tab a camera opens.
+   */
+  it('says to scan again from inside Pocket', () => {
+    renderAuth({ arrivedByCamera: true });
+
+    expect(container.textContent).toContain(CAMERA_BOOTSTRAP_MESSAGE);
+    expect(buttonNamed(SCAN_LABEL)).not.toBeNull();
+  });
+
+  it('says it on a returning browser too, where sign-in still leads', () => {
+    renderAuth({ arrivedByCamera: true, hasPriorUse: true });
+
+    expect(container.textContent).toContain(CAMERA_BOOTSTRAP_MESSAGE);
+    expect(container.textContent).toContain('Welcome back');
+  });
+
+  it('stays quiet on an ordinary visit', () => {
+    renderAuth({ arrivedByCamera: false });
+
+    expect(container.textContent).not.toContain(CAMERA_BOOTSTRAP_MESSAGE);
   });
 });
 
 describe('SetupOrSignin install guidance', () => {
-  it('warns before setup, not after it, when iOS needs the install first', () => {
-    // The point of moving it here: the device key and passkey this screen
-    // mints land in whichever partition creates them.
-    renderAuth({ firstRun: true, needsInstall: true });
+  it('warns before the scan, not after it, when iOS needs the install first', () => {
+    // The point of putting it here: the passkey a scan mints lands in whichever
+    // partition creates it.
+    renderAuth({ hasPriorUse: false, needsInstall: true });
 
     const notice = installNotice();
-    const password = setupPasswordField();
+    const scan = buttonNamed(SCAN_LABEL);
     expect(notice).not.toBeNull();
     // Strictly before, not merely "not after": a notice that *contained* the
-    // field would also satisfy FOLLOWING while saying nothing about order.
-    expect(
-      notice!.compareDocumentPosition(password!) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(notice!.contains(password!)).toBe(false);
+    // action would also satisfy FOLLOWING while saying nothing about order.
+    expect(notice!.compareDocumentPosition(scan!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(notice!.contains(scan!)).toBe(false);
   });
 
-  /**
-   * Under "Welcome back" the copy ("set up from there", "a passkey made here
-   * has to be made all over again") only makes sense next to the fields, so it
-   * rides with the disclosure rather than the screen.
-   */
-  it('stays quiet on a return visit until setup is actually opened', () => {
-    renderAuth({ firstRun: false, needsInstall: true });
+  it('warns before the camera notice too, the one arrival that shows both', () => {
+    // iOS Safari, opened by the phone's own camera: the camera notice sends the
+    // reader to the scan button, and scanning here before installing mints the
+    // passkey in the wrong partition — the trap the install notice exists for.
+    renderAuth({ hasPriorUse: false, needsInstall: true, arrivedByCamera: true });
+
+    const notice = installNotice()!;
+    const camera = [...container.querySelectorAll<HTMLElement>('div')].find(
+      (el) => el.textContent === CAMERA_BOOTSTRAP_MESSAGE,
+    )!;
+    expect(notice).not.toBeUndefined();
+    expect(camera).not.toBeUndefined();
+    expect(notice.compareDocumentPosition(camera) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('stays quiet on a return visit, which mints no passkey', () => {
+    renderAuth({ hasPriorUse: true, needsInstall: true });
 
     expect(installNotice()).toBeNull();
-
-    act(() => buttonNamed(/First-time setup/)!.click());
-
-    const notice = installNotice();
-    const password = setupPasswordField();
-    expect(notice).not.toBeNull();
-    expect(
-      notice!.compareDocumentPosition(password!) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(notice!.contains(password!)).toBe(false);
   });
 
-  it('stays advice rather than a gate — setup in the tab still submits', () => {
-    const onSetup = vi.fn();
-    renderAuth({ firstRun: true, needsInstall: true, onSetup });
+  it('stays advice rather than a gate — the scan is still offered', () => {
+    const onScan = vi.fn();
+    renderAuth({ hasPriorUse: false, needsInstall: true, onScan });
 
-    typeInto(setupPasswordField()!, 'hunter2');
-    const submit = buttonNamed('Create passkey & sign in')!;
-    expect(submit.disabled).toBe(false);
-    act(() => submit.click());
-
-    expect(onSetup).toHaveBeenCalledWith('hunter2', 'My Phone');
+    const scan = buttonNamed(SCAN_LABEL)!;
+    expect(scan.disabled).toBe(false);
+    act(() => scan.click());
+    expect(onScan).toHaveBeenCalledOnce();
   });
 
-  it('says nothing when the app is installed, or when push is unavailable for other reasons', () => {
-    // `needsInstall` is the iOS-tab signal alone: an unsupported browser or a
-    // blocked permission is a different problem, explained on the push rows.
-    renderAuth({ firstRun: true, needsInstall: false });
+  it('says nothing when the app is installed', () => {
+    renderAuth({ hasPriorUse: false, needsInstall: false });
 
     expect(installNotice()).toBeNull();
   });
 });
 
-describe('HostsView pair/connect actions', () => {
-  it('offers Pair alone where the Host holds no record for this Client', () => {
-    // The whole point of asking the Host: a primary Connect on an unpaired
-    // Host is an action that can only fail.
-    renderHosts({ pairState: () => 'unpaired' });
-
-    expect(actionsIn(rowFor('First laptop'))).toEqual(['Pair']);
-  });
-
-  it('offers Connect alone once the Host recognizes this Client', () => {
-    renderHosts({ pairState: () => 'paired' });
-
-    expect(actionsIn(rowFor('Second laptop'))).toEqual(['Connect']);
-  });
-
-  it('renames the action to Pair again after an ACL-miss denial', () => {
-    renderHosts({ pairState: (hostId) => (hostId === 'host-1' ? 'stale' : 'unpaired') });
-
-    // Still one action, and still Pair — the label is what says the last
-    // attempt was denied, so the row explains itself without adding a button.
-    expect(actionsIn(rowFor('First laptop'))).toEqual(['Pair again']);
-    expect(actionsIn(rowFor('Second laptop'))).toEqual(['Pair']);
-  });
-
-  it('keeps one disabled action on an offline host', () => {
-    const offline: HostView[] = [
-      { hostId: 'host-1', label: 'First laptop', online: false },
-      { hostId: 'host-2', label: 'Second laptop', online: false },
-    ];
-    // Offline means the Host cannot be asked, so the cached marker picks the
-    // action — but neither can be taken until it is back.
-    renderHosts({
-      hosts: offline,
-      pairState: (hostId) => (hostId === 'host-1' ? 'paired' : 'unpaired'),
+describe('the two-digit waiting screen', () => {
+  /**
+   * The laptop's modal tells the user to cancel if the phone is showing no
+   * code, so this screen is the one that has to be unmistakable.
+   */
+  it('shows the digits and what to do with them', () => {
+    act(() => {
+      root.render(
+        <StrictMode>
+          <PairingCodeView code="07" onCancel={() => undefined} />
+        </StrictMode>,
+      );
     });
 
-    const paired = rowFor('First laptop');
-    expect(actionsIn(paired)).toEqual(['Connect']);
-    expect(paired.querySelector('button')!.disabled).toBe(true);
-    expect(actionsIn(rowFor('Second laptop'))).toEqual(['Pair']);
-    expect(rowFor('Second laptop').querySelector('button')!.disabled).toBe(true);
+    // Matched on the live region's accessible name, not on the sentence beside
+    // it: the identity of this screen is an accessibility contract, and the copy
+    // around it is not (`PAIRING_CODE_LABEL`).
+    expect(pairingCodeIn(container)).toBe('07');
   });
 
-  it('routes the action to the Host whose row it belongs to', () => {
-    const onPair = vi.fn();
+  it('offers a way out while the outcome is still pending', () => {
+    const onCancel = vi.fn();
+    act(() => {
+      root.render(
+        <StrictMode>
+          <PairingCodeView code="42" onCancel={onCancel} />
+        </StrictMode>,
+      );
+    });
+
+    act(() => buttonNamed('Cancel')!.click());
+
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+});
+
+describe('BurrowsView actions', () => {
+  it('offers Connect on a paired row and Pair again where authorization is gone', () => {
+    renderBurrows({ burrows: NEEDS_PAIRING });
+
+    expect(actionsIn(rowFor('First laptop'))).toEqual(['Connect', 'Remove']);
+    expect(actionsIn(rowFor('Second laptop'))).toEqual(['Pair again', 'Remove']);
+  });
+
+  it('sends Pair again to the scanner, which is where pairing starts', () => {
+    const onScan = vi.fn();
     const onConnect = vi.fn();
-    renderHosts({
-      pairState: (hostId) => (hostId === 'host-1' ? 'paired' : 'unpaired'),
-      onPair,
-      onConnect,
-    });
+    renderBurrows({ burrows: NEEDS_PAIRING, onScan, onConnect });
 
-    act(() => rowFor('First laptop').querySelector('button')!.click());
     act(() => rowFor('Second laptop').querySelector('button')!.click());
 
-    expect(onConnect).toHaveBeenCalledWith(HOSTS[0]);
-    expect(onPair).toHaveBeenCalledWith(HOSTS[1]);
+    expect(onScan).toHaveBeenCalledOnce();
+    expect(onConnect).not.toHaveBeenCalled();
+  });
+
+  it('routes Connect to the Burrow whose row it belongs to', () => {
+    const onConnect = vi.fn();
+    renderBurrows({ onConnect });
+
+    act(() => rowFor('Second laptop').querySelector('button')!.click());
+
+    expect(onConnect).toHaveBeenCalledWith(BURROWS[1]);
+  });
+
+  it('removes a record locally, whatever the Burrow is doing', () => {
+    const onForget = vi.fn();
+    const offline: BurrowView[] = [{ ...BURROWS[0]!, online: false }];
+    renderBurrows({ burrows: offline, onForget });
+
+    const remove = [...rowFor('First laptop').querySelectorAll('button')].at(-1)!;
+    expect(remove.disabled).toBe(false);
+    act(() => remove.click());
+
+    expect(onForget).toHaveBeenCalledWith(offline[0]);
+  });
+
+  it('disables Connect on an offline Burrow but not Pair again', () => {
+    // Pairing starts at the scanner and needs no relay socket: the code on the
+    // computer's screen is what says whether it is there.
+    const offline: BurrowView[] = [
+      { ...BURROWS[0]!, online: false },
+      { ...BURROWS[1]!, online: false, needsPairing: true },
+    ];
+    renderBurrows({ burrows: offline });
+
+    expect(rowFor('First laptop').querySelector('button')!.disabled).toBe(true);
+    expect(rowFor('Second laptop').querySelector('button')!.disabled).toBe(false);
+  });
+
+  it('offers the scanner from the list, paired Burrows or none', () => {
+    const onScan = vi.fn();
+    renderBurrows({ burrows: [], onScan });
+
+    expect(container.textContent).toContain(BURROWS_EMPTY);
+    act(() => buttonNamed(SCAN_LABEL)!.click());
+    expect(onScan).toHaveBeenCalledOnce();
   });
 });
 
-describe('refinePairState', () => {
-  /**
-   * The sweep re-runs right after a denial (its `busy` dep flips back to
-   * null), and the Host's answer for a lost pairing is plain `unpaired` — so
-   * without the one-way refinement, "Pair again" would survive exactly one
-   * relay round trip before decaying to "Pair".
-   */
-  it('keeps stale through a sweep answer; only a pairing clears it', () => {
-    expect(refinePairState('stale', 'unpaired')).toBe('stale');
-    expect(refinePairState('stale', 'paired')).toBe('paired');
-    expect(refinePairState('unpaired', 'unpaired')).toBe('unpaired');
-    expect(refinePairState(undefined, 'unpaired')).toBe('unpaired');
-    expect(refinePairState('paired', 'stale')).toBe('stale');
-  });
-});
-
-describe('the one push card on the Hosts view', () => {
-  it('offers once for the whole device, not once per Host', () => {
+describe('the one push card on the Burrows view', () => {
+  it('offers once for the whole device, not once per Burrow', () => {
     // The permission prompt and the PushSubscription belong to the whole
-    // service-worker scope, so asking per Host asks for the same thing twice.
-    renderHosts();
+    // service-worker scope, so asking per Burrow asks for the same thing twice.
+    renderBurrows();
 
     expect(
       [...container.querySelectorAll('button')].filter(
         (b) => b.textContent === 'Enable push notifications',
       ),
     ).toHaveLength(1);
-    expect(actionsIn(rowFor('First laptop'))).toEqual(['Connect']);
   });
 
-  it('registers every paired Host from the one tap', () => {
+  it('registers every paired Burrow from the one tap', () => {
     const onEnablePush = vi.fn();
-    renderHosts({ onEnablePush });
+    renderBurrows({ onEnablePush });
 
     act(() => buttonNamed('Enable push notifications')!.click());
 
-    // No Host argument to get wrong: the handler reads the paired set itself.
+    // No Burrow argument to get wrong: the handler reads the paired set itself.
     expect(onEnablePush).toHaveBeenCalledOnce();
     expect(onEnablePush).toHaveBeenCalledWith();
   });
 
-  it('keeps offering while any paired Host still lacks a Server row', () => {
+  it('keeps offering while any paired Burrow still lacks a Relay row', () => {
     // A PushSubscription is scope-wide, so a browser that can receive push says
-    // nothing about which Hosts hold a row. The row marker is what names the
-    // Host the card is still offering to register.
-    renderHosts({ isPushSubscribed: (hostId) => hostId === 'host-1' });
+    // nothing about which Burrows hold a row. The row marker is what names the
+    // Burrow the card is still offering to register.
+    renderBurrows({ isPushSubscribed: (burrowId) => burrowId === 'burrow-1' });
 
     expect(buttonNamed('Enable push notifications')).not.toBeNull();
     expect(rowFor('First laptop').textContent).toContain('Push on');
     expect(rowFor('Second laptop').textContent).not.toContain('Push on');
   });
 
-  it('settles to one line once every paired Host holds a row', () => {
-    renderHosts({ isPushSubscribed: () => true });
+  it('settles to one line once every paired Burrow holds a row', () => {
+    renderBurrows({ isPushSubscribed: () => true });
 
     expect(container.textContent).toContain('Push notifications on.');
     expect(pushCard()).toBeNull();
     expect(buttonNamed('Enable push notifications')).toBeNull();
   });
 
-  it('counts only paired Hosts, which are the only ones with a row to hold', () => {
-    renderHosts({
-      pairState: (hostId) => (hostId === 'host-1' ? 'paired' : 'unpaired'),
-      isPushSubscribed: (hostId) => hostId === 'host-1',
+  it('counts only paired Burrows, which are the only ones with a row to hold', () => {
+    renderBurrows({
+      burrows: NEEDS_PAIRING,
+      isPushSubscribed: (burrowId) => burrowId === 'burrow-1',
     });
 
     expect(container.textContent).toContain('Push notifications on.');
@@ -432,53 +450,53 @@ describe('the one push card on the Hosts view', () => {
   });
 
   it('says nothing at all until something is paired', () => {
-    renderHosts({ pairState: () => 'unpaired' });
+    renderBurrows({ burrows: NEEDS_PAIRING.map((h) => ({ ...h, needsPairing: true })) });
 
     expect(pushCard()).toBeNull();
     expect(container.textContent).not.toContain('Push notifications on.');
   });
 
   it('explains an unavailable reason instead of offering a tap that cannot work', () => {
-    renderHosts({ pushState: 'denied' });
+    renderBurrows({ pushState: 'denied' });
 
     expect(pushCard()!.textContent).toContain('blocked');
     expect(buttonNamed('Enable push notifications')).toBeNull();
   });
 
-  it('reports a server with push disabled rather than the browser state', () => {
-    renderHosts({ pushConfigStatus: 'disabled' });
+  it('reports a Relay with push disabled rather than the browser state', () => {
+    renderBurrows({ pushConfigStatus: 'disabled' });
 
-    expect(pushCard()!.textContent).toContain('server has push notifications disabled');
+    expect(pushCard()!.textContent).toContain(PUSH_RELAY_DISABLED);
     expect(buttonNamed('Enable push notifications')).toBeNull();
   });
 
   it('leaves needs-install to the install notice rather than doubling it', () => {
     // The card for that state would have said "see above" and nothing else.
-    renderHosts({ pushState: 'needs-install' });
+    renderBurrows({ pushState: 'needs-install' });
 
     expect(container.textContent).toContain('Add Dormouse to your Home Screen');
     expect(pushCard()).toBeNull();
   });
 
-  it('does not advise installing when the server cannot push at all', () => {
+  it('does not advise installing when the Relay cannot push at all', () => {
     // The install ritual the notice describes would end at the same "push is
     // disabled" copy — advice and card must not contradict each other.
-    renderHosts({ pushState: 'needs-install', pushConfigStatus: 'disabled' });
+    renderBurrows({ pushState: 'needs-install', pushConfigStatus: 'disabled' });
 
     expect(container.textContent).not.toContain('Add Dormouse to your Home Screen');
-    expect(pushCard()!.textContent).toContain('server has push notifications disabled');
+    expect(pushCard()!.textContent).toContain(PUSH_RELAY_DISABLED);
   });
 
   it('does not offer Enable until the VAPID key is cached', () => {
-    renderHosts({ pushConfigStatus: 'loading' });
+    renderBurrows({ pushConfigStatus: 'loading' });
 
-    expect(pushCard()!.textContent).toContain('Checking whether this server can send push');
+    expect(pushCard()!.textContent).toContain('Checking whether this Relay can send push');
     expect(buttonNamed('Enable push notifications')).toBeNull();
   });
 
   it('retries config separately from the permission-triggering Enable tap', () => {
     const onRetryPushConfig = vi.fn();
-    renderHosts({ pushConfigStatus: 'error', onRetryPushConfig });
+    renderBurrows({ pushConfigStatus: 'error', onRetryPushConfig });
 
     expect(pushCard()!.textContent).toContain('Could not check');
     expect(buttonNamed('Enable push notifications')).toBeNull();
@@ -487,7 +505,7 @@ describe('the one push card on the Hosts view', () => {
   });
 
   it('locks the tap while a subscribe is in flight', () => {
-    renderHosts({ busy: 'push' });
+    renderBurrows({ busy: 'push' });
 
     expect(buttonNamed('Enable push notifications')).toBeNull();
     expect(buttonNamed('…')!.disabled).toBe(true);
@@ -499,7 +517,7 @@ function noticeState(
   overrides: Partial<Parameters<typeof pushNoticeState>[0]> = {},
 ): ReturnType<typeof pushNoticeState> {
   return pushNoticeState({
-    pairedHostIds: ['host-1'],
+    pairedBurrowIds: ['burrow-1'],
     isPushSubscribed: () => false,
     availability: 'ready',
     configStatus: 'ready',
@@ -509,7 +527,7 @@ function noticeState(
 
 describe('pushNoticeState', () => {
   /**
-   * The wall banner and the Host row used to restate the same availability and
+   * The wall banner and the Burrow row used to restate the same availability and
    * config gate side by side, staying equal only by parallel edits — while the
    * spec claimed they matched exactly. One card reads one predicate; this is
    * the matrix that pins every cell of it.
@@ -529,7 +547,7 @@ describe('pushNoticeState', () => {
         expect(offers).toBe(availability === 'ready' && configStatus === 'ready');
 
         // And the card renders exactly what the predicate decided.
-        renderHosts({ pushState: availability, pushConfigStatus: configStatus });
+        renderBurrows({ pushState: availability, pushConfigStatus: configStatus });
         expect(buttonNamed('Enable push notifications') !== null).toBe(offers);
       }
     }
@@ -541,19 +559,19 @@ describe('pushNoticeState', () => {
     expect(noticeState({ availability: null, isPushSubscribed: () => true })).toBeNull();
   });
 
-  it('lets a push-disabled server outrank a Server row this device still holds', () => {
-    // The rows survive a server restarted without VAPID keys; the delivery does
+  it('lets a push-disabled Relay outrank a Relay row this device still holds', () => {
+    // The rows survive a Relay restarted without VAPID keys; the delivery does
     // not, so "Push notifications on." would be a lie.
     expect(noticeState({ configStatus: 'disabled', isPushSubscribed: () => true })).toEqual({
       kind: 'blocked',
-      reason: 'This server has push notifications disabled.',
+      reason: PUSH_RELAY_DISABLED,
     });
   });
 
-  it('settles only when every paired Host holds a row', () => {
-    const isPushSubscribed = (hostId: string) => hostId === 'host-1';
+  it('settles only when every paired Burrow holds a row', () => {
+    const isPushSubscribed = (burrowId: string) => burrowId === 'burrow-1';
     expect(noticeState({ isPushSubscribed })?.kind).toBe('on');
-    expect(noticeState({ pairedHostIds: ['host-1', 'host-2'], isPushSubscribed })?.kind).toBe(
+    expect(noticeState({ pairedBurrowIds: ['burrow-1', 'burrow-2'], isPushSubscribed })?.kind).toBe(
       'offer',
     );
   });

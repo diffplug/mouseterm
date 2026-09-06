@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import {
   TerminalPaneHeader,
+  Wall,
   ModeContext,
   SelectedIdContext,
   WallActionsContext,
@@ -12,7 +13,8 @@ import {
 import type { ActivityNotification } from '../lib/alert-manager';
 import { summarizeCommandLine, type SetTerminalUserTitleResult } from '../lib/terminal-registry';
 import { removeMouseSelectionState, setMouseReporting, setOverride } from '../lib/mouse-selection';
-import { requireElement, waitForCondition, waitForPrimedState } from './settle-terminals';
+import { addPlainNote, clearAllNotepads } from '../lib/notepad/notepad-store';
+import { requireElement, settleTerminals, waitForCondition, waitForPrimedState } from './settle-terminals';
 
 const SESSION_ID = 'tab-story';
 
@@ -31,7 +33,6 @@ const noopActions: WallActions = {
   onCancelRename: () => {},
   onSwapRenderMode: () => {},
   resolveSurfaceRef: (id) => id,
-  onConnectPort: () => {},
 };
 
 function actionsRejecting(reason: 'empty' | 'reserved'): WallActions {
@@ -97,6 +98,7 @@ function TabStory({
   width = 360,
   reducedMotion = false,
   mouseCaptured = false,
+  noteCount = 0,
   actions = noopActions,
 }: {
   title?: string;
@@ -107,6 +109,8 @@ function TabStory({
   reducedMotion?: boolean;
   /** Simulate a TUI capturing the mouse, which surfaces the mouse-override icon. */
   mouseCaptured?: boolean;
+  /** Notes on this Surface — the notepad icon fills, and survives the minimal tier. */
+  noteCount?: number;
   actions?: WallActions;
 }) {
   useEffect(() => {
@@ -115,6 +119,11 @@ function TabStory({
     setOverride(SESSION_ID, 'temporary');
     return () => removeMouseSelectionState(SESSION_ID);
   }, [mouseCaptured]);
+
+  useEffect(() => {
+    for (let i = 0; i < noteCount; i++) addPlainNote(SESSION_ID, `note ${i + 1}`);
+    return () => clearAllNotepads();
+  }, [noteCount]);
 
   return (
     <ModeContext.Provider value={mode}>
@@ -145,15 +154,12 @@ function wait(ms: number) {
  *  patience budget. */
 const RETRY_BUDGET_MS = 4000;
 
-/**
- * Right-click the bell to open the TODO/alert dialog.
- *
- * Gated on the primed state rather than a fixed delay: the dialog reads the
- * notification and the running command out of the primed stores, and it clamps
- * its position to the viewport exactly once, in a layout effect keyed on the
- * trigger rect — so a dialog opened before priming lands keeps a position
- * measured against content it no longer shows.
- */
+/** Context interactions need the full Wall, which owns the unified menu. */
+function ContextWallStory() {
+  return <div style={{ width: 900, height: 680 }}><Wall initialPaneIds={[SESSION_ID]} initialMode="command" /></div>;
+}
+
+/** Wait for priming before opening the source's alert controls in context. */
 async function openAlertRightClickDialog() {
   await waitForPrimedState();
   const alertButton = await requireElement<HTMLButtonElement>(
@@ -169,7 +175,8 @@ async function openAlertRightClickDialog() {
     clientX: rect.left + rect.width / 2,
     clientY: rect.top + rect.height / 2,
   }));
-  await requireElement('[role="dialog"]', 'TODO and alert dialog');
+  await requireElement('[data-terminal-context]', 'terminal context');
+  await settleTerminals();
 }
 
 /**
@@ -340,6 +347,7 @@ const meta: Meta<typeof TabStory> = {
     width: { control: 'number' },
     reducedMotion: { control: 'boolean' },
     mouseCaptured: { control: 'boolean' },
+    noteCount: { control: 'number' },
   },
   args: {
     title: 'build-server',
@@ -349,6 +357,7 @@ const meta: Meta<typeof TabStory> = {
     width: 360,
     reducedMotion: false,
     mouseCaptured: false,
+    noteCount: 0,
   },
 };
 
@@ -409,6 +418,7 @@ export const AlertRinging: Story = {
 // offers depends on what the pane is running and whether a rule already exists.
 
 export const AlertRightClickDialog: Story = {
+  render: ContextWallStory,
   parameters: {
     ...primedRunningCommand('claude --resume'),
     ...primedState({ status: 'NOTHING_TO_SHOW', todo: false, watchingEnabled: true }),
@@ -419,6 +429,7 @@ export const AlertRightClickDialog: Story = {
 
 /** A pane at a prompt: no argv0, so the dialog explains instead of offering a switch. */
 export const AlertDialogNoCommandRunning: Story = {
+  render: ContextWallStory,
   parameters: primedState({ status: 'WATCHING_DISABLED', todo: false }),
   play: openAlertRightClickDialog,
 };
@@ -467,31 +478,37 @@ export const TodoWithLongNotificationPreview: Story = {
 };
 
 export const NotificationDialogTitleAndBody: Story = {
+  render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.osc777TitleAndBody, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
 export const NotificationDialogBodyOnly: Story = {
+  render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.osc9BodyOnly, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
 export const NotificationDialogTitleOnly: Story = {
+  render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.osc99TitleOnly, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
 export const NotificationDialogProgressComplete: Story = {
+  render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.progressComplete, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
 export const NotificationDialogTerminalBell: Story = {
+  render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.terminalBell, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
 export const NotificationDialogLongBody: Story = {
+  render: ContextWallStory,
   args: {
     width: 320,
   },
@@ -612,6 +629,35 @@ export const NarrowWithMouseCaptureControlsVisible: Story = {
     todo: false,
   }),
   play: assertControlsVisible,
+};
+
+// --- Notepad icon across the tiers -----------------------------------------
+//
+// Present at `full` and `compact`; at `minimal` an empty notepad yields its
+// 20px to the title, and one with notes keeps it (`docs/specs/notepad.md`).
+
+export const NotepadEmpty: Story = {
+  parameters: primedState({ status: 'NOTHING_TO_SHOW', todo: false }),
+};
+
+export const NotepadWithNotes: Story = {
+  args: { noteCount: 3 },
+  parameters: primedState({ status: 'NOTHING_TO_SHOW', todo: false }),
+};
+
+export const NotepadCompactWidth: Story = {
+  args: { width: 220, noteCount: 3 },
+  parameters: primedState({ status: 'NOTHING_TO_SHOW', todo: false }),
+};
+
+export const NotepadMinimalWidthEmpty: Story = {
+  args: { width: 150 },
+  parameters: primedState({ status: 'NOTHING_TO_SHOW', todo: false }),
+};
+
+export const NotepadMinimalWidthWithNotes: Story = {
+  args: { width: 150, noteCount: 2 },
+  parameters: primedState({ status: 'NOTHING_TO_SHOW', todo: false }),
 };
 
 export const NarrowLongTitleControlsVisible: Story = {

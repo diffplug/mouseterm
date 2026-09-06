@@ -2,26 +2,25 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
 import { handlePaneShortcuts } from './handle-pane-shortcuts';
+import { useWallKeyboard } from '../use-wall-keyboard';
 import type { WallKeyboardCtx } from './types';
 
 const terminalRegistryMocks = vi.hoisted(() => ({
   dismissOrToggleAlert: vi.fn(),
   getActivity: vi.fn(() => ({ status: 'WATCHING_DISABLED' })),
-  isUntouched: vi.fn(),
   toggleSessionTodo: vi.fn(),
 }));
 
 vi.mock('../../../lib/terminal-registry', () => ({
   dismissOrToggleAlert: terminalRegistryMocks.dismissOrToggleAlert,
   getActivity: terminalRegistryMocks.getActivity,
-  isUntouched: terminalRegistryMocks.isUntouched,
   toggleSessionTodo: terminalRegistryMocks.toggleSessionTodo,
 }));
 
-vi.mock('../../KillConfirm', () => ({
-  randomKillChar: () => 'Q',
-}));
+vi.mock('./handle-mouse-selection-keys', () => ({ handleMouseSelectionKeys: () => false }));
 
 // jsdom here ships no `CSS` global; the header lookup escapes ids via CSS.escape.
 globalThis.CSS ??= {
@@ -57,8 +56,7 @@ function makeCtx(overrides: Partial<WallKeyboardCtx> = {}): WallKeyboardCtx {
     handleReattachRef: { current: vi.fn() },
     selectPane: vi.fn(),
     enterTerminalMode: vi.fn(),
-    killPaneImmediately: vi.fn(),
-    setConfirmKill: vi.fn(),
+    requestKill: vi.fn(),
     setRenamingPaneId: vi.fn(),
     fireEvent: vi.fn(),
     ...overrides,
@@ -74,94 +72,84 @@ function keydownMeta(key: string): KeyboardEvent {
 }
 
 describe('handlePaneShortcuts kill behavior', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    terminalRegistryMocks.isUntouched.mockReturnValue(false);
-  });
+  beforeEach(() => vi.clearAllMocks());
 
-  it('kills untouched panes immediately without staging confirmation', () => {
-    terminalRegistryMocks.isUntouched.mockReturnValue(true);
+  it.each(['x', 'k'])('hands the %s gesture to the Wall kill request', (key) => {
     const ctx = makeCtx();
-    const event = keydown('x');
+    const event = keydown(key);
 
     expect(handlePaneShortcuts(event, ctx, { current: null })).toBe(true);
 
-    expect(ctx.killPaneImmediately).toHaveBeenCalledWith('pane-a');
-    expect(ctx.setConfirmKill).not.toHaveBeenCalled();
+    expect(ctx.requestKill).toHaveBeenCalledWith('pane-a');
     expect(event.defaultPrevented).toBe(true);
   });
+});
 
-  it('keeps confirmation for touched panes', () => {
+describe('comma rename eligibility', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('opens the terminal pane title editor', () => {
     const ctx = makeCtx();
-
-    expect(handlePaneShortcuts(keydown('x'), ctx, { current: null })).toBe(true);
-
-    expect(ctx.killPaneImmediately).not.toHaveBeenCalled();
-    expect(ctx.setConfirmKill).toHaveBeenCalledWith({ id: 'pane-a', char: 'Q' });
+    expect(handlePaneShortcuts(keydown(','), ctx, { current: null })).toBe(true);
+    expect(ctx.setRenamingPaneId).toHaveBeenCalledWith('pane-a');
   });
 
-  it('keeps confirmation for untouched tool panes', () => {
-    terminalRegistryMocks.isUntouched.mockReturnValue(true);
+  it.each([
+    { name: 'terminal Door', selectedType: 'door', params: {} },
+    { name: 'browser pane', selectedType: 'pane', params: { surfaceType: 'browser' } },
+    { name: 'render-mode browser pane', selectedType: 'pane', params: { renderMode: 'iframe' } },
+  ] as const)('keeps command dispatch live after comma on a $name', async ({ selectedType, params }) => {
+    const renamingRef = { current: null as string | null };
     const ctx = makeCtx({
-      nav: makeNav({ paneParams: () => ({ surfaceType: 'tool' }) }),
+      selectedTypeRef: { current: selectedType },
+      nav: makeNav({ paneParams: () => params }),
+      renamingRef,
+      confirmKillRef: { current: null },
+      setRenamingPaneId: vi.fn((id) => { renamingRef.current = id as string; }),
     });
+    function Harness() {
+      useWallKeyboard(ctx);
+      return null;
+    }
+    const root = createRoot(document.createElement('div'));
+    await act(async () => root.render(createElement(Harness)));
+    try {
+      const comma = keydown(',');
+      window.dispatchEvent(comma);
+      expect(comma.defaultPrevented).toBe(true);
+      expect(ctx.setRenamingPaneId).not.toHaveBeenCalled();
 
-    expect(handlePaneShortcuts(keydown('x'), ctx, { current: null })).toBe(true);
-
-    expect(ctx.killPaneImmediately).not.toHaveBeenCalled();
-    expect(ctx.setConfirmKill).toHaveBeenCalledWith({ id: 'pane-a', char: 'Q' });
-  });
-
-  it('reattaches untouched doors into an immediate kill path', () => {
-    terminalRegistryMocks.isUntouched.mockReturnValue(true);
-    const reattach = vi.fn();
-    const ctx = makeCtx({
-      selectedTypeRef: { current: 'door' },
-      handleReattachRef: { current: reattach },
-    });
-
-    expect(handlePaneShortcuts(keydown('x'), ctx, { current: null })).toBe(true);
-
-    expect(reattach).toHaveBeenCalledWith(
-      { id: 'pane-a', title: 'Pane A' },
-      { enterPassthrough: false, afterRestore: 'kill-immediately' },
-    );
-  });
-
-  it('reattaches touched doors into the confirmation path', () => {
-    const reattach = vi.fn();
-    const ctx = makeCtx({
-      selectedTypeRef: { current: 'door' },
-      handleReattachRef: { current: reattach },
-    });
-
-    expect(handlePaneShortcuts(keydown('x'), ctx, { current: null })).toBe(true);
-
-    expect(reattach).toHaveBeenCalledWith(
-      { id: 'pane-a', title: 'Pane A' },
-      { enterPassthrough: false, afterRestore: 'confirm-kill' },
-    );
-  });
-
-  it('reattaches untouched tool doors into the confirmation path', () => {
-    terminalRegistryMocks.isUntouched.mockReturnValue(true);
-    const reattach = vi.fn();
-    const ctx = makeCtx({
-      nav: makeNav({ paneParams: () => ({ surfaceType: 'tool' }) }),
-      selectedTypeRef: { current: 'door' },
-      handleReattachRef: { current: reattach },
-    });
-
-    expect(handlePaneShortcuts(keydown('x'), ctx, { current: null })).toBe(true);
-
-    expect(reattach).toHaveBeenCalledWith(
-      { id: 'pane-a', title: 'Pane A' },
-      { enterPassthrough: false, afterRestore: 'confirm-kill' },
-    );
+      window.dispatchEvent(keydown('Enter'));
+      if (selectedType === 'door') {
+        expect(ctx.handleReattachRef.current).toHaveBeenCalled();
+      } else {
+        expect(ctx.enterTerminalMode).toHaveBeenCalledWith('pane-a');
+      }
+    } finally {
+      await act(async () => root.unmount());
+    }
   });
 });
 
 describe('handlePaneShortcuts Cmd-Arrow swap (nav seam)', () => {
+  it.each(['metaKey', 'ctrlKey'] as const)('does not swap a selected Door through a stale breadcrumb (%s)', (modifier) => {
+    const ctx = makeCtx({
+      selectedTypeRef: { current: 'door' },
+      nav: makeNav({ hasPane: () => true }),
+    });
+    const event = new KeyboardEvent('keydown', {
+      key: 'ArrowLeft', [modifier]: true, bubbles: true, cancelable: true,
+    });
+    const history = { current: { direction: 'ArrowRight' as const, fromId: 'pane-b' } };
+
+    expect(handlePaneShortcuts(event, ctx, history)).toBe(true);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(ctx.swapWithNeighbor).not.toHaveBeenCalled();
+    expect(ctx.selectPane).not.toHaveBeenCalled();
+    expect(ctx.fireEvent).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => vi.clearAllMocks());
 
   it('swaps with the nav-resolved neighbor, fires move, and keeps selection on the moved pane', () => {

@@ -49,6 +49,8 @@ export interface ToolTakeoverGate {
   /** Whether the tool's resolved cwd is the caller pane's own directory: the
    *  command is typed into that shell, so it runs where the shell already is. */
   cwdMatches: boolean;
+  /** An existing auxiliary helper belongs to the plain terminal. Preserve it. */
+  helperPresent: boolean;
 }
 
 /**
@@ -67,6 +69,7 @@ function callerTypedTool(gate: ToolTakeoverGate): boolean {
  */
 export function toolTakesOverCaller(gate: ToolTakeoverGate): boolean {
   return gate.kind === 'terminal'
+    && !gate.helperPresent
     && !gate.explicitSurface
     && !gate.minimized
     && gate.visible

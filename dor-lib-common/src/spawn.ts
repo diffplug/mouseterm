@@ -38,7 +38,16 @@ const CLOSE_GRACE_MS = 250;
  */
 export function spawnAndCapture(binary: string, args: readonly string[]): Promise<SpawnCaptureResult> {
   return new Promise((resolve) => {
-    const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    } catch (error) {
+      // Invalid argv (for example a NUL in an eval string) throws before a child
+      // exists; preserve the same result contract as an asynchronous ENOENT.
+      const cause = error as NodeJS.ErrnoException;
+      resolve({ ok: false, error: { code: cause.code, message: cause.message } });
+      return;
+    }
     let stdout = '';
     let stderr = '';
     // Latch on the first terminal event so the error-vs-exit/close race can't
@@ -49,10 +58,18 @@ export function spawnAndCapture(binary: string, args: readonly string[]): Promis
       if (settled) return;
       settled = true;
       if (graceTimer !== undefined) clearTimeout(graceTimer);
+      // Capture is over. In the grace fallback a daemon still owns the write
+      // ends: leaving our readers open retains both the caller's event loop and
+      // the data listeners that keep accumulating ignored output.
+      child.stdout?.destroy();
+      child.stderr?.destroy();
       apply();
     };
-    child.stdout?.on('data', (chunk: unknown) => { stdout += String(chunk); });
-    child.stderr?.on('data', (chunk: unknown) => { stderr += String(chunk); });
+    // Decode across pipe chunks so a split UTF-8 sequence stays one character.
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr?.on('data', (chunk: string) => { stderr += chunk; });
     child.on('error', (error: NodeJS.ErrnoException) =>
       settle(() => resolve({ ok: false, error: { code: error.code, message: error.message } })));
     const finish = (code: number | null, out: string, err: string): void =>

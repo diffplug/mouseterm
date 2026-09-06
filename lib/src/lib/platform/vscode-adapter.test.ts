@@ -1,12 +1,13 @@
+import { getToolAnnounce, resetToolAnnounces } from '../tool-announce-store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const terminalStateStoreMocks = vi.hoisted(() => ({
-  applyTerminalSemanticEventsByPtyId: vi.fn(),
+  applyTerminalSemanticEvents: vi.fn(),
   removeTerminalPaneState: vi.fn(),
 }));
 
 vi.mock('../terminal-state-store', () => ({
-  applyTerminalSemanticEventsByPtyId: terminalStateStoreMocks.applyTerminalSemanticEventsByPtyId,
+  applyTerminalSemanticEvents: terminalStateStoreMocks.applyTerminalSemanticEvents,
   removeTerminalPaneState: terminalStateStoreMocks.removeTerminalPaneState,
 }));
 
@@ -21,6 +22,10 @@ vi.mock('../terminal-theme', () => ({
     terminalThemeMocks.listeners.add(cb);
     return () => terminalThemeMocks.listeners.delete(cb);
   },
+  // The replay one-shot parser answers colour queries from this, exactly as the
+  // real one reads the live xterm theme.
+  themeColorProvider: (target: 'foreground' | 'background' | 'cursor') =>
+    terminalThemeMocks.getTerminalTheme()[target] ?? null,
 }));
 
 import {
@@ -28,17 +33,19 @@ import {
   TerminalProtocolParser,
 } from '../terminal-protocol';
 import { HOST_MESSAGE_TOKEN_FIELD, HOST_MESSAGE_TOKEN_GLOBAL } from '../vscode-message-token';
+import { NOTEPAD_VOLATILE_GLOBAL } from '../vscode-notepad-global';
+import type { NotepadArchiveV1, VolatileNotepadSnapshot } from '../notepad/types';
 import { VSCodeAdapter } from './vscode-adapter';
 
 /** Stand-in for the per-boot token the extension host injects at webview boot. */
-const HOST_TOKEN = 'test-host-message-token';
+const BURROW_TOKEN = 'test-host-message-token';
 
 /**
  * Build the `message` event the extension host would post: the payload plus the
  * token stamp `serveWebview`'s channel adds. Framed content can't read the
  * token, so a forged message is just this without the stamp.
  */
-function hostMessage(data: Record<string, unknown>, token: unknown = HOST_TOKEN): MessageEvent {
+function hostMessage(data: Record<string, unknown>, token: unknown = BURROW_TOKEN): MessageEvent {
   return new MessageEvent('message', {
     data: { ...data, [HOST_MESSAGE_TOKEN_FIELD]: token },
   });
@@ -67,7 +74,7 @@ function stubWebviewEnv(): void {
   vi.stubGlobal('CustomEvent', TestCustomEvent);
   // The adapter captures this at construction, so it must be stubbed before
   // any `new VSCodeAdapter()`.
-  vi.stubGlobal(HOST_MESSAGE_TOKEN_GLOBAL, HOST_TOKEN);
+  vi.stubGlobal(HOST_MESSAGE_TOKEN_GLOBAL, BURROW_TOKEN);
   vi.stubGlobal('acquireVsCodeApi', () => ({
     postMessage,
     getState: vi.fn(),
@@ -217,6 +224,17 @@ describe('VSCodeAdapter PTY exit handling', () => {
     expect(snapshots).toEqual([['claude', 'npm']]);
   });
 
+  it('receives owner-parsed Tool announcements and reconstructs them on replay', () => {
+    resetToolAnnounces();
+    const adapter = new VSCodeAdapter();
+    windowTarget.dispatchEvent(hostMessage({ type: 'terminal:toolAnnounce', id: 'tool-1', announce: { port: 6006, name: null, key: null, dehydrate: false, persist: null } }));
+    expect(getToolAnnounce('tool-1')?.port).toBe(6006);
+    const repliesBeforeReplay = postMessage.mock.calls.length;
+    windowTarget.dispatchEvent(hostMessage({ type: 'pty:replay', id: 'tool-1', data: '\x1b]367;serve;{"port":6007}\x1b\\' }));
+    expect(getToolAnnounce('tool-1')?.port).toBe(6007);
+    expect(postMessage.mock.calls).toHaveLength(repliesBeforeReplay);
+  });
+
   it('parses replay buffers into semantic events and strips OSCs before forwarding', () => {
     const adapter = new VSCodeAdapter();
     const replays: Array<{ id: string; data: string }> = [];
@@ -232,14 +250,31 @@ describe('VSCodeAdapter PTY exit handling', () => {
     expect(replays).toEqual([{ id: 'pane-1', data: 'helloworld' }]);
 
     // Semantic CWD event was forwarded under the PTY id.
-    expect(terminalStateStoreMocks.applyTerminalSemanticEventsByPtyId).toHaveBeenCalledTimes(1);
-    const [forwardedId, forwardedEvents] = terminalStateStoreMocks.applyTerminalSemanticEventsByPtyId.mock.calls[0];
+    expect(terminalStateStoreMocks.applyTerminalSemanticEvents).toHaveBeenCalledTimes(1);
+    const [forwardedId, forwardedEvents] = terminalStateStoreMocks.applyTerminalSemanticEvents.mock.calls[0];
     expect(forwardedId).toBe('pane-1');
     expect(forwardedEvents).toHaveLength(1);
     expect(forwardedEvents[0]).toMatchObject({
       type: 'cwd',
       cwd: { path: '/Users/me/project', source: 'osc7' },
     });
+  });
+
+  it('consumes a buffered colour query rather than replaying it into xterm.js', () => {
+    // A *declined* query is not consumed, so it survives into the replayed
+    // bytes for xterm.js to answer — and answering is the owner's alone
+    // (docs/specs/terminal-escapes.md).
+    const adapter = new VSCodeAdapter();
+    const replays: Array<{ id: string; data: string }> = [];
+    adapter.onPtyReplay((detail) => replays.push(detail));
+
+    windowTarget.dispatchEvent(hostMessage({
+      type: 'pty:replay',
+      id: 'pane-1',
+      data: 'before\x1b]11;?\x07after',
+    }));
+
+    expect(replays).toEqual([{ id: 'pane-1', data: 'beforeafter' }]);
   });
 
   it('forwards extension-host semantic events to the pane state store', () => {
@@ -252,8 +287,8 @@ describe('VSCodeAdapter PTY exit handling', () => {
     windowTarget.dispatchEvent(hostMessage({ type: 'terminal:semanticEvents', id: 'pane-1', events }));
     void adapter;
 
-    expect(terminalStateStoreMocks.applyTerminalSemanticEventsByPtyId).toHaveBeenCalledTimes(1);
-    expect(terminalStateStoreMocks.applyTerminalSemanticEventsByPtyId).toHaveBeenCalledWith('pane-1', events);
+    expect(terminalStateStoreMocks.applyTerminalSemanticEvents).toHaveBeenCalledTimes(1);
+    expect(terminalStateStoreMocks.applyTerminalSemanticEvents).toHaveBeenCalledWith('pane-1', events);
   });
 
   it('round-trips host-parsed semantic events through JSON to the webview adapter', () => {
@@ -280,8 +315,8 @@ describe('VSCodeAdapter PTY exit handling', () => {
     new VSCodeAdapter();
     windowTarget.dispatchEvent(hostMessage(wirePayload));
 
-    expect(terminalStateStoreMocks.applyTerminalSemanticEventsByPtyId).toHaveBeenCalledTimes(1);
-    expect(terminalStateStoreMocks.applyTerminalSemanticEventsByPtyId).toHaveBeenCalledWith('pane-1', hostEvents);
+    expect(terminalStateStoreMocks.applyTerminalSemanticEvents).toHaveBeenCalledTimes(1);
+    expect(terminalStateStoreMocks.applyTerminalSemanticEvents).toHaveBeenCalledWith('pane-1', hostEvents);
   });
 
   it('forwards shell replacement requests from the extension host', () => {
@@ -379,7 +414,7 @@ describe('VSCodeAdapter PTY exit handling', () => {
       expect(replays).toEqual([]);
       expect(exits).toEqual([]);
       expect(lists).toEqual([]);
-      expect(terminalStateStoreMocks.applyTerminalSemanticEventsByPtyId).not.toHaveBeenCalled();
+      expect(terminalStateStoreMocks.applyTerminalSemanticEvents).not.toHaveBeenCalled();
     });
 
     it('rejects a wrong token as firmly as a missing one', () => {
@@ -424,8 +459,132 @@ describe('VSCodeAdapter PTY exit handling', () => {
 });
 
 
-// The remote Host lives in the extension host, in whichever VS Code window won
-// the bind (vscode-ext/src/remote-host.ts). This is the webview's end of that
+// The archive lives in the extension host's `globalState` — nothing in the
+// webview can reach it — so the port is a request/response bridge
+// (docs/specs/notepad.md). What is covered here is what this transport adds: the
+// compare-and-swap shape on the wire, failures that reject rather than resolve,
+// and the boot mirror being consumable exactly once.
+describe('VSCodeAdapter notepad archive', () => {
+  beforeEach(stubWebviewEnv);
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  const EMPTY: NotepadArchiveV1 = { version: 1, batches: [] };
+
+  /** The last archive request posted, whatever its type. */
+  function lastRequest(): { type: string; requestId: string; [key: string]: unknown } {
+    const posted = postMessage.mock.calls.map((call) => call[0]);
+    const request = [...posted].reverse().find((message) => String(message.type).startsWith('notepad:'));
+    if (!request) throw new Error('no notepad request was posted');
+    return request;
+  }
+
+  function answer(ok: boolean, extra: Record<string, unknown> = {}): void {
+    windowTarget.dispatchEvent(hostMessage({
+      type: 'notepad:result', requestId: lastRequest().requestId, ok, ...extra,
+    }));
+  }
+
+  it('loads the stored archive with the revision that names it', async () => {
+    const adapter = new VSCodeAdapter();
+    const pending = adapter.notepadArchive!.load();
+
+    expect(lastRequest()).toMatchObject({ type: 'notepad:load' });
+    answer(true, { result: { raw: JSON.stringify(EMPTY), revision: 'r3' } });
+
+    expect(await pending).toEqual({ raw: JSON.stringify(EMPTY), revision: 'r3' });
+  });
+
+  it('sends the whole archive and the revision it was built on', async () => {
+    const adapter = new VSCodeAdapter();
+    const pending = adapter.notepadArchive!.save(EMPTY, 'r3');
+
+    // The host stores bytes and compares revisions; it never parses or merges.
+    expect(lastRequest()).toMatchObject({
+      type: 'notepad:save', state: JSON.stringify(EMPTY), baseRevision: 'r3',
+    });
+    answer(true, { result: 'conflict' });
+
+    // A conflict is an outcome, not a failure — the shared service re-reads and retries.
+    expect(await pending).toBe('conflict');
+  });
+
+  it('rejects a failed request rather than resolving it as an empty archive', async () => {
+    // `null` legitimately means "nothing archived yet", so a failure that
+    // resolved like one would let the next save overwrite an archive nobody read.
+    const adapter = new VSCodeAdapter();
+    const pending = adapter.notepadArchive!.load();
+    answer(false, { error: 'globalState is gone' });
+    await expect(pending).rejects.toThrow('globalState is gone');
+  });
+
+  it('rejects rather than hanging when the host never answers', async () => {
+    const adapter = new VSCodeAdapter();
+    vi.useFakeTimers();
+    try {
+      const pending = adapter.notepadArchive!.load();
+      const rejected = expect(pending).rejects.toThrow(/timed out/);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await rejected;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('asks the host to move an unreadable archive aside', async () => {
+    const adapter = new VSCodeAdapter();
+    const pending = adapter.notepadArchive!.resetUnreadable();
+    expect(lastRequest()).toMatchObject({ type: 'notepad:reset' });
+    answer(true, {});
+    await expect(pending).resolves.toBeUndefined();
+  });
+
+  it('mirrors live notes to the extension host without waiting on it', () => {
+    // Fire and forget: the mirror is what lets a teardown archive from a webview
+    // VS Code has already destroyed.
+    const adapter = new VSCodeAdapter();
+    const snapshot: VolatileNotepadSnapshot = {
+      surfaces: [{
+        surfaceId: 'pane-1', surfaceTitle: 'zsh', surfaceKind: 'terminal', cwd: null,
+        notes: [{ id: 'n1', createdAt: 1, content: { kind: 'plain', text: 'hi' } }],
+      }],
+      stagedDeletions: { deleteBatchIds: [], deleteNotes: [] },
+    };
+
+    adapter.notepadArchive!.syncVolatile!(snapshot);
+
+    expect(postMessage).toHaveBeenCalledWith({ type: 'notepad:volatile', snapshot });
+  });
+
+  it('hands the boot mirror over exactly once', () => {
+    const snapshot: VolatileNotepadSnapshot = {
+      surfaces: [{
+        surfaceId: 'pane-1', surfaceTitle: 'zsh', surfaceKind: 'terminal', cwd: null,
+        notes: [{ id: 'n1', createdAt: 1, content: { kind: 'plain', text: 'hi' } }],
+      }],
+      stagedDeletions: { deleteBatchIds: [], deleteNotes: [] },
+    };
+    vi.stubGlobal(NOTEPAD_VOLATILE_GLOBAL, snapshot);
+
+    const adapter = new VSCodeAdapter();
+    expect(adapter.notepadArchive!.loadVolatile!()).toEqual(snapshot);
+    // A second read would be a later restore's, and a restore must never
+    // hydrate live notes.
+    expect(adapter.notepadArchive!.loadVolatile!()).toBeNull();
+  });
+
+  it('gives a cold restore no mirror at all', () => {
+    // The global is absent on every boot but a live resume.
+    const adapter = new VSCodeAdapter();
+    expect(adapter.notepadArchive!.loadVolatile!()).toBeNull();
+  });
+});
+
+// The Burrow lives in the extension host, in whichever VS Code window won
+// the bind (vscode-ext/src/burrow.ts). This is the webview's end of that
 // bridge; the contract is lib/src/host/remote/service-protocol.ts.
 //
 // Only what this transport adds is covered here: which message carries what,
@@ -440,11 +599,11 @@ describe('VSCodeAdapter remote host link', () => {
     vi.clearAllMocks();
   });
 
-  /** Every `remoteHost:command` this adapter has posted, in order. */
-  function sent(): Array<{ rhId: string; cmd: string; params?: unknown }> {
+  /** Every `burrow:command` this adapter has posted, in order. */
+  function sent(): Array<{ burrowRequestId: string; cmd: string; params?: unknown }> {
     return postMessage.mock.calls
       .map((call) => call[0])
-      .filter((message) => message.type === 'remoteHost:command')
+      .filter((message) => message.type === 'burrow:command')
       .map((message) => message.payload);
   }
 
@@ -454,18 +613,18 @@ describe('VSCodeAdapter remote host link', () => {
 
   it('posts a command and settles it from the result message', async () => {
     const adapter = new VSCodeAdapter();
-    const pending = adapter.remoteHost.command('status');
+    const pending = adapter.burrow.command('status');
 
     const payload = sent()[0]!;
     expect(payload.cmd).toBe('status');
-    deliver({ type: 'remoteHost:result', payload: { rhId: payload.rhId, result: { enrolled: true } } });
+    deliver({ type: 'burrow:result', payload: { burrowRequestId: payload.burrowRequestId, result: { enrolled: true } } });
 
     expect(await pending).toEqual({ enrolled: true });
   });
 
   it('answers an ask from the registered responder', () => {
     const adapter = new VSCodeAdapter();
-    adapter.remoteHost.respond('surfaceOp', (params) => [
+    adapter.burrow.respond('surfaceOp', (params) => [
       { ptyId: 'pty-1', ...(params as Record<string, unknown>) },
     ]);
 
@@ -481,15 +640,15 @@ describe('VSCodeAdapter remote host link', () => {
   it('fans an extension-host event out by name', () => {
     const adapter = new VSCodeAdapter();
     const seen: unknown[] = [];
-    adapter.remoteHost.on('pairing-queue', (data) => void seen.push(data));
+    adapter.burrow.on('pairing-queue', (data) => void seen.push(data));
 
-    deliver({ type: 'remoteHost:event', payload: { name: 'pairing-queue', queue: [{ clientId: 'c1' }] } });
+    deliver({ type: 'burrow:event', payload: { name: 'pairing-queue', queue: [{ clientId: 'c1' }] } });
     expect(seen).toEqual([{ name: 'pairing-queue', queue: [{ clientId: 'c1' }] }]);
   });
 
   it('notifies without waiting for anything', () => {
     const adapter = new VSCodeAdapter();
-    adapter.remoteHost.notify();
+    adapter.burrow.notify();
     expect(postMessage).toHaveBeenCalledWith({ type: 'peer:notify' });
   });
 
@@ -497,20 +656,20 @@ describe('VSCodeAdapter remote host link', () => {
     // The extension host cleans up the PTYs, but nothing there will ever answer
     // a command this webview is still holding.
     const adapter = new VSCodeAdapter();
-    const pending = adapter.remoteHost.command('status');
+    const pending = adapter.burrow.command('status');
     adapter.shutdown();
-    await expect(pending).rejects.toThrow('remote host bridge closed');
+    await expect(pending).rejects.toThrow('burrow bridge closed');
   });
 
   it('ignores an unauthenticated result, so framed content cannot settle a command', async () => {
     const adapter = new VSCodeAdapter();
     vi.useFakeTimers();
     try {
-      const pending = adapter.remoteHost.command('status');
+      const pending = adapter.burrow.command('status');
       const rejected = expect(pending).rejects.toThrow(/timed out/);
       windowTarget.dispatchEvent(
         new MessageEvent('message', {
-          data: { type: 'remoteHost:result', payload: { rhId: sent()[0]!.rhId, result: 'forged' } },
+          data: { type: 'burrow:result', payload: { burrowRequestId: sent()[0]!.burrowRequestId, result: 'forged' } },
         }),
       );
       await vi.advanceTimersByTimeAsync(20_000);

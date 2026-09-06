@@ -111,6 +111,23 @@ describe("TauriSessionStore", () => {
     expect(resolved).toBe(true);
   });
 
+  it("retries an unchanged value after its previous write failed", async () => {
+    const saved: string[] = [];
+    const store = new TauriSessionStore(async (value) => {
+      saved.push(value);
+      if (saved.length === 1) throw new Error("transient disk error");
+    });
+    store.setItem("k", "a");
+    await store.drain();
+    expect(store.getItem("k")).toBe("a");
+    store.setItem("k", "a");
+    await store.drain();
+    expect(saved).toEqual(["a", "a"]);
+    store.setItem("k", "a");
+    await store.drain();
+    expect(saved).toEqual(["a", "a"]);
+  });
+
   it("drain resolves only after an in-flight save settles", async () => {
     let release!: () => void;
     const store = new TauriSessionStore(

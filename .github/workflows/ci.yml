@@ -24,8 +24,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The disclosed dependency snapshots are a SECURITY.md `FAIL IF`
-      # (Dependency Supply Chain), but until this step existed the only thing
+      # The disclosed dependency snapshots are a `FAIL IF` in docs/specs/security-supply-chain.md
+      # (Disclosure), but until this step existed the only thing
       # that ever ran the generator was the nightly security audit — strictly
       # after the fact, and only if it reached that check. Two prod-dependency
       # bumps shipped undisclosed that way (`ws` via vscode-ext, `hono` via a
@@ -48,7 +48,7 @@ jobs:
       # zsh is not on the ubuntu runner image, and it is the default shell on
       # macOS — our primary platform. Without it, `standalone/sidecar`'s
       # shell-integration suite silently covered only bash, which is half of
-      # what stands behind an emit-side security fix (SECURITY.md's OSC 633
+      # what stands behind an emit-side security fix (docs/specs/terminal-escapes.md's OSC 633
       # rules; the emitters are the boundary, since the parser cannot defend
       # against a terminator that arrives inside a directory name). The suite
       # names the shells it covered on every run, so a future image change that
@@ -99,17 +99,55 @@ jobs:
           DORMOUSE_INSTALL_ORIGIN: https://ci.example.ts.net
         run: |
           set -euo pipefail
-          root="$(mktemp -d)/dormouse-server"
+          root="$(mktemp -d)/dormouse-relay"
+          offer="$root/run/enroll-offer.json"
+          # Prints the token, because it must rotate on every run before the
+          # first Host enrollment — and this job is the only executable check.
+          #
+          # The shape check is the server's own `isEnrollmentOffer`, imported
+          # rather than restated: a CI copy of the token regex and the origin
+          # rule is free to drift from the validator the redemption path
+          # actually runs, and then agrees with itself while the server rejects
+          # what the installer writes. No build step is needed for it: the
+          # `Test` step above builds remote-lib-common, as does the
+          # `pnpm --filter relay build` inside every install below.
+          read_offer() {
+            node --input-type=module -e '
+              import { readFileSync, statSync } from "node:fs";
+              import { isEnrollmentOffer } from "./remote-lib-common/dist/index.js";
+              const [path, wantOrigin] = process.argv.slice(1);
+              const mode = statSync(path).mode & 0o777;
+              if (mode !== 0o600) throw new Error(`${path} is mode ${mode.toString(8)}, expected 600`);
+              const offer = JSON.parse(readFileSync(path, "utf8"));
+              if (!isEnrollmentOffer(offer)) throw new Error(`not an enrollment offer: ${JSON.stringify(offer)}`);
+              // Beyond the structural guard, and nothing else checks it: the
+              // server hard-rejects a mintedAt it cannot parse, which the shape
+              // guard — a length bound — accepts.
+              if (Number.isNaN(Date.parse(offer.mintedAt))) throw new Error(`mintedAt is ${offer.mintedAt}`);
+              if (offer.origin !== wantOrigin) throw new Error(`origin is ${offer.origin}`);
+              process.stdout.write(offer.token);
+            ' "$offer" "$DORMOUSE_INSTALL_ORIGIN"
+          }
           # Twice: the first is a first install, the second exercises the update
-          # path — previous pointer, prune, and preserving config/server.env.
+          # path — previous pointer, prune, and preserving config/relay.env.
           DORMOUSE_INSTALL_ROOT="$root" ./deploy/local/install-linux.sh --yes
-          before="$(sha256sum "$root/config/server.env" | cut -d' ' -f1)"
+          before="$(sha256sum "$root/config/relay.env" | cut -d' ' -f1)"
+          first_token="$(read_offer)"
           DORMOUSE_INSTALL_ROOT="$root" ./deploy/local/install-linux.sh --yes
-          after="$(sha256sum "$root/config/server.env" | cut -d' ' -f1)"
-          [ "$before" = "$after" ] || { echo "::error::server.env was not preserved across an update"; exit 1; }
+          after="$(sha256sum "$root/config/relay.env" | cut -d' ' -f1)"
+          second_token="$(read_offer)"
+          [ "$before" = "$after" ] || { echo "::error::relay.env was not preserved across an update"; exit 1; }
+          [ "$first_token" != "$second_token" ] || { echo "::error::the enrollment offer was not re-minted on the update"; exit 1; }
+          # burrows.json existence, not its current row count, is the durable
+          # "first Burrow happened" marker. Even an empty hand-edited file keeps
+          # a later installer run from reopening bootstrap.
+          printf '[]\n' > "$root/state/burrows.json"
+          chmod 0600 "$root/state/burrows.json"
+          DORMOUSE_INSTALL_ROOT="$root" ./deploy/local/install-linux.sh --yes
+          [ ! -e "$offer" ] || { echo "::error::the enrollment offer survived after burrows.json existed"; exit 1; }
           [ -L "$root/previous" ] || { echo "::error::no previous release retained after an update"; exit 1; }
           bash -n "$root/bin/manage"
-          bash -n "$root/bin/run-server"
+          bash -n "$root/bin/run-relay"
   webview-smoketest:
     name: Webview Boot Smoketest
     runs-on: ubuntu-latest
@@ -205,8 +243,9 @@ jobs:
           echo "::error::apt failed after 3 attempts across mirrors"
           exit 1
 
+      # Frozen for the same supply-chain reason as every other job here.
       - name: Install npm dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
         working-directory: standalone
 
       - name: TypeScript check

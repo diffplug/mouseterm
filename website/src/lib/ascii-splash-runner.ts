@@ -1,5 +1,5 @@
 /*
- * Browser adapter for ascii-splash@0.6.0 in the Dormouse website playground.
+ * Browser adapter for ascii-splash@0.6.1 in the Dormouse website playground.
  *
  * This file is not the upstream CLI entrypoint. It imports upstream internals
  * from ascii-splash/dist through the website's `ascii-splash-internal` Vite
@@ -24,6 +24,7 @@
  * - Config persistence is intentionally omitted; upstream commands that need a
  *   config loader report that it is unavailable.
  */
+import type { TerminalRenderer } from "ascii-splash-internal/renderer/TerminalRenderer.js";
 import { AnimationEngine } from "ascii-splash-internal/engine/AnimationEngine.js";
 import { CommandBuffer } from "ascii-splash-internal/engine/CommandBuffer.js";
 import { CommandExecutor } from "ascii-splash-internal/engine/CommandExecutor.js";
@@ -194,7 +195,7 @@ function clearRow(buffer: Cell[][], y: number, bg = color(20)): void {
   }
 }
 
-class BrowserTerminalRenderer {
+class BrowserTerminalRenderer implements Pick<TerminalRenderer, keyof TerminalRenderer> {
   private buffer: SplashBuffer;
   private size: Size;
   private adapter: FakePtyAdapter;
@@ -358,7 +359,13 @@ export class AsciiSplashRunner implements InteractiveProgram {
     this.renderer.start();
 
     const initialFps = parsed.fps ?? qualityPresets[parsed.quality];
-    this.engine = new AnimationEngine(this.renderer, initialSlots[initialPatternIndex].pattern, initialFps);
+    // Upstream accepts its concrete Node renderer, including private fields.
+    // The implements clause checks its public surface for this browser adapter.
+    this.engine = new AnimationEngine(
+      this.renderer as unknown as TerminalRenderer,
+      initialSlots[initialPatternIndex].pattern,
+      initialFps,
+    );
     this.transitionManager.setDefaultConfig({ type: "crossfade", duration: 300 });
 
     this.runtime = new RuntimeController({

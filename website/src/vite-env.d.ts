@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference path="../../lib/src/globals.d.ts" />
 
 declare module "@standalone-latest" {
   const data: {

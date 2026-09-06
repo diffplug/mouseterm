@@ -27,6 +27,14 @@ export function useWallKeyboard(ctx: WallKeyboardCtx): void {
     const handler = (e: KeyboardEvent) => {
       const c = ctxRef.current;
 
+      const context = (e.target as HTMLElement | null)?.closest?.('[data-terminal-context]');
+      if (context) {
+        if (handleEditableClipboard(e)) return;
+        const terminalElement = (e.target as HTMLElement).closest<HTMLElement>('[data-helper-terminal], [data-context-terminal]');
+        const helperId = terminalElement?.dataset.helperTerminal ?? terminalElement?.dataset.contextTerminal;
+        if (helperId) handleMouseSelectionKeys(e, { ...c, selectedIdRef: { current: helperId } });
+        return;
+      }
       if (handleDualTap(e, c, dualTapState)) return;
       // Before every mode/renaming gate below: a focused text field owns its
       // clipboard chords no matter what the wall is doing.

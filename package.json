@@ -11,19 +11,19 @@
     }
   },
   "scripts": {
-    "build": "pnpm run build:vscode && pnpm --filter dormouse-website build",
-    "test": "node scripts/spec-lint.mjs && node scripts/xterm-lint.mjs && node scripts/loopback-lint.mjs && node scripts/deploy-lint.mjs && node scripts/deploy-lint-selftest.mjs && node scripts/clamp-issue-body-selftest.mjs && pnpm -r run test",
-    "lint:specs": "node scripts/spec-lint.mjs",
+    "build": "pnpm run build:vscode && pnpm --filter dormouse-lib build:pocket && pnpm --filter dormouse-website build",
+    "test": "node scripts/spec-lint.mjs && node scripts/spec-lint-selftest.mjs && node scripts/public-docs-lint.mjs && node scripts/xterm-lint.mjs && node --test scripts/xterm-bump.test.mjs && node scripts/loopback-lint.mjs && node scripts/loopback-lint-selftest.mjs && node scripts/deploy-lint.mjs && node scripts/deploy-lint-selftest.mjs && node scripts/installer-verify-test.mjs && node scripts/ps1-cmdlet-lint.mjs && node scripts/ps1-cmdlet-lint-selftest.mjs && node scripts/e2e-lint.mjs && node scripts/e2e-lint-selftest.mjs && node scripts/clamp-issue-body-selftest.mjs && node --test scripts/sign-and-deploy.test.mjs && node --test scripts/workflow-audit.test.mjs && node --test scripts/security-audit.test.mjs && pnpm -r run test",
+    "lint:specs": "node scripts/spec-lint.mjs && node scripts/spec-lint-selftest.mjs",
+    "lint:public-docs": "node scripts/public-docs-lint.mjs",
     "audit:prose": "node scripts/prose-audit.mjs",
-    "lint:loopback": "node scripts/loopback-lint.mjs",
-    "lint:xterm": "node scripts/xterm-lint.mjs",
+    "lint:loopback": "node scripts/loopback-lint.mjs && node scripts/loopback-lint-selftest.mjs",
+    "lint:xterm": "node scripts/xterm-lint.mjs && node --test scripts/xterm-bump.test.mjs",
     "bump:xterm": "node scripts/xterm-bump.mjs",
     "dev:canopy": "pnpm --filter canopy storybook",
     "dev:lib": "pnpm --filter dormouse-lib dev",
     "dev:standalone": "node scripts/free-dev-port.mjs && pnpm --filter dormouse-standalone tauri dev",
     "dev:standalone:ab": "pnpm --filter dormouse-standalone dev:agent-browser",
-    "dev:server": "pnpm --filter server dev",
-    "dev:pocket-server": "pnpm --filter dormouse-lib build:pocket && pnpm --filter server build && pnpm --filter server start",
+    "dev:relay": "pnpm --filter dormouse-lib build:pocket && pnpm --filter relay dev",
     "dev:website": "pnpm --filter dormouse-website dev",
     "build:vscode": "pnpm --filter dormouse-lib build && pnpm --filter dormouse build:frontend && pnpm --filter dormouse build",
     "build:standalone": "pnpm --filter dormouse-standalone tauri build",
@@ -32,7 +32,8 @@
     "dogfood:standalone": "bash standalone/scripts/dogfood.sh",
     "storybook": "pnpm --filter dormouse-lib storybook",
     "bundle-themes": "node lib/scripts/bundle-themes.mjs",
-    "lint:deploy": "node scripts/deploy-lint.mjs && node scripts/deploy-lint-selftest.mjs"
+    "lint:deploy": "node scripts/deploy-lint.mjs && node scripts/deploy-lint-selftest.mjs && node scripts/installer-verify-test.mjs && node scripts/ps1-cmdlet-lint.mjs && node scripts/ps1-cmdlet-lint-selftest.mjs",
+    "lint:e2e": "node scripts/e2e-lint.mjs && node scripts/e2e-lint-selftest.mjs"
   },
   "devDependencies": {}
 }

@@ -159,7 +159,7 @@ describe('screenshot loop backpressure', () => {
     loop.dispose();
   });
 
-  it('drops a crisp decode superseded by a provisional paint', async () => {
+  it('retries a crisp decode superseded by a provisional paint', async () => {
     let resolveBitmap: ((bitmap: ImageBitmap) => void) | undefined;
     vi.stubGlobal('createImageBitmap', vi.fn(() => new Promise<ImageBitmap>((resolve) => { resolveBitmap = resolve; })));
     setScreenshot(async () => ({ ok: true, bytes: new Uint8Array([7, 8, 9]), mime: 'image/jpeg' }));
@@ -183,6 +183,13 @@ describe('screenshot loop backpressure', () => {
     resolveBitmap?.({ width: 4, height: 4, close: vi.fn() } as unknown as ImageBitmap);
     await vi.advanceTimersByTimeAsync(0);
     expect(draw).not.toHaveBeenCalled();
+
+    // No new pulse is needed to sharpen the now-static provisional frame.
+    await vi.advanceTimersByTimeAsync(300);
+    expect(createImageBitmap).toHaveBeenCalledTimes(2);
+    resolveBitmap?.({ width: 4, height: 4, close: vi.fn() } as unknown as ImageBitmap);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(draw).toHaveBeenCalledTimes(1);
 
     loop.dispose();
   });
