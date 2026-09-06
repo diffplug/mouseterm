@@ -411,6 +411,12 @@ debugger can attach to.
 
 `vscode-ext/vite.config.ts` sets `root: ../lib` and `outDir: ./media`, building the shared React frontend directly into the extension's media folder.
 
+## Terminal context host operations
+
+The adapter forwards every `TerminalContextRequest` to the PTY host as a correlated request (`docs/specs/transport.md` → Auxiliary helper metadata); directory opening follows `docs/specs/security-local.md` → Terminal context directory actions, and inspection failure follows `docs/specs/terminal-context.md` → Helper lifecycle.
+
+Source of truth: `terminalContext` in `lib/src/lib/platform/vscode-adapter.ts`; `terminalContext` in `vscode-ext/src/pty-manager.ts`; `context` in `standalone/sidecar/pty-core.js`.
+
 ## Future
 
 ### Webview→host Surface-state channel

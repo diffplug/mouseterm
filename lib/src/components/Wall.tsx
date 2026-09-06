@@ -1,3 +1,10 @@
+import { TerminalContextContext, type TerminalContextOpenOptions, type TerminalContextState } from './wall/wall-context';
+import { TERMINAL_CONTEXT_EXIT_MS } from './design';
+import { motionIsInstant } from '../lib/ui-geometry';
+import type { PortMode } from './wall/TerminalContextView';
+import type { PortUrlEntry } from './wall/port-url';
+import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHelper, helperHasWork, type HelperTerminal } from '../lib/helper-terminal';
+import { isHelperSession } from '../lib/terminal-store';
 import { useRef, useState, useEffect, useCallback, useMemo, useSyncExternalStore, lazy, Suspense, type ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { Baseboard } from './Baseboard';
@@ -222,6 +229,10 @@ function ShellSpawnNotice({
 
 // --- Main component ---
 
+/** A blank shell may be replaced in place; one that owns a helper is not blank
+ *  (docs/specs/terminal-context.md → Helper lifecycle). */
+const isReplaceableShell = (id: string): boolean => isUntouched(id) && !getHelper(id);
+
 export function Wall({
   initialPaneIds,
   initialMode = 'command',
@@ -262,6 +273,16 @@ export function Wall({
    */
   enableBurrow?: boolean;
 } = {}) {
+  const [terminalContext, setTerminalContext] = useState<TerminalContextState | null>(null);
+  // Remove a closing context once its exit has played. A reopen or replacement
+  // changes the state object, so the cleanup cancels the stale removal; the
+  // identity check covers a timer that fires before that cleanup is flushed.
+  useEffect(() => {
+    if (!terminalContext?.closing) return;
+    const timer = setTimeout(() => setTerminalContext(current => current === terminalContext ? null : current), TERMINAL_CONTEXT_EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [terminalContext]);
+  const pendingHelperCloses = useRef(new Set<string>());
   // The Lath engine handle — Dormouse's tiling engine. Constructed lazily exactly
   // once per Wall mount, so `createLathWallEngine` is not re-invoked each render
   // (docs/specs/tiling-engine.md).
@@ -515,7 +536,41 @@ export function Wall({
     }, 1500);
   }, []);
 
-  const killPaneImmediately = useCallback((id: string) => {
+  /** Resolves true when the helper's running work (or a failed inspection)
+   *  blocks closing its source; the source is then revealed with the reason
+   *  (docs/specs/terminal-context.md → Promotion and source closure). */
+  const helperBlocksClose = useCallback(async (id: string, helper: HelperTerminal): Promise<boolean> => {
+    let warning: string;
+    try {
+      if (!await helperHasWork(helper)) return false;
+      warning = 'Helper has running work. Stop it in the helper, then close this terminal again.';
+    } catch (error) {
+      warning = `Could not inspect helper processes: ${String(error)}`;
+    }
+    // A helper replaced or promoted mid-inspection is re-gated by the caller.
+    if (getHelper(id) !== helper) return false;
+    const door = doorsRef.current.find(item => item.id === id);
+    if (door) handleReattachRef.current(door);
+    setConfirmKill(null);
+    setTerminalContext({ id, warning });
+    return true;
+  }, []);
+
+  const killPaneImmediately = useCallback((id: string): void | boolean | Promise<void | boolean> => {
+    const helper = getHelper(id);
+    if (helper) {
+      if (pendingHelperCloses.current.has(id)) return false;
+      pendingHelperCloses.current.add(id);
+      return helperBlocksClose(id, helper).then(blocked => {
+        pendingHelperCloses.current.delete(id);
+        if (blocked) return false;
+        if (getHelper(id) === helper) {
+          disposeHelper(id);
+          setTerminalContext(current => current?.id === id ? null : current);
+        }
+        return killPaneImmediately(id);
+      });
+    }
     // A second kill for a pane already mid-fade is a no-op (idempotent) — it must
     // not re-fire the event, re-dispose, or schedule a second removal.
     if (lath.isDying(id)) return;
@@ -583,7 +638,7 @@ export function Wall({
     }, lath.exitMs);
     clearLocalSurfaceActivity(id);
     fireEvent({ type: 'kill', id });
-  }, [fireEvent, forgetSurfaceRef, selectPane, lath, nav]);
+  }, [fireEvent, forgetSurfaceRef, selectPane, lath, nav, helperBlocksClose]);
 
   const acceptKill = useCallback(() => {
     const ck = confirmKillRef.current;
@@ -629,6 +684,7 @@ export function Wall({
    *  "Parked leaves"). Terminals do not park: their state lives in the PTY and the
    *  registry replays it, so the existing remove/restore path already loses nothing. */
   const minimizePane = useCallback((id: string, opts?: { select?: boolean }) => {
+    setTerminalContext(current => current?.id === id ? null : current);
     const meta = lath.getMeta(id);
     if (!meta) return;
     // May auto-spawn if this was the last leaf. `doorLeaf` retains the leaf's meta in
@@ -838,8 +894,8 @@ export function Wall({
   const handleReattachRef = useRef(handleReattach);
   handleReattachRef.current = handleReattach;
 
-  /** Focus a surface for the human half of `connectPort`: activating a port row
-   *  is an explicit request to look at and control that browser. A visible pane
+  /** Focus a surface for the human half of the context's port actions: activating
+   *  a port row is an explicit request to look at and control that browser. A visible pane
    *  enters passthrough in place; a minimized one reattaches on the same terms
    *  as clicking its Door chip. This is deliberately unlike `dor ab`, whose
    *  agent-initiated control path remains focus-neutral. */
@@ -1048,6 +1104,7 @@ export function Wall({
     reference,
     title,
     focusNeutral,
+    preserveSource,
   }: {
     minimized: boolean;
     params: Record<string, unknown>;
@@ -1056,6 +1113,7 @@ export function Wall({
     // `dor iframe` / `dor ab` pass this to open the surface in the background
     // without moving focus off the caller, matching `dor ensure`.
     focusNeutral?: boolean;
+    preserveSource?: boolean;
   }): ParseResult<{
     id: string;
     ref: string;
@@ -1069,7 +1127,7 @@ export function Wall({
     // Replace-in-place is reserved for a reference with no browser — a blank
     // untouched shell. Anything holding web content (a browser surface today, a
     // tool that has both later) must split beside it instead of being destroyed.
-    const replaceUntouchedShell = !hasBrowser(reference.kind) && isUntouched(reference.id);
+    const replaceUntouchedShell = !preserveSource && !hasBrowser(reference.kind) && isReplaceableShell(reference.id);
 
     if (replaceUntouchedShell) {
       // Whether the user's current selection sits on the pane being replaced.
@@ -1154,7 +1212,7 @@ export function Wall({
       const shouldReplaceUntouched =
         detail.replaceUntouched === true &&
         selectedPaneVisible &&
-        isUntouched(selectedPaneId!);
+        isReplaceableShell(selectedPaneId!);
       const shellName = detail.name?.trim() || 'terminal';
 
       if (shouldReplaceUntouched) {
@@ -1168,7 +1226,7 @@ export function Wall({
         return;
       }
 
-      if (detail.replaceUntouched === true && selectedDoor && isUntouched(selectedDoor.id)) {
+      if (detail.replaceUntouched === true && selectedDoor && isReplaceableShell(selectedDoor.id)) {
         handleReattachRef.current(selectedDoor, {
           enterPassthrough: false,
           afterRestore: {
@@ -1198,7 +1256,7 @@ export function Wall({
   }, [generatePaneId, surfaceRefForId, forgetSurfaceRef, selectPane, enterTerminalMode, showShellSpawnNotice, lath, nav]);
 
   // --- dor control plane (the `dor` CLI's webview handler) ---
-  const { connectPort, updateSurfaceParams } = useDorControl({
+  const { updateSurfaceParams } = useDorControl({
     lath,
     nav,
     doorsRef,
@@ -1208,7 +1266,6 @@ export function Wall({
     createSplitSurface,
     createContentSurface,
     killPaneImmediately,
-    revealSurface,
     lastAgentBrowserBinaryPathRef,
   });
 
@@ -1245,12 +1302,18 @@ export function Wall({
   const wallActions: WallActions = useMemo(() => ({
     onKill: (id: string) => {
       exitTerminalMode();
-      if (isUntouched(id)) {
-        killPaneImmediately(id);
-        return;
-      }
-      const char = randomKillChar();
-      setConfirmKill({ id, char });
+      const confirmSource = () => {
+        const door = doorsRef.current.find(item => item.id === id);
+        if (door) {
+          handleReattachRef.current(door, { enterPassthrough: false, afterRestore: isUntouched(id) ? 'kill-immediately' : 'confirm-kill' });
+          return;
+        }
+        if (isUntouched(id)) { void killPaneImmediately(id); return; }
+        setConfirmKill({ id, char: randomKillChar() });
+      };
+      const helper = getHelper(id);
+      if (!helper) { confirmSource(); return; }
+      void helperBlocksClose(id, helper).then(blocked => { if (!blocked) confirmSource(); });
     },
     onAlertButton: (id: string, displayedStatus: SessionStatus) => {
       return dismissOrToggleAlert(id, displayedStatus);
@@ -1429,9 +1492,77 @@ export function Wall({
       });
     },
     resolveSurfaceRef: surfaceRefForId,
-    // The pane context menu's "connect a port" action: act like `dor ab open`.
-    onConnectPort: connectPort,
-  }), [addSplitPanel, minimizePane, enterTerminalMode, exitTerminalMode, killPaneImmediately, replaceSurface, buildDorSurfaces, createContentSurface, surfaceRefForId, connectPort, updateSurfaceParams, lath, nav]);
+  }), [addSplitPanel, minimizePane, enterTerminalMode, exitTerminalMode, killPaneImmediately, helperBlocksClose, replaceSurface, buildDorSurfaces, createContentSurface, surfaceRefForId, updateSurfaceParams, lath, nav]);
+  const contextPortLaunches = useRef(new Map<string, Promise<void>>());
+  const openContextPort = useCallback(async (id: string, entry: PortUrlEntry, mode: PortMode): Promise<void> => {
+    const platform = getPlatform();
+    if (mode === 'system') { platform.openExternal?.(entry.url); return; }
+    const key = `${id}:${entry.port}:${mode === 'iframe' ? 'iframe' : 'agent'}`;
+    const pending = contextPortLaunches.current.get(key);
+    if (pending) { await pending; return openContextPort(id, entry, mode); }
+    const operation = (async () => {
+      const reference = buildDorSurfaces().find(surface => surface.id === id);
+      if (!reference) throw new Error('The parent terminal is no longer available');
+      const existing = buildDorSurfaceList().find(surface => {
+        const params = lath.getMeta(surface.id)?.params;
+        return params?.contextPortKey === key && !lath.isDying(surface.id);
+      });
+      if (existing) {
+        revealSurface(existing.id);
+        if (mode !== 'iframe') {
+          const controller = getAgentBrowserScreenController(existing.id);
+          controller?.actions.setRenderMode?.(mode);
+          controller?.chromeActions.navigate(entry.url);
+        } else updateSurfaceParams(existing.id, { url: entry.url });
+        return;
+      }
+      if (mode !== 'iframe' && !platform.agentBrowserOpen) throw new Error('Agent browser is unavailable');
+      const created = createContentSurface({ minimized: false, reference, preserveSource: true,
+        params: { surfaceType: 'browser', renderMode: mode, url: entry.url, syncEngaged: true, contextPortKey: key }, title: hostPathDisplay(entry.url, true) });
+      if (!created.ok) throw new Error(created.message);
+      enterTerminalMode(created.value.id);
+      if (mode === 'iframe') return;
+      const result = await platform.agentBrowserOpen!(entry.url, { headed: mode === 'ab-popout' }, lastAgentBrowserBinaryPathRef.current);
+      if (!result.ok || !result.session) {
+        killPaneImmediately(created.value.id);
+        throw new Error(result.error ?? 'Could not open agent browser');
+      }
+      if (result.binaryPath) lastAgentBrowserBinaryPathRef.current = result.binaryPath;
+      const binding = { session: result.session, wsPort: result.wsPort, binaryPath: result.binaryPath };
+      if (!lath.getMeta(created.value.id) || lath.isDying(created.value.id)) { closeAgentBrowserSession({ renderMode: mode, ...binding }); return; }
+      updateSurfaceParams(created.value.id, binding);
+    })();
+    contextPortLaunches.current.set(key, operation);
+    try { await operation; } finally { contextPortLaunches.current.delete(key); }
+  }, [buildDorSurfaces, buildDorSurfaceList, createContentSurface, enterTerminalMode, killPaneImmediately, lath, revealSurface, updateSurfaceParams]);
+  const contextActions = useMemo(() => ({
+    id: terminalContext && !terminalContext.closing ? terminalContext.id : null,
+    mounted: terminalContext,
+    open: (id: string, options?: TerminalContextOpenOptions) => { if (isHelperSession(id)) return; setTerminalContext({ id, ...options }); },
+    close: () => {
+      const instant = motionIsInstant();
+      setTerminalContext(current => {
+        if (!current || instant) return null;
+        // Same object while already closing, so the removal timer keeps running.
+        return current.closing ? current : { ...current, closing: true };
+      });
+    },
+    promote: async (id: string) => {
+      if (!getHelper(id) || !nav.hasPane(id)) throw new Error('Helper cannot be placed beside this terminal');
+      const helper = await beginPromotion(id);
+      const placed = lath.store.addLeaf(helper.id, terminalLeafMeta(), { refId: id, edge: lath.store.autoEdgeFor(id) });
+      if (!placed.ok) {
+        await cancelPromotion(id);
+        throw new Error('Could not split the source pane');
+      }
+      finishPromotion(id);
+      surfaceRefForId(helper.id);
+      setTerminalContext(null);
+      enterTerminalMode(helper.id);
+    },
+    openPort: openContextPort,
+  }), [terminalContext, lath, nav, surfaceRefForId, enterTerminalMode, openContextPort]);
+
   const wallActionsRef = useRef(wallActions);
   wallActionsRef.current = wallActions;
 
@@ -1543,6 +1674,7 @@ export function Wall({
     <ModeContext.Provider value={mode}>
       <SelectedIdContext.Provider value={selectedId}>
         <WallActionsContext.Provider value={wallActions}>
+          <TerminalContextContext.Provider value={contextActions}>
           <PaneWriteContext.Provider value={paneWrite}>
           <PaneElementsContext.Provider value={paneElementsContextValue}>
           <DoorElementsContext.Provider value={doorElementsContextValue}>
@@ -1614,6 +1746,7 @@ export function Wall({
           </DoorElementsContext.Provider>
           </PaneElementsContext.Provider>
           </PaneWriteContext.Provider>
+          </TerminalContextContext.Provider>
         </WallActionsContext.Provider>
       </SelectedIdContext.Provider>
     </ModeContext.Provider>

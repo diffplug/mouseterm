@@ -244,3 +244,15 @@ prompt** (rationale).
 - **Replay filtering does not re-fire alerts**, quiesce-detector events, or protocol notifications (`docs/specs/terminal-escapes.md` → "`pty:data` strip semantics").
 
 Source of truth: `getScrollbackReceived` / `getScrollbackSince` in `vscode-ext/src/pty-manager.ts`; the replay filter in `lib/src/lib/terminal-report-filter.ts`.
+
+## Auxiliary helper metadata
+
+**Must carry helper parent identity and captured autorun command in live PTY metadata**, validating that the parent is owned and is not itself a helper. Promotion clears that association without restarting the PTY. Reconnect restores helper entries before reconciling the primary layout, excluding them from ordinary orphan-pane recovery. A missing parent recovers its helper as an ordinary Pane. Recovered helpers conservatively disable automatic refresh.
+
+**Must retain Standalone replay only in memory**, bounded to the latest 200,000 UTF-16 code units per live PTY and sent after its live listing. Closing a PTY releases its buffer. Cold starts retain the existing host policy; helper scrollback and editor buffers are never written to Session snapshots.
+
+**Must expose terminal context operations through correlated host requests**, reporting errors and timeouts. The VS Code router checks Workspace ownership for per-terminal operations and helper parent metadata.
+
+**Must acknowledge Windows directory opening when Explorer starts**, reporting process-launch errors without waiting for its exit. macOS and Linux retain opener exit-error reporting.
+
+Source of truth: `TerminalContextRequest` in `lib/src/lib/terminal-context-types.ts`; `PtyInfo` in `lib/src/lib/platform/types.ts`; `resumeOrRestore` in `lib/src/lib/reconnect.ts`; `context` in `standalone/sidecar/pty-core.js`; `attachRouter` in `vscode-ext/src/message-router.ts`.

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import {
   TerminalPaneHeader,
+  Wall,
   ModeContext,
   SelectedIdContext,
   WallActionsContext,
@@ -12,7 +13,7 @@ import {
 import type { ActivityNotification } from '../lib/alert-manager';
 import { summarizeCommandLine, type SetTerminalUserTitleResult } from '../lib/terminal-registry';
 import { removeMouseSelectionState, setMouseReporting, setOverride } from '../lib/mouse-selection';
-import { requireElement, waitForCondition, waitForPrimedState } from './settle-terminals';
+import { requireElement, settleTerminals, waitForCondition, waitForPrimedState } from './settle-terminals';
 
 const SESSION_ID = 'tab-story';
 
@@ -31,7 +32,6 @@ const noopActions: WallActions = {
   onCancelRename: () => {},
   onSwapRenderMode: () => {},
   resolveSurfaceRef: (id) => id,
-  onConnectPort: () => {},
 };
 
 function actionsRejecting(reason: 'empty' | 'reserved'): WallActions {
@@ -145,15 +145,12 @@ function wait(ms: number) {
  *  patience budget. */
 const RETRY_BUDGET_MS = 4000;
 
-/**
- * Right-click the bell to open the TODO/alert dialog.
- *
- * Gated on the primed state rather than a fixed delay: the dialog reads the
- * notification and the running command out of the primed stores, and it clamps
- * its position to the viewport exactly once, in a layout effect keyed on the
- * trigger rect — so a dialog opened before priming lands keeps a position
- * measured against content it no longer shows.
- */
+/** Context interactions need the full Wall, which owns the unified menu. */
+function ContextWallStory() {
+  return <div style={{ width: 900, height: 680 }}><Wall initialPaneIds={[SESSION_ID]} initialMode="command" /></div>;
+}
+
+/** Wait for priming before opening the source's alert controls in context. */
 async function openAlertRightClickDialog() {
   await waitForPrimedState();
   const alertButton = await requireElement<HTMLButtonElement>(
@@ -169,7 +166,8 @@ async function openAlertRightClickDialog() {
     clientX: rect.left + rect.width / 2,
     clientY: rect.top + rect.height / 2,
   }));
-  await requireElement('[role="dialog"]', 'TODO and alert dialog');
+  await requireElement('[data-terminal-context]', 'terminal context');
+  await settleTerminals();
 }
 
 /**
@@ -409,6 +407,7 @@ export const AlertRinging: Story = {
 // offers depends on what the pane is running and whether a rule already exists.
 
 export const AlertRightClickDialog: Story = {
+  render: ContextWallStory,
   parameters: {
     ...primedRunningCommand('claude --resume'),
     ...primedState({ status: 'NOTHING_TO_SHOW', todo: false, watchingEnabled: true }),
@@ -419,6 +418,7 @@ export const AlertRightClickDialog: Story = {
 
 /** A pane at a prompt: no argv0, so the dialog explains instead of offering a switch. */
 export const AlertDialogNoCommandRunning: Story = {
+  render: ContextWallStory,
   parameters: primedState({ status: 'WATCHING_DISABLED', todo: false }),
   play: openAlertRightClickDialog,
 };
@@ -467,31 +467,37 @@ export const TodoWithLongNotificationPreview: Story = {
 };
 
 export const NotificationDialogTitleAndBody: Story = {
+  render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.osc777TitleAndBody, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
 export const NotificationDialogBodyOnly: Story = {
+  render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.osc9BodyOnly, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
 export const NotificationDialogTitleOnly: Story = {
+  render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.osc99TitleOnly, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
 export const NotificationDialogProgressComplete: Story = {
+  render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.progressComplete, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
 export const NotificationDialogTerminalBell: Story = {
+  render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.terminalBell, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
 export const NotificationDialogLongBody: Story = {
+  render: ContextWallStory,
   args: {
     width: 320,
   },

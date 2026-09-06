@@ -287,6 +287,15 @@ Dormouse's own `<input>`s — pane rename, the browser URL editor, dialog fields
 
 ---
 
+## Terminal context input
+
+**Must give application-captured right-click to the terminal program**, retaining header right-click as the context entry point. Do not add a Shift-right-click override gesture. A helper never opens a recursive context.
+
+**Must route clipboard chords and selection operations to the focused helper**, while leaving its Escape, Tab, arrows, and digits with xterm. Copying and selection do not disarm autorun; terminal input, paste, drops, and application mouse reports do.
+
+Source of truth: `TerminalPanel` in `lib/src/components/wall/TerminalPanel.tsx`; `useWallKeyboard` in `lib/src/components/wall/use-wall-keyboard.ts`; `markSessionTouched` in `lib/src/lib/terminal-lifecycle.ts`.
+
+
 ## 9. Future
 
 Not implemented today; they may be added in response to user feedback.

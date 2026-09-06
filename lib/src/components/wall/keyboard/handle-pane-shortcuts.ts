@@ -1,3 +1,4 @@
+import { getHelper } from '../../../lib/helper-terminal';
 import {
   dismissOrToggleAlert,
   getActivity,
@@ -83,6 +84,7 @@ export function handlePaneShortcuts(
   if ((e.key === 'k' || e.key === 'x') && sid) {
     e.preventDefault();
     e.stopPropagation();
+    if (getHelper(sid)) { ctx.wallActionsRef.current.onKill(sid); return true; }
     if (ctx.selectedTypeRef.current === 'door') {
       const item = ctx.doorsRef.current.find((d) => d.id === sid);
       if (item) {
@@ -153,8 +155,8 @@ export function handlePaneShortcuts(
     e.preventDefault();
     e.stopPropagation();
     // Reuse the header's own onContextMenu path: dispatch a synthetic
-    // contextmenu at the header's bottom-left corner so the menu opens anchored
-    // under the header's left edge. Browser-surface panes carry no
+    // contextmenu at the header's bottom-left corner as the reveal origin.
+    // Browser-surface panes carry no
     // `data-pane-header-for`, so the lookup misses and the key is a consumed
     // no-op — the spec'd behavior for surfaces with no header context menu.
     const header = findPaneHeaderForSession(sid);

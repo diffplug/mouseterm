@@ -220,6 +220,12 @@ and nothing records connects, attaches, denials, or writes. A self-hoster cannot
 "did anyone connect to my laptop last night", which also means an ACL entry added by
 any of the paths above would be invisible after the fact.
 
+## Auxiliary helpers
+
+**Must exclude unpromoted helpers from both remote directory discovery and direct attachment/resize resolution.** Promotion enables ordinary terminal access; hidden helper output and input are unavailable before that ownership change.
+
+Source of truth: `collectDirectorySnapshot` in `lib/src/remote/burrow/directory-collect.ts`; `driveOwnSurface` in `lib/src/remote/burrow/peer-surfaces.ts`.
+
 ## Future
 
 ### Cloud-hosted mode

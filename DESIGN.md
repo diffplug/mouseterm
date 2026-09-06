@@ -225,7 +225,7 @@ The Windows/Linux native-style window control row in the standalone app bar.
 
 The system uses **raised surfaces**, not "cards." There are no nested cards. There is no resting card grid.
 - **Raised surface** (`PopupButtonRow`, tooltips, popups): `bg-surface-raised`, `border border-border`, `rounded` (4px), `shadow-md`, `font-mono text-sm`.
-- **Dialog** (`KillConfirm`, `TodoAlertDialog`): `bg-surface-raised`, `border border-border`, `rounded-lg` (8px), `shadow-lg`, generous padding (`px-6 py-4` for kill-confirm).
+- **Dialog** (`KillConfirm`, the terminal context's detail dialogs): `bg-surface-raised`, `border border-border`, `rounded-lg` (8px), `shadow-lg`, generous padding (`px-6 py-4` for kill-confirm).
 - **Modal** (`ThemePicker` dropdown, `ThemeDebugger`, `ThemeStoreDialog`): `bg-surface-raised`, `border`, `rounded`, `shadow-2xl`, fixed-position with viewport-clamped sizing.
 
 **The Viewport-Bound Rule.** Anything floating over the viewport takes its height cap from `OVERLAY_MAX_HEIGHT` in `design.tsx` — `.modal` for a `ModalFrame` surface (the viewport minus `MODAL_OVERLAY_INSET` doubled), `.popover` for an anchored overlay (matching `clampOverlayPosition`'s margin). Don't hand-write a `vh`/`dvh` literal at the call site: the six that predated this token had drifted to five different budgets, and one silently shadowed its own overlay's padding. Each entry reads its own custom property first (`--overlay-max-h-modal` / `--overlay-max-h-popover`), so a story — or a host with less room than the window — can narrow one bound without touching the component. They are deliberately separate: a popover inside a modal is a DOM descendant of it, and custom properties inherit, so one shared knob would cap the dialog too. A deliberately *smaller* budget than the viewport (a context menu at `max-h-[70vh]`) is a different decision and stays at the call site.
@@ -234,6 +234,7 @@ The system uses **raised surfaces**, not "cards." There are no nested cards. The
 - Used by `ThemePicker`. Style: `bg-input-bg`, `border border-input-border`, `rounded`, `font-mono`, `text-sm`.
 - **Focus:** native browser focus outline; this is acceptable because the entire input lives inside a raised surface that already has `shadow-2xl` and a border.
 - **Form fields inside a dialog** use the underlined pair in `design.tsx` instead, so a form mixing them reads as one: `NumericInput` for a number (filtered at the keystroke, sized in `ch`) and `TextInput` for a string (full width, `type` passed through — `type="password"` for a credential). The app has no checkbox anywhere: a boolean is an `OnOffSwitch`.
+- **On/off switch:** a compact track with the thumb left when off and right when on, followed by only the current `On` / `Off` label. Off is neutral; on uses the host link accent. Its 60×24px button uses the subdued action tint and hover from `design.tsx`, with native keyboard and disabled-fieldset behavior. Nested settings text aligns through `UNDER_SWITCH_INDENT`.
 
 ### Navigation
 

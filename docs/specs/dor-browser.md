@@ -144,46 +144,15 @@ Source of truth: `lib/src/components/wall/use-dev-server-ports.ts`,
 
 ## Pane Context Menu Connect
 
-The terminal pane header's context menu (`docs/specs/layout.md` → Header context
-menu) lists the ports a pane's process tree binds, using the **same** per-port
-URL selection as `surface.resolveOpen` (`docs/specs/dor-cli.md` → Browser Open
-Target Resolution). Activating a row — click, its `1`–`9` digit accelerator, or
-`Enter` — reproduces `dor ab open <url>` against the **default** key/session,
-reusing or creating that session's browser surface: the wall-side mirror of the
-CLI flow, not the control plane. Host-gated on `agentBrowserCommand`; without it
-the rows are inert labels.
+**Must scan once per context opening**, using the shared per-port URL selection in `docs/specs/dor-cli.md` → Browser Open Target Resolution. Zero/one port uses an inline row; multiple ports use a selector. Failed scans are distinct from no listeners.
 
-**Activation reveals its surface.** Unlike focus-neutral `dor ab`, a menu row is
-the human asking to see and control that browser, so every arm of the lookup
-below **must end by selecting the surface in passthrough mode**, reattaching it
-first when minimized, exactly as clicking its Door chip does — including from
-command mode with `>` (rationale).
+**Must offer System browser, Iframe, Agent browser, and Popout for the selected port**, disabling unavailable host capabilities with a reason. Opening a browser from context always preserves the source terminal, including an untouched one.
 
-**Instant create.** The click is fire-and-forget: the menu closes at once and the
-pane appears **before** `agent-browser open` runs (rationale).
+**Must reuse targets per source and port**: iframe has a separate Surface; agent screencast and popout share a Session and switch display modes. Reattach minimized targets and recreate closed ones. System browser follows the OS opener's behavior.
 
-- The eager surface is placed synchronously and **must carry no `session`** — a
-  session-less `ab-screencast` pane is inert, so it cannot race the daemon boot
-  (rationale). It carries `key: 'default'` and the target `url`, and shows a
-  `Connecting to browser session…` placeholder rather than the idle
-  `run dor ab open <url>` line (rationale).
-- `agent-browser open <url>` runs, then a best-effort `stream status`.
-- **Must hand over `{session, wsPort, binaryPath}` in one params refresh**
-  (rationale). Failed or rejected `open` still hands over session and binary;
-  a rejected stream-status lookup omits only the port. Failures log into the
-  console after the menu closes. Pinned by `connect-port.test.ts`.
+**Must create agent-browser Surfaces eagerly without a session**, binding the returned session only after the host launch succeeds; failures are reported in context. A launch completing after its eager Surface has closed releases its browser session. Concurrent requests for the same target are serialized.
 
-The lookup reuses before it creates: (a) a surface bound to the default session,
-else (b) a still-booting session-less `key: 'default'` pane, so a double-click
-doesn't spawn two panes, else (c) a fresh session-less pane. Accepted edge: a
-pane persisted mid-boot restores session-less and stays a `Connecting…`
-placeholder — kill it, or connect again (arm (b) reuses it).
-
-Source of truth: `lib/src/components/wall/connect-port.ts`
-(`connectPortToDefaultBrowser`, `ensureEagerSurface`), `lib/src/components/wall/use-dor-control.ts`
-(`useDorControl`'s `connectPort` and `updateSurfaceParams`, shared with
-`ensureAgentBrowserSurface`), `lib/src/components/Wall.tsx` (`revealSurface`), `lib/src/components/wall/port-url.ts`
-(`listenerUrlsByPort`), `lib/src/components/wall/PaneHeaderContextMenu.tsx`.
+Source of truth: `openContextPort` in `lib/src/components/Wall.tsx`; `listenerUrlsByPort` in `lib/src/components/wall/port-url.ts`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`.
 
 ## Display Modal And Render Swaps
 

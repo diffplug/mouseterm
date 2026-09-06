@@ -101,8 +101,9 @@ async function minimizeFirstVisiblePane() {
 
 async function openAlertDialog() {
   const alertButton = await requireElement<HTMLButtonElement>('[data-alert-button-for]', 'alert bell');
-  alertButton.click();
-  await requireElement('[role="dialog"]', 'TODO and alert dialog');
+  alertButton.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+  await requireElement('[data-terminal-context]', 'terminal context');
+  await settleTerminals();
 }
 
 export const Default: Story = {
@@ -199,9 +200,9 @@ export const AlertModalOpen: Story = {
     }),
   },
   play: async () => {
-    // Settle first: the bell only offers the dialog once the primed ALERT_RINGING
+    // Settle first: the bell only offers the context once the primed ALERT_RINGING
     // status has landed, so clicking it earlier is a no-op and the story
-    // snapshots a wall with no dialog.
+    // snapshots a wall with no context.
     await settleTerminals();
     await openAlertDialog();
   },
@@ -262,5 +263,17 @@ export const MultipleRingingSessions: Story = {
         todo: false,
       },
     }),
+  },
+};
+
+/** Real context and helper lifecycle, backed by the deterministic demo shell. */
+export const TerminalContext: Story = {
+  args: { initialPaneIds: ['context-live'], initialMode: 'passthrough' },
+  parameters: { fakePty: { scenario: SCENARIO_SHELL_PROMPT } },
+  play: async () => {
+    await settleTerminals();
+    const header = await requireElement('[data-pane-header-for="context-live"]', 'terminal header');
+    header.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+    await waitForCondition(() => !!document.querySelector('[data-helper-terminal]'));
   },
 };

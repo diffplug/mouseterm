@@ -88,6 +88,41 @@ async function flushFrame(): Promise<void> {
 }
 
 describe('Wall on the Lath engine', () => {
+  it('releases input during context exit, cancels stale removal on reopen, and skips exit for reduced motion', async () => {
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a']} initialMode="passthrough" />));
+    await flush();
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = query => ({ ...originalMatchMedia(query), matches: false });
+    vi.useFakeTimers();
+    try {
+      const header = container.querySelector<HTMLElement>('[data-pane-header-for="pane-a"]')!;
+      const open = () => act(async () => { header.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 90 })); });
+      const close = () => act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Close terminal context"]')!.click(); });
+      await open();
+      const menu = container.querySelector<HTMLElement>('[data-terminal-context]')!;
+      await close();
+      expect(menu.isConnected).toBe(true);
+      expect(menu.hasAttribute('inert')).toBe(true);
+      expect(container.querySelector('[data-session-id="pane-a"]')?.getAttribute('data-focused')).toBe('true');
+      await act(async () => vi.advanceTimersByTime(100));
+      await open();
+      expect(menu.hasAttribute('inert')).toBe(false);
+      expect(document.activeElement).toBe(menu);
+      await act(async () => vi.advanceTimersByTime(200));
+      expect(menu.isConnected).toBe(true);
+      await close();
+      await act(async () => vi.advanceTimersByTime(180));
+      expect(menu.isConnected).toBe(false);
+      window.matchMedia = originalMatchMedia;
+      await open();
+      await close();
+      expect(container.querySelector('[data-terminal-context]')).toBeNull();
+    } finally {
+      window.matchMedia = originalMatchMedia;
+      vi.useRealTimers();
+    }
+  });
+
   it('cancels an ensure restart before a late prompt can relaunch its command', async () => {
     await act(async () => {
       root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
@@ -521,15 +556,15 @@ describe('Wall on the Lath engine', () => {
   it('reuses and closes a parked browser that gains its session after minimization', async () => {
     const defaultSession = sessionForKey('default');
     const untouchedSpy = vi.spyOn(terminalRegistry, 'isUntouched').mockReturnValue(false);
-    let resolveOpen!: (result: { exitCode: number; stdout: string; stderr: string }) => void;
-    const openResult = new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve) => {
+    let resolveOpen!: (result: { ok: boolean; session: string; wsPort: number }) => void;
+    const openResult = new Promise<{ ok: boolean; session: string; wsPort: number }>((resolve) => {
       resolveOpen = resolve;
     });
     const agentBrowserCommand = vi.fn(async (_session: string, args: string[]) => {
-      if (args[0] === 'open') return openResult;
       return { exitCode: 0, stdout: '', stderr: '' };
     });
     (fake as PlatformAdapter).agentBrowserCommand = agentBrowserCommand;
+    (fake as PlatformAdapter).agentBrowserOpen = vi.fn(() => openResult);
     (fake as PlatformAdapter).agentBrowserStreamStatus = vi.fn(async () => ({ ok: true, wsPort: 4321 }));
 
     try {
@@ -560,7 +595,7 @@ describe('Wall on the Lath engine', () => {
       });
       await flush();
       const portRow = document.querySelector<HTMLButtonElement>(
-        '[data-pane-context-menu-for="pane-a"] button[data-port-entry="5173"]',
+        '[data-terminal-context] button[aria-label="Open in agent-browser screencast"]',
       )!;
       await act(async () => { portRow.click(); });
       await flush();
@@ -583,7 +618,7 @@ describe('Wall on the Lath engine', () => {
       // Boot completion writes `session` only to live parked metadata. The Door
       // record is intentionally still the session-less minimize-time snapshot.
       await act(async () => {
-        resolveOpen({ exitCode: 0, stdout: '', stderr: '' });
+        resolveOpen({ ok: true, session: defaultSession, wsPort: 4321 });
         await openResult;
       });
       await flush();
@@ -1432,7 +1467,7 @@ describe('Wall on the Lath engine', () => {
       await flush();
       expect(focusOf('pane-a')).toBe('true');
 
-      const browserId = await dispatchAgentBrowser({
+      await dispatchAgentBrowser({
         session: defaultSession,
         surface: 'surface:1',
       });
@@ -1448,6 +1483,7 @@ describe('Wall on the Lath engine', () => {
       await flush();
 
       (fake as PlatformAdapter).agentBrowserCommand = vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
+      (fake as PlatformAdapter).agentBrowserOpen = vi.fn(async () => ({ ok: true, session: 'context-browser', wsPort: 4321 }));
       if (!fake.hasPty('pane-a')) fake.spawnPty('pane-a');
       fake.setOpenPorts('pane-a', [{
         protocol: 'tcp',
@@ -1471,21 +1507,21 @@ describe('Wall on the Lath engine', () => {
       await flush();
 
       const portRow = document.querySelector<HTMLButtonElement>(
-        '[data-pane-context-menu-for="pane-a"] button[data-port-entry="5173"]',
+        '[data-terminal-context] button[aria-label="Open in agent-browser screencast"]',
       );
       expect(portRow).not.toBeNull();
+      const contextMenu = portRow!.closest('[data-terminal-context]')!;
+      expect(contextMenu.closest('[data-lath-leaf]')).toBe(header.closest('[data-lath-leaf]'));
+      expect(contextMenu.closest('.lath-leaf-body')).toBeNull();
       await act(async () => {
         portRow!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
       await flush();
 
-      expect(onEvent).toHaveBeenCalledWith({ type: 'selectionChange', id: browserId, kind: 'pane' });
+      expect(onEvent).toHaveBeenCalledWith({ type: 'selectionChange', id: expect.any(String), kind: 'pane' });
+      expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
       expect(onEvent).toHaveBeenCalledWith({ type: 'modeChange', mode: 'passthrough' });
-      expect((fake as PlatformAdapter).agentBrowserCommand).toHaveBeenCalledWith(
-        defaultSession,
-        ['open', 'http://localhost:5173/'],
-        undefined,
-      );
+      expect((fake as PlatformAdapter).agentBrowserOpen).toHaveBeenCalledWith('http://localhost:5173/', { headed: false }, undefined);
     } finally {
       untouchedSpy.mockRestore();
     }

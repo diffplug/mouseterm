@@ -1,27 +1,6 @@
 import type { CSSProperties } from 'react';
 import { cfg } from '../cfg';
 
-/** Same-side cross-product test: inside means every edge turns the same way toward
- *  the point. Vertices may run in either winding order, and a point exactly on an
- *  edge counts as inside. **Convex only** — a concave or self-intersecting polygon
- *  reports false for points it does contain. */
-export function pointInConvexPolygon(
-  x: number,
-  y: number,
-  vertices: Array<{ x: number; y: number }>,
-): boolean {
-  let sign = 0;
-  for (let i = 0; i < vertices.length; i++) {
-    const a = vertices[i];
-    const b = vertices[(i + 1) % vertices.length];
-    const cross = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
-    if (cross === 0) continue;
-    if (sign === 0) sign = cross > 0 ? 1 : -1;
-    else if ((cross > 0 ? 1 : -1) !== sign) return false;
-  }
-  return true;
-}
-
 /** True if the user has requested reduced motion (or we're in SSR). */
 export function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined'

@@ -31,6 +31,30 @@ describe('AlertManager in isolation', () => {
     ]);
   }
 
+  it('drops every feed and control for a helper Session until it is promoted', () => {
+    const states: string[] = [];
+    manager.onStateChange((id) => states.push(id));
+    manager.setHelper('helper', true);
+    runWatchedCommand('helper');
+    manager.onData('helper');
+    applyTerminalProtocolEvents(manager, 'helper', [{ type: 'notification', notification: { title: 'done', body: null } }]);
+    manager.attend('helper');
+    manager.toggleTodo('helper');
+    manager.markTodo('helper');
+    manager.seed('helper', { todo: true });
+    manager.clearTodo('helper');
+    manager.onExit('helper', 0);
+    manager.onResize('helper');
+    applyTerminalProtocolEvents(manager, 'helper', [{ type: 'notification', notification: { title: 'late output', body: null } }]);
+    vi.advanceTimersByTime(10_000);
+    expect(states).toEqual([]);
+    expect(manager.getState('helper')).toEqual(DEFAULT_ALERT_STATE);
+
+    manager.setHelper('helper', false);
+    runWatchedCommand('helper');
+    expect(states).toContain('helper');
+  });
+
   it('state machine advances through silence to ALERT_RINGING', () => {
     const id = 'test-pty';
     runWatchedCommand(id);

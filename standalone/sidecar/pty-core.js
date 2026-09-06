@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFile, execFileSync, spawn } = require('node:child_process');
 
 function safeResolve(resolver) {
   try {
@@ -636,12 +636,22 @@ function parsePsPairs(output) {
 module.exports.parsePsPairs = parsePsPairs;
 
 function getDescendantPids(rootPid, runtime = {}) {
+  const pairs = readProcessTable(runtime);
+  if (pairs && (!runtime.strict || pairs.some(([pid]) => pid === rootPid))) return [...buildDescendantSet(pairs, rootPid)];
+  // Port discovery tolerates a failed scan; helper work inspection must not
+  // mistake one for idle (docs/specs/terminal-context.md).
+  if (runtime.strict) throw new Error('Unable to inspect terminal processes');
+  return [rootPid];
+}
+
+/** Every `[pid, ppid]` pair on this platform, or null when the scan fails or the platform is unknown. */
+function readProcessTable(runtime) {
   const platform = runtime.platform || process.platform;
   const fsModule = runtime.fsModule || fs;
   const execFileSyncFn = runtime.execFileSync || execFileSync;
 
-  if (platform === 'linux') {
-    try {
+  try {
+    if (platform === 'linux') {
       const pairs = [];
       for (const entry of fsModule.readdirSync('/proc')) {
         if (!/^\d+$/.test(entry)) continue;
@@ -651,46 +661,41 @@ function getDescendantPids(rootPid, runtime = {}) {
           if (ppid != null) pairs.push([Number(entry), ppid]);
         } catch { /* process vanished mid-scan */ }
       }
-      return [...buildDescendantSet(pairs, rootPid)];
-    } catch {
-      return [rootPid];
+      return pairs;
     }
-  }
 
-  // macOS (and any other POSIX): ps gives the whole pid/ppid table.
-  if (platform === 'darwin') {
-    try {
+    // macOS (and any other POSIX): ps gives the whole pid/ppid table.
+    if (platform === 'darwin') {
       const out = execFileSyncFn('ps', ['-axo', 'pid=,ppid='], {
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'ignore'],
         timeout: OPEN_PORT_TIMEOUT_MS,
         windowsHide: true, // see runPowerShell: avoid the console-allocation deadlock
       });
-      return [...buildDescendantSet(parsePsPairs(out), rootPid)];
-    } catch {
-      return [rootPid];
+      return parsePsPairs(out);
     }
-  }
 
-  if (platform === 'win32') {
-    try {
+    if (platform === 'win32') {
       const rows = runPowerShellJson(
         'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress',
         execFileSyncFn,
       );
-      const pairs = rows
+      return rows
         .map((r) => [Number(r.ProcessId), Number(r.ParentProcessId)])
         .filter(([pid, ppid]) => Number.isInteger(pid) && Number.isInteger(ppid));
-      return [...buildDescendantSet(pairs, rootPid)];
-    } catch {
-      return [rootPid];
     }
+  } catch {
+    return null;
   }
-
-  return [rootPid];
+  return null;
 }
 
 module.exports.getDescendantPids = getDescendantPids;
+
+/** The global autorun command: one line, at most 4096 characters (docs/specs/terminal-context.md). */
+function validCommand(value) {
+  return typeof value === 'string' && value.length <= 4096 && !/[\r\n\0]/.test(value);
+}
 
 /** Format a Linux /proc/net hex IPv4 address (little-endian per byte). */
 function parseHexIpv4(hex) {
@@ -1025,6 +1030,23 @@ function getOpenPortsForPid(rootPid, runtime = {}) {
 
 module.exports.getOpenPortsForPid = getOpenPortsForPid;
 
+/** Directory validation belongs to context(); this only launches the native UI. */
+function openNativeDirectory(nativePath, done, runtime = {}) {
+  const platform = runtime.platform || process.platform;
+  if (platform === 'win32') {
+    // Explorer is a shell UI: acknowledge process launch, not its lifetime or
+    // exit status. Keep OS-level launch errors visible to the caller.
+    const child = (runtime.spawn || spawn)('explorer.exe', [nativePath], { windowsHide: true, stdio: 'ignore' });
+    let settled = false;
+    const finish = error => { if (!settled) { settled = true; done(error); } };
+    child.once('error', finish);
+    child.once('spawn', () => { child.unref(); finish(null); });
+  } else {
+    (runtime.execFile || execFile)(platform === 'darwin' ? 'open' : 'xdg-open', [nativePath], { windowsHide: true }, done);
+  }
+}
+module.exports.openNativeDirectory = openNativeDirectory;
+
 /**
  * Shared PTY manager — the single place where node-pty processes are managed.
  *
@@ -1039,13 +1061,18 @@ module.exports.getOpenPortsForPid = getOpenPortsForPid;
  *   send('openPorts', { id, ports: [{ protocol, family, address, port, pid, processName }], requestId })
  */
 
-module.exports.create = function create(send, ptyModule) {
+module.exports.create = function create(send, ptyModule, { replay = false } = {}) {
   if (!ptyModule || typeof ptyModule.spawn !== 'function') {
     throw new TypeError('create() requires a node-pty compatible module');
   }
 
   const pty = ptyModule;
   const ptys = new Map(); // id -> pty.IPty
+  const helpers = new Map(); // id -> { parentId, command } for helper PTYs
+  // Every spawned, unkilled PTY (exited ones included). Only the standalone host
+  // asks for `replay`; VS Code's extension host keeps its own buffers.
+  const sessions = new Map(); // id -> { chunks: string[], chars: number }
+  const REPLAY_CHARS = 200000;
   const ptyShells = new Map(); // id -> resolved shell executable
   // Repaint restoration belongs to the PTY owner, where every local and remote
   // resize passes. A Viewer-local timer cannot see another display taking size
@@ -1058,8 +1085,20 @@ module.exports.create = function create(send, ptyModule) {
     repaintTimers.delete(id);
   }
 
+  function validHelperOwner(id, helper) {
+    return typeof helper.parentId === 'string' && validCommand(helper.command)
+      && helper.parentId !== id && sessions.has(helper.parentId) && !helpers.has(helper.parentId)
+      && ![...helpers].some(([otherId, other]) => otherId !== id && other.parentId === helper.parentId);
+  }
+
   function spawn(id, options) {
     const config = resolveSpawnConfig({ ...options, id, surfaceId: id });
+    if (options?.helper && validHelperOwner(id, options.helper)) {
+      helpers.set(id, { parentId: options.helper.parentId, command: options.helper.command });
+    } else if (options?.helper) {
+      send("exit", { id, exitCode: 1 });
+      return;
+    } else helpers.delete(id);
 
     let p;
     try {
@@ -1094,9 +1133,18 @@ module.exports.create = function create(send, ptyModule) {
 
     cancelRepaint(id);
     ptys.set(id, p);
+    const session = { chunks: [], chars: 0 };
+    sessions.set(id, session);
     ptyShells.set(id, config.shell);
 
     p.onData((data) => {
+      if (replay && ptys.get(id) === p) {
+        session.chunks.push(data);
+        session.chars += data.length;
+        // Drop whole chunks off the front, then trim the head: O(chunk) per write.
+        while (session.chunks.length > 1 && session.chars - session.chunks[0].length >= REPLAY_CHARS) session.chars -= session.chunks.shift().length;
+        if (session.chars > REPLAY_CHARS) { session.chunks[0] = session.chunks[0].slice(session.chars - REPLAY_CHARS); session.chars = REPLAY_CHARS; }
+      }
       send('data', { id, data });
     });
 
@@ -1153,6 +1201,8 @@ module.exports.create = function create(send, ptyModule) {
   }
 
   function kill(id) {
+    helpers.delete(id);
+    sessions.delete(id);
     cancelRepaint(id);
     const p = ptys.get(id);
     if (p) {
@@ -1169,14 +1219,66 @@ module.exports.create = function create(send, ptyModule) {
     }
     ptys.clear();
     ptyShells.clear();
+    helpers.clear();
+    sessions.clear();
   }
 
   function list() {
     const result = [];
     for (const [id] of ptys) {
-      result.push({ id, alive: true, shell: ptyShells.get(id) });
+      result.push({ id, alive: true, shell: ptyShells.get(id), ...(helpers.has(id) ? { helper: helpers.get(id) } : {}) });
     }
     send('list', { ptys: result });
+    if (replay) for (const { id } of result) send('replay', { id, data: sessions.get(id).chunks.join('') });
+  }
+
+  // Only explicit settings edits write this installation-global preference. No
+  // terminal transcripts or session layout are persisted here.
+  const settingsPath = path.join(os.homedir(), '.dormouse', 'helper-terminal.json');
+  function savedCommand() {
+    try {
+      const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      if (validCommand(saved.command)) return saved.command;
+    } catch { /* Factory default until explicitly saved. */ }
+    return 'git status';
+  }
+  const shellBasename = (value) => path.basename(value).replace(/^-/, '').replace(/\.exe$/i, '').toLowerCase();
+  function context(request, requestId) {
+    const result = { requestId };
+    try {
+      const p = ptys.get(request.id);
+      if (request.op === 'settings') {
+        if (request.command !== undefined) {
+          if (!validCommand(request.command)) throw new Error('Use a single command line (up to 4096 characters)');
+          fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+          const temporary = settingsPath + '.' + process.pid + '.tmp';
+          fs.writeFileSync(temporary, JSON.stringify({ command: request.command }), { mode: 0o600 });
+          fs.renameSync(temporary, settingsPath);
+        }
+        result.home = os.homedir();
+        result.command = request.command !== undefined ? request.command : savedCommand();
+      } else if (request.op === 'info') {
+        // Left null when inspection throws: unknown work is never idle.
+        result.busy = null;
+        result.busy = !p ? false
+          : getDescendantPids(p.pid, { strict: true }).some(pid => pid !== p.pid)
+            || (!!p.process && shellBasename(p.process) !== shellBasename(ptyShells.get(request.id)));
+      } else if (request.op === 'promote') {
+        if (request.restore) {
+          if (!sessions.has(request.id) || !validHelperOwner(request.id, request.restore)) throw new Error('Invalid helper owner');
+          helpers.set(request.id, { parentId: request.restore.parentId, command: request.restore.command });
+        } else helpers.delete(request.id);
+      } else if (request.op === 'openDirectory') {
+        if (typeof request.path !== 'string' || !path.isAbsolute(request.path) || request.path.includes('\0') || !directoryExists(request.path)) throw new Error('Directory is unavailable');
+        const nativePath = fs.realpathSync(request.path);
+        // Absolute canonical path is one argument; no shell interprets OSC text.
+        openNativeDirectory(nativePath, (error) => {
+          send('context', { ...result, ...(error ? { error: error.message } : {}) });
+        });
+        return;
+      } else throw new Error('Unknown terminal context operation');
+    } catch (error) { result.error = error.message; }
+    send('context', result);
   }
 
   function getCwd(id, requestId) {
@@ -1248,5 +1350,6 @@ module.exports.create = function create(send, ptyModule) {
     send('shells', { shells: detectAvailableShells(), requestId });
   }
 
-  return { spawn, write, resize, hasPty, kill, killAll, list, getCwd, getOpenPorts, interrupt, gracefulKillAll, getShells };
+  return { spawn, write, resize, hasPty, kill, killAll, list, context,
+    getCwd, getOpenPorts, interrupt, gracefulKillAll, getShells };
 };
