@@ -1,6 +1,10 @@
 import { rgbOf } from '../color-contrast';
 import { getAppliedThemeSnapshot, type AppliedThemeSnapshot } from './apply';
-import { pickDynamicPalette, type DynamicPaletteSnapshot } from './dynamic-palette';
+import {
+  dynamicPaletteValuesFrom,
+  pickDynamicPalette,
+  type DynamicPaletteSnapshot,
+} from './dynamic-palette';
 import type { BundledOrigin, InstalledOrigin } from './types';
 import { getMaterializedVscodeThemeVars } from './vscode-color-observer';
 import {
@@ -130,15 +134,8 @@ function captureDynamicPalette(styles: CSSStyleDeclaration): DynamicPaletteSnaps
   const ctx = getColorContext();
   if (!ctx) return { door: null, focusRing: null };
 
-  return pickDynamicPalette({
-    appBg: readVar(styles, '--color-app-bg') ?? '',
-    headerInactiveBg: readVar(styles, '--color-header-inactive-bg') ?? '',
-    headerInactiveFg: readVar(styles, '--color-header-inactive-fg') ?? '',
-    terminalBg: readVar(styles, '--color-terminal-bg') ?? '',
-    terminalFg: readVar(styles, '--color-terminal-fg') ?? '',
-    headerActiveBg: readVar(styles, '--color-header-active-bg') ?? '',
-    focusBorder: readVar(styles, '--vscode-focusBorder') ?? '',
-  }, (color) => rgbOf(color, ctx));
+  const values = dynamicPaletteValuesFrom('token', (name) => readVar(styles, name) ?? '');
+  return pickDynamicPalette(values, (color) => rgbOf(color, ctx));
 }
 
 function captureVisibleVars(

@@ -51,3 +51,18 @@ showed the stored theme.
 **Why the colour tokens are their own file.** The website compiles the library from source, so its Tailwind root has to scan `lib/src` or none of the library's utilities are emitted there — which is how the picker once lost its width, cap, and stacking on the docs pages, silently and with no build error. Scanning alone was not enough: the colour utilities resolve against an `@theme` the website did not declare, so the picker, the OpenVSX store, and the theme debugger each rendered with no surface, border, or text colour, and the picker carried a private inline stylesheet to compensate. Importing the whole of `theme.css` was not an option either — its `@theme` retunes `--text-xs`/`--text-sm` for a dense terminal UI, which would shrink type across the marketing site. Splitting the colour half out lets a host take the tokens without the app, and the inline stylesheet was deleted.
 
 **Why `compact` anchors absolutely.** Chromium offsets a fixed descendant of the docs' sticky mobile bar by that containing block; the dialog variants need fixed positioning to escape the dialog's `overflow-y-auto` surface, which would clip an absolute menu, while the compact mounts sit in no such scroller. Anchoring absolutely leaves the menu unmeasured; the trigger is still measured for side selection and the height cap.
+
+**Why the swatch previews chrome instead of repeating the terminal background.**
+The row already supplies the terminal foreground/background. The active header
+fill and runtime focus-ring pick show the chrome's two accent roles.
+Quiet Light uses green header fills and a purple focus border, so
+a background circle plus a focus dot hid the green. Resolving and flattening the
+candidate first also avoids showing translucent selection fills at an opacity the
+app never uses — which is also why the preview shares `applyTheme`'s
+`resolveThemeVars` rather than resolving on its own: a preview that skipped the
+selection flatten would show a candidate at an alpha the app never paints, and
+nothing would catch the divergence. The swatch remains circular while its
+enclosing entry takes the Settings controls' 4px corners: a 16px circle inset
+8px from an entry edge shares no corner with it, so the concentric derivation
+has nothing to match, and the entry keeps the radius every other Settings
+control has.
