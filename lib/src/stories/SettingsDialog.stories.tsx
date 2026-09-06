@@ -59,17 +59,6 @@ export const DeferralEnabled: Story = {
 };
 
 /**
- * Speech on. The delay field below it goes from dimmed-and-disabled to live,
- * which is the only visual difference between this and `WithRules`.
- */
-export const SpeechEnabled: Story = {
-  parameters: {
-    primedWatchedCommands: ['claude', 'codex'],
-    primedAlertSettings: { speakEnabled: true },
-  },
-};
-
-/**
  * Push on, with one subscribed phone — the mockup's "Push will be sent to …"
  * case. The device line is the join of the server's subscriptions and the
  * Burrow's ACL labels, so a story has to prime it directly.
