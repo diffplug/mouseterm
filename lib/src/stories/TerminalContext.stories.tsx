@@ -138,7 +138,6 @@ export const CommonCase: Story = {};
 export const NarrowHelperHeader: Story = { args: { initialScenario: 'preserved', paneWidth: 660 } };
 export const NoPorts: Story = { args: { initialScenario: 'noPorts' } };
 export const AutorunRunning: Story = { args: { initialScenario: 'running' } };
-export const EditorOpen: Story = { args: { initialScenario: 'editor' } };
 export const DifferentDirectory: Story = { args: { initialScenario: 'differentDirectory' } };
 export const MultiplePorts: Story = { args: { initialScenario: 'multiplePorts' } };
 export const Notification: Story = { args: { initialScenario: 'notification' } };
