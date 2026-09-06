@@ -643,11 +643,6 @@ export const NotepadCompactWidth: Story = {
   parameters: primedState({ status: 'NOTHING_TO_SHOW', todo: false }),
 };
 
-export const NotepadMinimalWidthEmpty: Story = {
-  args: { width: 150 },
-  parameters: primedState({ status: 'NOTHING_TO_SHOW', todo: false }),
-};
-
 export const NotepadMinimalWidthWithNotes: Story = {
   args: { width: 150, noteCount: 2 },
   parameters: primedState({ status: 'NOTHING_TO_SHOW', todo: false }),
