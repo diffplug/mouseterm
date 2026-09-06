@@ -53,7 +53,7 @@ describe('which half of a tool is forward', () => {
     expect(toolFace(serving)).toBe('browser');
   });
 
-  it('shows the terminal again when the header chip pins it', () => {
+  it('ignores a retired terminal-pin param once the tool serves', () => {
     expect(toolFace({ ...serving, showTerminal: true })).toBe('browser');
   });
 

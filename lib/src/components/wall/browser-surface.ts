@@ -93,9 +93,8 @@ export function toolPendingFromParams(params: unknown): ToolPending | null {
  */
 export type ToolFace = 'terminal' | 'browser' | 'port-conflict' | 'pending-approval';
 
-/** What occupies the tool's second half,  or null
- *  when it has none yet — `toolFace`'s
- *  browser branch, so both read the mutual exclusion from one place. */
+/** What occupies the tool's second half, or null when it has none yet.
+ *  `toolFace` reads the conflict/browser mutual exclusion from this one place. */
 export function toolSecondFace(params: unknown): 'browser' | 'port-conflict' | null {
   if (!isToolParams(params)) return null;
   if (toolPortConflictFromParams(params) !== null) return 'port-conflict';

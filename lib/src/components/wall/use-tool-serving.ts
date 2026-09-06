@@ -131,7 +131,6 @@ export function useToolServing({
           disposeAgentBrowserSurfaceController(leaf.id);
           lath.store.updateParams(leaf.id, {
             url: undefined,
-            showTerminal: undefined,
             toolPortConflict: undefined,
             session: undefined,
             wsPort: undefined,

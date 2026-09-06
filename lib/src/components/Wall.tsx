@@ -6,6 +6,7 @@ import type { PortUrlEntry } from './wall/port-url';
 import { beginPromotion, cancelPromotion, closeHelperParent, finishPromotion, getHelper, helperHasWork } from '../lib/helper-terminal';
 import { isHelperSession } from '../lib/terminal-store';
 import { useRef, useState, useEffect, useCallback, useMemo, useSyncExternalStore, lazy, Suspense, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { clsx } from 'clsx';
 import { Baseboard } from './Baseboard';
 import { ExternalLinkModalHost } from './ExternalLinkModalHost';
@@ -35,6 +36,7 @@ import {
   disposeSession,
   dismissOrToggleAlert,
   focusSession,
+  refitSession,
   markSessionAttention,
   toggleSessionTodo,
   setPendingShellOpts,
@@ -1531,7 +1533,10 @@ export function Wall({
       const { surfaceId } = (event as CustomEvent<{ surfaceId: string }>).detail;
       const meta = lath.getMeta(surfaceId);
       if (!meta || !isToolParams(meta.params)) return;
-      setTerminalContext({ id: surfaceId });
+      // Pin resolution runs synchronously after this event. Commit the context
+      // mount and fit first, so its markers and selection use the visible grid.
+      flushSync(() => setTerminalContext({ id: surfaceId }));
+      refitSession(surfaceId);
     };
     window.addEventListener('dormouse:reveal-note-source', reveal);
     return () => window.removeEventListener('dormouse:reveal-note-source', reveal);
