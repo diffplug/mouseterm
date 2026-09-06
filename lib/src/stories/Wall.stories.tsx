@@ -178,21 +178,6 @@ export const AlertModalOpen: Story = {
   },
 };
 
-export const TodoAfterDismiss: Story = {
-  args: {
-    initialPaneIds: ['wall-todo-after-dismiss'],
-  },
-  parameters: {
-    fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
-    ...withPrimedActivity({
-      'wall-todo-after-dismiss': {
-        status: 'ALERT_RINGING',
-        todo: true,
-      },
-    }),
-  },
-};
-
 export const MinimizedRingingSession: Story = {
   args: {
     initialPaneIds: ['wall-minimized-ringing'],
