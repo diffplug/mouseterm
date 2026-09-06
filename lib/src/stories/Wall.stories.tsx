@@ -136,21 +136,6 @@ export const WithDoors: Story = {
   },
 };
 
-export const AlertRingingPane: Story = {
-  args: {
-    initialPaneIds: ['wall-alert-ringing'],
-  },
-  parameters: {
-    fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
-    ...withPrimedActivity({
-      'wall-alert-ringing': {
-        status: 'ALERT_RINGING',
-        todo: false,
-      },
-    }),
-  },
-};
-
 export const AlertRingingDoor: Story = {
   args: {
     initialPaneIds: ['wall-alert-ringing-door'],
