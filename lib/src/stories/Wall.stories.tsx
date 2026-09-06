@@ -110,10 +110,6 @@ export const Default: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
 };
 
-export const WithLsOutput: Story = {
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_LS_OUTPUT) } },
-};
-
 export const WithAnsiColors: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_ANSI_COLORS) } },
 };
