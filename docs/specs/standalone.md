@@ -5,6 +5,18 @@
 > Defers the protocol it speaks — PTY lifecycle, message contracts, persisted-session types, adapter-agnostic invariants — to `docs/specs/transport.md`.
 > Evidence and dead approaches: [standalone.rationale.md](standalone.rationale.md).
 
+## Code Map
+
+Start at the runtime boundary involved, then follow its imports and dispatch:
+
+| Entrypoint | Role |
+|---|---|
+| `standalone/src/main.tsx` | Webview bootstrap, adapter selection, and app composition. |
+| `standalone/src/tauri-adapter.ts` | Shared frontend's Tauri command/event bridge. |
+| `standalone/src-tauri/src/lib.rs` | Native app entry, sidecar supervision, and command registration. |
+| `standalone/sidecar/main.js` | JSON-lines command dispatch into PTY and shared host modules. |
+| `standalone/src/quit.ts` | Webview quit orchestration and updater handoff. |
+
 ## Architecture
 
 **Rust stays thin**: it spawns and supervises the sidecar, bridges the webview to

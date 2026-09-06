@@ -31,8 +31,9 @@
  *      heading in the spec), and has no `## Future` — rationale files are
  *      informative, the fold belongs to the spec. Rationale files are not
  *      specs: they skip checks 1, 2, and 5 but ride 3 and 4.
- *   9. A spec uses one implementation map: either `## Files` / `## Code Map`
- *      or section-local `Source of truth:` pointers, never both.
+ *   9. Retired: navigation maps and section-local pointers may coexist.
+ *      Maps are optional and need not cover every file; check 4 validates
+ *      their repo paths, while check 12 validates targeted pointers.
  *  10. Word-budget ratchet: every spec (and AGENTS.md, SELF_HOST.md) stays
  *      under its budget in scripts/spec-word-budgets.json. A budget is the
  *      file's size rounded up to the nearest BUDGET_STEP words. Growth past
@@ -318,19 +319,6 @@ for (const rat of rationaleFiles) {
     } else if (!specAnchors.has(slug(h.title))) {
       problems.push(`${rat}: "## ${h.title}" is not a heading in ${spec}`);
     }
-  }
-}
-
-// --- Check 9: one implementation map per spec -------------------------------
-for (const spec of foldCheckedFiles) {
-  const lines = proseLines(spec);
-  const mapLine = lines.findIndex((line) => /^##\s+(?:Files|Code Map)\s*$/i.test(line));
-  const sourceLine = lines.findIndex((line) => /\bSource of truth:/.test(line));
-  if (mapLine !== -1 && sourceLine !== -1) {
-    problems.push(
-      `${spec}:${sourceLine + 1}: has both "${lines[mapLine].trim()}" and ` +
-      '`Source of truth:` pointers — use one implementation map',
-    );
   }
 }
 

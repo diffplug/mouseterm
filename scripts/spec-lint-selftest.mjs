@@ -14,10 +14,13 @@
  * instead of for its check. Check 15 (a large spec needs a rationale file) is
  * a number, not a pattern, and cannot be planted without also tripping the
  * structural checks, so it is not here. `scripts/lint-kit.mjs` owns the
- * edit-and-restore.
+ * edit-and-restore. Valid-form cases also keep optional navigation maps
+ * compatible with targeted implementation pointers.
  */
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { makeSelftest, readRepoFile, repoRoot } from './lint-kit.mjs';
 import { countWords } from './spec-md.mjs';
@@ -52,6 +55,26 @@ const CASES = [
 ];
 
 const selftest = makeSelftest('spec-lint.mjs', '.spec-selftest.bak');
+
+// A one-entry map deliberately omits the file named by the local pointer:
+// maps are navigation aids, not exhaustive implementation inventories.
+// Run both supported headings, and prove map paths still get checked.
+const originalSpec = readRepoFile(SPEC);
+const specPath = join(repoRoot, SPEC);
+for (const heading of ['Files', 'Code Map']) {
+  const map = `\n## ${heading}\n\n| Entrypoint | Role |\n|---|---|\n| \`scripts/lint-kit.mjs\` | Lint plumbing. |\n\n## Map pointer fixture\n\nSource of truth: \`countWords\` in \`scripts/spec-md.mjs\`.\n`;
+  try {
+    writeFileSync(specPath, originalSpec + map);
+    execFileSync('node', [join(repoRoot, 'scripts/spec-lint.mjs')], { stdio: 'pipe' });
+    writeFileSync(specPath, originalSpec + map.replace('scripts/lint-kit.mjs', 'scripts/no-such-map-entry.mjs'));
+    const result = spawnSync('node', [join(repoRoot, 'scripts/spec-lint.mjs')], { encoding: 'utf8' });
+    assert.equal(result.status, 1, `${heading}: a missing map path must fail lint`);
+    assert.match(result.stdout + result.stderr, /path does not exist -> scripts\/no-such-map-entry\.mjs/, `${heading}: require the map path diagnostic`);
+  } finally {
+    writeFileSync(specPath, originalSpec);
+  }
+}
+console.log('spec-lint-selftest: OK (Files / Code Map coexist with pointers; partial maps pass and missing paths fail)');
 
 for (const [name, target, text] of CASES) {
   selftest.withAppended(target, text, `${name}\n      planting this in ${target} stays green — spec-lint cannot see it`);

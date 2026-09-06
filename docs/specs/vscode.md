@@ -6,6 +6,18 @@
 >
 > Defers to `docs/specs/transport.md` — PTY lifecycle, buffering, reconnection, the message protocol, persisted-session types, and every adapter-agnostic invariant — for all sections below.
 
+## Code Map
+
+Start on the side of the webview boundary involved, then follow imports:
+
+| Entrypoint | Role |
+|---|---|
+| `vscode-ext/src/extension.ts` | Activation, panel setup, and deactivation; wires host services and view registration. |
+| `vscode-ext/src/message-router.ts` | Per-webview command dispatch and PTY ownership. |
+| `vscode-ext/src/pty-manager.ts` | Extension-side PTY API and forked child-process bridge. |
+| `lib/src/main.tsx` | Shared webview bootstrap, recovery, and app mount. |
+| `lib/src/lib/platform/vscode-adapter.ts` | Frontend adapter over VS Code's message bridge. |
+
 ## What's built
 
 Two hosting modes: a `WebviewView` in the bottom panel (alongside Terminal, Problems, Output) and `WebviewPanel` editor tabs (`dormouse.open`, multiple instances). Both restore across "Developer: Reload Window". PTYs live in the extension host (`pty-manager.ts`), survive panel visibility toggling, and replay buffered output on **resume**. Scrollback is never persisted (`docs/specs/transport.md` → "Persistence policy"); `deactivate()` instead interrupts the live PTYs and records each pane's agent resume invocation for the next cold restore to auto-run (`docs/specs/layout.md` → "Agent resume on cold restore").
