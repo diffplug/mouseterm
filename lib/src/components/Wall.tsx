@@ -1,4 +1,4 @@
-import { TerminalContextContext } from './wall/wall-context';
+import { TerminalContextContext, type TerminalContextOpenOptions } from './wall/wall-context';
 import type { PortMode } from './wall/TerminalContextView';
 import type { PortUrlEntry } from './wall/port-url';
 import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHelper, helperHasWork, type HelperTerminal } from '../lib/helper-terminal';
@@ -271,7 +271,7 @@ export function Wall({
    */
   enableBurrow?: boolean;
 } = {}) {
-  const [terminalContext, setTerminalContext] = useState<{ id: string; warning?: string } | null>(null);
+  const [terminalContext, setTerminalContext] = useState<({ id: string } & TerminalContextOpenOptions) | null>(null);
   const pendingHelperCloses = useRef(new Set<string>());
   // The Lath engine handle — Dormouse's tiling engine. Constructed lazily exactly
   // once per Wall mount, so `createLathWallEngine` is not re-invoked each render
@@ -1526,8 +1526,8 @@ export function Wall({
     try { await operation; } finally { contextPortLaunches.current.delete(key); }
   }, [buildDorSurfaces, buildDorSurfaceList, createContentSurface, enterTerminalMode, killPaneImmediately, lath, revealSurface, updateSurfaceParams]);
   const contextActions = useMemo(() => ({
-    id: terminalContext?.id ?? null, warning: terminalContext?.warning,
-    open: (id: string, warning?: string) => { if (isHelperSession(id)) return; setTerminalContext({ id, warning }); },
+    id: terminalContext?.id ?? null, warning: terminalContext?.warning, origin: terminalContext?.origin,
+    open: (id: string, options?: TerminalContextOpenOptions) => { if (isHelperSession(id)) return; setTerminalContext({ id, ...options }); },
     close: () => setTerminalContext(null),
     promote: async (id: string) => {
       if (!getHelper(id) || !nav.hasPane(id)) throw new Error('Helper cannot be placed beside this terminal');

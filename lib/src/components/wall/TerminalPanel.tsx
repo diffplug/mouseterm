@@ -27,10 +27,10 @@ export function TerminalPanel(props: PaneProps) {
       // A program that owns the mouse keeps its right-click (docs/specs/mouse-and-clipboard.md).
       const mouse = getMouseSelectionState(props.id);
       if (mouse.mouseReporting !== 'none' && mouse.override === 'off') return;
-      context.open(props.id);
+      context.open(props.id, { origin: { x: event.clientX, y: event.clientY } });
     }}>
       <TerminalPane id={props.id} isFocused={isFocused} />
-      {context.id === props.id && <TerminalContext id={props.id} title={props.title} />}
+      {context.id === props.id && <TerminalContext id={props.id} title={props.title} sourceElement={elRef.current} />}
     </div>
   );
 }

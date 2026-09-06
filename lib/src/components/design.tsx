@@ -80,6 +80,9 @@ export const ALERT_SPEECH_TRACKING_CLASS = 'tracking-[0.12em]';
 // stay at the call site; the surface recipe is shared so they can't drift.
 export const POPUP_SURFACE_CLASS = 'z-[1000] rounded border border-border bg-surface-raised font-mono text-foreground shadow-md';
 
+/** The terminal context floats over its source, with an edge visible in dark themes. */
+export const TERMINAL_CONTEXT_SURFACE_CLASS = 'z-[1000] rounded-lg border border-foreground/20 bg-surface-raised font-mono text-foreground shadow-2xl';
+
 // `ComponentProps<'div'>` rather than `HTMLAttributes<HTMLDivElement>` so `ref`
 // is among the props (React 19 ref-as-prop): an anchored menu needs the row
 // itself measured, not a wrapper around it.

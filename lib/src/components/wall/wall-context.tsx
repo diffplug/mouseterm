@@ -98,9 +98,14 @@ export const WindowFocusedContext = createContext(true);
 
 export const DialogKeyboardContext = createContext<(active: boolean) => void>(() => {});
 
+export interface TerminalContextOpenOptions {
+  warning?: string;
+  origin?: { x: number; y: number };
+}
+
 export const TerminalContextContext = createContext<{
-  id: string | null; warning?: string;
-  open(id: string, warning?: string): void; close(): void;
+  id: string | null; warning?: string; origin?: { x: number; y: number };
+  open(id: string, options?: TerminalContextOpenOptions): void; close(): void;
   promote(id: string): Promise<void>;
   openPort(id: string, entry: PortUrlEntry, mode: PortMode): Promise<void>;
 }>({ id: null, open: () => {}, close: () => {}, promote: async () => {}, openPort: async () => {} });

@@ -1,6 +1,6 @@
-import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowCounterClockwiseIcon, ArrowLineUpIcon, ArrowSquareOutIcon, BugBeetleIcon, CheckIcon, CircleNotchIcon, CopyIcon, FrameCornersIcon, PauseIcon, SlidersHorizontalIcon, TerminalIcon, WarningIcon, XIcon } from '@phosphor-icons/react';
-import { OnOffSwitch, POPUP_SURFACE_CLASS, SUBTLE_ACTION_COLOR_CLASS, SUBTLE_ACTION_INTERACTION_CLASS, SUBTLE_ACTION_REST_COLOR_CLASS } from '../design';
+import { OnOffSwitch, POPUP_SURFACE_CLASS, SUBTLE_ACTION_COLOR_CLASS, SUBTLE_ACTION_INTERACTION_CLASS, SUBTLE_ACTION_REST_COLOR_CLASS, TERMINAL_CONTEXT_SURFACE_CLASS } from '../design';
 import { stepFocus } from '../focus-step';
 import { AgentRobotIcon } from './BrowserDisplayIcon';
 import type { PortUrlEntry } from './port-url';
@@ -12,6 +12,7 @@ export type ContextScan = { status: 'scanning' | 'failed' } | { status: 'loaded'
 /** Every action may fail asynchronously; the view reports the failure. */
 type Action = () => void | Promise<void>;
 export interface TerminalContextViewProps {
+  origin?: { x: number; y: number };
   defaultCommand?: string; title: string; surfaceRef: string; cwd: string; helperCwd?: string; mismatch?: boolean;
   titleSources: { source: string; value: string; note?: string }[];
   scan: ContextScan; argv0?: string | null; watching: boolean; todo: boolean;
@@ -77,6 +78,16 @@ function ContextOpenAction({ children, label, disabled, onOpen }: { children: Re
 }
 
 export function TerminalContextView(p: TerminalContextViewProps) {
+  const surface = useRef<HTMLElement>(null);
+  const initialOrigin = useRef(p.origin);
+  useLayoutEffect(() => {
+    const element = surface.current;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    const origin = initialOrigin.current;
+    element.style.setProperty('--context-origin-x', `${origin ? Math.max(0, Math.min(rect.width, origin.x - rect.left)) : 0}px`);
+    element.style.setProperty('--context-origin-y', `${origin ? Math.max(0, Math.min(rect.height, origin.y - rect.top)) : 0}px`);
+  }, []);
   const detailRoot = useRef<HTMLDivElement>(null);
   const [detail, setDetail] = useState(p.initialDetail ?? null);
   useEffect(() => {
@@ -96,8 +107,8 @@ export function TerminalContextView(p: TerminalContextViewProps) {
   /** A detail-dialog action: closes the dialog on success and holds the buttons meanwhile. */
   const submit = async (action: Action) => { setBusy(true); if (await attempt(action)) setDetail(null); setBusy(false); };
   const status = p.status === 'waiting' ? 'Waiting for shell…' : p.status === 'off' ? 'Autorun off' : p.status === 'unsupported' ? 'Autorun skipped: shell readiness unavailable' : p.status === 'exited' ? 'Helper exited' : preserved ? 'Skipping autorun to preserve user keystrokes' : p.status === 'running' ? `Running ${p.command}…` : `${p.command} autoran`;
-  return <section aria-label="Terminal context" data-terminal-context tabIndex={-1}
-    className={`${POPUP_SURFACE_CLASS} absolute bottom-8 left-0 right-8 top-0 flex flex-col overflow-hidden text-sm`}
+  return <section ref={surface} aria-label="Terminal context" data-terminal-context tabIndex={-1}
+    className={`${TERMINAL_CONTEXT_SURFACE_CLASS} terminal-context-enter absolute inset-4 flex flex-col overflow-hidden text-sm`}
     onKeyDown={event => {
       if ((event.target as HTMLElement).closest('[data-helper-terminal]') && !detail) return;
       if (detail && event.key === 'Tab') {
@@ -106,6 +117,7 @@ export function TerminalContextView(p: TerminalContextViewProps) {
       }
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (detail) setDetail(null); else p.onClose(); }
     }}>
+    <div className="terminal-context-content flex min-h-0 flex-1 flex-col">
     <div className="shrink-0 px-3 py-2">
       <div className="grid grid-cols-[4rem_1fr] items-center gap-y-1">
         <span className="text-muted">Title</span>
@@ -142,6 +154,7 @@ export function TerminalContextView(p: TerminalContextViewProps) {
       {p.mismatch && <div role="alert" className="mx-3 mb-2 flex shrink-0 items-start gap-2 border-l-4 border-error bg-error/10 px-3 py-2"><WarningIcon size={18} weight="fill" className="shrink-0 text-error" /><div><div className="font-semibold">Helper directory differs from parent</div><div className="mt-1 grid grid-cols-[4rem_1fr] gap-x-2"><span className="text-muted">Helper</span><strong>{p.helperCwd}</strong><span className="text-muted">Parent</span><span>{p.cwd}</span></div></div></div>}
       {(p.warning || (!detail && error)) && <div role="alert" className="mx-3 mb-2 border-l-4 border-error bg-error/10 px-3 py-2">{p.warning || error}</div>}
       <div className="min-h-0 flex-1 bg-terminal-bg text-terminal-fg">{p.children}</div>
+    </div>
     </div>
     {detail && <div className="absolute inset-0 z-10 bg-app-bg/35" onClick={() => setDetail(null)}><div ref={detailRoot} role="dialog" aria-modal="true" aria-label={detail === 'title' ? 'Title sources' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal'} className={`${POPUP_SURFACE_CLASS} absolute left-3 right-3 top-9 p-4`} onClick={e => e.stopPropagation()}>
       <div className="mb-3 flex items-center justify-between font-semibold"><span>{detail === 'title' ? 'Why this title?' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal?'}</span><ContextAction label="Close details" onClick={() => setDetail(null)} muted><XIcon size={14} /></ContextAction></div>

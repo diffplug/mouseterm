@@ -1,4 +1,5 @@
 import { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { TerminalPane } from '../TerminalPane';
 import { TerminalContextView, type ContextScan } from './TerminalContextView';
 import { TerminalContextContext, WallActionsContext } from './wall-context';
@@ -9,10 +10,11 @@ import { focusSession, getActivitySnapshot, getTerminalPaneStateSnapshot, isComm
 import { writeTextToClipboard } from '../../lib/clipboard';
 import { listenerUrlsByPort } from './port-url';
 import { DEFAULT_HELPER_COMMAND } from '../../lib/terminal-context-types';
+import { resolvePaneElement } from './resolve-pane-element';
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-export function TerminalContext({ id, title }: { id: string; title?: string }) {
+export function TerminalContext({ id, title, sourceElement }: { id: string; title?: string; sourceElement: HTMLElement | null }) {
   const context = useContext(TerminalContextContext);
   const actions = useContext(WallActionsContext);
   const states = useSyncExternalStore(subscribeToTerminalPaneState, getTerminalPaneStateSnapshot);
@@ -51,8 +53,12 @@ export function TerminalContext({ id, title }: { id: string; title?: string }) {
   const copy = async (value: string) => { if (!await writeTextToClipboard(value)) throw new Error('Could not copy to clipboard'); };
   const mismatch = !!helper && !!cwd && !!helperCwd && (cwd.path !== helperCwd.path || cwd.isRemote !== helperCwd.isRemote || (cwd.isRemote && cwd.host !== helperCwd.host));
   const warning = context.warning ?? (helperError || (helper && helper.status !== 'waiting' && (!cwd || !helperCwd) ? 'Directory comparison unavailable: a terminal has not reported its directory.' : undefined));
-  return <div ref={wrapper} onMouseDown={e => e.stopPropagation()}>
-    <TerminalContextView title={deriveSurfaceLabel(state, appTitleForPane, title ?? id)} surfaceRef={actions.resolveSurfaceRef(id)}
+  const pane = resolvePaneElement(sourceElement);
+  if (!pane) return null;
+  // Keep the helper mounted in one portal for this opening. The leaf tracks
+  // layout changes itself, and the overlay escapes the body's clipping box.
+  return createPortal(<div ref={wrapper} onMouseDown={e => e.stopPropagation()} onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}>
+    <TerminalContextView origin={context.origin} title={deriveSurfaceLabel(state, appTitleForPane, title ?? id)} surfaceRef={actions.resolveSurfaceRef(id)}
       titleSources={titleSources} cwd={cwd ? display(cwd) : 'Directory unknown'} helperCwd={helperCwd && display(helperCwd)} mismatch={mismatch}
       scan={scan} argv0={argv0} watching={!!argv0 && isCommandWatched(argv0)} todo={activities.get(id)?.todo === true} notification={activities.get(id)?.notification}
       status={helper?.status ?? 'waiting'} command={helper?.command ?? defaultCommand} defaultCommand={defaultCommand} warning={warning}
@@ -66,5 +72,5 @@ export function TerminalContext({ id, title }: { id: string; title?: string }) {
       onReset={async () => { disposeHelper(id); await openHelper(id); }} onPromote={() => context.promote(id)}>
       {helper && <div data-helper-terminal={helper.id} className="h-full px-3 py-2" onMouseDown={() => focusSession(helper.id, true)} onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}><TerminalPane key={helper.id} id={helper.id} isFocused={false} /></div>}
     </TerminalContextView>
-  </div>;
+  </div>, pane);
 }

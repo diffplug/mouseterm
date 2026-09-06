@@ -81,9 +81,10 @@ it('shares header, alert and uncaptured body entry points; captured mouse has no
   act(() => root.render(<TerminalContextContext.Provider value={value}><TerminalPaneHeader id="parent" /><TerminalPanel id="parent" /></TerminalContextContext.Provider>));
   const header = container.querySelector('[data-pane-header-for]')!;
   const body = container.querySelector('textarea')!;
-  const rightClick = (target: Element, shiftKey = false) => act(() => target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, shiftKey })));
+  const rightClick = (target: Element, shiftKey = false) => act(() => target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, shiftKey, clientX: 120, clientY: 90 })));
   rightClick(header); rightClick(container.querySelector('[data-alert-button-for]')!); rightClick(body);
   expect(open).toHaveBeenCalledTimes(3);
+  for (const call of open.mock.calls) expect(call).toEqual(['parent', { origin: { x: 120, y: 90 } }]);
   act(() => setMouseReporting('parent', 'vt200'));
   rightClick(body); rightClick(body, true); expect(open).toHaveBeenCalledTimes(3);
   rightClick(header); expect(open).toHaveBeenCalledTimes(4);

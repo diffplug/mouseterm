@@ -1475,6 +1475,9 @@ describe('Wall on the Lath engine', () => {
         '[data-terminal-context] button[aria-label="Open in agent-browser screencast"]',
       );
       expect(portRow).not.toBeNull();
+      const contextMenu = portRow!.closest('[data-terminal-context]')!;
+      expect(contextMenu.closest('[data-lath-leaf]')).toBe(header.closest('[data-lath-leaf]'));
+      expect(contextMenu.closest('.lath-leaf-body')).toBeNull();
       await act(async () => {
         portRow!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
