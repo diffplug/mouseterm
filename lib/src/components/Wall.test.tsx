@@ -60,7 +60,8 @@ beforeEach(() => {
     disconnect() {}
   } as unknown as typeof ResizeObserver;
   // Reduced motion so the Lath engine runs a 0 duration: the two-phase kill's
-  // deferred removal fires on a setTimeout(0) and completes within `flush()` — the
+  // deferred removal fires on a setTimeout(0); archive decisions may queue it
+  // after a flush has started, so those tests wait for the removal itself. The
   // instant path is also stage 3's "reduced motion" acceptance requirement.
   globalThis.matchMedia = ((query: string) => ({
     matches: query.includes('prefers-reduced-motion'),
@@ -2431,7 +2432,10 @@ describe('Wall on the Lath engine', () => {
     await flush();
 
     expect(archiveFailureModal()).toBeNull();
-    expect(container.querySelector('[data-lath-leaf="pane-a"]')).toBeNull();
+    await vi.waitFor(async () => {
+      await flush();
+      expect(container.querySelector('[data-lath-leaf="pane-a"]')).toBeNull();
+    });
     expect(getNotes('pane-a')).toEqual([]);
     expect((await storedArchive()).batches).toEqual([]);
   });
@@ -2467,7 +2471,10 @@ describe('Wall on the Lath engine', () => {
     expect(archiveFailureModal()).toBeNull();
     expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
     expect(getNotes('pane-a')).toHaveLength(1);
-    expect(container.querySelector('[data-lath-leaf="pane-b"]')).toBeNull();
+    await vi.waitFor(async () => {
+      await flush();
+      expect(container.querySelector('[data-lath-leaf="pane-b"]')).toBeNull();
+    });
   });
 
   it('migrates a notepad to the new id when a replacement mints one', async () => {
