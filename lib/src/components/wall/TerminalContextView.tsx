@@ -25,12 +25,12 @@ export interface TerminalContextViewProps {
   initialDetail?: 'title' | 'modify' | 'reset' | null;
 }
 
-export function ContextAction({ children, label, onClick, disabled = false, muted = false }: { children: ReactNode; label: string; onClick?: () => void; disabled?: boolean; muted?: boolean }) {
+export function ContextAction({ children, label, onClick, disabled = false, busy = false, muted = false }: { children: ReactNode; label: string; onClick?: () => void; disabled?: boolean; busy?: boolean; muted?: boolean }) {
   const windowFocused = useContext(WindowFocusedContext);
   // Native app launches can leave :hover stale until this window regains focus.
   const color = muted ? 'text-muted' : windowFocused ? SUBTLE_ACTION_COLOR_CLASS : SUBTLE_ACTION_REST_COLOR_CLASS;
-  return <button type="button" title={label} aria-label={label} disabled={disabled} onClick={onClick}
-    className={`inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 disabled:opacity-40 ${windowFocused ? SUBTLE_ACTION_INTERACTION_CLASS : ''} ${color}`}>{children}</button>;
+  return <button type="button" title={label} aria-label={label} aria-busy={busy || undefined} disabled={disabled || busy} onClick={onClick}
+    className={`inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 ${busy ? '' : 'disabled:opacity-40'} ${windowFocused ? SUBTLE_ACTION_INTERACTION_CLASS : ''} ${color}`}>{children}</button>;
 }
 
 function ContextCopyAction({ children, label, onCopy }: { children: ReactNode; label: string; onCopy: () => Promise<boolean> }) {
@@ -48,6 +48,29 @@ function ContextCopyAction({ children, label, onCopy }: { children: ReactNode; l
       <span className={`col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5 ${confirmation ? 'invisible' : ''}`}>{children}</span>
       <span role="status" className="col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5">
         {confirmation ? <><CheckIcon size={14} weight="bold" />Copied</> : null}
+      </span>
+    </span>
+  </ContextAction>;
+}
+
+function ContextOpenAction({ children, label, disabled, onOpen }: { children: ReactNode; label: string; disabled: boolean; onOpen: () => Promise<boolean> }) {
+  const [pending, setPending] = useState(false);
+  const [feedback, setFeedback] = useState(false);
+  const opening = pending || feedback;
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(false), 750);
+    return () => clearTimeout(timer);
+  }, [feedback]);
+  return <ContextAction label={label} disabled={disabled} busy={opening} onClick={() => {
+    setPending(true);
+    setFeedback(true);
+    void onOpen().then(success => { setPending(false); if (!success) setFeedback(false); });
+  }}>
+    <span className="grid">
+      <span className={`col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5 ${opening ? 'invisible' : ''}`}>{children}</span>
+      <span role="status" className="col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5">
+        {opening ? <><CircleNotchIcon size={15} className="animate-spin motion-reduce:animate-none" />Opening…</> : null}
       </span>
     </span>
   </ContextAction>;
@@ -91,7 +114,7 @@ export function TerminalContextView(p: TerminalContextViewProps) {
           <div className="ml-auto flex shrink-0 items-center gap-2 text-muted"><ContextCopyAction label="Copy surface identifier" onCopy={() => attempt(p.onCopyRef)}><span>{p.surfaceRef}</span><CopyIcon size={12} /></ContextCopyAction><ContextAction label="Close terminal context" onClick={p.onClose} muted><XIcon size={15} /></ContextAction></div>
         </div>
         <span className="text-muted">Dir</span>
-        <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-1.5"><span className="truncate" title={p.cwd}>{p.cwd}</span><ContextAction label={p.canExplore ? p.explorerLabel : 'Directory unavailable on this host'} disabled={!p.canExplore} onClick={() => void attempt(p.onExplore)}><ArrowSquareOutIcon size={15} />{p.explorerLabel}</ContextAction><ContextCopyAction label="Copy absolute path" onCopy={() => attempt(p.onCopyPath)}><CopyIcon size={14} />Copy path</ContextCopyAction></div>
+        <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-1.5"><span className="truncate" title={p.cwd}>{p.cwd}</span><ContextOpenAction label={p.canExplore ? p.explorerLabel : 'Directory unavailable on this host'} disabled={!p.canExplore} onOpen={() => attempt(p.onExplore)}><ArrowSquareOutIcon size={15} />{p.explorerLabel}</ContextOpenAction><ContextCopyAction label="Copy absolute path" onCopy={() => attempt(p.onCopyPath)}><CopyIcon size={14} />Copy path</ContextCopyAction></div>
         <span className="text-muted">Ports</span>
         <div className="flex min-h-7 flex-wrap items-center gap-2">
           {p.scan.status === 'scanning' ? <span className="text-muted">Scanning ports…</span> : p.scan.status === 'failed' ? <span className="text-error">Port scan failed · Reopen to try again</span> : !selected ? <span className="text-muted">No listening ports</span> : <>
