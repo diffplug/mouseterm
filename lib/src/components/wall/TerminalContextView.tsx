@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowCounterClockwiseIcon, ArrowLineUpIcon, ArrowSquareOutIcon, BugBeetleIcon, CheckIcon, CircleNotchIcon, CopyIcon, FrameCornersIcon, PauseIcon, SlidersHorizontalIcon, TerminalIcon, WarningIcon, XIcon } from '@phosphor-icons/react';
-import { OnOffSwitch, POPUP_SURFACE_CLASS, SUBTLE_ACTION_COLOR_CLASS, SUBTLE_ACTION_INTERACTION_CLASS } from '../design';
+import { OnOffSwitch, POPUP_SURFACE_CLASS, SUBTLE_ACTION_COLOR_CLASS, SUBTLE_ACTION_INTERACTION_CLASS, SUBTLE_ACTION_REST_COLOR_CLASS } from '../design';
 import { stepFocus } from '../focus-step';
 import { AgentRobotIcon } from './BrowserDisplayIcon';
 import type { PortUrlEntry } from './port-url';
 import type { HelperStatus } from '../../lib/helper-terminal';
+import { WindowFocusedContext } from './wall-context';
 
 export type PortMode = 'system' | 'iframe' | 'ab-screencast' | 'ab-popout';
 export type ContextScan = { status: 'scanning' | 'failed' } | { status: 'loaded'; entries: PortUrlEntry[] };
@@ -25,8 +26,11 @@ export interface TerminalContextViewProps {
 }
 
 export function ContextAction({ children, label, onClick, disabled = false, muted = false }: { children: ReactNode; label: string; onClick?: () => void; disabled?: boolean; muted?: boolean }) {
+  const windowFocused = useContext(WindowFocusedContext);
+  // Native app launches can leave :hover stale until this window regains focus.
+  const color = muted ? 'text-muted' : windowFocused ? SUBTLE_ACTION_COLOR_CLASS : SUBTLE_ACTION_REST_COLOR_CLASS;
   return <button type="button" title={label} aria-label={label} disabled={disabled} onClick={onClick}
-    className={`inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 disabled:opacity-40 ${SUBTLE_ACTION_INTERACTION_CLASS} ${muted ? 'text-muted' : SUBTLE_ACTION_COLOR_CLASS}`}>{children}</button>;
+    className={`inline-flex h-6 shrink-0 items-center justify-center gap-1.5 rounded px-1.5 disabled:opacity-40 ${windowFocused ? SUBTLE_ACTION_INTERACTION_CLASS : ''} ${color}`}>{children}</button>;
 }
 
 function ContextCopyAction({ children, label, onCopy }: { children: ReactNode; label: string; onCopy: () => Promise<boolean> }) {
