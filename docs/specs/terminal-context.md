@@ -67,6 +67,8 @@ Source of truth: `TerminalContextView` in `lib/src/components/wall/TerminalConte
 
 **Must show a Tool's primary Session in Terminal Context instead of creating an auxiliary helper.** Reuse the title, directory, port, alert, and notepad presentation, showing Tool command status without helper Modify, Reset, or Promote controls. Pending approval cannot open context.
 
+**Must focus the Tool terminal instance directly**, bypassing its browser Surface focus handle.
+
 **Must mount only one terminal view for the Tool at a time**, moving its retained xterm between the full pane and context without disposing the Session. Context keystrokes, including terminal clipboard chords, belong to that terminal and never reach the browser underneath. Closing context preserves both processes and browser state.
 
 Source of truth: `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`; `ToolPanel` in `lib/src/components/wall/ToolPanel.tsx`. Tests: `lib/src/components/wall/TerminalContext.test.tsx`, `lib/src/components/Wall.test.tsx`.
