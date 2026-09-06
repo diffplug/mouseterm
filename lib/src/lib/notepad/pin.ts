@@ -50,6 +50,7 @@ export function revealNoteSource(surfaceId: string, noteId: string): PinOutcome 
     return failed('no-terminal');
   }
 
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dormouse:reveal-note-source', { detail: { surfaceId, terminalId: source.terminalId } }));
   const resolved = resolveTerminalSource(terminal, source);
   if (!resolved.ok) {
     const outcome = failed(resolved.reason);
@@ -60,7 +61,6 @@ export function revealNoteSource(surfaceId: string, noteId: string): PinOutcome 
     return outcome;
   }
 
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dormouse:reveal-note-source', { detail: { surfaceId, terminalId: source.terminalId } }));
   revealResolvedSource(source.terminalId, resolved.selection);
   return { ok: true };
 }

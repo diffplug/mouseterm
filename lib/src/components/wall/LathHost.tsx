@@ -1,3 +1,4 @@
+import { isToolParams } from './browser-surface';
 // Lath's HTML adapter. Leaves use stable id-sorted DOM order and geometric
 // positioning only; gestures surface as proposals and never activate/focus.
 // See docs/specs/tiling-engine.md → "The HTML adapter (LathHost)".
@@ -115,7 +116,7 @@ function TerminalLeafOverlay({ id, title, params }: PaneProps) {
   return (
     <>
       <AlertSpeechIndicator sessionId={id} />
-      {mounted?.id === id && <TerminalContext {...mounted} title={title} tool={params?.surfaceType === 'tool'} />}
+      {mounted?.id === id && <TerminalContext {...mounted} title={title} tool={isToolParams(params)} />}
     </>
   );
 }

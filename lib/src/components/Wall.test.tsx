@@ -2853,4 +2853,14 @@ it('shares one primary terminal and notepad between a Tool pane and Terminal Con
   await flush();
   expect(container.querySelectorAll('[data-session-id="tool-context"]')).toHaveLength(1);
   expect(getNotes('tool-context').map(note => note.content)).toEqual([{ kind: 'plain', text: 'Keep this note' }]);
+  const refit = vi.spyOn(terminalRegistry, 'refitSession').mockImplementation(id => {
+    expect(id).toBe('tool-context');
+    expect(container.querySelector('[data-context-terminal="tool-context"] [data-session-id="tool-context"]')).not.toBeNull();
+  });
+  act(() => {
+    window.dispatchEvent(new CustomEvent('dormouse:reveal-note-source', { detail: { surfaceId: 'tool-context' } }));
+    // Pin resolution follows synchronously, before the React event returns.
+    expect(refit).toHaveBeenCalledOnce();
+  });
+
 });

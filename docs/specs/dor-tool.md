@@ -168,7 +168,7 @@ The Tool-specific local boundaries are `docs/specs/security-local.md` → Dor To
 
 ## Persistence and hosts
 
-**Must persist the command and stable Tool metadata with `surfaceType: 'tool'`**, retaining the ordinary CWD field. Never persist a derived URL, browser session binding, conflict, pending approval, or visibility toggle as runnable Tool state. Live notes follow `docs/specs/notepad.md` → Live resume.
+**Must persist the command and stable Tool metadata with `surfaceType: 'tool'`**, retaining the ordinary CWD field. Never persist a derived URL, browser session binding, conflict, or pending approval as runnable Tool state. Live notes follow `docs/specs/notepad.md` → Live resume.
 
 **Must cold-restore an approved Tool by starting its saved command through integration-gated shell readiness**, then rediscover its port. Agent-resume commands do not override the saved Tool command. Pending approvals restore as ordinary terminals and execute nothing. **Must rebuild visible Tool metadata from its pane row when layout geometry is unusable**, rather than starting the command in a plain terminal with no serving behavior.
 
