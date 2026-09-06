@@ -114,11 +114,3 @@ export const Blocked: Story = {
     displayText: '',
   },
 };
-
-// Blocked URL hidden behind a plain label.
-export const BlockedWithLabel: Story = {
-  args: {
-    uri: 'javascript:alert(document.cookie)',
-    displayText: 'click for free shipping',
-  },
-};
