@@ -276,10 +276,6 @@ export const TextureAtlas: Story = {
   args: { content: demoContent(), showAtlas: true },
 };
 
-export const Sdf: Story = {
-  args: { content: demoContent(), renderer: 'fork-sdf' },
-};
-
 export const SdfTextureAtlas: Story = {
   args: { content: demoContent(), renderer: 'fork-sdf', showAtlas: true },
 };

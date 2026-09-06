@@ -123,7 +123,7 @@ its `test` (a `tsc` typecheck) runs under `pnpm test`. Stories:
 | Story | Renders |
 | --- | --- |
 | `TextureAtlas` | stock fork (`sdf: false`), and its glyph atlas |
-| `Sdf` / `SdfTextureAtlas` | SDF rendering, and its atlas |
+| `SdfTextureAtlas` | SDF rendering, and its atlas |
 | `SdfVsRasterAt3x` | the VR scenario: one base-size glyph bitmap-upscaled (blurry) vs SDF-rendered (crisp) |
 | `UpstreamVsFork` | regression harness: identical content through pristine upstream `@xterm/addon-webgl`, fork `sdf: false`, fork `sdf: true`, stacked |
 
