@@ -96,6 +96,41 @@ async function flushFrame(): Promise<void> {
 }
 
 describe('Wall on the Lath engine', () => {
+  it('releases input during context exit, cancels stale removal on reopen, and skips exit for reduced motion', async () => {
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a']} initialMode="passthrough" />));
+    await flush();
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = query => ({ ...originalMatchMedia(query), matches: false });
+    vi.useFakeTimers();
+    try {
+      const header = container.querySelector<HTMLElement>('[data-pane-header-for="pane-a"]')!;
+      const open = () => act(async () => { header.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 90 })); });
+      const close = () => act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Close terminal context"]')!.click(); });
+      await open();
+      const menu = container.querySelector<HTMLElement>('[data-terminal-context]')!;
+      await close();
+      expect(menu.isConnected).toBe(true);
+      expect(menu.hasAttribute('inert')).toBe(true);
+      expect(container.querySelector('[data-session-id="pane-a"]')?.getAttribute('data-focused')).toBe('true');
+      await act(async () => vi.advanceTimersByTime(100));
+      await open();
+      expect(menu.hasAttribute('inert')).toBe(false);
+      expect(document.activeElement).toBe(menu);
+      await act(async () => vi.advanceTimersByTime(200));
+      expect(menu.isConnected).toBe(true);
+      await close();
+      await act(async () => vi.advanceTimersByTime(180));
+      expect(menu.isConnected).toBe(false);
+      window.matchMedia = originalMatchMedia;
+      await open();
+      await close();
+      expect(container.querySelector('[data-terminal-context]')).toBeNull();
+    } finally {
+      window.matchMedia = originalMatchMedia;
+      vi.useRealTimers();
+    }
+  });
+
   it('cancels an ensure restart before a late prompt can relaunch its command', async () => {
     await act(async () => {
       root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
@@ -1483,6 +1518,9 @@ describe('Wall on the Lath engine', () => {
         '[data-terminal-context] button[aria-label="Open in agent-browser screencast"]',
       );
       expect(portRow).not.toBeNull();
+      const contextMenu = portRow!.closest('[data-terminal-context]')!;
+      expect(contextMenu.closest('[data-lath-leaf]')).toBe(header.closest('[data-lath-leaf]'));
+      expect(contextMenu.closest('.lath-leaf-body')).toBeNull();
       await act(async () => {
         portRow!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });

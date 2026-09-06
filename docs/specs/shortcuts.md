@@ -89,7 +89,7 @@ The standalone host contributes no chords; `docs/specs/standalone.md` owns its n
 - `lib/src/components/wall/keyboard/` — one module per dispatch branch: `handle-dual-tap.ts`, `handle-editable-clipboard.ts`, `handle-mouse-selection-keys.ts`, `handle-kill-confirm.ts`, `handle-pane-shortcuts.ts`, `handle-pane-navigation.ts`; platform modifiers in `chords.ts`
 - `lib/src/lib/vscode-keybindings.ts` — the workbench mirror allowlist
 - `lib/src/lib/terminal-mouse-router.ts` — live Alt tracking during a drag
-- `lib/src/components/SelectionPopup.tsx`, `lib/src/components/wall/TerminalContextView.tsx`, `lib/src/components/wall/InlineEditInput.tsx`, `lib/src/components/use-popover-focus-trap.ts` — the popover/dialog handlers
+- `lib/src/components/SelectionPopup.tsx`, `lib/src/components/wall/TerminalContextView.tsx`, `lib/src/components/wall/InlineEditInput.tsx` — the popover/dialog handlers
 - `lib/src/components/wall/agent-browser-surface-controller.ts` — browser key forwarding and the edit-chord bridge
 
 ## Future

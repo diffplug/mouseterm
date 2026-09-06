@@ -13,14 +13,17 @@ import { ensureResizeObserver } from './wall-test-utils';
 import { setMouseReporting, removeMouseSelectionState } from '../../lib/mouse-selection';
 import { setPlatform } from '../../lib/platform';
 import { FakePtyAdapter } from '../../lib/platform/fake-adapter';
+import { cfg } from '../../cfg';
 
 vi.mock('../TerminalPane', () => ({ TerminalPane: () => <textarea aria-label="Fake terminal input" /> }));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let container: HTMLDivElement;
 let root: Root;
 let props: TerminalContextViewProps;
+let previousAnimate: boolean;
 const port = (value: number) => ({ port: value, host: 'localhost', url: `http://localhost:${value}/` });
 beforeEach(() => {
+  previousAnimate = cfg.layout.animate;
   setPlatform(new FakePtyAdapter()); ensureResizeObserver();
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
   props = { title: 'pnpm dev', surfaceRef: 'surface:3', cwd: '~/repo', titleSources: [{ source: 'OSC 2', value: 'pnpm dev', note: 'Used' }], scan: { status: 'loaded', entries: [port(5173)] },
@@ -28,10 +31,41 @@ beforeEach(() => {
     onClose: vi.fn(), onCopyRef: vi.fn(), onCopyPath: vi.fn(), onExplore: vi.fn(), onWatch: vi.fn(), onTodo: vi.fn(), onPort: vi.fn(), onModify: vi.fn(async () => {}), onReset: vi.fn(async () => {}), onPromote: vi.fn(async () => {}),
     children: <div data-helper-terminal="helper"><textarea aria-label="Helper input" /></div> };
 });
-afterEach(() => { act(() => root.unmount()); container.remove(); removeMouseSelectionState('parent'); });
+afterEach(() => { act(() => root.unmount()); container.remove(); removeMouseSelectionState('parent'); cfg.layout.animate = previousAnimate; vi.useRealTimers(); });
 const render = () => act(() => root.render(<TerminalContextView {...props} />));
 const button = (label: string) => container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
 const click = async (label: string) => { await act(async () => button(label).click()); };
+
+it('shows static context and initial details together when layout animation is disabled', () => {
+  cfg.layout.animate = false;
+  props.initialDetail = 'title';
+  render();
+  const surface = container.querySelector('[data-terminal-context]')!;
+  expect(surface.classList.contains('terminal-context-enter')).toBe(false);
+  expect(container.querySelector('[role="dialog"]')?.closest('.terminal-context-content')).not.toBeNull();
+});
+
+it('keeps the opening action focused and Escape available while suppressing repeat launches', async () => {
+  vi.useFakeTimers();
+  let finish!: () => void;
+  props.onExplore = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+  render();
+  const launch = button('Open in Finder');
+  act(() => launch.focus());
+  await click('Open in Finder');
+  expect(launch.disabled).toBe(false);
+  expect(launch.getAttribute('aria-disabled')).toBe('true');
+  expect(document.activeElement).toBe(launch);
+  await click('Open in Finder');
+  expect(props.onExplore).toHaveBeenCalledOnce();
+  act(() => launch.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+  expect(props.onClose).toHaveBeenCalledOnce();
+  await act(async () => vi.advanceTimersByTime(800));
+  expect(launch.getAttribute('aria-busy')).toBe('true');
+  await act(async () => finish());
+  expect(launch.hasAttribute('aria-disabled')).toBe(false);
+  expect(document.activeElement).toBe(launch);
+});
 
 it('uses labeled title, directory and port actions without a redundant heading', () => {
   render(); expect(container.querySelector('h1,h2,h3')).toBeNull();
@@ -80,13 +114,14 @@ it('shows both directories in the mismatch warning', () => {
   props.mismatch = true; props.helperCwd = '~/other'; render(); expect(container.querySelector('[role="alert"]')?.textContent).toContain('~/other'); expect(container.querySelector('[role="alert"]')?.textContent).toContain('~/repo');
 });
 it('shares header, alert and uncaptured body entry points; captured mouse has no Shift escape', () => {
-  const open = vi.fn(); const value = { id: null, open, close: vi.fn(), promote: vi.fn(), openPort: vi.fn() };
+  const open = vi.fn(); const value = { id: null, mounted: null, open, close: vi.fn(), promote: vi.fn(), openPort: vi.fn() };
   act(() => root.render(<TerminalContextContext.Provider value={value}><TerminalPaneHeader id="parent" /><TerminalPanel id="parent" /></TerminalContextContext.Provider>));
   const header = container.querySelector('[data-pane-header-for]')!;
   const body = container.querySelector('textarea')!;
-  const rightClick = (target: Element, shiftKey = false) => act(() => target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, shiftKey })));
+  const rightClick = (target: Element, shiftKey = false) => act(() => target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, shiftKey, clientX: 120, clientY: 90 })));
   rightClick(header); rightClick(container.querySelector('[data-alert-button-for]')!); rightClick(body);
   expect(open).toHaveBeenCalledTimes(3);
+  for (const call of open.mock.calls) expect(call).toEqual(['parent', { origin: { x: 120, y: 90 } }]);
   act(() => setMouseReporting('parent', 'vt200'));
   rightClick(body); rightClick(body, true); expect(open).toHaveBeenCalledTimes(3);
   rightClick(header); expect(open).toHaveBeenCalledTimes(4);

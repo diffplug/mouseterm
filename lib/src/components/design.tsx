@@ -220,6 +220,12 @@ export const modalSurface = tv({
 
 export type ModalSurfaceVariants = VariantProps<typeof modalSurface>;
 
+/** The terminal context floats over its source pane: the modal surface with an
+ *  edge that stays visible in dark themes. Its exit length is mirrored into CSS
+ *  as `--context-exit-duration` (docs/specs/layout.md → "Header context menu"). */
+export const TERMINAL_CONTEXT_SURFACE_CLASS = modalSurface({ padding: 'none', elevation: 'modal', class: 'z-[1000] border-foreground/20' });
+export const TERMINAL_CONTEXT_EXIT_MS = 180;
+
 export const modalActionButton = tv({
   base: 'rounded px-2 py-1.5 text-xs transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-45',
   variants: {
@@ -374,7 +380,8 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
 export const UNDER_SWITCH_INDENT = 'ml-18';
 
 /** Quiet action tint and interaction treatment, shared by switches and context actions. */
-export const SUBTLE_ACTION_COLOR_CLASS = 'text-[color:color-mix(in_srgb,var(--color-link)_35%,var(--color-muted))] enabled:hover:text-link enabled:focus-visible:text-link';
+export const SUBTLE_ACTION_REST_COLOR_CLASS = 'text-[color:color-mix(in_srgb,var(--color-link)_35%,var(--color-muted))]';
+export const SUBTLE_ACTION_COLOR_CLASS = `${SUBTLE_ACTION_REST_COLOR_CLASS} enabled:hover:text-link enabled:focus-visible:text-link`;
 export const SUBTLE_ACTION_INTERACTION_CLASS = 'enabled:hover:bg-current/10 focus-visible:outline focus-visible:outline-focus-ring';
 
 /**

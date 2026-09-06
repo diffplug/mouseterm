@@ -426,7 +426,7 @@ debugger can attach to.
 
 ## Terminal context host operations
 
-**Must forward native directory opening, process inspection, helper promotion, and global autorun settings to the PTY host**, preserving correlated errors. Directory opening validates an existing absolute directory, resolves it canonically, and invokes Finder/Explorer/the platform opener with one path argument and no shell. Process-inspection failure is unknown work, never proof of idle. Preference storage is owned by `docs/specs/terminal-context.md` → Global autorun setting; live ownership and replay by `docs/specs/transport.md` → Auxiliary helper metadata.
+The adapter forwards every `TerminalContextRequest` to the PTY host as a correlated request (`docs/specs/transport.md` → Auxiliary helper metadata); directory opening follows `docs/specs/security-local.md` → Terminal context directory actions, and inspection failure follows `docs/specs/terminal-context.md` → Helper lifecycle.
 
 Source of truth: `terminalContext` in `lib/src/lib/platform/vscode-adapter.ts`; `terminalContext` in `vscode-ext/src/pty-manager.ts`; `context` in `standalone/sidecar/pty-core.js`.
 

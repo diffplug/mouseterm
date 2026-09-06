@@ -56,7 +56,11 @@ The label is the `DerivedHeader` from `deriveHeader(...)`; `docs/specs/terminal-
 
 **Must open the terminal context from terminal header, alert, body, and command-mode `>` entry points.** Browser-only Surfaces and Doors have no context. Application mouse ownership follows `docs/specs/mouse-and-clipboard.md` → Terminal context input.
 
-**Must anchor at the terminal body's top-left below its header**, leaving two rem at right and bottom. Keep one context per Wall. Outside pointer press and explicit close dismiss it; resize follows its containing body. No separate context heading or clipboard toolbar is shown.
+**Must float the context inside its source Pane with a one-rem inset on every side**, overlapping the header, with a theme-derived edge and raised shadow. Render it in the Lath leaf's overlay slot, outside the body's clipping box, so it follows the leaf's layout without remounting the helper. Keep one context per Wall. Outside pointer press and explicit close dismiss it. No separate context heading or clipboard toolbar is shown.
+
+**Must reveal the context from the opening pointer position, clamped to its bounds, over 320ms.** Alert activation uses the alert button center; command-mode `>` uses the header's bottom-left; openings without a position use the context's top-left. Keep final layout dimensions throughout the reveal. Start helper creation, settings reads, and port scanning immediately on mount; fade mounted content, including detail dialogs, in over 140ms after 160ms. Reduced motion or disabled layout animation skips both animations and the delay.
+
+**Must contract dismissals toward the opening origin over 180ms, fading content over 100ms**, starting from the current reveal when interrupted. Make the closing context inert and pause helper polling immediately; release focus without waiting for removal. Reopening cancels pending removal. Reduced motion dismisses immediately; promotion, source removal, and replacement by another context retain their immediate lifecycle transitions.
 
 | Row | Content |
 |---|---|
@@ -70,9 +74,15 @@ The label is the `DerivedHeader` from `deriveHeader(...)`; `docs/specs/terminal-
 
 **Must place the shared notepad button beside Promote in the Helper status row**, opening the parent's panel over the context; `docs/specs/notepad.md` → "Helper terminals" owns its behavior.
 
+**Must tint the copyable Surface ref as an action and confirm each successful context copy in its button** with a checkmark and “Copied” for 1.4 seconds, preserving button width and keeping the context open. Failed copies show the action error without success feedback.
+
+**Must suppress context action hover and focus highlights while the window is unfocused**, including after opening a native explorer or system browser.
+
+**Must show “Opening…” with a spinner in the directory explorer button during launch and for at least 0.75 seconds**, preserving width and keyboard focus while blocking repeat clicks. Stop immediately on failure and show the action error. Respect reduced motion by keeping the spinner static.
+
 **Must promote by adopting the helper Session into a new split beside the source**, preserving identity and focusing it. Helper lifetime and source closure are owned by `docs/specs/terminal-context.md`.
 
-Source of truth: `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`; `TerminalPanel` in `lib/src/components/wall/TerminalPanel.tsx`; `TerminalPaneHeader` in `lib/src/components/wall/TerminalPaneHeader.tsx`; `useWallKeyboard` in `lib/src/components/wall/use-wall-keyboard.ts`.
+Source of truth: `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`; `TerminalLeafOverlay` in `lib/src/components/wall/LathHost.tsx`; `TerminalPanel` in `lib/src/components/wall/TerminalPanel.tsx`; `TerminalPaneHeader` in `lib/src/components/wall/TerminalPaneHeader.tsx`; `useWallKeyboard` in `lib/src/components/wall/use-wall-keyboard.ts`; `.terminal-context-enter` / `.terminal-context-content` in `lib/src/theme.css`. Tests: `lib/src/components/wall/TerminalContext.test.tsx`, `lib/src/components/Wall.test.tsx`.
 
 ### Pane body
 

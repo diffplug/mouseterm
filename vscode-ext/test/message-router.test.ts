@@ -122,6 +122,15 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it('reports rejected helper creation as an exited terminal', () => {
+  const webview = fakeWebview();
+  const disposable = router.attachRouter(webview.channel, {});
+  try {
+    webview.send({ type: 'pty:spawn', id: 'rejected-helper', options: { helper: { parentId: 'unowned-parent', command: 'git status' } } });
+    expect(webview.posted).toContainEqual({ type: 'pty:exit', id: 'rejected-helper', exitCode: 1 });
+  } finally { disposable.dispose(); }
+});
+
 describe('session flush', () => {
   it('waits for ordered host writes after the webview acknowledges its flush', async () => {
     vi.useFakeTimers();

@@ -569,7 +569,10 @@ export function attachRouter(
         break;
       }
       case 'pty:spawn': {
-        if (msg.options?.helper && (!ownedPtyIds.has(msg.options.helper.parentId) || ptyManager.helperPtys.has(msg.options.helper.parentId))) break;
+        if (msg.options?.helper && (!ownedPtyIds.has(msg.options.helper.parentId) || ptyManager.helperPtys.has(msg.options.helper.parentId))) {
+          post({ type: 'pty:exit', id: msg.id, exitCode: 1 });
+          break;
+        }
         if (msg.options?.helper) alertManager.setHelper(msg.id, true);
         claim(msg.id);
         // A fresh generation under this id: retire the parser rather than let

@@ -292,7 +292,7 @@ export class AlertManager {
   }
 
   onExit(id: string, exitCode?: number): void {
-    if (this.helpers.delete(id)) return;
+    if (this.helpers.has(id)) return;
     const entry = this.entries.get(id);
     if (entry && this.finishCommandExitWatch(id, entry, exitCode)) this.notify(id);
     // The command-exit dispatch above already resolved anything waiting on the
@@ -466,6 +466,7 @@ export class AlertManager {
    * attention exactly as they were.
    */
   awaitCompletion(id: string, options: AwaitOptions): AwaitHandle {
+    if (this.helpers.has(id)) return settledAwait({ kind: 'cancelled', waitedMs: 0 });
     // The ceiling starts life as a CLI argument a process away and ends up in
     // `setTimeout`, so nonsense is rejected here rather than trusted from one
     // caller away. A rejected request settles `cancelled` — it absorbs nothing
@@ -1061,6 +1062,7 @@ export class AlertManager {
   // --- Todo controls ---
 
   toggleTodo(id: string): void {
+    if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     entry.todo = !entry.todo;
     if (!entry.todo) entry.notification = null;
@@ -1069,6 +1071,7 @@ export class AlertManager {
   }
 
   markTodo(id: string): void {
+    if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     const cleared = this.clearAllRingsIfActive(entry);
     if (entry.todo && !cleared) return;
@@ -1139,6 +1142,7 @@ export class AlertManager {
    * never resurrect a ring or an in-flight progress cycle.
    */
   seed(id: string, state: { todo: unknown; notification?: unknown }): void {
+    if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     entry.todo = state.todo === true;
     entry.notification = entry.todo ? normalizeActivityNotification(state.notification) : null;

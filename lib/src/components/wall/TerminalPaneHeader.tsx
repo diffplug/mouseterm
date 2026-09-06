@@ -159,12 +159,13 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
     setTodoPreviewRect(button.getBoundingClientRect());
   }, [activity.notification]);
 
-  const triggerAlertButtonAction = useCallback((displayedStatus: SessionStatus, _button: HTMLButtonElement) => {
+  const triggerAlertButtonAction = useCallback((displayedStatus: SessionStatus, button: HTMLButtonElement) => {
     const result = actions.onAlertButton(id, displayedStatus);
     // 'no-command' opens the dialog too — it is where we explain that alerts are
     // keyed on the running command and there is nothing running here.
     if (result === 'dismissed' || result === 'menu' || result === 'no-command') {
-      context.open(id);
+      const rect = button.getBoundingClientRect();
+      context.open(id, { origin: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } });
     }
   }, [actions, id, context]);
 
@@ -195,7 +196,7 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
         // Header and alert entry points share the terminal context.
         e.preventDefault();
         e.stopPropagation();
-        context.open(id);
+        context.open(id, { origin: { x: e.clientX, y: e.clientY } });
       }}
     >
       <div className="flex flex-1 min-w-0 items-center gap-1.5 overflow-hidden">
@@ -246,10 +247,7 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
             }
             triggerAlertButtonAction(activity.status, e.currentTarget);
           }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            context.open(id);
-          }}
+          onContextMenu={(e) => context.open(id, { origin: { x: e.clientX, y: e.clientY } })}
           ariaLabel={alertButtonAriaLabel}
           tooltip={alertButtonTooltip}
           tooltipDetail={alertButtonTooltipDetail}
