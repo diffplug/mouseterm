@@ -1,11 +1,8 @@
-import { getHelper } from '../../../lib/helper-terminal';
 import {
   dismissOrToggleAlert,
   getActivity,
-  isUntouched,
   toggleSessionTodo,
 } from '../../../lib/terminal-registry';
-import { randomKillChar } from '../../KillConfirm';
 import { hasTerminal } from 'dor/commands/types';
 import { surfaceKindFromParams } from '../browser-surface';
 import { ARROW_OPPOSITES, isArrowKey, type NavHistoryRef, type WallKeyboardCtx } from './types';
@@ -84,23 +81,7 @@ export function handlePaneShortcuts(
   if ((e.key === 'k' || e.key === 'x') && sid) {
     e.preventDefault();
     e.stopPropagation();
-    if (getHelper(sid)) { ctx.wallActionsRef.current.onKill(sid); return true; }
-    if (ctx.selectedTypeRef.current === 'door') {
-      const item = ctx.doorsRef.current.find((d) => d.id === sid);
-      if (item) {
-        ctx.handleReattachRef.current(item, {
-          enterPassthrough: false,
-          afterRestore: isUntouched(sid) ? 'kill-immediately' : 'confirm-kill',
-        });
-      }
-      return true;
-    }
-    if (isUntouched(sid)) {
-      ctx.killPaneImmediately(sid);
-      return true;
-    }
-    const char = randomKillChar();
-    ctx.setConfirmKill({ id: sid, char });
+    ctx.requestKill(sid);
     return true;
   }
 

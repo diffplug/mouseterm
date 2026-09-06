@@ -1,4 +1,8 @@
 import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { NotepadPanel } from '../NotepadPanel';
+import { NotepadHeaderButton } from './NotepadHeaderButton';
+import { isSurfaceClosing } from '../../lib/notepad/notepad-store';
+import { messageOf } from '../../lib/errors';
 import { TerminalPane } from '../TerminalPane';
 import { TerminalContextView, type ContextScan } from './TerminalContextView';
 import { TerminalContextContext, WallActionsContext, type TerminalContextState } from './wall-context';
@@ -9,8 +13,6 @@ import { focusSession, getActivitySnapshot, getTerminalPaneStateSnapshot, isComm
 import { writeTextToClipboard } from '../../lib/clipboard';
 import { listenerUrlsByPort } from './port-url';
 import { DEFAULT_HELPER_COMMAND } from '../../lib/terminal-context-types';
-
-const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export function TerminalContext({ id, title, closing, origin, warning: openWarning }: TerminalContextState & { title?: string }) {
   const context = useContext(TerminalContextContext);
@@ -35,7 +37,7 @@ export function TerminalContext({ id, title, closing, origin, warning: openWarni
   const display = (location: CwdState) => cwdDisplay(location, { style: 'full', homePath: home });
   useEffect(() => {
     let cancelled = false;
-    void openHelper(id).catch(e => { if (!cancelled) setHelperError(errorText(e)); });
+    void openHelper(id).catch(e => { if (!cancelled) setHelperError(messageOf(e)); });
     void platform.terminalContext?.({ op: 'settings' }).then(info => { if (!cancelled) { setHome(info.home ?? ''); setDefaultCommand(info.command ?? DEFAULT_HELPER_COMMAND); } }).catch(() => {});
     void platform.getOpenPorts(id).then(ports => { if (!cancelled) setScan({ status: 'loaded', entries: listenerUrlsByPort(ports) }); }, () => { if (!cancelled) setScan({ status: 'failed' }); });
     return () => { cancelled = true; };
@@ -61,7 +63,9 @@ export function TerminalContext({ id, title, closing, origin, warning: openWarni
     onWatch={() => { if (argv0) setCommandWatched(argv0, !isCommandWatched(argv0)); }} onTodo={() => toggleSessionTodo(id)}
     onPort={(entry, mode) => context.openPort(id, entry, mode)}
     onModify={async command => { await platform.terminalContext?.({ op: 'settings', command }); setDefaultCommand(command); }}
-    onReset={async () => { disposeHelper(id); await openHelper(id); }} onPromote={() => context.promote(id)}>
+    notepadAction={<NotepadHeaderButton surfaceId={id} />}
+    notepadPanel={<NotepadPanel surfaceId={id} pins={false} />}
+    onReset={async () => { if (isSurfaceClosing(id)) throw new Error('This terminal is closing'); disposeHelper(id); await openHelper(id); }} onPromote={() => context.promote(id)}>
     {helper && <div data-helper-terminal={helper.id} className="h-full px-3 py-2" onMouseDown={() => focusSession(helper.id, true)}><TerminalPane key={helper.id} id={helper.id} isFocused={false} /></div>}
   </TerminalContextView>;
 }

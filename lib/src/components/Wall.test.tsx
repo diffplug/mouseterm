@@ -12,12 +12,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SURFACE_CONTROL_METHODS } from 'dor/protocol';
 import { sessionForKey } from 'dor-lib-common/agent-browser';
 import { Wall } from './Wall';
+import * as helpers from '../lib/helper-terminal';
 import { getAgentBrowserScreenController } from './wall/agent-browser-screen';
 import { setPlatform } from '../lib/platform';
 import { FakePtyAdapter } from '../lib/platform/fake-adapter';
 import type { PlatformAdapter } from '../lib/platform/types';
 import * as terminalRegistry from '../lib/terminal-registry';
 import { UNNAMED_PANEL_TITLE } from '../lib/terminal-registry';
+import { __resetArchiveServiceForTests } from '../lib/notepad/archive-service';
+import { addPlainNote, beginClosing, clearAllNotepads, getNotes } from '../lib/notepad/notepad-store';
+import type { NotepadArchiveV1 } from '../lib/notepad/types';
 import { createTerminalPaneState, type TerminalPaneState } from '../lib/terminal-state';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -43,6 +47,8 @@ function leafCount(): number {
 }
 
 beforeEach(() => {
+  __resetArchiveServiceForTests();
+  clearAllNotepads();
   fake = new FakePtyAdapter();
   setPlatform(fake);
   // jsdom lacks these; Baseboard / dynamic-palette / reduced-motion need them.
@@ -77,6 +83,9 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
+  __resetArchiveServiceForTests();
+  clearAllNotepads();
 });
 
 async function flush(): Promise<void> {
@@ -162,10 +171,45 @@ describe('Wall on the Lath engine', () => {
       expect(writeSpy.mock.calls).toEqual([['pane-a', '\x03']]);
     } finally {
       vi.useRealTimers();
-      stateSpy.mockRestore();
-      integratedSpy.mockRestore();
-      writeSpy.mockRestore();
     }
+  });
+
+  it('cancels an ensure restart even when the prompt is already back before the wait', async () => {
+    await act(async () => {
+      root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
+    });
+    await flush();
+    const cwd = { path: '/repo', pathKind: 'posix', isRemote: false, source: 'osc633', updatedAt: 0 } as const;
+    let state: TerminalPaneState = createTerminalPaneState({
+      cwd,
+      currentCommand: {
+        id: 'run-1', rawCommandLine: 'pnpm dev', displayCommand: 'pnpm dev',
+        cwdAtStart: cwd, startedAt: 0, source: 'osc633_E',
+      },
+    });
+    vi.spyOn(terminalRegistry, 'getTerminalPaneState').mockImplementation(() => state);
+    vi.spyOn(terminalRegistry, 'isPaneOscDriven').mockReturnValue(true);
+    const controller = new AbortController();
+    // The interrupt lands on a prompt synchronously, so the wait resolves without
+    // polling; the cancel is queued ahead of that resolution's continuation.
+    const writeSpy = vi.spyOn(fake, 'writePty').mockImplementation((_id, data) => {
+      if (data !== '\x03') return;
+      state = createTerminalPaneState({ cwd });
+      queueMicrotask(() => controller.abort());
+    });
+    const respond = vi.fn();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('dormouse:control-request', {
+        detail: {
+          method: SURFACE_CONTROL_METHODS.ensure,
+          params: { command: ['pnpm', 'dev'], cwd: '/repo', restart: true },
+          signal: controller.signal,
+          respond,
+        },
+      }));
+    });
+    expect(respond).toHaveBeenCalledWith({ ok: false, error: "surface 'surface:1' restart was cancelled" });
+    expect(writeSpy.mock.calls).toEqual([['pane-a', '\x03']]);
   });
 
   it('removes an unintegrated ensure split as soon as its client cancels', async () => {
@@ -173,31 +217,113 @@ describe('Wall on the Lath engine', () => {
       root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
     });
     await flush();
-    const integratedSpy = vi.spyOn(terminalRegistry, 'isPaneOscDriven').mockReturnValue(false);
-    const shellSpy = vi.spyOn(terminalRegistry, 'getDefaultShellOpts').mockReturnValue({ shell: '/bin/bash' });
+    vi.spyOn(terminalRegistry, 'isPaneOscDriven').mockReturnValue(false);
+    vi.spyOn(terminalRegistry, 'getDefaultShellOpts').mockReturnValue({ shell: '/bin/bash' });
     const controller = new AbortController();
+    const respond = vi.fn();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('dormouse:control-request', {
+        detail: {
+          method: SURFACE_CONTROL_METHODS.ensure,
+          params: { command: ['pnpm', 'dev'], cwd: '/repo', surface: 'surface:1' },
+          signal: controller.signal,
+          respond,
+        },
+      }));
+    });
+    expect(leafCount()).toBe(2);
+    expect(respond).not.toHaveBeenCalled();
+    await act(async () => { controller.abort(); });
+    expect(respond).toHaveBeenCalledWith({ ok: false, error: 'ensure was cancelled' });
+    await flush();
+    expect(leafCount()).toBe(1);
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+  });
+
+  it('reuses a running Surface while another archive caller holds its notes freeze', async () => {
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" />));
+    await flush();
+    const cwd = { path: '/repo', pathKind: 'posix', isRemote: false, source: 'osc633', updatedAt: 0 } as const;
+    vi.spyOn(terminalRegistry, 'getTerminalPaneState').mockReturnValue(createTerminalPaneState({
+      cwd,
+      currentCommand: { id: 'run', rawCommandLine: 'pnpm dev', displayCommand: 'pnpm dev', cwdAtStart: cwd, startedAt: 0, source: 'osc633_E' },
+    }));
+    const release = beginClosing(['pane-a']);
     const respond = vi.fn();
     try {
       await act(async () => {
-        window.dispatchEvent(new CustomEvent('dormouse:control-request', {
-          detail: {
-            method: SURFACE_CONTROL_METHODS.ensure,
-            params: { command: ['pnpm', 'dev'], cwd: '/repo', surface: 'surface:1' },
-            signal: controller.signal,
-            respond,
-          },
-        }));
+        window.dispatchEvent(new CustomEvent('dormouse:control-request', { detail: {
+          method: SURFACE_CONTROL_METHODS.ensure, params: { command: ['pnpm', 'dev'], cwd: '/repo' }, respond,
+        } }));
       });
-      expect(leafCount()).toBe(2);
-      expect(respond).not.toHaveBeenCalled();
-      await act(async () => { controller.abort(); });
-      expect(respond).toHaveBeenCalledWith({ ok: false, error: 'ensure was cancelled' });
-      await flush();
+      expect(respond).toHaveBeenCalledWith({ ok: true, result: expect.objectContaining({ status: 'existing', surfaceId: 'pane-a' }) });
       expect(leafCount()).toBe(1);
-      expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
-    } finally {
-      integratedSpy.mockRestore();
-      shellSpy.mockRestore();
+    } finally { release(); }
+  });
+
+  it('does not reuse a running Surface while its own close is archiving', async () => {
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" />));
+    await flush();
+    const cwd = { path: '/repo', pathKind: 'posix', isRemote: false, source: 'osc633', updatedAt: 0 } as const;
+    vi.spyOn(terminalRegistry, 'getTerminalPaneState').mockReturnValue(createTerminalPaneState({
+      cwd,
+      currentCommand: { id: 'run', rawCommandLine: 'pnpm dev', displayCommand: 'pnpm dev', cwdAtStart: cwd, startedAt: 0, source: 'osc633_E' },
+    }));
+    vi.spyOn(terminalRegistry, 'isPaneOscDriven').mockReturnValue(true);
+    act(() => { addPlainNote('pane-a', 'keep this note'); });
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const saveOriginal = fake.notepadArchive.save.bind(fake.notepadArchive);
+    const save = vi.spyOn(fake.notepadArchive, 'save').mockImplementation(async (...args) => { await gate; return saveOriginal(...args); });
+    const killed = vi.fn();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('dormouse:control-request', { detail: {
+        method: SURFACE_CONTROL_METHODS.kill, params: { surface: 'surface:1', confirmation: { mode: 'dangerously' } }, respond: killed,
+      } }));
+    });
+    await flush();
+    expect(save).toHaveBeenCalled();
+    const respond = vi.fn();
+    try {
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('dormouse:control-request', { detail: {
+          method: SURFACE_CONTROL_METHODS.ensure, params: { command: ['pnpm', 'dev'], cwd: '/repo' }, respond,
+        } }));
+      });
+      expect(respond).toHaveBeenCalledWith({ ok: true, result: expect.objectContaining({ status: 'created' }) });
+      expect(killed).not.toHaveBeenCalled();
+    } finally { release(); await flush(); }
+    expect(killed).toHaveBeenCalledWith({ ok: true, result: expect.objectContaining({ status: 'killed', surfaceId: 'pane-a' }) });
+  });
+
+  it.each([false, true])('preserves notes entered in a cancelled ensure pane (archive fails: %s)', async fails => {
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" />));
+    await flush();
+    vi.spyOn(terminalRegistry, 'isPaneOscDriven').mockReturnValue(false);
+    vi.spyOn(terminalRegistry, 'getDefaultShellOpts').mockReturnValue({ shell: '/bin/bash' });
+    const controller = new AbortController();
+    const respond = vi.fn();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('dormouse:control-request', { detail: {
+        method: SURFACE_CONTROL_METHODS.ensure, params: { command: ['pnpm', 'dev'], cwd: '/repo', surface: 'surface:1' }, signal: controller.signal, respond,
+      } }));
+    });
+    const temporaryId = Array.from(container.querySelectorAll('[data-lath-leaf]')).map(el => el.getAttribute('data-lath-leaf')!).find(id => id !== 'pane-a')!;
+    expect(temporaryId).toBeTruthy();
+    act(() => { addPlainNote(temporaryId, 'written while integration is pending'); });
+    if (fails) vi.spyOn(fake.notepadArchive, 'save').mockRejectedValue(new Error('disk full'));
+    await act(async () => controller.abort());
+    await flush();
+    if (fails) {
+      expect(respond).toHaveBeenCalledWith({ ok: false, error: expect.stringContaining('temporary surface kept open: notepad archive failed: disk full') });
+      expect(getNotes(temporaryId)).toHaveLength(1);
+      expect(container.querySelector(`[data-lath-leaf="${temporaryId}"]`)).not.toBeNull();
+    } else {
+      expect(respond).toHaveBeenCalledWith({ ok: false, error: 'ensure was cancelled' });
+      expect(container.querySelector(`[data-lath-leaf="${temporaryId}"]`)).toBeNull();
+      const archive = (await fake.notepadArchive.load())?.raw as NotepadArchiveV1;
+      expect(archive.batches.flatMap(batch => batch.notes)).toEqual([expect.objectContaining({ content: { kind: 'plain', text: 'written while integration is pending' } })]);
+      expect(getNotes(temporaryId)).toEqual([]);
     }
   });
 
@@ -1540,6 +1666,356 @@ describe('Wall on the Lath engine', () => {
 
     expect(focusOf('pane-a')).toBe('true');
     expect(focusOf(newId)).toBe('false');
+  });
+
+  // --- Notepad closure (docs/specs/notepad.md → "Closure") ---
+
+  /** What the host actually stored. */
+  async function storedArchive(): Promise<NotepadArchiveV1> {
+    const loaded = await fake.notepadArchive.load();
+    return (loaded?.raw ?? { version: 1, batches: [] }) as NotepadArchiveV1;
+  }
+
+  /** The Keep open / Close anyway prompt, when it is up. */
+  function archiveFailureModal(): HTMLElement | null {
+    return container.querySelector<HTMLElement>('[aria-labelledby="notepad-archive-failure-title"]');
+  }
+
+  function clickButton(label: string): void {
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((candidate) => candidate.textContent?.trim() === label);
+    expect(button, `no "${label}" button`).toBeDefined();
+    act(() => { button!.click(); });
+  }
+
+  /** The pane header's Kill button — a user-visible closure, which does prompt.
+   *  `isUntouched` short-circuits the kill confirmation so this is one click. */
+  async function clickHeaderKill(paneId: string): Promise<void> {
+    const untouched = vi.spyOn(terminalRegistry, 'isUntouched').mockReturnValue(true);
+    try {
+      const button = container.querySelector<HTMLButtonElement>(
+        `[data-lath-leaf="${paneId}"] button[aria-label="Kill"]`,
+      );
+      expect(button, `no Kill button on ${paneId}`).not.toBeNull();
+      await act(async () => {
+        button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await flush();
+    } finally {
+      untouched.mockRestore();
+    }
+  }
+
+  /** A Helper on pane-a whose host work inspection answers `busy`, switchable mid-test. */
+  function spyOnHelper(): { dispose: ReturnType<typeof vi.spyOn>; setBusy: (value: boolean) => void } {
+    let helper: helpers.HelperTerminal | undefined = { id: 'helper-a', parentId: 'pane-a', command: '', status: 'off' };
+    let busy = false;
+    vi.spyOn(helpers, 'getHelper').mockImplementation(id => id === 'pane-a' ? helper : undefined);
+    vi.spyOn(helpers, 'helperHasWork').mockImplementation(async () => busy);
+    vi.spyOn(helpers, 'openHelper').mockImplementation(async () => helper!);
+    const dispose = vi.spyOn(helpers, 'closeHelperParent').mockImplementation(() => { helper = undefined; });
+    return { dispose, setBusy: (value) => { busy = value; } };
+  }
+
+  async function renderNotedPane(): Promise<void> {
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />));
+    await flush();
+    act(() => { addPlainNote('pane-a', 'shared helper note'); });
+  }
+
+  it('closes an idle Helper with its source and archives the shared notes once', async () => {
+    const { dispose } = spyOnHelper();
+    await renderNotedPane();
+    expect((await dispatchKill('surface:1'))?.ok).toBe(true);
+    await flush();
+    expect(getNotes('pane-a')).toEqual([]);
+    expect(dispose).toHaveBeenCalledWith('pane-a');
+    expect((await storedArchive()).batches).toHaveLength(1);
+  });
+
+  it('refuses a source whose Helper has running work before touching the archive', async () => {
+    const { dispose, setBusy } = spyOnHelper();
+    const save = vi.spyOn(fake.notepadArchive, 'save');
+    setBusy(true);
+    await renderNotedPane();
+    expect((await dispatchKill('surface:1'))?.ok).toBe(false);
+    await flush();
+    expect(getNotes('pane-a')).toHaveLength(1);
+    expect(dispose).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  // The kill gesture (`requestKill`): docs/specs/layout.md → "Kill confirmation".
+  const confirmKillOverlay = () => Array.from(container.querySelectorAll('h2')).find(h => h.textContent === 'Confirm kill') ?? null;
+
+  it('closes an untouched pane at once and stages the confirm overlay for a touched one', async () => {
+    const untouched = vi.spyOn(terminalRegistry, 'isUntouched').mockReturnValue(true);
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a', 'pane-b']} initialMode="command" showBaseboard />));
+    await flush();
+    const kill = (id: string) => act(async () => {
+      container.querySelector<HTMLButtonElement>(`[data-lath-leaf="${id}"] button[aria-label="Kill"]`)!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await kill('pane-b');
+    await flush();
+    expect(confirmKillOverlay()).toBeNull();
+    expect(container.querySelector('[data-lath-leaf="pane-b"]')).toBeNull();
+    untouched.mockReturnValue(false);
+    await kill('pane-a');
+    expect(confirmKillOverlay()).not.toBeNull();
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+  });
+
+  /** Minimize pane-a beside pane-b (the Door stays selected) and press the kill key on it. */
+  async function killSelectedDoor(): Promise<void> {
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a', 'pane-b']} initialMode="command" showBaseboard />));
+    await flush();
+    await act(async () => { container.querySelector<HTMLElement>('[data-lath-leaf="pane-a"] [aria-label="Minimize"]')!.click(); });
+    await flush();
+    expect(container.querySelector('[data-door-id="pane-a"]')).not.toBeNull();
+    await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true })); });
+    await flushFrame();
+    await flush();
+  }
+
+  it('reattaches an untouched Door only far enough to close it, with no overlay', async () => {
+    vi.spyOn(terminalRegistry, 'isUntouched').mockReturnValue(true);
+    await killSelectedDoor();
+    expect(container.querySelector('[data-door-id="pane-a"]')).toBeNull();
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).toBeNull();
+    expect(confirmKillOverlay()).toBeNull();
+  });
+
+  it('reattaches a touched Door into the confirm overlay', async () => {
+    vi.spyOn(terminalRegistry, 'isUntouched').mockReturnValue(false);
+    await killSelectedDoor();
+    expect(container.querySelector('[data-door-id="pane-a"]')).toBeNull();
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+    expect(confirmKillOverlay()).not.toBeNull();
+  });
+
+  it('drops a kill gesture whose Helper inspection outlives the pane', async () => {
+    vi.spyOn(terminalRegistry, 'isUntouched').mockReturnValue(false);
+    const helper: helpers.HelperTerminal = { id: 'helper-a', parentId: 'pane-a', command: '', status: 'off' };
+    vi.spyOn(helpers, 'getHelper').mockImplementation(id => id === 'pane-a' ? helper : undefined);
+    vi.spyOn(helpers, 'closeHelperParent').mockImplementation(() => {});
+    const inspections: Array<(busy: boolean) => void> = [];
+    vi.spyOn(helpers, 'helperHasWork').mockImplementation(() => new Promise<boolean>(resolve => { inspections.push(resolve); }));
+    await act(async () => root.render(<Wall initialPaneIds={['pane-a', 'pane-b']} initialMode="command" showBaseboard />));
+    await flush();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-lath-leaf="pane-a"] button[aria-label="Kill"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(inspections).toHaveLength(1);
+    // A `dor kill` lands while the gesture's inspection is still pending and
+    // closes the pane first (its own two inspections answered idle).
+    let killed: { ok: boolean } | undefined;
+    window.dispatchEvent(new CustomEvent('dormouse:control-request', {
+      detail: { method: SURFACE_CONTROL_METHODS.kill, params: { surface: 'surface:1', confirmation: { mode: 'dangerously' } }, respond: (r: typeof killed) => { killed = r; } },
+    }));
+    for (const index of [1, 2]) {
+      await act(async () => { while (inspections.length <= index) await new Promise(r => setTimeout(r, 0)); });
+      await act(async () => { inspections[index](false); });
+    }
+    await flush();
+    expect(killed?.ok).toBe(true);
+    await act(async () => { inspections[0](false); });
+    await flush();
+    expect(confirmKillOverlay()).toBeNull();
+  });
+
+  it('keeps the notes and pending batch when Helper work starts during the write, replacing the batch on retry', async () => {
+    const { dispose, setBusy } = spyOnHelper();
+    const saveOriginal = fake.notepadArchive.save.bind(fake.notepadArchive);
+    const save = vi.spyOn(fake.notepadArchive, 'save').mockImplementation(async (...args) => {
+      const result = await saveOriginal(...args);
+      setBusy(true);
+      return result;
+    });
+    await renderNotedPane();
+    expect((await dispatchKill('surface:1'))?.ok).toBe(false);
+    await flush();
+    expect(getNotes('pane-a')).toHaveLength(1);
+    expect(dispose).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+    expect((await storedArchive()).batches).toHaveLength(1);
+    setBusy(false);
+    save.mockImplementation(saveOriginal);
+    expect((await dispatchKill('surface:1'))?.ok).toBe(true);
+    expect((await storedArchive()).batches).toHaveLength(1);
+    expect(getNotes('pane-a')).toEqual([]);
+  });
+
+  it('runs the Helper guard again before Close anyway discards the notes', async () => {
+    const { dispose, setBusy } = spyOnHelper();
+    vi.spyOn(fake.notepadArchive, 'save').mockRejectedValue(new Error('disk full'));
+    await renderNotedPane();
+    await clickHeaderKill('pane-a');
+    expect(archiveFailureModal()).not.toBeNull();
+    setBusy(true);
+    clickButton('Close anyway');
+    await flush();
+    await flush();
+    expect(getNotes('pane-a')).toHaveLength(1);
+    expect(dispose).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+  });
+
+  it('archives a closing Surface\'s notes before tearing it down', async () => {
+    await act(async () => {
+      root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
+    });
+    await flush();
+    act(() => { addPlainNote('pane-a', 'ssh key is in 1password'); });
+
+    expect((await dispatchKill('surface:1'))?.ok).toBe(true);
+    await flush();
+
+    const archive = await storedArchive();
+    expect(archive.batches).toHaveLength(1);
+    expect(archive.batches[0].notes[0].content).toEqual({ kind: 'plain', text: 'ssh key is in 1password' });
+    // The metadata resolver the Wall installs supplies the derived pane label.
+    expect(archive.batches[0].surfaceKind).toBe('terminal');
+    expect(getNotes('pane-a')).toEqual([]);
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).toBeNull();
+  });
+
+  it('keeps the Surface and asks when the archive refuses the write', async () => {
+    vi.spyOn(fake.notepadArchive, 'save').mockRejectedValue(new Error('disk is full'));
+    await act(async () => {
+      root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
+    });
+    await flush();
+    act(() => { addPlainNote('pane-a', 'keep me'); });
+
+    await clickHeaderKill('pane-a');
+
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+    expect(getNotes('pane-a')).toHaveLength(1);
+    expect(archiveFailureModal()).not.toBeNull();
+  });
+
+  it('answers a refused `dor kill` with the error and raises no prompt', async () => {
+    // The caller is a command, not someone looking at the Wall: a modal here
+    // would block a Wall nobody is watching (docs/specs/notepad.md → "Closure").
+    vi.spyOn(fake.notepadArchive, 'save').mockRejectedValue(new Error('disk is full'));
+    await act(async () => {
+      root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
+    });
+    await flush();
+    act(() => { addPlainNote('pane-a', 'keep me'); });
+
+    const response = await dispatchKill('surface:1');
+    await flush();
+
+    expect(response?.ok).toBe(false);
+    expect((response as { error?: string }).error).toContain('notepad archive failed');
+    expect((response as { error?: string }).error).toContain('disk is full');
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+    expect(getNotes('pane-a')).toHaveLength(1);
+    expect(archiveFailureModal()).toBeNull();
+  });
+
+  it('Keep open dismisses the prompt and leaves everything alone', async () => {
+    vi.spyOn(fake.notepadArchive, 'save').mockRejectedValue(new Error('disk is full'));
+    await act(async () => {
+      root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
+    });
+    await flush();
+    act(() => { addPlainNote('pane-a', 'keep me'); });
+    await clickHeaderKill('pane-a');
+
+    clickButton('Keep open');
+    await flush();
+
+    expect(archiveFailureModal()).toBeNull();
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+    expect(getNotes('pane-a')).toHaveLength(1);
+  });
+
+  it('Close anyway discards the notes and removes the Surface without a batch', async () => {
+    vi.spyOn(fake.notepadArchive, 'save').mockRejectedValue(new Error('disk is full'));
+    await act(async () => {
+      root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
+    });
+    await flush();
+    act(() => { addPlainNote('pane-a', 'expendable'); });
+    await clickHeaderKill('pane-a');
+
+    clickButton('Close anyway');
+    await flush();
+
+    expect(archiveFailureModal()).toBeNull();
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).toBeNull();
+    expect(getNotes('pane-a')).toEqual([]);
+    expect((await storedArchive()).batches).toEqual([]);
+  });
+
+  it('queues a second refused closure behind the first prompt', async () => {
+    // One slot would leave pane-a waiting forever: its prompt is replaced, and
+    // nothing is left to answer for it.
+    // Distinct messages are how the prompt on screen names its Surface.
+    vi.spyOn(fake.notepadArchive, 'save')
+      .mockRejectedValueOnce(new Error('a could not be written'))
+      .mockRejectedValueOnce(new Error('b could not be written'));
+    await act(async () => {
+      root.render(<Wall initialPaneIds={['pane-a', 'pane-b']} initialMode="command" showBaseboard />);
+    });
+    await flush();
+    act(() => {
+      addPlainNote('pane-a', 'from a');
+      addPlainNote('pane-b', 'from b');
+    });
+
+    await clickHeaderKill('pane-a');
+    await clickHeaderKill('pane-b');
+
+    // A's prompt is the one on screen; B's is behind it.
+    expect(archiveFailureModal()?.textContent).toContain('a could not be written');
+    clickButton('Keep open');
+    await flush();
+
+    expect(archiveFailureModal()?.textContent).toContain('b could not be written');
+    clickButton('Close anyway');
+    await flush();
+
+    expect(archiveFailureModal()).toBeNull();
+    expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
+    expect(getNotes('pane-a')).toHaveLength(1);
+    expect(container.querySelector('[data-lath-leaf="pane-b"]')).toBeNull();
+  });
+
+  it('migrates a notepad to the new id when a replacement mints one', async () => {
+    await act(async () => {
+      root.render(<Wall initialPaneIds={['pane-a']} initialMode="command" showBaseboard />);
+    });
+    await flush();
+    const untouchedSpy = vi.spyOn(terminalRegistry, 'isUntouched').mockImplementation((id) => id === 'pane-a');
+
+    try {
+      act(() => { addPlainNote('pane-a', 'survives the swap'); });
+
+      let response: { ok: boolean; result?: { surfaceId: string } } | undefined;
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('dormouse:control-request', {
+          detail: {
+            method: SURFACE_CONTROL_METHODS.iframe,
+            params: { url: 'http://localhost:5173/' },
+            respond: (r: typeof response) => { response = r; },
+          },
+        }));
+      });
+      await flush();
+
+      const newId = response!.result!.surfaceId;
+      expect(newId).not.toBe('pane-a');
+      expect(getNotes('pane-a')).toEqual([]);
+      expect(getNotes(newId).map((note) => note.content)).toEqual([{ kind: 'plain', text: 'survives the swap' }]);
+      // A replacement is not a closure, so nothing was archived.
+      expect((await storedArchive()).batches).toEqual([]);
+    } finally {
+      untouchedSpy.mockRestore();
+    }
   });
 
   it('seeds multiple initial panes with the aspect-aware layout (geometry is measured before the seed)', async () => {

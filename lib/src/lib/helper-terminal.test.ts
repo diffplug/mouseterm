@@ -2,12 +2,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registry, pendingShellOpts, type TerminalEntry } from './terminal-store';
 import { applyTerminalSemanticEvents, resetTerminalPaneState, removeTerminalPaneState } from './terminal-state-store';
-import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHelper, helperHasWork, openHelper, restoreHelper, setHelperVisible, subscribeHelpers } from './helper-terminal';
+import { beginPromotion, cancelPromotion, closeHelperParent, disposeHelper, finishPromotion, getHelper, helperHasWork, openHelper, restoreHelper, setHelperVisible, subscribeHelpers } from './helper-terminal';
 
 const host = vi.hoisted(() => ({ writePty: vi.fn(), terminalContext: vi.fn() }));
 vi.mock('./platform', () => ({ getPlatform: () => host }));
 vi.mock('./terminal-lifecycle', () => ({
-  unmountElement: vi.fn(),
+  parkElement: vi.fn(),
   setPendingShellOpts: (id: string, options: unknown) => pendingShellOpts.set(id, options as never),
   getOrCreateTerminal: (id: string) => { const entry = { untouched: true, helper: pendingShellOpts.get(id)?.helper } as TerminalEntry; registry.set(id, entry); resetTerminalPaneState(id); return entry; },
   disposeSession: (id: string) => { registry.delete(id); removeTerminalPaneState(id); },
@@ -22,6 +22,27 @@ afterEach(() => { setHelperVisible('parent', false); disposeHelper('parent'); re
 const prompt = (id: string) => applyTerminalSemanticEvents(id, [{ type: 'promptStart' }, { type: 'promptEnd' }]);
 
 describe('helper lifecycle', () => {
+  it('rejects late helper startup while its closing parent remains registered for the fade', async () => {
+    let resolve!: (value: unknown) => void;
+    host.terminalContext.mockImplementationOnce(() => new Promise(r => { resolve = r; }));
+    const opening = openHelper('parent');
+    closeHelperParent('parent');
+    expect(registry.has('parent')).toBe(true);
+    resolve({ command: 'git status' });
+    await expect(opening).rejects.toThrow('The parent terminal has closed');
+    expect(getHelper('parent')).toBeUndefined();
+    expect([...registry.keys()]).toEqual(['parent']);
+    expect(pendingShellOpts.size).toBe(0);
+  });
+
+  it('rejects parent retirement during promotion and allows reopening after rollback', async () => {
+    const helper = await openHelper('parent');
+    await beginPromotion('parent');
+    expect(() => closeHelperParent('parent')).toThrow(/promotion/i);
+    await cancelPromotion('parent');
+    expect(await openHelper('parent')).toBe(helper);
+  });
+
   it.each(['exited', 'preserved', 'completed'] as const)('publishes %s on reopening before another polling tick', async status => {
     const helper = await openHelper('parent');
     helper.status = 'running';

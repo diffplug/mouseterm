@@ -16,6 +16,7 @@ import { HeaderActionButton } from '../HeaderActionButton';
 import { HEADER_PALETTE_TRANSITION_CLASS, paneZoomButtonClass, POPUP_SURFACE_CLASS, TERMINAL_TOP_RADIUS_CLASS, TODO_PILL_TRACKING_CLASS } from '../design';
 import { AlertBell } from '../AlertBell';
 import { useTodoPillContent } from '../TodoPillBody';
+import { NotepadHeaderButton } from './NotepadHeaderButton';
 import type { PaneProps } from './pane-props';
 import { IllegalRenameWarning, type RenameRejection } from './IllegalRenameWarning';
 import { InlineEditInput } from './InlineEditInput';
@@ -305,6 +306,7 @@ export function TerminalPaneHeader({ id, title }: PaneProps) {
               </HeaderActionButton>
             </div>
           )}
+          <NotepadHeaderButton surfaceId={id} hideWhenEmpty={tier === 'minimal'} />
           {tier === 'full' && (
             <div className="ml-1 flex shrink-0 items-center gap-0.5">
               <HeaderActionButton

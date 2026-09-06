@@ -30,9 +30,14 @@ export type WallMode = 'command' | 'passthrough';
 
 export type WallSelectionKind = 'pane' | 'door';
 
+/** How a Surface closure answers the archive: `prompt` raises the Keep open /
+ *  Close anyway prompt on refusal, `silent` only returns the refusal, `discard`
+ *  drops the notes instead of archiving them (docs/specs/notepad.md → "Closure"). */
+export type CloseSurfaceMode = 'prompt' | 'silent' | 'discard';
+
 export type DoorAfterRestoreAction =
   | 'confirm-kill'
-  | 'kill-immediately'
+  | 'close'
   | {
       type: 'replace-terminal';
       newId: string;
