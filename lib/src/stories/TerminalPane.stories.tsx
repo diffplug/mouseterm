@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from '@storybook/react';
 import { TerminalPane } from '../components/TerminalPane';
 import {
   flattenScenario,
-  SCENARIO_SHELL_PROMPT,
   SCENARIO_LS_OUTPUT,
   SCENARIO_ANSI_COLORS,
   SCENARIO_LONG_RUNNING,
@@ -28,11 +27,6 @@ const meta: Meta<typeof TerminalContainer> = {
 
 export default meta;
 type Story = StoryObj<typeof TerminalContainer>;
-
-export const ShellPrompt: Story = {
-  args: { id: 'term-prompt' },
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
-};
 
 export const LsOutput: Story = {
   args: { id: 'term-ls' },
