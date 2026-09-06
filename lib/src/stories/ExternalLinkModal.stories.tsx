@@ -51,15 +51,7 @@ export const PlainLabel: Story = {
   },
 };
 
-// Deceptive: link text looks like a URL but resolves to a different host.
-export const DeceptiveDomain: Story = {
-  args: {
-    uri: 'https://evil.example.com/phish',
-    displayText: 'goog1e.com',
-  },
-};
-
-// Deceptive variant where the label is a full URL pretending to be the target.
+// Deceptive: the label is a full URL pretending to be the target.
 export const DeceptiveFullUrl: Story = {
   args: {
     uri: 'https://evil.example.com/phish',
