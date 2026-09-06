@@ -9,7 +9,7 @@ import { TerminalContextContext, WallActionsContext, type TerminalContextState }
 import { disposeHelper, getHelper, helperRevision, openHelper, setHelperVisible, subscribeHelpers } from '../../lib/helper-terminal';
 import { getPlatform, IS_MAC, IS_WINDOWS } from '../../lib/platform';
 import { buildAppTitleResolver, commandArgv0, createTerminalPaneState, cwdDisplay, deriveSurfaceLabel, explainTerminalTitle, type CwdState } from '../../lib/terminal-state';
-import { focusSession, getActivitySnapshot, getTerminalPaneStateSnapshot, isCommandWatched, setCommandWatched, subscribeToActivity, subscribeToTerminalPaneState, subscribeToWatchedCommands, getWatchedCommandsSnapshot, toggleSessionTodo } from '../../lib/terminal-registry';
+import { focusSession, getTerminalInstance, getActivitySnapshot, getTerminalPaneStateSnapshot, isCommandWatched, setCommandWatched, subscribeToActivity, subscribeToTerminalPaneState, subscribeToWatchedCommands, getWatchedCommandsSnapshot, toggleSessionTodo } from '../../lib/terminal-registry';
 import { writeTextToClipboard } from '../../lib/clipboard';
 import { listenerUrlsByPort } from './port-url';
 import { DEFAULT_HELPER_COMMAND } from '../../lib/terminal-context-types';
@@ -66,7 +66,7 @@ export function TerminalContext({ id, title, closing, origin, warning: openWarni
     notepadAction={<NotepadHeaderButton surfaceId={id} />}
     notepadPanel={<NotepadPanel surfaceId={id} pins={tool} />}
     onReset={async () => { if (isSurfaceClosing(id)) throw new Error('This terminal is closing'); disposeHelper(id); await openHelper(id); }} onPromote={() => context.promote(id)}>
-    {tool && <div data-context-terminal={id} className="h-full px-3 py-2" onMouseDown={() => focusSession(id, true)}><TerminalPane id={id} isFocused={false} /></div>}
+    {tool && <div data-context-terminal={id} className="h-full px-3 py-2" onMouseDown={() => getTerminalInstance(id)?.focus()}><TerminalPane id={id} isFocused={false} /></div>}
     {helper && <div data-helper-terminal={helper.id} className="h-full px-3 py-2" onMouseDown={() => focusSession(helper.id, true)}><TerminalPane key={helper.id} id={helper.id} isFocused={false} /></div>}
   </TerminalContextView>;
 }
