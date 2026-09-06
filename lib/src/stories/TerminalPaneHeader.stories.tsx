@@ -319,11 +319,6 @@ const NOTIFICATIONS = {
     title: 'Claude is waiting',
     body: null,
   },
-  progressComplete: {
-    source: 'OSC 9;4',
-    title: 'Progress complete',
-    body: 'Progress 100%',
-  },
   terminalBell: {
     source: 'BEL',
     title: 'Terminal bell',
@@ -492,12 +487,6 @@ export const NotificationDialogBodyOnly: Story = {
 export const NotificationDialogTitleOnly: Story = {
   render: ContextWallStory,
   parameters: primedNotificationState(NOTIFICATIONS.osc99TitleOnly, 'ALERT_RINGING'),
-  play: openAlertRightClickDialog,
-};
-
-export const NotificationDialogProgressComplete: Story = {
-  render: ContextWallStory,
-  parameters: primedNotificationState(NOTIFICATIONS.progressComplete, 'ALERT_RINGING'),
   play: openAlertRightClickDialog,
 };
 
