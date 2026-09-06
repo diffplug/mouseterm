@@ -6,6 +6,12 @@
 >
 > Defers to `docs/specs/transport.md` — PTY lifecycle, buffering, reconnection, the message protocol, persisted-session types, and every adapter-agnostic invariant — for all sections below.
 
+## Local alert diagnostics
+
+**Must append host decisions and renderer diagnostic messages to the same local journal**, under `context.globalStorageUri/alert-logs/`. The Dormouse output channel reports the directory. Never put these records in Settings Sync or restorable Session state. Behavior: `docs/specs/alert.md` → Local alert diagnostics.
+
+Source of truth: `initAlertJournal` in `vscode-ext/src/alert-journal.ts`; `attachRouter` in `vscode-ext/src/message-router.ts`.
+
 ## Code Map
 
 Start on the side of the webview boundary involved, then follow imports:

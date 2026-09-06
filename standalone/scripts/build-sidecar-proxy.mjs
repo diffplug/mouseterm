@@ -24,6 +24,7 @@ const sidecar = path.resolve(here, '../sidecar');
 const remoteSrc = resolveRemoteConnectSrc(process.env, 'sidecar');
 
 const bundles = [
+  { entry: 'alert-journal.ts', out: 'alert-journal.cjs' },
   { entry: 'iframe-proxy.ts', out: 'iframe-proxy.cjs' },
   { entry: 'agent-browser-host.ts', out: 'agent-browser-host.cjs' },
   {

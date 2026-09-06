@@ -502,6 +502,8 @@ native handler never fires. Behavior and status:
 
 ## Logging
 
+Local alert diagnostics (`docs/specs/alert.md` → Local alert diagnostics) live in `<app_data_dir>/alert-logs/`, written by the Node sidecar through `alert_diagnostic`. The sidecar bundles `createAlertJournal` from `lib/src/host/alert-journal.ts` and gives its close at most 250ms during shutdown. The browser-dev harness has no persistent journal.
+
 Windows release builds use the GUI subsystem, so nothing streams to a launching
 terminal. The Rust backend appends sidecar stderr, malformed stdout diagnostics,
 and its own diagnostics to a log file: `%LOCALAPPDATA%\Dormouse Terminal\dormouse.log` on

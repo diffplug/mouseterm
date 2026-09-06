@@ -32,6 +32,7 @@ standalone/src-tauri/binaries/
 standalone/src-tauri/gen/
 standalone/dist/
 standalone/sidecar/dor-cli/
+standalone/sidecar/alert-journal.cjs
 standalone/sidecar/iframe-proxy.cjs
 standalone/sidecar/agent-browser-host.cjs
 standalone/sidecar/burrow.cjs

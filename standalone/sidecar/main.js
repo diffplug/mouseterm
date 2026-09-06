@@ -1,3 +1,5 @@
+const { createAlertJournal } = require('./alert-journal.cjs');
+const alertJournal = createAlertJournal(process.env.DORMOUSE_STATE_DIR || '');
 /**
  * Tauri sidecar entry point — stdio JSON-lines transport over pty-core.
  *
@@ -139,6 +141,7 @@ function handleLine(line) {
       case 'pty:themeColors': burrow.setThemeColors(data); break;
       case 'sidecar:shutdown': shutdown(); break;
       case 'dor:controlResponse': dorControl?.respond(data); break;
+      case 'alert:diagnostic': alertJournal.append(data); break;
       case 'burrow:command': burrow.handleCommand(data); break;
       case 'iframe:createProxyUrl':
         // Log to stderr — stdout is the JSON-lines protocol channel.
@@ -232,6 +235,7 @@ async function shutdown() {
   dorControl?.close();
   burrow.dispose();
   mgr.killAll();
+  await Promise.race([alertJournal.close(), new Promise((resolve) => setTimeout(resolve, 250))]);
   process.exit(0);
 }
 

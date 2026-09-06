@@ -1,3 +1,4 @@
+import { appendAlertDiagnostic } from './alert-journal';
 import * as vscode from 'vscode';
 import * as ptyManager from './pty-manager';
 import { AlertManager, type AwaitHandle, type AwaitOutcome } from '../../lib/src/lib/alert-manager';
@@ -910,6 +911,9 @@ export function attachRouter(
         break;
 
       // Alert actions — proxy to the shared alert manager
+      case 'alert:diagnostic':
+        appendAlertDiagnostic(msg.record);
+        break;
       case 'alert:remove':
         alertManager.remove(msg.id);
         break;

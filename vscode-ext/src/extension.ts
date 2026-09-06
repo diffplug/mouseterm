@@ -1,3 +1,5 @@
+import { initAlertJournal, closeAlertJournal } from './alert-journal';
+import { alertDiagnostic } from '../../lib/src/lib/alert-diagnostics';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as ptyManager from './pty-manager';
@@ -92,6 +94,10 @@ export function activate(context: vscode.ExtensionContext) {
   // whichever window wins the bind (burrow.ts).
   context.subscriptions.push(initBurrow(context));
   log.init();
+  initAlertJournal(context.globalStorageUri.fsPath);
+  context.subscriptions.push(vscode.window.onDidChangeWindowState((state) => {
+    alertDiagnostic('host.focus', { focused: state.focused });
+  }));
   extensionContext = context;
   ptyManager.setExtensionPath(context.extensionPath);
 
@@ -237,6 +243,8 @@ export async function deactivate() {
   const t0 = Date.now();
   const step = (name: string) => log.info(`[deactivate] ${name} (+${Date.now() - t0}ms)`);
   step('starting');
+  alertDiagnostic('host.stop');
+  void closeAlertJournal();
   // Recovery gets the budget FIRST, and this ordering is load-bearing rather than
   // tidy. `[deactivate] done` has never once been reached in a real shutdown — VS
   // Code kills the extension host on a budget we do not control — so the single

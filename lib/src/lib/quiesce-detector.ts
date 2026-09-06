@@ -1,3 +1,4 @@
+import type { DiagnosticFields } from './alert-diagnostics';
 import { cfg } from '../cfg';
 
 /**
@@ -11,6 +12,7 @@ export type QuiesceStatus =
   | 'MIGHT_NEED_ATTENTION';
 
 export interface QuiesceDetectorOptions {
+  diagnostic?: (event: string, fields: DiagnosticFields) => void;
   onChange?: (status: QuiesceStatus) => void;
   /**
    * A busy Session stayed quiet long enough to look finished. Fired once per
@@ -38,6 +40,10 @@ const QUIESCE_AFTER_OUTPUT_MS = T_MIGHT_NEED_ATTENTION + T_SETTLED_CONFIRM;
  * `onSettled` and the detector immediately starts over.
  */
 export class QuiesceDetector {
+  private outputChunks = 0;
+  private ignoredResizeChunks = 0;
+  private lastReceivedOutputAt: number | null = null;
+  private readonly diagnostic?: QuiesceDetectorOptions['diagnostic'];
   private status: QuiesceStatus = 'NOTHING_TO_SHOW';
   private resizeGrace = false;
   private busyCandidateTimer: ReturnType<typeof setTimeout> | null = null;
@@ -60,8 +66,26 @@ export class QuiesceDetector {
   private readonly onSettled: (() => void) | null;
 
   constructor(options?: QuiesceDetectorOptions) {
+    this.diagnostic = options?.diagnostic;
     this.onChange = options?.onChange ?? null;
     this.onSettled = options?.onSettled ?? null;
+  }
+
+  diagnosticSnapshot(): DiagnosticFields {
+    return {
+      detector: this.status, outputChunks: this.outputChunks,
+      ignoredResizeChunks: this.ignoredResizeChunks, lastReceivedOutputAt: this.lastReceivedOutputAt,
+      lastAcceptedOutputAt: this.lastAcceptedOutputAt, resizeGrace: this.resizeGrace,
+      quietDueAt: this.lastAcceptedOutputAt === null ? null : this.quietAt(),
+    };
+  }
+
+  private timer(name: string, callback: () => void, delay: number): ReturnType<typeof setTimeout> {
+    const dueAt = Date.now() + delay;
+    return setTimeout(() => {
+      this.diagnostic?.('detector.timer', { timer: name, dueAt, lateByMs: Date.now() - dueAt });
+      callback();
+    }, delay);
   }
 
   getStatus(): QuiesceStatus {
@@ -86,13 +110,17 @@ export class QuiesceDetector {
    * history. The `quietAt` clock is not history and survives (see above). */
   reset(): void {
     if (this.disposed) return;
+    this.diagnostic?.('detector.reset', this.diagnosticSnapshot());
     this.clearActivityTimers();
     this.resetOutputTracking();
     this.setStatus('NOTHING_TO_SHOW');
   }
 
   onData(): void {
-    if (this.disposed || this.resizeGrace) return;
+    if (this.disposed) return;
+    this.outputChunks++;
+    this.lastReceivedOutputAt = Date.now();
+    if (this.resizeGrace) { this.ignoredResizeChunks++; return; }
 
     const now = Date.now();
     this.lastOutputAt = now;
@@ -118,7 +146,7 @@ export class QuiesceDetector {
     if (this.disposed) return;
     this.resizeGrace = true;
     if (this.resizeTimer !== null) clearTimeout(this.resizeTimer);
-    this.resizeTimer = setTimeout(() => {
+    this.resizeTimer = this.timer('resize', () => {
       this.resizeGrace = false;
       this.resizeTimer = null;
     }, T_RESIZE_DEBOUNCE);
@@ -151,7 +179,7 @@ export class QuiesceDetector {
   private enterMightBeBusy(): void {
     this.clearActivityTimers();
     this.setStatus('MIGHT_BE_BUSY');
-    this.busyConfirmTimer = setTimeout(() => {
+    this.busyConfirmTimer = this.timer('busyConfirm', () => {
       this.busyConfirmTimer = null;
       if (this.status !== 'MIGHT_BE_BUSY') return;
       this.seedFromLatestOutput();
@@ -168,7 +196,7 @@ export class QuiesceDetector {
 
   private startBusyCandidateTimer(): void {
     if (this.busyCandidateTimer !== null) return;
-    this.busyCandidateTimer = setTimeout(() => {
+    this.busyCandidateTimer = this.timer('busyCandidate', () => {
       this.busyCandidateTimer = null;
       if (this.status !== 'NOTHING_TO_SHOW') return;
       if (this.outputCountSinceReset >= 2) {
@@ -181,7 +209,7 @@ export class QuiesceDetector {
     if (this.mightNeedAttentionTimer !== null) {
       clearTimeout(this.mightNeedAttentionTimer);
     }
-    this.mightNeedAttentionTimer = setTimeout(() => {
+    this.mightNeedAttentionTimer = this.timer('mightNeedAttention', () => {
       this.mightNeedAttentionTimer = null;
       if (this.status !== 'BUSY') return;
       this.setStatus('MIGHT_NEED_ATTENTION');
@@ -190,7 +218,7 @@ export class QuiesceDetector {
   }
 
   private startSettledConfirmTimer(): void {
-    this.settledConfirmTimer = setTimeout(() => {
+    this.settledConfirmTimer = this.timer('settledConfirm', () => {
       this.settledConfirmTimer = null;
       if (this.status !== 'MIGHT_NEED_ATTENTION') return;
       this.resetOutputTracking();

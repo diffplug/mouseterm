@@ -1,3 +1,4 @@
+import { alertDiagnostic, diagnosticId, type DiagnosticFields } from './alert-diagnostics';
 import { getAlertSettings } from './alert-settings';
 import { watchUnattendedRings } from './alert-ring-watch';
 import {
@@ -51,34 +52,58 @@ interface SpeechLifecycle {
 
 /** Dispatch after tracking is installed; engines may synchronously start and
  * settle inside `synth.speak()`. */
-function speak(text: string, lifecycle: SpeechLifecycle): void {
+function speak(text: string, lifecycle: SpeechLifecycle | undefined, context: DiagnosticFields): boolean {
+  const spokenText = toSpokenText(text);
+  const attempt = diagnosticId();
+  const requestedAt = Date.now();
+  const trace = (event: string, extra: DiagnosticFields = {}): void => alertDiagnostic(event, {
+    ...context, attempt, sinceRequestMs: Date.now() - requestedAt,
+    ...(typeof context.sessionId === 'string' ? {
+      liveStatus: getActivity(context.sessionId).status,
+      liveRingSeq: getActivity(context.sessionId).ringSeq,
+    } : {}),
+    ...extra,
+  });
+  trace('speech.request', { text: spokenText, characters: Array.from(spokenText).length, utf16Units: spokenText.length });
   const synth = globalThis.speechSynthesis;
   // Absent in jsdom and in webviews with no speech backend — staying silent is
   // the correct degradation, not an error.
-  if (!synth || typeof globalThis.SpeechSynthesisUtterance !== 'function') return;
+  if (!synth || typeof globalThis.SpeechSynthesisUtterance !== 'function') {
+    trace('speech.unavailable');
+    return false;
+  }
 
   let utterance: SpeechSynthesisUtterance;
   try {
-    utterance = new globalThis.SpeechSynthesisUtterance(toSpokenText(text));
+    utterance = new globalThis.SpeechSynthesisUtterance(spokenText);
   } catch {
     // A speech engine that refuses the utterance must never break the alert path.
-    return;
+    trace('speech.refused', { stage: 'construct' });
+    return false;
   }
-  utterance.onstart = () => lifecycle.onStart(utterance);
-  utterance.onend = () => lifecycle.onSettle(utterance);
-  utterance.onerror = () => lifecycle.onSettle(utterance);
-  lifecycle.onQueued(utterance);
+  utterance.onstart = () => { trace('speech.start'); lifecycle?.onStart(utterance); };
+  utterance.onend = () => { trace('speech.end'); lifecycle?.onSettle(utterance); };
+  utterance.onerror = (event) => {
+    trace('speech.error', { error: event?.error ?? 'unknown' });
+    lifecycle?.onSettle(utterance);
+  };
+  trace('speech.queue');
+  lifecycle?.onQueued(utterance);
   try {
     synth.speak(utterance);
   } catch {
     // Settle a refused dispatch rather than leaving the Session pinned at
     // `speaking` behind an utterance no callback will ever retire.
-    lifecycle.onSettle(utterance);
+    trace('speech.refused', { stage: 'dispatch' });
+    lifecycle?.onSettle(utterance);
+    return false;
   }
+  return true;
 }
 
 /** Silence the engine, dropping everything it is holding. */
-function cancelSpeech(): void {
+function cancelSpeech(reason: string): void {
+  alertDiagnostic('speech.cancel', { reason, scope: 'engine-queue' });
   globalThis.speechSynthesis?.cancel();
 }
 
@@ -88,23 +113,7 @@ const TEST_UTTERANCE = 'Dormouse alarm test';
 /** Play the Settings test without publishing Session delivery state; false means
  * this webview has no speech backend. */
 export function speakTestUtterance(): boolean {
-  const synth = globalThis.speechSynthesis;
-  if (!synth || typeof globalThis.SpeechSynthesisUtterance !== 'function') return false;
-
-  let utterance: SpeechSynthesisUtterance;
-  try {
-    utterance = new globalThis.SpeechSynthesisUtterance(toSpokenText(TEST_UTTERANCE));
-  } catch {
-    return false;
-  }
-  try {
-    // Do not cancel the shared engine queue: only `interrupt` can re-dispatch
-    // queued real alarms whose callbacks cancellation may drop.
-    synth.speak(utterance);
-  } catch {
-    return false;
-  }
-  return true;
+  return speak(TEST_UTTERANCE, undefined, { reason: 'test', sessionId: null, ringSeq: null });
 }
 
 /**
@@ -113,6 +122,7 @@ export function speakTestUtterance(): boolean {
  * detaches delivery callbacks from utterances already handed to it.
  */
 export function startAlertSpeech(): () => void {
+  alertDiagnostic('speech.mount');
   // A callback from an old or already-attended utterance must not overwrite the
   // state of a newer ring for the same Session. The opaque token makes every
   // utterance generation distinct without exposing engine objects to the store.
@@ -176,7 +186,7 @@ export function startAlertSpeech(): () => void {
     }
   };
 
-  const fireSpeech = (sessionId: string): void => {
+  const fireSpeech = (sessionId: string, reason = 'ring'): void => {
     const token = {};
     speak(deriveSessionLabel(sessionId), {
       onQueued: (utterance) => {
@@ -198,7 +208,7 @@ export function startAlertSpeech(): () => void {
         setAlertSpeechState(sessionId, 'speaking');
       },
       onSettle: (utterance) => settle(sessionId, token, utterance),
-    });
+    }, { sessionId, ringSeq: getActivity(sessionId).ringSeq, reason });
   };
 
   /** Stop resolved speech. Web Speech cancels the whole queue, so re-dispatch
@@ -217,11 +227,12 @@ export function startAlertSpeech(): () => void {
       if (speakable && activity.get(sessionId)?.status === 'ALERT_RINGING') requeue.push(sessionId);
     }
     queued.clear();
-    cancelSpeech();
-    for (const sessionId of requeue) fireSpeech(sessionId);
+    cancelSpeech('resolved-speaking-ring');
+    for (const sessionId of requeue) fireSpeech(sessionId, 'requeue');
   };
 
   const stopRingWatch = watchUnattendedRings({
+    diagnosticSink: 'speech',
     enabled: () => getAlertSettings().speakEnabled,
     delayMs: () => getAlertSettings().speakDelayMs,
     fire: fireSpeech,
@@ -279,7 +290,7 @@ export function startAlertSpeech(): () => void {
     // teardown; the engine still owns its queue. Without this, a webview that
     // unmounts mid-alarm keeps reading Pane names aloud with no visible source
     // and no UI left to stop it.
-    cancelSpeech();
+    cancelSpeech('dispose');
     clearAllAlertSpeechStates();
   };
 }

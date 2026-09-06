@@ -1,3 +1,4 @@
+import { alertDiagnostic, diagnosticId, type DiagnosticFields } from './alert-diagnostics';
 import { QuiesceDetector, type QuiesceStatus } from './quiesce-detector';
 import type { AlertSettings } from './alert-settings';
 import { cfg } from '../cfg';
@@ -209,6 +210,28 @@ interface AlertEntry {
 /** Portable Session Activity manager. `dispatchCompletion` is the single
  * observe→claim→ring seam, so await can claim completions before suppression. */
 export class AlertManager {
+  private readonly diagnosticManager = diagnosticId();
+  private lastAttentionAt: number | null = null;
+
+  private trace(event: string, id?: string, fields: DiagnosticFields = {}): void {
+    const entry = id === undefined ? undefined : this.entries.get(id);
+    alertDiagnostic(event, {
+      manager: this.diagnosticManager, sessionId: id ?? null,
+      attentionId: this.attentionId, lastAttentionAt: this.lastAttentionAt,
+      inactivityTimeoutMs: this.inactivityTimeoutMs, deferAlertsUntilQuiet: this.deferAlertsUntilQuiet,
+      ...(entry ? {
+        ...entry.detector.diagnosticSnapshot(), ringSeq: entry.ringSeq,
+        status: this.getProjectedStatus(entry), watching: this.isWatching(entry),
+        watchingRing: entry.watchingRingingCommand !== null, outputSinceWatchingRing: entry.outputSinceWatchingRing,
+        protocol: entry.protocolStatus, commandExit: entry.commandExitStatus,
+        commandStartedAt: entry.commandExitWatch?.startedAt ?? null,
+        commandSeenAt: entry.commandExitWatch?.seenWithAttentionAt ?? null,
+        pendingNotification: entry.deferredNotification?.source ?? null,
+        todo: entry.todo, attentionDismissedRing: entry.attentionDismissedRing,
+      } : {}), ...fields,
+    });
+  }
+
   private entries = new Map<string, AlertEntry>();
   /** Blocks late output/resize from recreating a removed entry. Only a semantic
    * or protocol event proves a reused id belongs to a live replacement. */
@@ -244,6 +267,7 @@ export class AlertManager {
   setInactivityTimeoutMs(ms: number): void {
     if (!Number.isFinite(ms) || ms <= 0 || ms === this.inactivityTimeoutMs) return;
     this.inactivityTimeoutMs = ms;
+    this.trace('manager.settings');
     // Re-arm from now so a shortened window takes effect immediately instead of
     // waiting out the window that was already running.
     if (this.attentionTimer !== null && this.attentionId !== null) {
@@ -255,6 +279,7 @@ export class AlertManager {
   setDeferAlertsUntilQuiet(enabled: boolean): void {
     if (enabled === this.deferAlertsUntilQuiet) return;
     this.deferAlertsUntilQuiet = enabled;
+    this.trace('manager.settings');
     if (enabled) return;
 
     // Turning the gate off releases news it was holding; dropping it would turn
@@ -292,6 +317,7 @@ export class AlertManager {
   }
 
   onExit(id: string, exitCode?: number): void {
+    this.trace('manager.onExit', id);
     if (this.helpers.has(id)) return;
     const entry = this.entries.get(id);
     if (entry && this.finishCommandExitWatch(id, entry, exitCode)) this.notify(id);
@@ -302,6 +328,7 @@ export class AlertManager {
   }
 
   onResize(id: string): void {
+    this.trace('manager.onResize', id);
     if (this.helpers.has(id)) return;
     // Same reasoning as `onData`: the resize grace window is part of the
     // always-on detector, and a Pane's first fit usually beats any PTY event.
@@ -362,9 +389,11 @@ export class AlertManager {
 
   private createDetector(id: string): QuiesceDetector {
     return new QuiesceDetector({
+      diagnostic: (event, fields) => this.trace(event, id, fields),
       // Detector state is public only while WATCHING, so only then can a
       // transition change the projection.
       onChange: () => {
+        this.trace('detector.state', id);
         const entry = this.entries.get(id);
         if (entry && this.isWatching(entry)) this.notify(id);
       },
@@ -417,7 +446,18 @@ export class AlertManager {
     // Snapshot: a claimant may unregister itself (or register another) while
     // being offered this very event.
     const claimants = [...(this.claimants.get(id) ?? [])];
-    if (claimants.some((claimant) => claimant(event))) return true;
+    const claimed = claimants.some((claimant) => claimant(event));
+    this.trace('manager.completion', id, {
+      kind: event.kind, claimed,
+      reason: claimed ? 'claimed' : this.hasAttention(id) ? 'attended'
+        : event.kind === 'settled' && !this.isWatching(entry) ? 'not-watched'
+        : event.kind === 'commandFinished' && !event.armed ? 'not-armed'
+        : event.kind === 'commandFinished' && event.ranMs < this.inactivityTimeoutMs ? 'short-command'
+        : 'eligible',
+      ...(event.kind === 'commandFinished' ? { ranMs: event.ranMs, armed: event.armed, exitCode: event.exitCode ?? null } : {}),
+      ...(event.kind === 'notification' ? { notificationSource: event.notification.source } : {}),
+    });
+    if (claimed) return true;
 
     switch (event.kind) {
       case 'settled':
@@ -738,6 +778,7 @@ export class AlertManager {
 
   applyTerminalSemanticEvents(id: string, events: TerminalSemanticEvent[]): void {
     if (events.length === 0 || this.helpers.has(id)) return;
+    for (const event of events) this.trace('manager.semantic', id, { kind: event.type });
     const entry = this.reportedEntry(id);
     let changed = false;
 
@@ -884,12 +925,14 @@ export class AlertManager {
       && (entry.deferredNotification !== null || entry.detector.isConfirmedBusy())
     ) {
       // Latest wins, matching repeated notifications on an already-ringing track.
+      this.trace('manager.defer', id, { notificationSource: notification.source });
       entry.deferredNotification = notification;
       this.scheduleDeferredNotification(id, entry);
     } else {
       // An existing ring means this is enrichment, not a fresh summons. Cancel
       // any older pending detail so it cannot overwrite this notification later.
       this.clearDeferredNotification(entry);
+      this.trace('manager.deliver', id, { notificationSource: notification.source });
       this.applyProtocolRinging(entry, notification);
     }
     // The caller may have cleared a publicly visible cycle and delegated the
@@ -906,7 +949,10 @@ export class AlertManager {
    */
   private scheduleDeferredNotification(id: string, entry: AlertEntry): void {
     if (entry.deferredNotificationTimer !== null) clearTimeout(entry.deferredNotificationTimer);
+    const dueAt = Math.max(Date.now(), entry.detector.quietAt());
+    this.trace('manager.deferScheduled', id, { dueAt });
     entry.deferredNotificationTimer = setTimeout(() => {
+      this.trace('manager.deferTimer', id, { dueAt, lateByMs: Date.now() - dueAt });
       entry.deferredNotificationTimer = null;
       if (entry.detector.quietAt() > Date.now()) this.scheduleDeferredNotification(id, entry);
       else this.flushDeferredNotification(id, entry);
@@ -916,6 +962,7 @@ export class AlertManager {
   private flushDeferredNotification(id: string, entry: AlertEntry): void {
     const notification = entry.deferredNotification;
     if (notification === null) return;
+    this.trace('manager.deferFlush', id, { reason: this.hasAttention(id) ? 'attended' : 'deliver' });
     this.clearDeferredNotification(entry);
 
     // Attending the Session clears this eagerly too; retain the recheck as the
@@ -1004,12 +1051,16 @@ export class AlertManager {
 
   private setAttention(id: string): void {
     const previousAttentionId = this.attentionId;
+    if (previousAttentionId !== id) this.trace('manager.attention', id, { reason: 'gain' });
+    this.lastAttentionAt = Date.now();
     if (previousAttentionId && previousAttentionId !== id && this.armCommandExitOnAttentionLoss(previousAttentionId)) {
       this.notify(previousAttentionId);
     }
     this.attentionId = id;
     this.clearAttentionTimer();
+    const dueAt = Date.now() + this.inactivityTimeoutMs;
     this.attentionTimer = setTimeout(() => {
+      this.trace('manager.attentionTimer', id, { dueAt, lateByMs: Date.now() - dueAt });
       if (this.attentionId === id) {
         this.attentionId = null;
         if (this.armCommandExitOnAttentionLoss(id)) {
@@ -1023,6 +1074,7 @@ export class AlertManager {
   attend(id: string): void {
     if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
+    if (this.hasActiveRing(entry) || entry.deferredNotification !== null) this.trace('manager.attend', id);
     this.setAttention(id);
 
     if (this.clearAllRingsIfActive(entry)) {
@@ -1036,6 +1088,7 @@ export class AlertManager {
   clearAttention(id?: string): void {
     if (id !== undefined && (this.attentionId !== id || this.helpers.has(id))) return;
     const lostAttentionId = this.attentionId;
+    this.trace('manager.attention', lostAttentionId ?? undefined, { reason: 'clear', requestedId: id ?? null });
     this.attentionId = null;
     this.clearAttentionTimer();
     if (lostAttentionId && this.armCommandExitOnAttentionLoss(lostAttentionId)) {
@@ -1046,6 +1099,7 @@ export class AlertManager {
   // --- Alert controls ---
 
   dismissAlert(id: string): void {
+    this.trace('manager.dismissAlert', id);
     const entry = this.entries.get(id);
     if (!entry) return;
 
@@ -1062,6 +1116,7 @@ export class AlertManager {
   // --- Todo controls ---
 
   toggleTodo(id: string): void {
+    this.trace('manager.toggleTodo', id);
     if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     entry.todo = !entry.todo;
@@ -1071,6 +1126,7 @@ export class AlertManager {
   }
 
   markTodo(id: string): void {
+    this.trace('manager.markTodo', id);
     if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     const cleared = this.clearAllRingsIfActive(entry);
@@ -1080,6 +1136,7 @@ export class AlertManager {
   }
 
   clearTodo(id: string): void {
+    this.trace('manager.clearTodo', id);
     if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     entry.todo = false;
@@ -1116,6 +1173,7 @@ export class AlertManager {
 
   /** Completely remove alert state for a PTY (used when PTY is destroyed) */
   remove(id: string): void {
+    this.trace('manager.remove', id);
     this.helpers.delete(id);
     this.removed.add(id);
     // Nobody parked here has anything left to wait for.
@@ -1142,6 +1200,7 @@ export class AlertManager {
    * never resurrect a ring or an in-flight progress cycle.
    */
   seed(id: string, state: { todo: unknown; notification?: unknown }): void {
+    this.trace('manager.seed', id);
     if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     entry.todo = state.todo === true;
@@ -1160,6 +1219,7 @@ export class AlertManager {
   }
 
   dispose(): void {
+    this.trace('manager.dispose');
     // Settled first, while listeners are still attached: a parked caller that
     // never hears an outcome absorbed a completion it never delivered.
     for (const id of [...this.awaits.keys()]) this.settleWaiters(id, 'cancelled');
@@ -1241,6 +1301,7 @@ export class AlertManager {
     const state = this.getState(id);
     const last = this.lastEmitted.get(id);
     if (last && alertStatesEqual(last, state)) return;
+    this.trace('manager.publish', id, { previousStatus: last?.status ?? null, previousRingSeq: last?.ringSeq ?? null });
     if (this.entries.has(id)) {
       this.lastEmitted.set(id, state);
     } else {

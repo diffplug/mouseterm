@@ -122,6 +122,7 @@ Transport constraints:
 
 | Direction | Message | Contract |
 | --- | --- | --- |
+| Webview → host | `alert:diagnostic` (VS Code) / `alert_diagnostic` → sidecar `alert:diagnostic` (Tauri) | One local journal record through the optional `recordAlertDiagnostic` adapter port. No reply, broadcast, or Relay forwarding. **Must validate the bounded primitive record before retaining it**; `isAlertDiagnostic` in `lib/src/host/alert-journal.ts`. Behavior: `docs/specs/alert.md` → Local alert diagnostics. |
 | Webview → host | `dormouse:openExternal` | Open a user-confirmed external URI from an OSC 8 hyperlink. **Hosts must revalidate**, rejecting malformed, control-character-bearing, or blocked pseudo-scheme targets (`javascript:`, `data:`, `blob:`, `about:` — `lib/src/lib/external-links.ts`). |
 | Webview → host | `pty:getOpenPorts` | TCP listening ports of a PTY's shell **and all of its descendant subprocesses**, resolved from the root pid, answered with `pty:openPorts`. `getOpenPortsForPid()` in `standalone/sidecar/pty-core.js` (VS Code loads it through the `lib/pty-core.cjs` shim). |
 | Host → webview | `pty:openPorts` | `ports: OpenPort[]` (`{ protocol, family, address, port, pid, processName }`), de-duplicated by `(family, address, port)`, sorted by port then address. Empty when the PTY is gone or enumeration fails. |

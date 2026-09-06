@@ -1,3 +1,4 @@
+import { alertDiagnostic } from './alert-diagnostics';
 import { cfg } from '../cfg';
 import { loadJson, saveJson } from './local-json-store';
 import { getPlatform } from './platform';
@@ -104,6 +105,7 @@ export function updateAlertSettings(patch: Partial<AlertSettings>): void {
   const next = normalizeAlertSettings({ ...settings, ...patch });
   if (alertSettingsEqual(next, settings)) return;
   settings = next;
+  alertDiagnostic('renderer.settings', { speakEnabled: settings.speakEnabled, speakDelayMs: settings.speakDelayMs, deferAlertsUntilQuiet: settings.deferAlertsUntilQuiet, inactivityTimeoutMs: settings.inactivityTimeoutMs });
   saveJson(STORAGE_KEY, settings);
   getPlatform().alertPublishSettings(settings, { seed: false });
   listeners.forEach((listener) => listener());
@@ -114,6 +116,7 @@ export function applyAlertSettingsFromHost(value: unknown): void {
   const next = normalizeAlertSettings(value);
   if (alertSettingsEqual(next, settings)) return;
   settings = next;
+  alertDiagnostic('renderer.settings', { speakEnabled: settings.speakEnabled, speakDelayMs: settings.speakDelayMs, deferAlertsUntilQuiet: settings.deferAlertsUntilQuiet, inactivityTimeoutMs: settings.inactivityTimeoutMs });
   saveJson(STORAGE_KEY, settings);
   listeners.forEach((listener) => listener());
 }

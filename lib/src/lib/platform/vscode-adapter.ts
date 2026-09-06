@@ -1,3 +1,4 @@
+import type { AlertDiagnostic } from '../alert-diagnostics';
 import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../terminal-context-types';
 import type { AgentBrowserCommandResult, AgentBrowserEditOp, AgentBrowserEditResult, AgentBrowserOpenResult, AgentBrowserPopResult, AgentBrowserScreenshotResult, AgentBrowserStreamStatusResult, AlertStateDetail, IframeProxyResult, OpenPort, PlatformAdapter, PtyDataDetail, PtyInfo, BurrowLink } from './types';
 import { OPEN_PORT_TIMEOUT_MS } from './types';
@@ -114,6 +115,10 @@ export class VSCodeAdapter implements PlatformAdapter {
       return snapshot;
     },
   };
+
+  recordAlertDiagnostic(record: AlertDiagnostic): void {
+    this.vscode.postMessage({ type: 'alert:diagnostic', record });
+  }
 
   constructor() {
     this.vscode = acquireVsCodeApi();
