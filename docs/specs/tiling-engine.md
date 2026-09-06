@@ -5,6 +5,17 @@
 > **Defers** the interaction model on top to [layout.md](layout.md): selection, focus, modes, session lifecycle.
 > Evidence behind the rules: [tiling-engine.rationale.md](tiling-engine.rationale.md).
 
+## Code Map
+
+Follow these entrypoints from Wall policy down into geometry and rendering:
+
+| Entrypoint | Role |
+|---|---|
+| `lib/src/components/Wall.tsx` | Creates the engine and connects user actions to its operations. |
+| `lib/src/components/wall/lath-wall-engine.ts` | Wall-facing operations, animator ownership, and persistence projection over the store. |
+| `lib/src/components/wall/lath-wall-store.ts` | State commits and derived geometry; imports the pure core operations and queries. |
+| `lib/src/components/wall/LathHost.tsx` | HTML rendering and gesture binding; imports pane renderers and drag handling. |
+
 ## Why
 
 Lath replaces dockview's split tree, resize, drag-move, maximize, and serialization, eliminating its broader model's failure modes (rationale).
