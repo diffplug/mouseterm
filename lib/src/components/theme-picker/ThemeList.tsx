@@ -24,6 +24,8 @@ export function ThemeList({
     // document's theme. Previewing must not apply a theme or mutate storage.
     style: getThemePreviewStyle(theme),
   })), [themes]);
+  const backgroundColor = previews.find(({ theme }) => theme.id === activeId)?.style.backgroundColor
+    ?? 'var(--color-terminal-bg)';
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current!;
@@ -47,20 +49,17 @@ export function ThemeList({
   }, [themes]);
 
   return (
-    <div className="relative flex max-h-80 min-h-0 flex-1 flex-col">
+    <div className="relative flex max-h-80 min-h-0 flex-1 flex-col" style={{ backgroundColor }}>
       <div ref={scrollRef} className="min-h-0 overflow-y-auto">
-        <div ref={contentRef}>
+        <div ref={contentRef} className="flex flex-col gap-1 p-2">
           {previews.map(({ theme, style }) => {
             const isActive = theme.id === activeId;
             const isInstalled = theme.origin.kind === 'installed';
             return (
               <div
                 key={theme.id}
-                className="flex items-center"
-                style={{
-                  ...style,
-                  boxShadow: isActive ? 'inset 0 0 0 1px currentColor' : undefined,
-                }}
+                className="flex items-center overflow-hidden rounded-full"
+                style={style}
               >
                 <button
                   type="button"
@@ -68,7 +67,7 @@ export function ThemeList({
                   aria-checked={isActive}
                   title={theme.label}
                   onClick={() => onSelect(theme.id)}
-                  className={`flex min-h-11 min-w-0 flex-1 items-center py-2 pl-3 text-left text-sm hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-current ${isInstalled ? 'pr-1' : 'pr-3'}`}
+                  className={`group/theme-preview flex min-h-11 min-w-0 flex-1 items-center rounded-full py-2 pl-3 text-left text-sm focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-current ${isInstalled ? 'pr-1' : 'pr-3'} ${isActive ? 'font-semibold' : ''}`}
                   style={{ color: 'inherit' }}
                 >
                   <ThemePreview theme={theme} />
@@ -80,7 +79,7 @@ export function ThemeList({
                     title={`Uninstall ${theme.label}`}
                     // Keep a gap from selection: uninstall requires finding
                     // the extension again in OpenVSX to undo.
-                    className="mr-2 ml-1 flex min-h-11 shrink-0 items-center rounded px-1.5 hover:outline hover:outline-1 hover:-outline-offset-3 hover:outline-current focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-current"
+                    className="mr-2 ml-1 flex min-h-11 shrink-0 items-center rounded-full px-1.5 hover:opacity-65 focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-current"
                     style={{ color: 'inherit' }}
                     onClick={() => onUninstall(theme)}
                   >
@@ -97,7 +96,7 @@ export function ThemeList({
           aria-hidden="true"
           data-scroll-fade="above"
           className="pointer-events-none absolute inset-x-0 top-0 h-4"
-          style={{ background: 'linear-gradient(to bottom, var(--color-surface-raised), transparent)' }}
+          style={{ background: `linear-gradient(to bottom, ${backgroundColor}, transparent)` }}
         />
       ) : null}
       {overflow.below ? (
@@ -105,7 +104,7 @@ export function ThemeList({
           aria-hidden="true"
           data-scroll-fade="below"
           className="pointer-events-none absolute inset-x-0 bottom-0 h-4"
-          style={{ background: 'linear-gradient(to top, var(--color-surface-raised), transparent)' }}
+          style={{ background: `linear-gradient(to top, ${backgroundColor}, transparent)` }}
         />
       ) : null}
     </div>

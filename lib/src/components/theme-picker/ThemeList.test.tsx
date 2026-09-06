@@ -64,6 +64,7 @@ describe('ThemeList', () => {
     const rows = container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]');
     expect(rows[0].parentElement!.style.backgroundColor).toBe('rgb(17, 34, 51)');
     expect(rows[0].parentElement!.style.color).toBe('rgb(171, 205, 239)');
+    expect((container.firstElementChild as HTMLElement).style.backgroundColor).toBe('rgb(17, 34, 51)');
     expect(rows[0].getAttribute('aria-checked')).toBe('true');
     const resolvedLight = completeThemeVars(light.vars, light.type);
     const expected = document.createElement('div');
@@ -73,6 +74,7 @@ describe('ThemeList', () => {
     render([dark, light], light.id);
     expect(rows[0].parentElement!.style.backgroundColor).toBe('rgb(17, 34, 51)');
     expect(rows[1].getAttribute('aria-checked')).toBe('true');
+    expect((container.firstElementChild as HTMLElement).style.backgroundColor).toBe('rgb(255, 255, 255)');
   });
 
   it('keeps selection and uninstall as separate actions', () => {

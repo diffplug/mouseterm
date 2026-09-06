@@ -15,7 +15,7 @@ export function ThemePreview({ theme, label = theme.label }: { theme: DormouseTh
   return (
     <span className="flex min-w-0 flex-1 items-center gap-2">
       <ThemeSwatch theme={theme} />
-      <span className="min-w-0 truncate">{label}</span>
+      <span className="min-w-0 truncate underline-offset-4 group-hover/theme-preview:underline">{label}</span>
     </span>
   );
 }

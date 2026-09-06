@@ -206,16 +206,17 @@ playground navbar — carries none**.
   "Theme" in `compact`.
 - **The picker renders the bundled default through hydration, then reconciles
   stored themes and selection in a layout effect** (rationale).
-- **Must use `ThemePicker` for every theme-selection placement**, with
-  `ThemeList` owning its preview rows and scroll affordances.
+- **Must share `ThemePicker` and its `ThemeList` across theme-selection placements.**
 - **Must preview each candidate with its resolved terminal foreground/background**,
-  including missing-token defaults for its own polarity. **Must share the
-  circle swatch, label treatment, and palette between list entries and the
-  closed trigger** through `ThemePreview`. **Must mark selection with an inset
-  border and preserve preview colors on selection and hover.**
+  resolving omissions for its polarity.
+- **Must share swatches, labels,
+  and palettes between entries and triggers** through `ThemePreview`.
+- **Must mark selection with a heavier label and hover with an underline,
+  preserving preview colors.**
+- **Must separate theme pills with gaps of the active terminal background**,
+  also used by edge fades.
 - **Must show an edge fade only while entries overflow in that direction**,
-  updating on scroll, content
-  changes, and resize. Pinned by `lib/src/components/theme-picker/ThemeList.test.tsx`.
+  updating on scroll, content changes, and resize. Pinned by `lib/src/components/theme-picker/ThemeList.test.tsx`.
 - **Must style surrounding picker chrome with `--color-*` utilities.** A host
   rendering library JSX scans `lib/src` and imports
   `theme-colors.css`, or none of those utilities reach it (rationale).

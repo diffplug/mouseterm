@@ -66,7 +66,7 @@ async function openMenu({ canvasElement }: { canvasElement: HTMLElement }) {
 /** Resting state: the trigger alone, which is all these pages show until clicked. */
 export const Closed: Story = {};
 
-/** The bundled set. Each row previews its own palette; an inset border marks selection. */
+/** The bundled set. Each pill previews its own palette; a heavier label marks selection. */
 export const Open: Story = {
   play: openMenu,
 };
