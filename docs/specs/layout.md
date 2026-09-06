@@ -54,17 +54,33 @@ The label is the `DerivedHeader` from `deriveHeader(...)`; `docs/specs/terminal-
 
 #### Header context menu
 
-**One menu per terminal pane, opened by right-click anywhere on the header or by `>` in command mode** — at the pointer, or under the header's left edge (`data-pane-header-for` plus a synthetic `contextmenu`, so both paths share one code path). Browser headers and Doors have no such menu, so `>` no-ops there. Only the alert bell owns its own right-click (`stopPropagation`, opening the alert dialog); every other region, the title span included, bubbles here. It is portaled to `document.body`, viewport-clamped, and dismissed by outside `pointerdown`, `Escape`, `resize`, or capture-phase `scroll` — **never by a scroll originating inside the menu**, since arrow-key focus moves auto-scroll the overflowing list.
+**Must open the terminal context from terminal header, alert, body, and command-mode `>` entry points.** Browser-only Surfaces and Doors have no context. Application mouse ownership follows `docs/specs/mouse-and-clipboard.md` → Terminal context input.
 
-Content, top to bottom:
+**Must float the context inside its source Pane with a one-rem inset on every side**, overlapping the header, with a theme-derived edge and raised shadow. Render it in the Lath leaf's overlay slot, outside the body's clipping box, so it follows the leaf's layout without remounting the helper. Keep one context per Wall. Outside pointer press and explicit close dismiss it. No separate context heading or clipboard toolbar is shown.
 
-- **Header row** — display title, the pane's `surface:N` handle (`resolveSurfaceRef`, muted), close button.
-- **Title-candidates table** — latest entry per `titleCandidates` channel (`docs/specs/terminal-state.md`): channel, text, timestamp; else a muted `No title candidates`. **Diagnostic only** — it changes no title priority rule.
-- **Port rows** — the TCP ports the pane's process tree binds, scanned by `getOpenPorts` **once per open** (reopen to rescan): a spinner, then one `host:port` row per distinct port (digit chip first, process name muted beside it), else a muted `no listening ports` / `port scan failed`.
+**Must reveal the context from the opening pointer position, clamped to its bounds, over 320ms.** Alert activation uses the alert button center; command-mode `>` uses the header's bottom-left; openings without a position use the context's top-left. Keep final layout dimensions throughout the reveal. Start helper creation, settings reads, and port scanning immediately on mount; fade mounted content, including detail dialogs, in over 140ms after 160ms. Reduced motion or disabled layout animation skips both animations and the delay.
 
-**The menu owns the keyboard while open**: DOM focus on mount, the previously focused element restored when a dismissal leaves input ownership unchanged, and registration as dialog-keyboard-active so command-mode keys don't fire underneath. `1`–`9` activate the matching port row and **presses during the scan are dropped, never buffered**; `↑`/`↓` rove the rows (wrapping), `Enter`/`Space` activate the focused row, `Tab`/`Shift+Tab` cycle every focusable element, `Escape` closes.
+**Must contract dismissals toward the opening origin over 180ms, fading content over 100ms**, starting from the current reveal when interrupted. Make the closing context inert and pause helper polling immediately; release focus without waiting for removal. Reopening cancels pending removal. Reduced motion dismisses immediately; promotion, source removal, and replacement by another context retain their immediate lifecycle transitions.
 
-Activating a port row reproduces `dor ab open <url>` for that port and closes the menu at once (`docs/specs/dor-browser.md` → Pane Context Menu Connect): the browser surface becomes the selection in passthrough, reattaching first if minimized — **the one command-mode gesture that moves selection off the pane it targeted and exits command mode** — with loading/errors surfacing in the pane, not the menu. With no `agentBrowserCommand` the rows are inert labels with no digit chips. Source of truth: `lib/src/components/wall/PaneHeaderContextMenu.tsx`, `lib/src/components/wall/TerminalPaneHeader.tsx`, `lib/src/components/wall/keyboard/handle-pane-shortcuts.ts`.
+| Row | Content |
+|---|---|
+| Title | Derived display title, labeled Explain action, copyable source Surface ref and close at right |
+| Dir | Home-abbreviated directory, native explorer action, absolute-path copy |
+| Ports | One scan per opening; scanning/empty/failure states; one port inline, multiple ports in a dropdown with count beside it; four labeled actions |
+| Alerts | Source Watch and TODO controls; notification details directly below |
+| Helper | Remaining space; one-line status, Modify/Reset and Promote; hide its name below 48rem container width |
+
+**Must focus context controls on opening.** Explicit entry into helper xterm gives it terminal keys; Escape there belongs to its program. Escape from controls closes the innermost disclosure, then context. Terminal clipboard routing uses the focused helper rather than the selected source. Actions use subdued link color and shared compact `OnOffSwitch` controls.
+
+**Must tint the copyable Surface ref as an action and confirm each successful context copy in its button** with a checkmark and “Copied” for 1.4 seconds, preserving button width and keeping the context open. Failed copies show the action error without success feedback.
+
+**Must suppress context action hover and focus highlights while the window is unfocused**, including after opening a native explorer or system browser. **Must also withhold hover from an in-flight action, which stays focusable and `aria-disabled` rather than `disabled`** so the innermost disclosure keeps a focused descendant for Escape and Tab.
+
+**Must show “Opening…” with a spinner in the directory explorer button during launch and for at least 0.75 seconds**, preserving width and keyboard focus while blocking repeat clicks. Stop immediately on failure and show the action error. Respect reduced motion by keeping the spinner static.
+
+**Must promote by adopting the helper Session into a new split beside the source**, preserving identity and focusing it. Helper lifetime and source closure are owned by `docs/specs/terminal-context.md`.
+
+Source of truth: `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`; `TerminalLeafOverlay` in `lib/src/components/wall/LathHost.tsx`; `TerminalPanel` in `lib/src/components/wall/TerminalPanel.tsx`; `TerminalPaneHeader` in `lib/src/components/wall/TerminalPaneHeader.tsx`; `useWallKeyboard` in `lib/src/components/wall/use-wall-keyboard.ts`; `.terminal-context-enter` / `.terminal-context-content` in `lib/src/theme.css`. Tests: `lib/src/components/wall/TerminalContext.test.tsx`, `lib/src/components/Wall.test.tsx`.
 
 ### Pane body
 

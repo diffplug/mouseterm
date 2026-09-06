@@ -54,9 +54,11 @@ The containment hierarchy `dor` handles commit to (`docs/specs/dor-cli.md`):
 Window ⊃ Workspace ⊃ Pane ⊃ Surface  (terminal = Session | browser)
 ```
 
-**Surface identity:** a Surface's id is its Lath leaf id. A terminal Surface's *is* its `SessionId`, stable (I1); browser replacement and relaunch have different identity effects (I10).
+**Surface identity:** a primary Surface's id is its Lath leaf id; a helper receives its Lath leaf only on promotion. A terminal Surface's *is* its `SessionId`, stable (I1); browser replacement and relaunch have different identity effects (I10).
 
 ## Containers
+
+**Must keep a helper as an auxiliary terminal Surface in its source's Pane**, with a stable Session id and explicit parent association. It has no independent Lath leaf, public ref, or alerting until promotion; `docs/specs/terminal-context.md` owns its lifetime. A shown helper is `Paned` within the source body; a closed context leaves it `Hidden` and DOM-parked (`Mounted`).
 
 Workspace and Window are containers, not Session layers — they group Surfaces rather than describing one Surface's state (containment is I7).
 
@@ -148,7 +150,7 @@ A **Session** is the tuple of its `SessionId` plus one state per layer (I1).
 
 | State | Meaning |
 |---|---|
-| `Paned` | Rendered as a pane in the content area (a Lath leaf) |
+| `Paned` | Rendered in the content area: a primary Lath leaf or its shown auxiliary helper |
 | `Zoomed` | Subset of `Paned` — the passthrough-focused pane is maximized; acquiring zoom gives focus, losing focus returns it to `Paned` |
 | `Doored` | Rendered as a door on the baseboard. DOM survival is a rendering decision, not part of this state: browser DOM retention follows **parking** and eviction (`docs/specs/tiling-engine.md` → "Parked leaves"); a terminal Surface unmounts its element (Registry: `Orphaned`) and remounts the same xterm on reattach — nothing replays |
 | `Hidden` | In neither pane nor door — webview closed or mid-transition; inactive-Workspace presentation is staged (`docs/specs/layout.md` → Future). Process and Activity unaffected. |

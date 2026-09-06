@@ -220,6 +220,10 @@ export class AlertManager {
   private listeners = new Set<(id: string, state: AlertState) => void>();
   private lastEmitted = new Map<string, AlertState>();
   private watchedCommands = new Set<string>();
+  /** Helper Sessions never alert (docs/specs/alert.md → "suppress helper
+   *  alerting until promotion"): every ingestion and control entry point below
+   *  drops them here, so a host marks the id once instead of guarding each call. */
+  private helpers = new Set<string>();
   private inactivityTimeoutMs = cfg.alert.userAttention;
   private deferAlertsUntilQuiet = false;
 
@@ -258,6 +262,12 @@ export class AlertManager {
     for (const [id, entry] of this.entries) this.flushDeferredNotification(id, entry);
   }
 
+  /** Mark (or, on promotion, unmark) a helper Session. */
+  setHelper(id: string, helper: boolean): void {
+    if (helper) this.helpers.add(id);
+    else this.helpers.delete(id);
+  }
+
   // --- State change subscription ---
 
   onStateChange(listener: (id: string, state: AlertState) => void): () => void {
@@ -268,6 +278,7 @@ export class AlertManager {
   // --- Feed PTY events ---
 
   onData(id: string): void {
+    if (this.helpers.has(id)) return;
     // The detector runs for every Session, including one that has never
     // produced a semantic or protocol event, so output creates the entry.
     const entry = this.streamEntry(id);
@@ -281,6 +292,7 @@ export class AlertManager {
   }
 
   onExit(id: string, exitCode?: number): void {
+    if (this.helpers.has(id)) return;
     const entry = this.entries.get(id);
     if (entry && this.finishCommandExitWatch(id, entry, exitCode)) this.notify(id);
     // The command-exit dispatch above already resolved anything waiting on the
@@ -290,6 +302,7 @@ export class AlertManager {
   }
 
   onResize(id: string): void {
+    if (this.helpers.has(id)) return;
     // Same reasoning as `onData`: the resize grace window is part of the
     // always-on detector, and a Pane's first fit usually beats any PTY event.
     this.streamEntry(id)?.detector.onResize();
@@ -453,6 +466,7 @@ export class AlertManager {
    * attention exactly as they were.
    */
   awaitCompletion(id: string, options: AwaitOptions): AwaitHandle {
+    if (this.helpers.has(id)) return settledAwait({ kind: 'cancelled', waitedMs: 0 });
     // The ceiling starts life as a CLI argument a process away and ends up in
     // `setTimeout`, so nonsense is rejected here rather than trusted from one
     // caller away. A rejected request settles `cancelled` — it absorbs nothing
@@ -636,6 +650,7 @@ export class AlertManager {
   // --- Terminal-report protocol track ---
 
   notifyFromProtocol(id: string, notification: ActivityNotification): void {
+    if (this.helpers.has(id)) return;
     const entry = this.reportedEntry(id);
     const normalized = normalizeActivityNotification(notification);
     if (!normalized) return;
@@ -644,6 +659,7 @@ export class AlertManager {
   }
 
   updateProtocolProgress(id: string, progress: ProtocolProgressUpdate): void {
+    if (this.helpers.has(id)) return;
     const entry = this.reportedEntry(id);
 
     if (progress.state === 'clear') {
@@ -721,7 +737,7 @@ export class AlertManager {
   // --- Command-exit track ---
 
   applyTerminalSemanticEvents(id: string, events: TerminalSemanticEvent[]): void {
-    if (events.length === 0) return;
+    if (events.length === 0 || this.helpers.has(id)) return;
     const entry = this.reportedEntry(id);
     let changed = false;
 
@@ -1005,6 +1021,7 @@ export class AlertManager {
   }
 
   attend(id: string): void {
+    if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     this.setAttention(id);
 
@@ -1017,7 +1034,7 @@ export class AlertManager {
   }
 
   clearAttention(id?: string): void {
-    if (id !== undefined && this.attentionId !== id) return;
+    if (id !== undefined && (this.attentionId !== id || this.helpers.has(id))) return;
     const lostAttentionId = this.attentionId;
     this.attentionId = null;
     this.clearAttentionTimer();
@@ -1045,6 +1062,7 @@ export class AlertManager {
   // --- Todo controls ---
 
   toggleTodo(id: string): void {
+    if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     entry.todo = !entry.todo;
     if (!entry.todo) entry.notification = null;
@@ -1053,6 +1071,7 @@ export class AlertManager {
   }
 
   markTodo(id: string): void {
+    if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     const cleared = this.clearAllRingsIfActive(entry);
     if (entry.todo && !cleared) return;
@@ -1061,6 +1080,7 @@ export class AlertManager {
   }
 
   clearTodo(id: string): void {
+    if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     entry.todo = false;
     entry.notification = null;
@@ -1096,6 +1116,7 @@ export class AlertManager {
 
   /** Completely remove alert state for a PTY (used when PTY is destroyed) */
   remove(id: string): void {
+    this.helpers.delete(id);
     this.removed.add(id);
     // Nobody parked here has anything left to wait for.
     this.settleWaiters(id, 'died');
@@ -1121,6 +1142,7 @@ export class AlertManager {
    * never resurrect a ring or an in-flight progress cycle.
    */
   seed(id: string, state: { todo: unknown; notification?: unknown }): void {
+    if (this.helpers.has(id)) return;
     const entry = this.getOrCreateEntry(id);
     entry.todo = state.todo === true;
     entry.notification = entry.todo ? normalizeActivityNotification(state.notification) : null;
@@ -1147,6 +1169,7 @@ export class AlertManager {
     }
     this.entries.clear();
     this.removed.clear();
+    this.helpers.clear();
     this.awaits.clear();
     this.claimants.clear();
     this.listeners.clear();

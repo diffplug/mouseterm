@@ -26,7 +26,7 @@ A focused cross-origin iframe surface swallows the gesture; the proxy shim detec
 | `,` | Rename | Inline rename of the selected terminal pane's title; consumed no-op on browser surfaces and doors. |
 | `a` | Toggle alert | Dismiss or toggle the bell alert. Terminal Surfaces only; doors excluded. |
 | `t` | Toggle todo | Toggle the TODO marker on the selected Surface, terminal or browser; doors excluded. |
-| `>` | Header context menu | Terminal panes only; consumed no-op on browser panes, inert on doors. |
+| `>` | Terminal context | Terminal panes only; consumed no-op on browser panes, inert on doors. |
 
 ## Navigation (command mode)
 
@@ -67,11 +67,8 @@ Every key not claimed above forwards to the embedded page while a screencast pan
 |-----|--------|-------------|
 | `Esc` | Close / cancel | Dismiss a dialog or popover; cancel a rename or kill confirmation; abort an in-progress sash or pane drag. |
 | `Enter` | Confirm rename | Save the new name while renaming a pane; blur commits too. |
-| `Tab` / `Shift+Tab` | Focus cycle | Cycle focus through an open popover or dialog (trapped, wrapping). |
+| `Tab` / `Shift+Tab` | Focus cycle | Cycle popover/dialog controls. In terminal context, navigate controls into the helper; once helper xterm has focus, Tab belongs to its program. |
 | Prompted letter | Confirm kill | Type the letter shown to confirm; other keys reaching the prompt cancel (see layout's dispatch order). |
-| `a` / `t` (alert dialog open) | Toggle alert / todo | Same as command-mode `a` / `t`, for the dialog's Session. |
-| `1`–`9` (header context menu open) | Connect port | Open the nth port row in a browser surface, select it, enter passthrough. Dropped, never buffered, unless the scan loaded a row for that digit and the host can open one. |
-| `↑` / `↓` (header context menu open) | Move row focus | Rove focus across port rows, wrapping; `Enter`/`Space` activates the focused row. |
 
 ## VS Code host
 
@@ -91,7 +88,7 @@ The standalone host contributes no chords; `docs/specs/standalone.md` owns its n
 - `lib/src/components/wall/keyboard/` — one module per dispatch branch: `handle-dual-tap.ts`, `handle-editable-clipboard.ts`, `handle-mouse-selection-keys.ts`, `handle-kill-confirm.ts`, `handle-pane-shortcuts.ts`, `handle-pane-navigation.ts`; platform modifiers in `chords.ts`
 - `lib/src/lib/vscode-keybindings.ts` — the workbench mirror allowlist
 - `lib/src/lib/terminal-mouse-router.ts` — live Alt tracking during a drag
-- `lib/src/components/SelectionPopup.tsx`, `lib/src/components/wall/PaneHeaderContextMenu.tsx`, `lib/src/components/TodoAlertDialog.tsx`, `lib/src/components/wall/InlineEditInput.tsx`, `lib/src/components/use-popover-focus-trap.ts` — the popover/dialog handlers
+- `lib/src/components/SelectionPopup.tsx`, `lib/src/components/wall/TerminalContextView.tsx`, `lib/src/components/wall/InlineEditInput.tsx` — the popover/dialog handlers
 - `lib/src/components/wall/agent-browser-surface-controller.ts` — browser key forwarding and the edit-chord bridge
 
 ## Future

@@ -44,7 +44,7 @@ const mgr = create((event, data) => {
     console.error(`[sidecar] burrow ${event} tap failed:`, err && err.message || err);
   }
   if (event !== 'data') send(`pty:${event}`, data);
-}, nodePty);
+}, nodePty, { replay: true });
 
 const burrow = createSidecarBurrow({
   send,
@@ -124,6 +124,7 @@ function handleLine(line) {
       case 'pty:resize':  mgr.resize(data.id, data.cols, data.rows); break;
       case 'pty:kill':    mgr.kill(data.id); break;
       case 'pty:requestInit': mgr.list(); break;
+      case 'pty:context': mgr.context(data, data.requestId); break;
       case 'pty:getCwd':  mgr.getCwd(data.id, data.requestId); break;
       case 'pty:getOpenPorts': mgr.getOpenPorts(data.id, data.requestId); break;
       case 'pty:getShells':  mgr.getShells(data.requestId); break;

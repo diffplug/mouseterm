@@ -1,3 +1,4 @@
+import { registry } from './terminal-store';
 import {
   commandArgv0,
   createTerminalPaneState,
@@ -76,8 +77,9 @@ export function getRunningCommandArgv0(id: string): string | null {
 // whether a quit needs a confirmation (docs/specs/standalone.md §Quit flow).
 export function countRunningSessions(): number {
   let count = 0;
-  for (const state of paneStates.values()) {
-    if (state.activity.kind === 'running') count++;
+  for (const [id, state] of paneStates) {
+    const entry = registry.get(id);
+    if (state.activity.kind === 'running' || (entry?.helper && !entry.exited && entry.helperBusy !== false)) count++;
   }
   return count;
 }

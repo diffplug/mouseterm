@@ -513,3 +513,9 @@ Source of truth: `standalone/package.json` (package scripts),
 - `pnpm dev:standalone:ab` runs the sidecar + webview in a normal browser via the
   browser-dev harness instead of the Tauri WebView (`docs/specs/transport.md`,
   Standalone browser-dev harness).
+
+## Terminal context host operations
+
+The adapter forwards every `TerminalContextRequest` to the PTY host as a correlated request (`docs/specs/transport.md` → Auxiliary helper metadata); directory opening follows `docs/specs/security-local.md` → Terminal context directory actions, and inspection failure follows `docs/specs/terminal-context.md` → Helper lifecycle.
+
+Source of truth: `terminalContext` in `standalone/src/tauri-adapter.ts`; `pty_context` in `standalone/src-tauri/src/lib.rs`; `context` in `standalone/sidecar/pty-core.js`.

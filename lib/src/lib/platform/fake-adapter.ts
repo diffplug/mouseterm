@@ -1,3 +1,4 @@
+import { DEFAULT_HELPER_COMMAND, type HelperIdentity, type TerminalContextRequest, type TerminalContextInfo } from '../terminal-context-types';
 import type { AlertStateDetail, OpenPort, PlatformAdapter, PtyDataDetail, PtyInfo, BurrowLink } from './types';
 import { AlertManager } from '../alert-manager';
 import type { AwaitHandle, AwaitOptions } from '../alert-manager';
@@ -43,6 +44,9 @@ export class FakePtyAdapter implements PlatformAdapter {
   private alertStateHandlers = new Set<(detail: AlertStateDetail) => void>();
   private spawnHandlers = new Set<(detail: { id: string }) => void>();
   private terminals = new Set<string>();
+  /** The deterministic demo shell behind each helper (docs/specs/terminal-context.md). */
+  private helpers = new Map<string, { cwd: string; busy: boolean }>();
+  private helperCommand = DEFAULT_HELPER_COMMAND;
   private terminalSizes = new Map<string, FakePtySize>();
   private activeTimers = new Map<string, ReturnType<typeof setTimeout>[]>();
   private defaultScenario: FakeScenario | null = null;
@@ -99,6 +103,7 @@ export class FakePtyAdapter implements PlatformAdapter {
     }
     this.activeTimers.clear();
     this.terminals.clear();
+    this.helpers.clear();
     this.terminalSizes.clear();
     this.defaultScenario = null;
     this.scenarioMap.clear();
@@ -122,7 +127,11 @@ export class FakePtyAdapter implements PlatformAdapter {
     return [{ name: 'fake-shell', path: '/bin/fake', args: [] }];
   }
 
-  spawnPty(id: string, options?: { cols?: number; rows?: number }): void {
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; helper?: HelperIdentity }): void {
+    if (options?.helper) {
+      this.helpers.set(id, { cwd: options.cwd ?? '/home/demo/projects/dormouse', busy: false });
+      this.alertManager.setHelper(id, true);
+    }
     this.terminals.add(id);
     this.protocolParsers.set(id, new TerminalProtocolParser(themeColorProvider));
     this.terminalSizes.set(id, {
@@ -132,10 +141,52 @@ export class FakePtyAdapter implements PlatformAdapter {
     for (const handler of this.spawnHandlers) {
       handler({ id });
     }
+    if (options?.helper) { this.startHelperShell(id); return; }
     const scenario = this.resolveScenario(id);
     if (scenario) {
       this.playScenario(id, scenario);
     }
+  }
+
+  async terminalContext(request: TerminalContextRequest): Promise<TerminalContextInfo> {
+    switch (request.op) {
+      case 'settings':
+        if (request.command !== undefined) {
+          if (/[\r\n\0]/.test(request.command) || request.command.length > 4096) throw new Error('Use a single command line (up to 4096 characters)');
+          this.helperCommand = request.command;
+        }
+        return { home: '/home/demo', command: this.helperCommand };
+      case 'info':
+        return { busy: this.helpers.get(request.id)?.busy ?? false };
+      case 'promote':
+        if (!request.restore) this.helpers.delete(request.id);
+        this.alertManager.setHelper(request.id, !!request.restore);
+        return {};
+      default:
+        return {};
+    }
+  }
+
+  private startHelperShell(id: string): void {
+    const helper = this.helpers.get(id)!;
+    let input = '';
+    const prompt = () => this.sendOutput(id, `\x1b]633;A\x07${helper.cwd} ❯ \x1b]633;B\x07`);
+    this.inputHandlers.set(id, data => {
+      if (data === '\x03') { helper.busy = false; input = ''; this.sendOutput(id, '^C\r\n\x1b]633;D;130\x07'); prompt(); return; }
+      if (helper.busy) return;
+      for (const char of data) {
+        if (char === '\r' || char === '\n') {
+          const command = input; input = '';
+          this.sendOutput(id, `\r\n\x1b]633;E;${command}\x07\x1b]633;C\x07`);
+          if (/^(sleep|nano|vim)\b/.test(command)) { helper.busy = true; this.sendOutput(id, 'Demo process running. Ctrl+C stops it.\r\n'); continue; }
+          const output = command === 'git status' ? 'On branch main\r\nnothing to commit, working tree clean' : command.startsWith('echo ') ? command.slice(5) : command === 'pwd' ? helper.cwd : command ? `Demo shell: ${command}` : '';
+          if (output) this.sendOutput(id, output + '\r\n');
+          this.sendOutput(id, '\x1b]633;D;0\x07'); prompt();
+        } else if (char === '\x7f') { if (input) { input = input.slice(0, -1); this.sendOutput(id, '\b \b'); } }
+        else { input += char; this.sendOutput(id, char); }
+      }
+    });
+    queueMicrotask(prompt);
   }
 
   private resolveScenario(id: string): FakeScenario | null {
@@ -178,6 +229,7 @@ export class FakePtyAdapter implements PlatformAdapter {
     this.protocolParsers.delete(id);
     this.openPortsMap.delete(id);
     this.alertManager.onExit(id, 0);
+    this.helpers.delete(id);
     for (const handler of this.exitHandlers) {
       handler({ id, exitCode: 0 });
     }
@@ -199,7 +251,7 @@ export class FakePtyAdapter implements PlatformAdapter {
     this.exitHandlers.delete(handler);
   }
 
-  async getCwd(_id: string): Promise<string | null> { return null; }
+  async getCwd(id: string): Promise<string | null> { return this.helpers.get(id)?.cwd ?? null; }
 
   /** Ports the playground/tests want a given terminal to report. */
   setOpenPorts(id: string, ports: OpenPort[]): void {

@@ -347,21 +347,23 @@ Where it surfaces is host-specific:
 
 ### Pane Header
 
-The header shows an alert bell, a fixed-text `TODO` pill when `todo === true`, a hover/focus notification preview when TODO has `notification`, and a dialog opened by right-click or by some left-click actions. Placement, sizing, and width tiers belong to `docs/specs/layout.md`.
+The header shows an alert bell, a fixed-text `TODO` pill when `todo === true`, a hover/focus notification preview when TODO has `notification`, and the terminal context opened by right-click or by some left-click actions. Placement, sizing, and width tiers belong to `docs/specs/layout.md`.
 
 Bell rotation follows public status; motion follows latch edges. **When a track latches, ring each mounted bell for four 800ms cycles, then hold 45° until the ring clears** (test: `runs a finite ringing burst and then holds the bell at 45 degrees` in `lib/src/components/bell-icon-class.test.ts`; rationale). **A newly mounted ringing bell may replay once without advancing `ringSeq`** (test: `replays the finite burst when a ringing presentation remounts` in `lib/src/components/AlertBell.test.tsx`; rationale). **A newly latched track replays the burst; further reports on that track only enrich its summons.** `AlertState.ringSeq` counts per-Session latches and is compared by `alertStatesEqual` (tests: `counts a second track ringing behind an already-latched one` and `does not count a track that is already ringing` in `lib/src/lib/alert-manager.test.ts`, `replaces the icon when the ring counter advances` in `lib/src/components/AlertBell.test.tsx`; rationale). **Remote Clients have no counter:** `DirectoryEntry.ringing` is an edgeless boolean, so Pocket rings on mount and holds. **The bell names the command it would act on** ("Alert on all `claude`"), not an abstract toggle — that is the scope of what a click changes.
 
 Bell interactions — one transition table, in `dismissOrToggleAlert`:
 
-- Left-click `ALERT_RINGING`: dismiss, create TODO if needed, open dialog.
-- Left-click after `attentionDismissedRing`: consume the flag and open dialog.
+- Left-click `ALERT_RINGING`: dismiss, create TODO if needed, open context.
+- Left-click after `attentionDismissedRing`: consume the flag and open context.
 - Otherwise, with a command running: toggle that command's WATCHING rule on or off. Turning it off drops the rule for every Session running it.
-- Exception: from `OSC_NOTIF_BUSY` or `COMMAND_EXIT_ARMED` with no rule set, open the dialog instead. Those alarms need no rule, so a click must not create one by surprise, and must not clear the progress or the arm.
-- With no command running: change nothing and open the dialog, which explains that alerts are per command.
-- Pressing `a` on the selected Pane in command mode uses the same action. Right-click always opens the dialog.
+- Exception: from `OSC_NOTIF_BUSY` or `COMMAND_EXIT_ARMED` with no rule set, open the context instead. Those alarms need no rule, so a click must not create one by surprise, and must not clear the progress or the arm.
+- With no command running: change nothing and open the context, which explains that alerts are per command.
+- Pressing `a` on the selected Pane in command mode uses the same action. Right-click always opens the context.
 - Pressing `t` toggles TODO.
 
-The dialog carries the TODO switch, the WATCHING rule switch for the running command, notification detail, and the same `WatchedCommandList` the Settings dialog renders — load-bearing, not decoration, for the reason under Settings dialog.
+**Must keep context alert controls scoped to the source**, with TODO, running-command WATCHING, and notification detail. Settings owns the global watched-command list. **Must suppress helper alerting until promotion, including after exit**, covering bell/notification protocols, watched commands, TODO, speech, push, and attention projections; semantic command/readiness state remains active. Promotion starts ordinary alert behavior without replaying suppressed events.
+
+Source of truth: `TerminalContext` in `lib/src/components/wall/TerminalContext.tsx`; `setHelper` in `lib/src/lib/alert-manager.ts`, which every host calls at helper spawn, listing, and promotion.
 
 The TODO pill always displays `TODO`; remote notification text belongs in preview/detail surfaces, not inside the pill. Clicking the pill clears TODO, and on clear the pill briefly shows the success flourish before unmounting.
 

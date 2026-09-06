@@ -1,3 +1,5 @@
+import type { PortMode } from './TerminalContextView';
+import type { PortUrlEntry } from './port-url';
 import { createContext } from 'react';
 import type { AlertButtonActionResult, SessionStatus, SetTerminalUserTitleResult } from '../../lib/terminal-registry';
 import type { WallMode } from './wall-types';
@@ -52,11 +54,6 @@ export interface WallActions {
   /** The stable `surface:N` ref for a pane/door id (minted lazily, exactly as
    *  `dor list` assigns refs). Used by the pane context menu to show the handle. */
   resolveSurfaceRef: (id: string) => string;
-  /** Act like `dor ab open <url>` for a port the pane's process tree binds: create
-   *  the default agent-browser surface immediately, then open the URL on its
-   *  session and connect the pane (`connect-port.ts`). Fire-and-forget — failures
-   *  are logged, and the pane itself shows loading state. */
-  onConnectPort: (id: string, url: string) => void;
 }
 
 export const WallActionsContext = createContext<WallActions>({
@@ -75,7 +72,6 @@ export const WallActionsContext = createContext<WallActions>({
   onSwapRenderMode: () => {},
   onOpenBrowserPane: () => {},
   resolveSurfaceRef: (id: string) => id,
-  onConnectPort: () => {},
 });
 
 /** Engine-directed writes from a pane/header (title + params). The read side is
@@ -101,3 +97,22 @@ export const ZoomedIdContext = createContext<string | null>(null);
 export const WindowFocusedContext = createContext(true);
 
 export const DialogKeyboardContext = createContext<(active: boolean) => void>(() => {});
+
+export interface TerminalContextOpenOptions {
+  warning?: string;
+  /** Viewport coordinates the reveal grows from. */
+  origin?: { x: number; y: number };
+}
+
+/** One opening of the terminal context; `closing` while its exit plays. */
+export type TerminalContextState = { id: string; closing?: boolean } & TerminalContextOpenOptions;
+
+export const TerminalContextContext = createContext<{
+  /** The Session holding the context's input — null while none is open or one is exiting. */
+  id: string | null;
+  /** The context that is rendered, an exiting one included; read only by its leaf. */
+  mounted: TerminalContextState | null;
+  open(id: string, options?: TerminalContextOpenOptions): void; close(): void;
+  promote(id: string): Promise<void>;
+  openPort(id: string, entry: PortUrlEntry, mode: PortMode): Promise<void>;
+}>({ id: null, mounted: null, open: () => {}, close: () => {}, promote: async () => {}, openPort: async () => {} });
