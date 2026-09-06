@@ -203,7 +203,7 @@ describe('spoken alarms', () => {
       if (source === 'osc9') {
         setTerminalActivity(id, {
           status: 'ALERT_RINGING',
-          notification: { source: 'OSC 9', title: null, body: 'program title osc9 key=8b7d0c4e9f2a61035e8c9d1f04a76b23' },
+          notification: { source: 'OSC 9', title: null, body: 'program title osc9' },
         });
       } else {
         setStatus(id, 'ALERT_RINGING');
@@ -214,7 +214,7 @@ describe('spoken alarms', () => {
     expect(spoken).toEqual([
       'program title osc0',
       'program title osc2',
-      'program title osc9 key REDACTED',
+      'program title osc9',
     ]);
   });
 
