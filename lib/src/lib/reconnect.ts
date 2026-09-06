@@ -1,4 +1,4 @@
-import { restoreHelper } from './helper-terminal';
+import { adoptOrphanedHelper, restoreHelper } from './helper-terminal';
 import type { LathPersistedLayout } from './lath/persistence';
 import type { PlatformAdapter, PtyInfo } from './platform/types';
 import { hydrateNotepadFromVolatile } from './notepad/notepad-store';
@@ -84,6 +84,7 @@ function resumeLiveSessions(platform: PlatformAdapter): Promise<ReconnectResult 
       const savedState = platform.getState();
       const savedResumeInfo = getSavedPaneResumeInfo(savedState, ptyList.map((pty) => pty.id));
       const ids: string[] = [];
+      const ptyById = new Map(ptyList.map((pty) => [pty.id, pty]));
       for (const pty of ptyList) {
         const resumeInfo: { alive: boolean; exitCode?: number; shell?: string; title?: string; untouched?: boolean; helper?: PtyInfo['helper'] } = {
           alive: pty.alive,
@@ -93,11 +94,15 @@ function resumeLiveSessions(platform: PlatformAdapter): Promise<ReconnectResult 
         const savedInfo = savedResumeInfo.get(pty.id);
         if (savedInfo?.title !== undefined) resumeInfo.title = savedInfo.title;
         if (savedInfo?.untouched) resumeInfo.untouched = true;
-        const parentPresent = pty.helper && ptyList.some(parent => parent.id === pty.helper?.parentId && !parent.helper);
-        if (parentPresent) resumeInfo.helper = pty.helper;
+        // A helper stays one only while its source is also live; helpers cannot
+        // have helpers.
+        const parent = pty.helper && ptyById.get(pty.helper.parentId);
+        const helper = parent && !parent.helper ? pty.helper : undefined;
+        if (helper) resumeInfo.helper = helper;
         resumeTerminal(pty.id, replayBuffer.get(pty.id) ?? null, resumeInfo);
-        if (parentPresent && pty.helper) restoreHelper(pty.id, pty.helper);
-        else { ids.push(pty.id); if (pty.helper) void platform.terminalContext?.({ op: 'promote', id: pty.id }); }
+        if (helper) { restoreHelper(pty.id, helper); continue; }
+        ids.push(pty.id);
+        if (pty.helper) adoptOrphanedHelper(pty.id);
       }
       // Pull saved visible/doors state so a resume (e.g. after panel
       // close/reopen) restores splits and doors instead of stacking every live

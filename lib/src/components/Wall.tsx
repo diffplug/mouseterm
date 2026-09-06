@@ -3,7 +3,7 @@ import { TERMINAL_CONTEXT_EXIT_MS } from './design';
 import { motionIsInstant } from '../lib/ui-geometry';
 import type { PortMode } from './wall/TerminalContextView';
 import type { PortUrlEntry } from './wall/port-url';
-import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHelper, helperHasWork, type HelperTerminal } from '../lib/helper-terminal';
+import { beginPromotion, cancelPromotion, closeHelperParent, finishPromotion, getHelper, helperHasWork } from '../lib/helper-terminal';
 import { isHelperSession } from '../lib/terminal-store';
 import { useRef, useState, useEffect, useCallback, useMemo, useSyncExternalStore, lazy, Suspense, type ReactNode } from 'react';
 import { clsx } from 'clsx';
@@ -25,7 +25,7 @@ import { isAllowedAgentBrowserBinary } from '../lib/agent-browser-binary';
 import { disposeAgentBrowserSurfaceController } from './wall/agent-browser-surface-controller';
 import { KILL_CONFIRM_MS, KILL_SHAKE_MS, KillConfirmOverlay, randomKillChar, type ConfirmKill } from './KillConfirm';
 import { NotepadArchiveFailureModal, type NotepadArchiveFailure } from './NotepadArchiveFailure';
-import { messageOf } from '../lib/notepad/archive-service';
+import { messageOf } from '../lib/errors';
 import { archiveSurfaceNotes } from '../lib/notepad/close-coordinator';
 import { beginClosing, isSurfaceClosing, removeSurface, setNotepadSurfaceMetaResolver, transferNotepad } from '../lib/notepad/notepad-store';
 import {
@@ -108,7 +108,7 @@ import {
   type PaneWriteActions,
   type WallActions,
 } from './wall/wall-context';
-import type { DoorAfterRestoreAction, DoorChip, DooredItem, WallEvent, WallMode, WallSelectionKind } from './wall/wall-types';
+import type { CloseSurfaceMode, DoorAfterRestoreAction, DoorChip, DooredItem, WallEvent, WallMode, WallSelectionKind } from './wall/wall-types';
 
 type ShellSpawnRequest = {
   shell?: string;
@@ -289,7 +289,6 @@ export function Wall({
     const timer = setTimeout(() => setTerminalContext(current => current === terminalContext ? null : current), TERMINAL_CONTEXT_EXIT_MS);
     return () => clearTimeout(timer);
   }, [terminalContext]);
-  const pendingSurfaceCloses = useRef(new Set<string>());
   // The Lath engine handle — Dormouse's tiling engine. Constructed lazily exactly
   // once per Wall mount, so `createLathWallEngine` is not re-invoked each render
   // (docs/specs/tiling-engine.md).
@@ -443,6 +442,11 @@ export function Wall({
     [doors, lath, doorDisplayMetadata],
   );
   const confirmKillRef = useRef(confirmKill);
+  /** Surfaces with a `closeSurface` in flight. Wall-owned on purpose: the notepad
+   *  store's `isSurfaceClosing` is the shared notes freeze, held by any archive
+   *  caller (the standalone quit gate over every noted Surface, past its own
+   *  deadline), so reading it here would make those Surfaces unclosable. */
+  const pendingSurfaceCloses = useRef(new Set<string>());
   confirmKillRef.current = confirmKill;
 
   // The navigation/query seam for the keyboard handlers, backed by the engine + its
@@ -548,29 +552,39 @@ export function Wall({
     }, 1500);
   }, []);
 
-  /** Resolves true when the helper's running work (or a failed inspection)
-   *  blocks closing its source; the source is then revealed with the reason
+  /** Why the helper's running work (or a failed inspection) blocks closing its
+   *  source, or null when the source may close
    *  (docs/specs/terminal-context.md → Promotion and source closure). */
-  const helperBlocksClose = useCallback(async (id: string, helper: HelperTerminal): Promise<boolean> => {
-    let warning: string;
-    try {
-      if (!await helperHasWork(helper)) return false;
-      warning = 'Helper has running work. Stop it in the helper, then close this terminal again.';
-    } catch (error) {
-      warning = `Could not inspect helper processes: ${String(error)}`;
+  const helperRefusal = useCallback(async (id: string): Promise<string | null> => {
+    let helper = getHelper(id);
+    while (helper) {
+      let warning: string | null = null;
+      try {
+        if (await helperHasWork(helper)) warning = 'Helper has running work. Stop it in the helper, then close this terminal again.';
+      } catch (error) {
+        warning = `Could not inspect helper processes: ${messageOf(error)}`;
+      }
+      // A reset or promotion can finish while host inspection is pending; the
+      // replacement is inspected in turn.
+      if (getHelper(id) === helper) return warning;
+      helper = getHelper(id);
     }
-    // A helper replaced or promoted mid-inspection is re-gated by the caller.
-    if (getHelper(id) !== helper) return false;
-    const door = doorsRef.current.find(item => item.id === id);
-    if (door) handleReattachRef.current(door);
-    setConfirmKill(null);
-    setTerminalContext({ id, warning });
-    return true;
+    return null;
   }, []);
 
-  /** Teardown only after the closure gates have settled. */
+  /** Reveal a source whose closure its helper refused, with the reason. */
+  const revealRefusal = useCallback((id: string, warning: string) => {
+    const door = doorsRef.current.find(item => item.id === id);
+    // Command mode, as `requestKill`'s own Door path: the overlay takes focus.
+    if (door) handleReattachRef.current(door, { enterPassthrough: false });
+    setConfirmKill(null);
+    setTerminalContext({ id, warning });
+  }, []);
+
+  /** Tear a Surface down with no archive step; who may call it is
+   *  docs/specs/notepad.md → "Closure". */
   const killPaneImmediately = useCallback((id: string): void => {
-    disposeHelper(id);
+    closeHelperParent(id);
     setTerminalContext(current => current?.id === id ? null : current);
     // A second kill for a pane already mid-fade is a no-op (idempotent) — it must
     // not re-fire the event, re-dispose, or schedule a second removal.
@@ -642,39 +656,26 @@ export function Wall({
   }, [fireEvent, forgetSurfaceRef, selectPane, lath, nav]);
 
   /**
-   * A permanent, user-visible Surface closure: archive its notes, then tear it
-   * down (docs/specs/notepad.md → "Closure"). Resolves `null` when the Surface
-   * is gone, or with this attempt's own error message when the archive refused
-   * — the Surface and its notes left exactly as they were, and the Keep open /
-   * Close anyway prompt raised. Without that escape an unwritable archive would
-   * make every Surface unclosable.
-   *
-   * `prompt: false` returns the error and raises nothing: `dor kill` is a
-   * command answering a caller, not a person looking at the pane.
+   * A permanent, user-visible Surface closure: helper guard, archive, helper
+   * guard again, teardown (docs/specs/notepad.md → "Closure";
+   * docs/specs/terminal-context.md → "Promotion and source closure"). Resolves
+   * `null` once the Surface is gone, else this attempt's error with the Surface
+   * left as it was: `prompt` raises Keep open / Close anyway, `silent` (`dor
+   * kill`) raises nothing, `discard` is the Close anyway answer.
    */
-  const closeSurface = useCallback(async (id: string, opts?: { prompt?: boolean; discard?: boolean }): Promise<string | null> => {
+  const closeSurface = useCallback(async (id: string, mode: CloseSurfaceMode = 'prompt'): Promise<string | null> => {
     if (pendingSurfaceCloses.current.has(id)) return 'This terminal is already closing';
     pendingSurfaceCloses.current.add(id);
     const release = beginClosing([id]);
-    const helperRefusal = async (): Promise<string | null> => {
-      // A reset or promotion can finish while host inspection is pending.
-      let helper = getHelper(id);
-      while (helper) {
-        if (await helperBlocksClose(id, helper)) return 'Helper has running work or could not be inspected; stop it before closing the parent';
-        if (getHelper(id) === helper) return null;
-        helper = getHelper(id);
-      }
-      return null;
-    };
     try {
-      const blocked = await helperRefusal();
-      if (blocked) return blocked;
-      if (!opts?.discard) {
+      const refused = await helperRefusal(id);
+      if (refused) { revealRefusal(id, refused); return refused; }
+      if (mode !== 'discard') {
         try {
           await archiveSurfaceNotes([id], { retainNotes: true });
         } catch (error) {
           const message = messageOf(error);
-          if (opts?.prompt !== false) {
+          if (mode === 'prompt') {
             setArchiveFailures(queue => queue.some(failure => failure.id === id)
               ? queue.map(failure => failure.id === id ? { id, message } : failure)
               : [...queue, { id, message }]);
@@ -682,10 +683,10 @@ export function Wall({
           return `notepad archive failed: ${message}`;
         }
       }
-      // Input or background work may have begun while the archive was writing.
-      // Keep notes and their pending batch for a replacement on the next retry.
-      const blockedAfterArchive = await helperRefusal();
-      if (blockedAfterArchive) return blockedAfterArchive;
+      // Work may have begun while the archive was writing; `discard` awaited
+      // nothing since its first guard, so it is not asked twice.
+      const refusedAfterArchive = mode === 'discard' ? null : await helperRefusal(id);
+      if (refusedAfterArchive) { revealRefusal(id, refusedAfterArchive); return refusedAfterArchive; }
       removeSurface(id);
       killPaneImmediately(id);
       return null;
@@ -693,9 +694,32 @@ export function Wall({
       release();
       pendingSurfaceCloses.current.delete(id);
     }
-  }, [killPaneImmediately, helperBlocksClose]);
+  }, [killPaneImmediately, helperRefusal, revealRefusal]);
   const closeSurfaceRef = useRef(closeSurface);
   closeSurfaceRef.current = closeSurface;
+
+  /**
+   * The kill gesture on a Surface, from the header, the keyboard, or a Door: a
+   * Door reattaches first, an untouched shell closes at once, anything else
+   * stages the confirm overlay. A source whose helper has running work is
+   * revealed with the reason instead, and nothing is staged.
+   */
+  const requestKill = useCallback((id: string) => {
+    const stage = () => {
+      const door = doorsRef.current.find(item => item.id === id);
+      if (door) {
+        handleReattachRef.current(door, { enterPassthrough: false, afterRestore: isUntouched(id) ? 'close' : 'confirm-kill' });
+        return;
+      }
+      // The helper inspection below can outlive the Surface (an exit, a `dor
+      // kill`); a confirm overlay for a gone pane would never clear itself.
+      if (!nav.hasPane(id) || lath.isDying(id)) return;
+      if (isUntouched(id)) { void closeSurface(id); return; }
+      setConfirmKill({ id, char: randomKillChar() });
+    };
+    if (!getHelper(id)) { stage(); return; }
+    void helperRefusal(id).then(refused => (refused ? revealRefusal(id, refused) : stage()));
+  }, [closeSurface, helperRefusal, revealRefusal, lath, nav]);
 
   /** The head of the refused-closure queue is answered; show the next. */
   const shiftArchiveFailure = useCallback(() => {
@@ -967,13 +991,14 @@ export function Wall({
         // Guard against removal between scheduling and execution.
         if (!nav.hasPane(item.id)) return;
         focusSession(item.id, false);
-        if (afterRestore === 'kill-immediately') {
+        if (afterRestore === 'close') {
           void closeSurfaceRef.current(item.id);
         } else if (afterRestore === 'confirm-kill') {
           setConfirmKill({ id: item.id, char: randomKillChar() });
         } else if (typeof afterRestore === 'object' && afterRestore.type === 'replace-terminal') {
           // Atomic identity swap in place — no transient add/remove.
           lath.store.replaceLeaf(item.id, afterRestore.newId, terminalLeafMeta());
+          closeHelperParent(item.id);
           disposeSession(item.id);
           // An in-place shell replacement is not a closure: the notes follow the
           // new id rather than being archived (docs/specs/notepad.md → "Closure").
@@ -1283,6 +1308,8 @@ export function Wall({
     // The old renderer's controller is going away with this swap; release its
     // client-side resources (no-op for a non-agent-browser surface).
     disposeAgentBrowserSurfaceController(oldId);
+    // A browser Surface has no helper; the terminal's goes with the old id.
+    closeHelperParent(oldId);
     const newId = generatePaneId();
     transferSurfaceRef(oldId, newId);
     // A renderer swap is not a closure — the notepad follows the new id
@@ -1361,7 +1388,7 @@ export function Wall({
   }, [generatePaneId, surfaceRefForId, forgetSurfaceRef, selectPane, enterTerminalMode, showShellSpawnNotice, lath, nav]);
 
   // --- dor control plane (the `dor` CLI's webview handler) ---
-  const { updateSurfaceParams } = useDorControl({
+  const { findSurfaceByParams, updateSurfaceParams } = useDorControl({
     lath,
     nav,
     doorsRef,
@@ -1407,19 +1434,9 @@ export function Wall({
 
   const wallActions: WallActions = useMemo(() => ({
     onKill: (id: string) => {
+      // The confirm keystroke must reach the Wall, not the pane's xterm.
       exitTerminalMode();
-      const confirmSource = () => {
-        const door = doorsRef.current.find(item => item.id === id);
-        if (door) {
-          handleReattachRef.current(door, { enterPassthrough: false, afterRestore: isUntouched(id) ? 'kill-immediately' : 'confirm-kill' });
-          return;
-        }
-        if (isUntouched(id)) { void closeSurface(id); return; }
-        setConfirmKill({ id, char: randomKillChar() });
-      };
-      const helper = getHelper(id);
-      if (!helper) { confirmSource(); return; }
-      void helperBlocksClose(id, helper).then(blocked => { if (!blocked) confirmSource(); });
+      requestKill(id);
     },
     onAlertButton: (id: string, displayedStatus: SessionStatus) => {
       return dismissOrToggleAlert(id, displayedStatus);
@@ -1598,7 +1615,7 @@ export function Wall({
       });
     },
     resolveSurfaceRef: surfaceRefForId,
-  }), [addSplitPanel, minimizePane, enterTerminalMode, exitTerminalMode, closeSurface, helperBlocksClose, replaceSurface, buildDorSurfaces, createContentSurface, surfaceRefForId, updateSurfaceParams, lath, nav]);
+  }), [addSplitPanel, minimizePane, enterTerminalMode, exitTerminalMode, requestKill, replaceSurface, buildDorSurfaces, createContentSurface, surfaceRefForId, updateSurfaceParams, lath, nav]);
   const contextPortLaunches = useRef(new Map<string, Promise<void>>());
   const openContextPort = useCallback(async (id: string, entry: PortUrlEntry, mode: PortMode): Promise<void> => {
     const platform = getPlatform();
@@ -1609,10 +1626,7 @@ export function Wall({
     const operation = (async () => {
       const reference = buildDorSurfaces().find(surface => surface.id === id);
       if (!reference) throw new Error('The parent terminal is no longer available');
-      const existing = buildDorSurfaceList().find(surface => {
-        const params = lath.getMeta(surface.id)?.params;
-        return params?.contextPortKey === key && !lath.isDying(surface.id);
-      });
+      const existing = findSurfaceByParams(params => (params as { contextPortKey?: unknown } | undefined)?.contextPortKey === key);
       if (existing) {
         revealSurface(existing.id);
         if (mode !== 'iframe') {
@@ -1640,7 +1654,7 @@ export function Wall({
     })();
     contextPortLaunches.current.set(key, operation);
     try { await operation; } finally { contextPortLaunches.current.delete(key); }
-  }, [buildDorSurfaces, buildDorSurfaceList, createContentSurface, enterTerminalMode, closeSurface, lath, revealSurface, updateSurfaceParams]);
+  }, [buildDorSurfaces, findSurfaceByParams, createContentSurface, enterTerminalMode, closeSurface, lath, revealSurface, updateSurfaceParams]);
   const contextActions = useMemo(() => ({
     id: terminalContext && !terminalContext.closing ? terminalContext.id : null,
     mounted: terminalContext,
@@ -1700,10 +1714,9 @@ export function Wall({
     enterTerminalMode,
     exitTerminalMode,
     minimizePane,
-    closeSurface,
+    requestKill,
     acceptKill,
     rejectKill,
-    setConfirmKill,
     setRenamingPaneId,
     fireEvent,
   });
@@ -1838,7 +1851,7 @@ export function Wall({
                   // Retry the Helper guard before discarding the shared notes.
                   const { id } = archiveFailures[0];
                   shiftArchiveFailure();
-                  void closeSurface(id, { discard: true });
+                  void closeSurface(id, 'discard');
                 }}
               />
             )}

@@ -200,7 +200,7 @@ The source cwd is read from `getTerminalPaneState(sourceId).cwd`. **Never inheri
 
 **Untouched sessions skip this confirmation.** A newly spawned shell starts `untouched: true`; the first user-originated PTY input flips it to false. Counted: printable keys, Enter, control keys, keyboard CSI such as arrows/history, paste, file-drop path insertion. Not counted: replay-shaped terminal reports and stripped mouse-report-only input — **the gate checks `inputIsReplayTerminalReport`**, the broader synthetic-report check gating input recording and alert attention, not this flag. Killing an untouched pane runs the normal kill animation/dispose path immediately; killing an untouched door first reattaches it only far enough to reuse that removal path, then kills it with no overlay.
 
-Source of truth: `acceptKill` in `lib/src/components/Wall.tsx`, `lib/src/components/KillConfirm.tsx`.
+Source of truth: `requestKill` (every kill gesture: Door reattach, untouched fast path, or staging the overlay) and `acceptKill` in `lib/src/components/Wall.tsx`, `lib/src/components/KillConfirm.tsx`.
 
 ## Selection overlay
 

@@ -10,12 +10,12 @@ import {
 import {
   ensureArchiveLoaded,
   getArchiveSnapshot,
-  messageOf,
   mutateArchive,
   refreshArchive,
   resetUnreadableArchive,
   subscribeToArchive,
 } from '../lib/notepad/archive-service';
+import { messageOf } from '../lib/errors';
 import { setStagedArchiveDeletions } from '../lib/notepad/notepad-store';
 import { copyNote } from './use-notepad';
 import { NoteList } from './NoteList';

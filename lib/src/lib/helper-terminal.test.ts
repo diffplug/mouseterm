@@ -7,7 +7,7 @@ import { beginPromotion, cancelPromotion, disposeHelper, finishPromotion, getHel
 const host = vi.hoisted(() => ({ writePty: vi.fn(), terminalContext: vi.fn() }));
 vi.mock('./platform', () => ({ getPlatform: () => host }));
 vi.mock('./terminal-lifecycle', () => ({
-  unmountElement: vi.fn(),
+  parkElement: vi.fn(),
   setPendingShellOpts: (id: string, options: unknown) => pendingShellOpts.set(id, options as never),
   getOrCreateTerminal: (id: string) => { const entry = { untouched: true, helper: pendingShellOpts.get(id)?.helper } as TerminalEntry; registry.set(id, entry); resetTerminalPaneState(id); return entry; },
   disposeSession: (id: string) => { registry.delete(id); removeTerminalPaneState(id); },

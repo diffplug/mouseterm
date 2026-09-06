@@ -1,6 +1,6 @@
 import { getPlatform } from './platform';
 import { registry } from './terminal-store';
-import { disposeSession, getOrCreateTerminal, setPendingShellOpts, unmountElement } from './terminal-lifecycle';
+import { disposeSession, getOrCreateTerminal, parkElement, setPendingShellOpts } from './terminal-lifecycle';
 import { getDefaultShellOpts } from './shell-defaults';
 import { getTerminalPaneState, isPaneOscDriven, seedLaunchedCommand } from './terminal-state-store';
 import { DEFAULT_HELPER_COMMAND, type HelperIdentity } from './terminal-context-types';
@@ -70,13 +70,20 @@ function watchHelper(helper: HelperTerminal, launchCwd?: string): void {
   }, STATUS_POLL_MS);
 }
 
+/** Recover a live helper PTY whose source also survived. Replays do not prove
+ *  absence of user input, so recovery always disarms autorun. */
 export function restoreHelper(id: string, identity: HelperIdentity): void {
-  // Replays do not prove absence of user input. Recovery always disarms autorun.
   const helper: HelperTerminal = { ...identity, id, status: 'preserved' };
   helpers.set(identity.parentId, helper);
   watchHelper(helper);
-  unmountElement(id);
+  parkElement(id);
   notifyHelpers();
+}
+
+/** A live helper PTY whose source did not survive becomes an ordinary Session:
+ *  the host stops treating it as auxiliary, on the same handshake as promotion. */
+export function adoptOrphanedHelper(id: string): void {
+  void getPlatform().terminalContext?.({ op: 'promote', id });
 }
 
 export async function helperHasWork(helper: HelperTerminal): Promise<boolean> {
@@ -106,6 +113,25 @@ export function disposeHelper(parentId: string): void {
   disposeSession(helper.id);
 }
 
+/** Parents torn down while their registry entry lingers for the kill fade; a
+ *  WeakSet so the mark leaves with the entry. */
+const closedParents = new WeakSet<object>();
+
+/** The parent Surface is retiring (kill, renderer swap, shell replacement):
+ *  dispose its helper, and refuse an `openHelper` whose host round trip lands
+ *  afterwards, which would otherwise spawn a helper PTY nothing can reach. A
+ *  helper mid-promotion is left alone: it is becoming its own pane. */
+export function closeHelperParent(parentId: string): void {
+  if (!helpers.get(parentId)?.promoting) disposeHelper(parentId);
+  const entry = registry.get(parentId);
+  if (entry) closedParents.add(entry);
+}
+
+function parentIsOpen(parentId: string): boolean {
+  const entry = registry.get(parentId);
+  return !!entry && !closedParents.has(entry);
+}
+
 export async function openHelper(parentId: string): Promise<HelperTerminal> {
   const inFlight = pending.get(parentId);
   if (inFlight) return inFlight;
@@ -129,7 +155,7 @@ export async function openHelper(parentId: string): Promise<HelperTerminal> {
     const platform = getPlatform();
     if (!platform.terminalContext) throw new Error('Helper terminals are unavailable on this host');
     const settings = await platform.terminalContext({ op: 'settings' });
-    if (!registry.has(parentId)) throw new Error('The parent terminal has closed');
+    if (!parentIsOpen(parentId)) throw new Error('The parent terminal has closed');
     const id = `helper-${crypto.randomUUID()}`;
     const cwd = getTerminalPaneState(parentId).cwd;
     const command = settings.command ?? DEFAULT_HELPER_COMMAND;
@@ -137,7 +163,7 @@ export async function openHelper(parentId: string): Promise<HelperTerminal> {
     helpers.set(parentId, helper);
     setPendingShellOpts(id, { ...getDefaultShellOpts(), cwd: cwd && !cwd.isRemote ? cwd.path : undefined, helper: { parentId, command } });
     getOrCreateTerminal(id);
-    unmountElement(id);
+    parkElement(id);
     notifyHelpers();
     watchHelper(helper, cwd?.path);
     return helper;

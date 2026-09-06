@@ -26,7 +26,8 @@ import { agentBrowserSessionFromParams } from './browser-surface';
 import { listenerUrlsByPort } from './port-url';
 import { dorDirectionForEdge, type LathWallEngine } from './lath-wall-engine';
 import type { WallNav } from './keyboard/types';
-import type { DooredItem } from './wall-types';
+import type { CloseSurfaceMode, DooredItem } from './wall-types';
+import { isSurfaceClosing } from '../../lib/notepad/notepad-store';
 
 type DorControlParams = {
   command?: unknown;
@@ -237,33 +238,39 @@ const RESTART_POLL_INTERVAL_MS = 100;
 const RESTART_INTERRUPT_TIMEOUT_MS = 15_000;
 const RESTART_START_TIMEOUT_MS = 15_000;
 
-/** Resolve true once `predicate` holds for the surface's live state, false on timeout. */
+type WaitOutcome = 'ready' | 'timeout' | 'aborted';
+
+/** Resolve once `predicate` holds for the surface's live state, the timeout
+ *  passes, or `signal` aborts — whichever comes first. */
 function waitForTerminalState(
   id: string,
   predicate: (state: TerminalPaneState) => boolean,
   timeoutMs: number,
   signal?: AbortSignal,
-): Promise<boolean> {
-  if (signal?.aborted) return Promise.resolve(false);
-  if (predicate(getTerminalPaneState(id))) return Promise.resolve(true);
+): Promise<WaitOutcome> {
+  if (signal?.aborted) return Promise.resolve('aborted');
+  if (predicate(getTerminalPaneState(id))) return Promise.resolve('ready');
   return new Promise((resolve) => {
     let elapsed = 0;
-    const finish = (ready: boolean) => {
+    const finish = (outcome: WaitOutcome) => {
       clearInterval(timer);
       signal?.removeEventListener('abort', cancel);
-      resolve(ready);
+      resolve(outcome);
     };
-    const cancel = () => finish(false);
+    const cancel = () => finish('aborted');
     const timer = setInterval(() => {
       if (predicate(getTerminalPaneState(id))) {
-        finish(true);
+        finish('ready');
       } else if ((elapsed += RESTART_POLL_INTERVAL_MS) >= timeoutMs) {
-        finish(false);
+        finish('timeout');
       }
     }, RESTART_POLL_INTERVAL_MS);
     signal?.addEventListener('abort', cancel, { once: true });
   });
 }
+
+const RESTART_CANCELLED: ParseResult<undefined> = { ok: false, message: 'restart was cancelled' };
+const ENSURE_CANCELLED = 'ensure was cancelled';
 
 /**
  * Restart a surface already running `command` in `cwd`: interrupt it (Ctrl+C),
@@ -272,7 +279,8 @@ function waitForTerminalState(
  * doors too (their PTY keeps running). Returns a message on failure.
  */
 async function restartSurfaceInPlace(id: string, command: string, cwd: string, signal?: AbortSignal): Promise<ParseResult<undefined>> {
-  if (signal?.aborted) return { ok: false, message: 'restart was cancelled' };
+  // Checked before the interrupt is written, not just before each wait.
+  if (signal?.aborted) return RESTART_CANCELLED;
   // A match is by construction OSC-driven (surfaceRunsCommand only matches a
   // shell that reports its command), so this never fires on the real path — but
   // it guarantees we never fire Ctrl+C into a non-integration shell (e.g. cmd.exe
@@ -286,8 +294,11 @@ async function restartSurfaceInPlace(id: string, command: string, cwd: string, s
     RESTART_INTERRUPT_TIMEOUT_MS,
     signal,
   );
-  if (signal?.aborted) return { ok: false, message: 'restart was cancelled' };
-  if (!interrupted) return { ok: false, message: 'did not return to a prompt after interrupt' };
+  // Re-check the signal itself, not only the outcome: an already-satisfied wait
+  // resolves without polling, so a cancel queued before that continuation would
+  // otherwise slip past and type the command.
+  if (signal?.aborted || interrupted === 'aborted') return RESTART_CANCELLED;
+  if (interrupted === 'timeout') return { ok: false, message: 'did not return to a prompt after interrupt' };
   platform.writePty(id, `${command}\r`);
   const restarted = await waitForTerminalState(
     id,
@@ -295,8 +306,8 @@ async function restartSurfaceInPlace(id: string, command: string, cwd: string, s
     RESTART_START_TIMEOUT_MS,
     signal,
   );
-  if (signal?.aborted) return { ok: false, message: 'restart was cancelled' };
-  if (!restarted) return { ok: false, message: 'command did not restart' };
+  if (signal?.aborted || restarted === 'aborted') return RESTART_CANCELLED;
+  if (restarted === 'timeout') return { ok: false, message: 'command did not restart' };
   return { ok: true, value: undefined };
 }
 
@@ -397,12 +408,15 @@ export function useDorControl({
    *  only (docs/specs/notepad.md → "Closure"). */
   killPaneImmediately: (id: string) => void;
   /** The user-visible closure path: archive the Surface's notes, then tear it
-   *  down. A string means the archive refused, and is why; the Surface is still
-   *  here. */
-  closeSurface: (id: string, opts?: { prompt?: boolean }) => Promise<string | null>;
+   *  down. A string means the closure was refused, and is why; the Surface is
+   *  still here. */
+  closeSurface: (id: string, mode?: CloseSurfaceMode) => Promise<string | null>;
   /** The last binary path a `dor ab` surface resolved on a terminal's PATH. */
   lastAgentBrowserBinaryPathRef: MutableRefObject<string | undefined>;
 }): {
+  /** The live surface (visible pane or minimized door) whose params match, or
+   *  null. Shared with the context's port launches in Wall.tsx. */
+  findSurfaceByParams: (isMatch: (params: unknown) => boolean) => { id: string; minimized: boolean } | null;
   /** Fold a params patch onto a surface (visible pane or minimized door) — the
    *  one write path a background daemon boot uses to hand a session-less pane
    *  its `{session, wsPort, binaryPath}`. */
@@ -473,13 +487,18 @@ export function useDorControl({
     return target;
   }, [requireListedSurface]);
 
+  /** A Surface a command may still target: not mid-fade, and not mid-closure
+   *  (`closeSurface` archives before it tears down; a match made meanwhile
+   *  would be acted on moments before it vanishes). */
+  const isTargetable = useCallback((id: string) => !lath.isDying(id) && !isSurfaceClosing(id), [lath]);
+
   const findSurfaceIdRunningCommand = useCallback((command: string, cwdPath: string): string | null => {
     const ids = [
       ...lath.listPanes().map((panel) => panel.id),
       ...doorsRef.current.map((door) => door.id),
     ];
-    return ids.find((id) => surfaceRunsCommand(getTerminalPaneState(id), command, cwdPath)) ?? null;
-  }, [lath]);
+    return ids.find((id) => isTargetable(id) && surfaceRunsCommand(getTerminalPaneState(id), command, cwdPath)) ?? null;
+  }, [lath, isTargetable]);
 
   /**
    * The surface (visible pane or minimized door — panes win) whose params match,
@@ -487,12 +506,12 @@ export function useDorControl({
    * survives webview reloads. Null when nothing matches.
    */
   const findSurfaceByParams = useCallback((isMatch: (params: unknown) => boolean): { id: string; minimized: boolean } | null => {
-    const panel = lath.listPanes().find((candidate) => isMatch(candidate.params));
+    const panel = lath.listPanes().find((candidate) => isTargetable(candidate.id) && isMatch(candidate.params));
     if (panel) return { id: panel.id, minimized: false };
-    const door = doorsRef.current.find((candidate) => isMatch(lath.getMeta(candidate.id)?.params));
+    const door = doorsRef.current.find((candidate) => isTargetable(candidate.id) && isMatch(lath.getMeta(candidate.id)?.params));
     if (door) return { id: door.id, minimized: true };
     return null;
-  }, [lath]);
+  }, [lath, isTargetable]);
 
   /** The agent-browser session ↔ surface registry: the surface bound to
    *  `session`, or null if none exists. */
@@ -662,7 +681,7 @@ export function useDorControl({
 
       if (detail.method === SURFACE_CONTROL_METHODS.ensure) {
         if (detail.signal?.aborted) {
-          detail.respond({ ok: false, error: 'ensure was cancelled' });
+          detail.respond({ ok: false, error: ENSURE_CANCELLED });
           return;
         }
         const command = dorCommandString(stringArrayParam(params.command));
@@ -749,14 +768,14 @@ export function useDorControl({
           INTEGRATION_DETECT_TIMEOUT_MS,
           detail.signal,
         );
-        if (!integrated) {
+        if (integrated !== 'ready') {
           // Tear down the throwaway split. The focus-neutral create never selected
           // it, so the kill's live selection check leaves the caller's selection
           // where ensure found it. A `--minimize` create is already a door;
           // killPaneImmediately tears the door down too — disposing the session and
           // removing it from the baseboard.
           killPaneImmediately(result.value.id);
-          detail.respond({ ok: false, error: detail.signal?.aborted ? 'ensure was cancelled' : missingIntegrationError(ensureShell) });
+          detail.respond({ ok: false, error: integrated === 'aborted' ? ENSURE_CANCELLED : missingIntegrationError(ensureShell) });
           return;
         }
         detail.respond({
@@ -887,7 +906,7 @@ export function useDorControl({
         // and answers with the error rather than silently dropping the notes —
         // and raises no pane prompt, because the caller is a command, not
         // someone looking at the Wall (docs/specs/notepad.md → "Closure").
-        const refused = await closeSurface(target.id, { prompt: false });
+        const refused = await closeSurface(target.id, 'silent');
         if (refused) {
           detail.respond({ ok: false, error: refused });
           return;
@@ -1071,5 +1090,5 @@ export function useDorControl({
     return () => window.removeEventListener('dormouse:control-request', handler);
   }, [buildDorSurfaces, buildDorSurfaceList, closeSurface, createContentSurface, createSplitSurface, ensureAgentBrowserSurface, findSurfaceIdRunningCommand, killPaneImmediately, requireBrowserSurface, requireListedSurface, requireTerminalSurface, resolveListedSurface, resolveVisibleSurface, surfaceRefForId, lath, nav]);
 
-  return { updateSurfaceParams };
+  return { findSurfaceByParams, updateSurfaceParams };
 }

@@ -7,11 +7,41 @@ import type { PortUrlEntry } from './port-url';
 import type { HelperStatus } from '../../lib/helper-terminal';
 import { WindowFocusedContext } from './wall-context';
 import { motionIsInstant } from '../../lib/ui-geometry';
+import { messageOf } from '../../lib/errors';
 
 export type PortMode = 'system' | 'iframe' | 'ab-screencast' | 'ab-popout';
 export type ContextScan = { status: 'scanning' | 'failed' } | { status: 'loaded'; entries: PortUrlEntry[] };
 /** Every action may fail asynchronously; the view reports the failure. */
 type Action = () => void | Promise<void>;
+const SPINNING = <CircleNotchIcon size={13} className="shrink-0 animate-spin" />;
+const PAUSED = <PauseIcon size={13} className="shrink-0" />;
+const SETTLED = <CheckIcon size={13} className="shrink-0" />;
+/** One row per helper state (docs/specs/terminal-context.md → Helper lifecycle);
+ *  a `reset` state offers Reset in place of Modify. */
+const HELPER_STATUS: Record<HelperStatus, { icon: ReactNode; label: (command: string) => string; reset?: boolean }> = {
+  waiting: { icon: SPINNING, label: () => 'Waiting for shell…' },
+  running: { icon: SPINNING, label: command => `Running ${command}…` },
+  completed: { icon: SETTLED, label: command => `${command} autoran` },
+  preserved: { icon: PAUSED, label: () => 'Skipping autorun to preserve user keystrokes', reset: true },
+  off: { icon: PAUSED, label: () => 'Autorun off' },
+  unsupported: { icon: PAUSED, label: () => 'Autorun skipped: shell readiness unavailable' },
+  exited: { icon: SETTLED, label: () => 'Helper exited', reset: true },
+};
+
+/** The port row's launch targets; `needs` names the host capability that enables one. */
+const PORT_ACTIONS: readonly ({ mode: PortMode; label: string; icon: ReactNode; text: string } & ({ needs?: undefined } | { needs: 'canIframe' | 'canAgent'; unavailable: string }))[] = [
+  { mode: 'system', label: 'Open in system browser', icon: <ArrowSquareOutIcon size={15} />, text: 'System browser' },
+  { mode: 'iframe', label: 'Open in iframe embed', needs: 'canIframe', unavailable: 'Iframe unavailable on this host', icon: <FrameCornersIcon size={15} />, text: 'Iframe' },
+  { mode: 'ab-screencast', label: 'Open in agent-browser screencast', needs: 'canAgent', unavailable: 'Agent browser unavailable on this host', icon: <AgentRobotIcon size={17} />, text: 'Agent browser' },
+  { mode: 'ab-popout', label: 'Open in agent-browser popout', needs: 'canAgent', unavailable: 'Popout unavailable on this host', icon: <><AgentRobotIcon size={17} /><ArrowSquareOutIcon size={13} /></>, text: 'Popout' },
+];
+
+const DETAILS = {
+  title: { label: 'Title sources', heading: 'Why this title?' },
+  modify: { label: 'Default helper autorun command', heading: 'Default helper autorun command' },
+  reset: { label: 'Reset helper terminal', heading: 'Reset helper terminal?' },
+} as const;
+type Detail = keyof typeof DETAILS;
 export interface TerminalContextViewProps {
   /** Exit in progress: the view is inert, and `onClose` is not called again. */
   closing?: boolean;
@@ -27,7 +57,7 @@ export interface TerminalContextViewProps {
   onClose(): void; onCopyRef: Action; onCopyPath: Action; onExplore: Action;
   onWatch(): void; onTodo(): void; onPort(entry: PortUrlEntry, mode: PortMode): void | Promise<void>;
   onModify(command: string): Promise<void>; onReset: Action; onPromote: Action;
-  initialDetail?: 'title' | 'modify' | 'reset' | null;
+  initialDetail?: Detail | null;
 }
 
 export function ContextAction({ children, label, onClick, disabled = false, busy = false, muted = false }: { children: ReactNode; label: string; onClick?: () => void; disabled?: boolean; busy?: boolean; muted?: boolean }) {
@@ -130,11 +160,11 @@ export function TerminalContextView(p: TerminalContextViewProps) {
   const [error, setError] = useState('');
   const entries = p.scan.status === 'loaded' ? p.scan.entries : [];
   const selected = entries.find(entry => entry.port === port) ?? entries[0];
-  const preserved = p.status === 'preserved';
-  const attempt = async (action: Action) => { setError(''); try { await action(); return true; } catch (e) { setError(String(e instanceof Error ? e.message : e)); return false; } };
+  const attempt = async (action: Action) => { setError(''); try { await action(); return true; } catch (e) { setError(messageOf(e)); return false; } };
   /** A detail-dialog action: closes the dialog on success and holds the buttons meanwhile. */
   const submit = async (action: Action) => { setBusy(true); if (await attempt(action)) setDetail(null); setBusy(false); };
-  const status = p.status === 'waiting' ? 'Waiting for shell…' : p.status === 'off' ? 'Autorun off' : p.status === 'unsupported' ? 'Autorun skipped: shell readiness unavailable' : p.status === 'exited' ? 'Helper exited' : preserved ? 'Skipping autorun to preserve user keystrokes' : p.status === 'running' ? `Running ${p.command}…` : `${p.command} autoran`;
+  const status = HELPER_STATUS[p.status];
+  const statusLabel = status.label(p.command);
   return <section ref={surface} aria-label="Terminal context" data-terminal-context tabIndex={-1} inert={p.closing} aria-hidden={p.closing || undefined} style={SURFACE_STYLE}
     className={`${TERMINAL_CONTEXT_SURFACE_CLASS} ${motionClass} ${p.closing ? 'pointer-events-none' : ''} absolute inset-4 flex flex-col overflow-hidden text-sm`}
     onContextMenu={event => event.preventDefault()}
@@ -161,10 +191,10 @@ export function TerminalContextView(p: TerminalContextViewProps) {
             {p.scan.status === 'scanning' ? <span className="text-muted">Scanning ports…</span> : p.scan.status === 'failed' ? <span className="text-error">Port scan failed · Reopen to try again</span> : !selected ? <span className="text-muted">No listening ports</span> : <>
               {entries.length > 1 ? <div className="inline-flex shrink-0 items-center gap-2"><select aria-label="Port" value={selected.port} onChange={e => setPort(Number(e.target.value))} className="h-6 rounded border border-input-border bg-input-bg px-1 text-foreground">{entries.map(entry => <option key={entry.port} value={entry.port}>{entry.host}:{entry.port}{entry.processName ? ` · ${entry.processName}` : ''}</option>)}</select><span className="text-muted">{entries.length} ports</span></div> : <><span>{selected.host}:{selected.port}</span><span className="text-muted">{selected.processName}</span></>}
               <div className="ml-1 inline-flex shrink-0 items-center gap-1 border-l border-border pl-2">
-                <ContextAction label="Open in system browser" onClick={() => void attempt(() => p.onPort(selected, 'system'))}><ArrowSquareOutIcon size={15} />System browser</ContextAction>
-                <ContextAction label={p.canIframe ? 'Open in iframe embed' : 'Iframe unavailable on this host'} disabled={!p.canIframe} onClick={() => void attempt(() => p.onPort(selected, 'iframe'))}><FrameCornersIcon size={15} />Iframe</ContextAction>
-                <ContextAction label={p.canAgent ? 'Open in agent-browser screencast' : 'Agent browser unavailable on this host'} disabled={!p.canAgent} onClick={() => void attempt(() => p.onPort(selected, 'ab-screencast'))}><AgentRobotIcon size={17} />Agent browser</ContextAction>
-                <ContextAction label={p.canAgent ? 'Open in agent-browser popout' : 'Popout unavailable on this host'} disabled={!p.canAgent} onClick={() => void attempt(() => p.onPort(selected, 'ab-popout'))}><AgentRobotIcon size={17} /><ArrowSquareOutIcon size={13} />Popout</ContextAction>
+                {PORT_ACTIONS.map(action => {
+                  const unavailable = action.needs && !p[action.needs] ? action.unavailable : null;
+                  return <ContextAction key={action.mode} label={unavailable ?? action.label} disabled={!!unavailable} onClick={() => void attempt(() => p.onPort(selected, action.mode))}>{action.icon}{action.text}</ContextAction>;
+                })}
               </div>
             </>}
           </div>
@@ -175,8 +205,8 @@ export function TerminalContextView(p: TerminalContextViewProps) {
       <div className="@container flex min-h-0 flex-1 flex-col border-t border-border">
         <div aria-label="Helper terminal status" className="flex h-9 shrink-0 items-center gap-3 whitespace-nowrap px-3">
           <span className="hidden shrink-0 items-center gap-2 font-semibold @[48rem]:flex"><TerminalIcon size={15} />Helper terminal</span>
-          <div className="flex min-w-0 items-center gap-2 text-muted">{p.status === 'running' || p.status === 'waiting' ? <CircleNotchIcon size={13} className="shrink-0 animate-spin" /> : preserved || p.status === 'off' || p.status === 'unsupported' ? <PauseIcon size={13} className="shrink-0" /> : <CheckIcon size={13} className="shrink-0" />}<span className="truncate" title={status}>{status}</span>
-            {preserved || p.status === 'exited' ? <ContextAction label="Reset helper terminal" onClick={() => setDetail('reset')}><ArrowCounterClockwiseIcon size={13} />Reset…</ContextAction> : <ContextAction label="Modify autorun command" onClick={() => { setCommand(p.defaultCommand ?? p.command); setDetail('modify'); }}><SlidersHorizontalIcon size={15} />Modify</ContextAction>}
+          <div className="flex min-w-0 items-center gap-2 text-muted">{status.icon}<span className="truncate" title={statusLabel}>{statusLabel}</span>
+            {status.reset ? <ContextAction label="Reset helper terminal" onClick={() => setDetail('reset')}><ArrowCounterClockwiseIcon size={13} />Reset…</ContextAction> : <ContextAction label="Modify autorun command" onClick={() => { setCommand(p.defaultCommand ?? p.command); setDetail('modify'); }}><SlidersHorizontalIcon size={15} />Modify</ContextAction>}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">{p.notepadAction}<ContextAction label="Move this terminal into a new pane" disabled={busy} onClick={() => void submit(p.onPromote)}><ArrowLineUpIcon size={15} />Promote</ContextAction></div>
         </div>
@@ -185,8 +215,8 @@ export function TerminalContextView(p: TerminalContextViewProps) {
         <div className="min-h-0 flex-1 bg-terminal-bg text-terminal-fg">{p.children}</div>
       </div>
     {p.notepadPanel}
-    {detail && <div className="absolute inset-0 z-10 bg-app-bg/35" onClick={() => setDetail(null)}><div ref={detailRoot} role="dialog" aria-modal="true" aria-label={detail === 'title' ? 'Title sources' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal'} className={`${POPUP_SURFACE_CLASS} absolute left-3 right-3 top-9 p-4`} onClick={e => e.stopPropagation()}>
-      <div className="mb-3 flex items-center justify-between font-semibold"><span>{detail === 'title' ? 'Why this title?' : detail === 'modify' ? 'Default helper autorun command' : 'Reset helper terminal?'}</span><ContextAction label="Close details" onClick={() => setDetail(null)} muted><XIcon size={14} /></ContextAction></div>
+    {detail && <div className="absolute inset-0 z-10 bg-app-bg/35" onClick={() => setDetail(null)}><div ref={detailRoot} role="dialog" aria-modal="true" aria-label={DETAILS[detail].label} className={`${POPUP_SURFACE_CLASS} absolute left-3 right-3 top-9 p-4`} onClick={e => e.stopPropagation()}>
+      <div className="mb-3 flex items-center justify-between font-semibold"><span>{DETAILS[detail].heading}</span><ContextAction label="Close details" onClick={() => setDetail(null)} muted><XIcon size={14} /></ContextAction></div>
       {detail === 'title' ? <div className="grid grid-cols-[8rem_1fr_auto] gap-x-3 gap-y-2">{p.titleSources.map((source, index) => <div className="contents" key={index}><span className="text-muted">{source.source}</span><span>{source.value}</span><span className="text-muted">{source.note}</span></div>)}</div> : detail === 'modify' ? <><input autoFocus aria-label="Default helper autorun command" value={command} onChange={e => setCommand(e.target.value)} maxLength={4096} placeholder="Leave empty to turn autorun off" className="w-full border-b border-input-border bg-input-bg px-2 py-1.5 outline-focus-ring" /><p className="mb-4 mt-2 text-muted">Global default. Applies to new and reset helpers. Leave empty to turn autorun off.</p><div className="flex justify-end gap-2"><ContextAction label="Reset helper terminal" onClick={() => setDetail('reset')}>Reset helper…</ContextAction><ContextAction label="Save default" disabled={busy} onClick={() => void submit(() => p.onModify(command))}>Save default</ContextAction></div></> : <><p>Discard this helper, including scrollback, unfinished input, and any running program? Unsaved edits will be lost.</p><p className="mb-4 mt-2 text-muted">A fresh helper starts in the parent's current directory using the global autorun default.</p><div className="flex justify-end gap-2"><ContextAction label="Keep helper" onClick={() => setDetail(null)}>Keep helper</ContextAction><ContextAction label="Discard and reset" disabled={busy} onClick={() => void submit(p.onReset)}>Discard and reset</ContextAction></div></>}
       {error && <p role="alert" className="mt-2 text-error">{error}</p>}
     </div></div>}

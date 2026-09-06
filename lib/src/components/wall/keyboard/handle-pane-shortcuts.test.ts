@@ -11,19 +11,13 @@ import type { WallKeyboardCtx } from './types';
 const terminalRegistryMocks = vi.hoisted(() => ({
   dismissOrToggleAlert: vi.fn(),
   getActivity: vi.fn(() => ({ status: 'WATCHING_DISABLED' })),
-  isUntouched: vi.fn(),
   toggleSessionTodo: vi.fn(),
 }));
 
 vi.mock('../../../lib/terminal-registry', () => ({
   dismissOrToggleAlert: terminalRegistryMocks.dismissOrToggleAlert,
   getActivity: terminalRegistryMocks.getActivity,
-  isUntouched: terminalRegistryMocks.isUntouched,
   toggleSessionTodo: terminalRegistryMocks.toggleSessionTodo,
-}));
-
-vi.mock('../../KillConfirm', () => ({
-  randomKillChar: () => 'Q',
 }));
 
 vi.mock('./handle-mouse-selection-keys', () => ({ handleMouseSelectionKeys: () => false }));
@@ -62,8 +56,7 @@ function makeCtx(overrides: Partial<WallKeyboardCtx> = {}): WallKeyboardCtx {
     handleReattachRef: { current: vi.fn() },
     selectPane: vi.fn(),
     enterTerminalMode: vi.fn(),
-    closeSurface: vi.fn(async () => null),
-    setConfirmKill: vi.fn(),
+    requestKill: vi.fn(),
     setRenamingPaneId: vi.fn(),
     fireEvent: vi.fn(),
     ...overrides,
@@ -79,61 +72,16 @@ function keydownMeta(key: string): KeyboardEvent {
 }
 
 describe('handlePaneShortcuts kill behavior', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    terminalRegistryMocks.isUntouched.mockReturnValue(false);
-  });
+  beforeEach(() => vi.clearAllMocks());
 
-  it('closes untouched panes without staging confirmation', () => {
-    terminalRegistryMocks.isUntouched.mockReturnValue(true);
+  it.each(['x', 'k'])('hands the %s gesture to the Wall kill request', (key) => {
     const ctx = makeCtx();
-    const event = keydown('x');
+    const event = keydown(key);
 
     expect(handlePaneShortcuts(event, ctx, { current: null })).toBe(true);
 
-    expect(ctx.closeSurface).toHaveBeenCalledWith('pane-a');
-    expect(ctx.setConfirmKill).not.toHaveBeenCalled();
+    expect(ctx.requestKill).toHaveBeenCalledWith('pane-a');
     expect(event.defaultPrevented).toBe(true);
-  });
-
-  it('keeps confirmation for touched panes', () => {
-    const ctx = makeCtx();
-
-    expect(handlePaneShortcuts(keydown('x'), ctx, { current: null })).toBe(true);
-
-    expect(ctx.closeSurface).not.toHaveBeenCalled();
-    expect(ctx.setConfirmKill).toHaveBeenCalledWith({ id: 'pane-a', char: 'Q' });
-  });
-
-  it('reattaches untouched doors into an immediate kill path', () => {
-    terminalRegistryMocks.isUntouched.mockReturnValue(true);
-    const reattach = vi.fn();
-    const ctx = makeCtx({
-      selectedTypeRef: { current: 'door' },
-      handleReattachRef: { current: reattach },
-    });
-
-    expect(handlePaneShortcuts(keydown('x'), ctx, { current: null })).toBe(true);
-
-    expect(reattach).toHaveBeenCalledWith(
-      { id: 'pane-a', title: 'Pane A' },
-      { enterPassthrough: false, afterRestore: 'kill-immediately' },
-    );
-  });
-
-  it('reattaches touched doors into the confirmation path', () => {
-    const reattach = vi.fn();
-    const ctx = makeCtx({
-      selectedTypeRef: { current: 'door' },
-      handleReattachRef: { current: reattach },
-    });
-
-    expect(handlePaneShortcuts(keydown('x'), ctx, { current: null })).toBe(true);
-
-    expect(reattach).toHaveBeenCalledWith(
-      { id: 'pane-a', title: 'Pane A' },
-      { enterPassthrough: false, afterRestore: 'confirm-kill' },
-    );
   });
 });
 

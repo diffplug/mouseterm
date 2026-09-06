@@ -29,7 +29,7 @@
 
 **Must make Reset an explicit discard**, confirming loss of scrollback, unfinished input, running programs, and unsaved edits. Cancellation changes nothing; confirmation disposes the old helper and launches a fresh one using the source's current directory and current global setting. Stale timers cannot write to the replacement.
 
-Source of truth: `openHelper` / `helperHasWork` / `disposeHelper` in `lib/src/lib/helper-terminal.ts`; `markSessionTouched` / `unmountElement` in `lib/src/lib/terminal-lifecycle.ts`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`. Tests: `lib/src/lib/helper-terminal.test.ts`.
+Source of truth: `openHelper` / `helperHasWork` / `disposeHelper` in `lib/src/lib/helper-terminal.ts`; `markSessionTouched` / `parkElement` in `lib/src/lib/terminal-lifecycle.ts`; `TerminalContextView` in `lib/src/components/wall/TerminalContextView.tsx`. Tests: `lib/src/lib/helper-terminal.test.ts`.
 
 Notepad sharing and pin restrictions follow `docs/specs/notepad.md` → "Helper terminals".
 
@@ -45,7 +45,7 @@ Notepad sharing and pin restrictions follow `docs/specs/notepad.md` → "Helper 
 
 **Must include hidden helper work in shutdown checks.** The helper's host inspection also detects background descendants; unresolved inspection, including a process table missing the live PTY process, counts conservatively as work. Minimizing the source hides its context and retains the helper.
 
-Source of truth: `beginPromotion` / `cancelPromotion` / `finishPromotion` / `helperHasWork` in `lib/src/lib/helper-terminal.ts`; `closeSurface` / `contextActions` in `lib/src/components/Wall.tsx`; `countRunningSessions` in `lib/src/lib/terminal-state-store.ts`.
+Source of truth: `beginPromotion` / `cancelPromotion` / `finishPromotion` / `helperHasWork` in `lib/src/lib/helper-terminal.ts`; `closeSurface` / `requestKill` / `contextActions` in `lib/src/components/Wall.tsx`; `countRunningSessions` in `lib/src/lib/terminal-state-store.ts`.
 
 ## Global autorun setting
 

@@ -931,13 +931,17 @@ fn temp_write_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// The directory `path` is written into, created and tightened to owner-only.
-fn ensure_owner_only_parent(path: &Path) -> Result<&Path, String> {
+/// The directory `path` is written into, created and tightened to owner-only
+/// by `restrict` (`restrict_to_owner` outside tests).
+fn ensure_parent_with(
+    path: &Path,
+    restrict: impl Fn(&Path, u32) -> Result<(), String>,
+) -> Result<&Path, String> {
     let dir = path
         .parent()
         .ok_or_else(|| format!("no parent directory for {}", path.display()))?;
     create_dir_all(dir).map_err(|e| format!("create dir {}: {e}", dir.display()))?;
-    restrict_to_owner(dir, 0o700)?;
+    restrict(dir, 0o700)?;
     Ok(dir)
 }
 
@@ -946,19 +950,21 @@ fn ensure_owner_only_parent(path: &Path) -> Result<&Path, String> {
 /// The one implementation behind both machine-local stores this app owns — the
 /// per-window session snapshot and the notepad archive — because both carry user
 /// text and both must survive a crash mid-write
-/// (docs/specs/security-local.md -> "Persisted state").
+/// (docs/specs/security-local.md -> "Persisted state"). Owner-only before any
+/// bytes are written, and atomic-replace, both live here
+/// (docs/specs/standalone.md -> "Persistence").
 fn write_file_atomically(path: &Path, contents: &str) -> Result<(), String> {
     write_file_with_permissions(path, contents, restrict_to_owner)
 }
 
+/// `write_file_atomically` with the permission step injected, so a test can
+/// fail either tightening and check that no bytes were written.
 fn write_file_with_permissions(
     path: &Path,
     contents: &str,
     restrict: impl Fn(&Path, u32) -> Result<(), String>,
 ) -> Result<(), String> {
-    let dir = path.parent().ok_or_else(|| "no parent directory".to_string())?;
-    create_dir_all(dir).map_err(|e| format!("create dir: {e}"))?;
-    restrict(dir, 0o700)?;
+    let dir = ensure_parent_with(path, &restrict)?;
     let tmp = temp_write_path(path);
     // Atomic replace: write a sibling temp file, fsync it, then rename over the
     // target so a crash mid-write can never truncate the previous good copy.
@@ -984,19 +990,6 @@ fn write_file_with_permissions(
         }
     }
     Ok(())
-}
-
-// Owner-only before any bytes are written, and atomic-replace: both live in
-// `write_file_atomically` above (docs/specs/security-local.md -> "Persisted
-// state", docs/specs/standalone.md -> "Persistence").
-#[cfg(test)]
-fn write_session_with_permissions(
-    dir: &Path,
-    label: &str,
-    state: &str,
-    restrict: impl Fn(&Path, u32) -> Result<(), String>,
-) -> Result<(), String> {
-    write_file_with_permissions(&dir.join(session_file_name(label)), state, restrict)
 }
 
 fn write_session_to(dir: &Path, label: &str, state: &str) -> Result<(), String> {
@@ -1125,13 +1118,13 @@ fn lock_archive<'a>(gate: &'a Mutex<()>, path: &Path) -> Result<ArchiveLock<'a>,
 /// Take the interprocess lock, blocking until it is ours; released when the
 /// returned handle drops.
 ///
-/// Reported rather than swallowed, unlike the `restrict_to_owner` call beside
-/// it: this lock is what makes the compare-and-swap correct across processes, so
-/// carrying on without it would silently reinstate the overwrite it exists to
-/// close. Blocking is safe because every caller is a `#[tauri::command(async)]`
-/// off the event loop, and each holder does one small read or write.
+/// Reported rather than swallowed: this lock is what makes the compare-and-swap
+/// correct across processes, so carrying on without it would silently reinstate
+/// the overwrite it exists to close. Blocking is safe because every caller is a
+/// `#[tauri::command(async)]` off the event loop, and each holder does one small
+/// read or write.
 fn lock_notepad_archive(path: &Path) -> Result<File, String> {
-    ensure_owner_only_parent(path)?;
+    ensure_parent_with(path, restrict_to_owner)?;
     let lock_path = notepad_archive_lock_path(path);
     let file = OpenOptions::new()
         .create(true)
@@ -2375,9 +2368,8 @@ mod tests {
         for fail_mode in [0o700, 0o600] {
             let dir = TempDir::new("sessions-permission-failure");
             write_session_to(dir.path(), "main", "previous").unwrap();
-            let result = super::write_session_with_permissions(
-                dir.path(),
-                "main",
+            let result = super::write_file_with_permissions(
+                &dir.path().join(session_file_name("main")),
                 "private replacement",
                 |path, mode| {
                     if mode == fail_mode {

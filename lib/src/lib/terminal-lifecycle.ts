@@ -6,6 +6,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { shellCommandKind, type ShellCommandKind } from 'dor/commands/shell-quote';
 import { getPlatform, IS_MAC, IS_WINDOWS, PLATFORM_STRING } from './platform';
 import type { PtyDataDetail } from './platform/types';
+import type { HelperIdentity } from './terminal-context-types';
 import { DIM, RESET } from './ansi';
 import { cfg } from '../cfg';
 import { requestExternalLinkConfirmation } from './external-link-confirmation';
@@ -341,7 +342,7 @@ function wireXtermHandlers(
   };
 }
 
-function setupTerminalEntry(id: string, options: { shell?: string; untouched?: boolean; helper?: import('./terminal-context-types').HelperIdentity } = {}): TerminalEntry {
+function setupTerminalEntry(id: string, options: { shell?: string; untouched?: boolean; helper?: HelperIdentity } = {}): TerminalEntry {
   const { terminal, fit, element } = createXtermHost();
   const selectionBaselineRef = { current: null as string | null };
   // Every module that finalizes a selection arms the render handler through
@@ -489,7 +490,7 @@ export function getOrCreateTerminal(id: string): TerminalEntry {
 export function resumeTerminal(
   id: string,
   replayData: string | null,
-  exitInfo?: { alive: boolean; exitCode?: number; shell?: string; title?: string | null; untouched?: boolean; helper?: import('./terminal-context-types').HelperIdentity },
+  exitInfo?: { alive: boolean; exitCode?: number; shell?: string; title?: string | null; untouched?: boolean; helper?: HelperIdentity },
 ): TerminalEntry {
   const existing = registry.get(id);
   if (existing) return existing;
@@ -585,14 +586,34 @@ export function mountElement(id: string, container: HTMLElement): void {
   requestAnimationFrame(() => entry.fit.fit());
 }
 
+/** Where a hidden helper's xterm element waits between reveals: still in the
+ *  document, so its renderer and scrollback survive
+ *  (docs/specs/terminal-context.md → Helper lifecycle). */
+let helperParking: HTMLElement | null = null;
+
+/** Park a helper Session's element out of sight without terminating anything;
+ *  the next `mountElement` reveals the same element. */
+export function parkElement(id: string): void {
+  const entry = registry.get(id);
+  if (!entry) return;
+  // Revalidated, not just cached: a host that replaces the body (a docs iframe,
+  // a test teardown) would otherwise park every helper in a detached subtree.
+  if (!helperParking?.isConnected) {
+    helperParking = document.createElement('div');
+    helperParking.hidden = true;
+    document.body.appendChild(helperParking);
+  }
+  helperParking.appendChild(entry.element);
+}
+
+/** Detach a Session's element from its pane. With `container`, only when it is
+ *  still mounted there: cleanup from an older mount cannot detach a newer one.
+ *  A helper's element is parked rather than removed. */
 export function unmountElement(id: string, container?: HTMLElement): void {
   const entry = registry.get(id);
   if (!entry || (container && entry.element.parentElement !== container)) return;
-  if (entry.helper) {
-    let parking = document.getElementById('helper-terminal-parking');
-    if (!parking) { parking = document.createElement('div'); parking.id = 'helper-terminal-parking'; parking.hidden = true; document.body.appendChild(parking); }
-    parking.appendChild(entry.element);
-  } else entry.element.remove();
+  if (entry.helper) parkElement(id);
+  else entry.element.remove();
 }
 
 export function disposeAllSessions(): void {

@@ -9,6 +9,7 @@
 // batch and note id, which is what makes that retry safe — a closure that
 // already landed is re-applied as a no-op rather than a duplicate batch.
 import { createSerialQueue } from '../../host/remote/serial-queue';
+import { messageOf } from '../errors';
 import { getPlatformOrNull } from '../platform';
 import {
   applyArchiveMutation,
@@ -73,12 +74,6 @@ function archivePort(): NotepadArchivePort | undefined {
  *  it. The one availability gate — every caller reads it. */
 export function hasNotepadArchive(): boolean {
   return archivePort() !== undefined;
-}
-
-/** A rejection as something a user can read. Shared with the Archive view,
- *  which reports the same failures this module publishes. */
-export function messageOf(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error);
 }
 
 let inFlightLoad: Promise<void> | null = null;

@@ -18,10 +18,15 @@ vi.mock('../lib/notepad/capture', () => ({
 // the Door (`hasNotepadArchive` in `lib/src/lib/notepad/archive-service.ts`).
 vi.mock('../lib/notepad/archive-service', () => ({ hasNotepadArchive: vi.fn(() => true) }));
 
+import { copyRaw } from '../lib/clipboard';
 import { addSelectionToNotepad, isNotepadChordBound } from '../lib/notepad/capture';
 import { hasNotepadArchive } from '../lib/notepad/archive-service';
 import {
   __resetMouseSelectionForTests,
+  beginDrag,
+  bumpRenderTick,
+  endDrag,
+  flashCopy,
   getMouseSelectionState,
   setSelection,
 } from '../lib/mouse-selection';
@@ -99,6 +104,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.useRealTimers();
 });
 
 describe('SelectionPopup: Add to notepad', () => {
@@ -177,5 +183,72 @@ describe('SelectionPopup: Add to notepad', () => {
 
     expect(leftWith).toBeGreaterThan(0);
     expect(leftWith).toBeLessThan(leftWithout);
+  });
+});
+
+describe('SelectionPopup: copy and flash', () => {
+  // A ten-line viewport over ten scrollback lines, so a scroll moves the anchor
+  // by whole cells.
+  const COPY_DIMS = { ...DIMS, baseY: 10, elementWidth: 800, elementHeight: 240, cellWidth: 10, cellHeight: 10, gridLeft: 0, gridTop: 0 };
+  let dims: typeof COPY_DIMS;
+  const popup = () => container.querySelector<HTMLElement>('[data-selection-popup-for]')!;
+  const copyRawButton = () => container.querySelector<HTMLButtonElement>('button')!;
+  /** A finalized drag starting in scrollback, as the mouse handlers raise it. */
+  const drag = (row: number, col: number) => {
+    beginDrag('term-1', { row, col, altKey: false, startedInScrollback: true });
+    endDrag('term-1');
+  };
+
+  beforeEach(() => {
+    dims = { ...COPY_DIMS };
+    vi.mocked(getTerminalOverlayDims).mockImplementation(() => dims);
+    vi.mocked(copyRaw).mockReset();
+    drag(5, 3);
+    render();
+  });
+
+  it('reanchors after scrolling with the same finalized selection', () => {
+    expect(popup().style.top).toBe('74px');
+    dims.viewportY = 3;
+    act(() => bumpRenderTick());
+    expect(popup().style.top).toBe('44px');
+  });
+
+  it('dismisses immediately when selection is canceled during the copied flash', () => {
+    vi.useFakeTimers();
+    act(() => flashCopy('term-1', 'raw'));
+    act(() => setSelection('term-1', null));
+    expect(container.querySelector('[data-selection-popup-for]')).toBeNull();
+  });
+
+  it('keeps a newer copied selection for its own confirmation duration', () => {
+    vi.useFakeTimers();
+    act(() => flashCopy('term-1', 'raw'));
+    act(() => vi.advanceTimersByTime(400));
+    act(() => {
+      drag(8, 1);
+      flashCopy('term-1', 'raw');
+    });
+    act(() => vi.advanceTimersByTime(300));
+    expect(getMouseSelectionState('term-1').selection?.startRow).toBe(8);
+    act(() => vi.advanceTimersByTime(400));
+    expect(getMouseSelectionState('term-1').selection).toBeNull();
+  });
+
+  it('retains a selection without a success flash when copying fails', async () => {
+    vi.mocked(copyRaw).mockResolvedValue(false);
+    await act(async () => copyRawButton().click());
+    expect(getMouseSelectionState('term-1').copyFlash).toBeNull();
+    expect(getMouseSelectionState('term-1').selection).not.toBeNull();
+  });
+
+  it('does not clear a newer selection when a previous copy finishes', async () => {
+    let complete!: (copied: boolean) => void;
+    vi.mocked(copyRaw).mockImplementation(() => new Promise((resolve) => { complete = resolve; }));
+    act(() => copyRawButton().click());
+    act(() => beginDrag('term-1', { row: 8, col: 1, altKey: false, startedInScrollback: true }));
+    await act(async () => complete(true));
+    expect(getMouseSelectionState('term-1').copyFlash).toBeNull();
+    expect(getMouseSelectionState('term-1').selection?.startRow).toBe(8);
   });
 });

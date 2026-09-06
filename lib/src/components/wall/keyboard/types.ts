@@ -37,13 +37,11 @@ export interface WallKeyboardCtx {
   enterTerminalMode: (id: string) => void;
   exitTerminalMode: () => void;
   minimizePane: (id: string) => void;
-  /** Archive the Surface's notes, then tear it down — the user-visible closure
-   *  path (docs/specs/notepad.md → "Closure"). Fire-and-forget from the
-   *  keyboard: a refused archive raises its own prompt. */
-  closeSurface: (id: string) => Promise<string | null>;
+  /** The kill gesture: `requestKill` in `lib/src/components/Wall.tsx` decides
+   *  between reattach, immediate closure, and the confirm overlay. */
+  requestKill: (id: string) => void;
   acceptKill: () => void;
   rejectKill: () => void;
-  setConfirmKill: Dispatch<SetStateAction<ConfirmKill | null>>;
   setRenamingPaneId: Dispatch<SetStateAction<string | null>>;
   fireEvent: (event: WallEvent) => void;
 }

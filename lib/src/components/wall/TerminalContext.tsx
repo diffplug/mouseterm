@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalS
 import { NotepadPanel } from '../NotepadPanel';
 import { NotepadHeaderButton } from './NotepadHeaderButton';
 import { isSurfaceClosing } from '../../lib/notepad/notepad-store';
+import { messageOf } from '../../lib/errors';
 import { TerminalPane } from '../TerminalPane';
 import { TerminalContextView, type ContextScan } from './TerminalContextView';
 import { TerminalContextContext, WallActionsContext, type TerminalContextState } from './wall-context';
@@ -12,8 +13,6 @@ import { focusSession, getActivitySnapshot, getTerminalPaneStateSnapshot, isComm
 import { writeTextToClipboard } from '../../lib/clipboard';
 import { listenerUrlsByPort } from './port-url';
 import { DEFAULT_HELPER_COMMAND } from '../../lib/terminal-context-types';
-
-const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export function TerminalContext({ id, title, closing, origin, warning: openWarning }: TerminalContextState & { title?: string }) {
   const context = useContext(TerminalContextContext);
@@ -38,7 +37,7 @@ export function TerminalContext({ id, title, closing, origin, warning: openWarni
   const display = (location: CwdState) => cwdDisplay(location, { style: 'full', homePath: home });
   useEffect(() => {
     let cancelled = false;
-    void openHelper(id).catch(e => { if (!cancelled) setHelperError(errorText(e)); });
+    void openHelper(id).catch(e => { if (!cancelled) setHelperError(messageOf(e)); });
     void platform.terminalContext?.({ op: 'settings' }).then(info => { if (!cancelled) { setHome(info.home ?? ''); setDefaultCommand(info.command ?? DEFAULT_HELPER_COMMAND); } }).catch(() => {});
     void platform.getOpenPorts(id).then(ports => { if (!cancelled) setScan({ status: 'loaded', entries: listenerUrlsByPort(ports) }); }, () => { if (!cancelled) setScan({ status: 'failed' }); });
     return () => { cancelled = true; };
