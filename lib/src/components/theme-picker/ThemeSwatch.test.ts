@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { getBundledThemes, type DormouseTheme } from '../../lib/themes';
+import { getBundledThemes, resolveThemeVars, type DormouseTheme } from '../../lib/themes';
 import { getThemeSwatchColors } from './ThemeSwatch';
+
+/** The swatch reads a theme the way `applyTheme` paints it. */
+const swatchColors = (theme: DormouseTheme) => getThemeSwatchColors(resolveThemeVars(theme));
 
 describe('theme swatch palette', () => {
   it('shows Quiet Light’s green headers as well as its purple focus accent', () => {
     const theme = getBundledThemes().find((theme) => theme.label === 'Quiet Light')!;
-    expect(getThemeSwatchColors(theme)).toEqual({
+    expect(swatchColors(theme)).toEqual({
       active: '#c4d9b1',
       focus: '#9769dc',
     });
@@ -23,7 +26,7 @@ describe('theme swatch palette', () => {
       },
     };
     const original = { ...theme.vars };
-    expect(getThemeSwatchColors(theme)).toEqual({
+    expect(swatchColors(theme)).toEqual({
       active: '#7fff7f',
       focus: '#7fff7f',
     });
@@ -39,13 +42,13 @@ describe('theme swatch palette', () => {
         '--vscode-focusBorder': '#ff000080',
       },
     };
-    expect(getThemeSwatchColors(theme).focus).toBe('#ff7f7f');
+    expect(swatchColors(theme).focus).toBe('#ff7f7f');
   });
 
   it('resolves missing tokens by candidate polarity without using legacy preview metadata', () => {
     const base = { ...getBundledThemes()[0], vars: {}, swatch: '#123456', accent: '#654321' };
-    const dark = getThemeSwatchColors({ ...base, type: 'dark' });
-    const light = getThemeSwatchColors({ ...base, type: 'light' });
+    const dark = swatchColors({ ...base, type: 'dark' });
+    const light = swatchColors({ ...base, type: 'light' });
     expect(dark.active).not.toBe(light.active);
     for (const color of [...Object.values(dark), ...Object.values(light)]) {
       expect(color).toMatch(/^#/);

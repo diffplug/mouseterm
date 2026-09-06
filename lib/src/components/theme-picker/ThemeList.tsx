@@ -1,7 +1,8 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { XIcon } from '@phosphor-icons/react';
 import type { DormouseTheme } from '../../lib/themes';
-import { getThemePreviewStyle, ThemePreview } from './ThemePreview';
+import { themePreviewButton } from '../design';
+import { getThemePreview, ThemePreview } from './ThemePreview';
 
 /** The preview list shared by every ThemePicker placement. */
 export function ThemeList({
@@ -17,14 +18,10 @@ export function ThemeList({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const [overflow, setOverflow] = useState({ above: false, below: false });
-  const previews = useMemo(() => themes.map((theme) => ({
-    theme,
-    // Resolve omissions using the candidate's polarity, never the active
-    // document's theme. Previewing must not apply a theme or mutate storage.
-    style: getThemePreviewStyle(theme),
-  })), [themes]);
-  const backgroundColor = previews.find(({ theme }) => theme.id === activeId)?.style.backgroundColor
+  const [above, setAbove] = useState(false);
+  const [below, setBelow] = useState(false);
+  const previews = themes.map((theme) => ({ theme, preview: getThemePreview(theme) }));
+  const backgroundColor = previews.find(({ theme }) => theme.id === activeId)?.preview.style.backgroundColor
     ?? 'var(--color-terminal-bg)';
 
   useLayoutEffect(() => {
@@ -32,10 +29,8 @@ export function ThemeList({
     const update = () => {
       // scrollTop may be fractional (or negative during Safari overscroll),
       // while scrollHeight/clientHeight are rounded to integer CSS pixels.
-      const above = scroll.scrollTop > 1;
-      const below = scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop > 1;
-      setOverflow((previous) => previous.above === above && previous.below === below
-        ? previous : { above, below });
+      setAbove(scroll.scrollTop > 1);
+      setBelow(scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop > 1);
     };
     update();
     const observer = new ResizeObserver(update);
@@ -50,27 +45,27 @@ export function ThemeList({
 
   return (
     <div className="relative flex max-h-80 min-h-0 flex-1 flex-col" style={{ backgroundColor }}>
-      <div ref={scrollRef} className="min-h-0 overflow-y-auto">
+      <div ref={scrollRef} data-theme-list-scroll="" className="min-h-0 overflow-y-auto">
+        {/* 8px gap and inset, so the list background reads between entries. */}
         <div ref={contentRef} className="flex flex-col gap-2 p-2">
-          {previews.map(({ theme, style }) => {
-            const isActive = theme.id === activeId;
+          {previews.map(({ theme, preview }) => {
             const isInstalled = theme.origin.kind === 'installed';
             return (
               <div
                 key={theme.id}
                 className="flex items-center overflow-hidden rounded"
-                style={style}
+                style={preview.style}
               >
                 <button
                   type="button"
                   role="menuitemradio"
-                  aria-checked={isActive}
+                  aria-checked={theme.id === activeId}
                   title={theme.label}
                   onClick={() => onSelect(theme.id)}
-                  className={`group/theme-preview flex min-h-8 min-w-0 flex-1 items-center rounded py-1 pl-2 text-left text-sm pointer-coarse:min-h-11 focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-current ${isInstalled ? 'pr-1' : 'pr-2'}`}
+                  className={`group/theme-preview ${themePreviewButton({ kind: 'entry' })} ${isInstalled ? 'pr-1' : 'pr-2'}`}
                   style={{ color: 'inherit' }}
                 >
-                  <ThemePreview theme={theme} />
+                  <ThemePreview colors={preview.swatch} label={theme.label} />
                 </button>
                 {isInstalled ? (
                   <button
@@ -79,7 +74,7 @@ export function ThemeList({
                     title={`Uninstall ${theme.label}`}
                     // Keep a gap from selection: uninstall requires finding
                     // the extension again in OpenVSX to undo.
-                    className="mr-1 ml-1 flex min-h-8 shrink-0 items-center rounded px-1.5 pointer-coarse:min-h-11 hover:opacity-65 focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-current"
+                    className={themePreviewButton({ kind: 'uninstall' })}
                     style={{ color: 'inherit' }}
                     onClick={() => onUninstall(theme)}
                   >
@@ -91,22 +86,21 @@ export function ThemeList({
           })}
         </div>
       </div>
-      {overflow.above ? (
+      {/* Painted in the list background over the edge entries scroll past, so a
+          fade appears only toward the direction that still holds entries. */}
+      {[
+        { edge: 'above', shown: above, side: 'top-0', direction: 'to bottom' },
+        { edge: 'below', shown: below, side: 'bottom-0', direction: 'to top' },
+      ].map(({ edge, shown, side, direction }) => shown ? (
         <div
+          key={edge}
           aria-hidden="true"
-          data-scroll-fade="above"
-          className="pointer-events-none absolute inset-x-0 top-0 h-8"
-          style={{ background: `linear-gradient(to bottom, ${backgroundColor}, transparent)` }}
+          data-scroll-fade={edge}
+          // 32px: at least twice the gap, or a fade reads as a row divider.
+          className={`pointer-events-none absolute inset-x-0 h-8 ${side}`}
+          style={{ background: `linear-gradient(${direction}, ${backgroundColor}, transparent)` }}
         />
-      ) : null}
-      {overflow.below ? (
-        <div
-          aria-hidden="true"
-          data-scroll-fade="below"
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-8"
-          style={{ background: `linear-gradient(to top, ${backgroundColor}, transparent)` }}
-        />
-      ) : null}
+      ) : null)}
     </div>
   );
 }

@@ -43,3 +43,11 @@ export function toHex({ r, g, b }: Rgba): string {
   const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
   return `#${h(r)}${h(g)}${h(b)}`;
 }
+
+/** Parse to the DOM-free RGB tuple `dynamic-palette.ts` reads colors as
+ *  (`ColorToRgb`). Its other adapter, `rgbOf` in `color-contrast.ts`, needs a
+ *  canvas, so it cannot serve a caller resolving a theme off the document. */
+export function parseColorRgb(value: string): [number, number, number] | null {
+  const color = parseColor(value);
+  return color ? [color.r, color.g, color.b] : null;
+}

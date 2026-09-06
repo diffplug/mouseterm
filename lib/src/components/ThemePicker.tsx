@@ -12,10 +12,10 @@ import {
 } from '../lib/themes';
 import { ThemeDebuggerDialog } from './ThemeDebugger';
 import { ThemeList } from './theme-picker/ThemeList';
-import { getThemePreviewStyle, ThemePreview } from './theme-picker/ThemePreview';
+import { getThemePreview, ThemePreview } from './theme-picker/ThemePreview';
 import { ThemeStoreDialog } from './theme-picker/ThemeStoreDialog';
 import { useAnchoredMenu, useCloseOnOutsideAndEscape } from './use-anchored-menu';
-import { OVERLAY_MAX_HEIGHT, POPUP_SURFACE_CLASS } from './design';
+import { OVERLAY_MAX_HEIGHT, POPUP_SURFACE_CLASS, themePreviewButton } from './design';
 
 /**
  * `compact` is the free-floating trigger used by the website's Pocket
@@ -86,7 +86,10 @@ export function ThemePicker({
   );
 
   const inDialog = variant === 'settings-dialog';
-  const activeTheme = themes.find((theme) => theme.id === activeId) ?? themes[0];
+  // `themes` is seeded from the non-empty bundled array and only ever grows,
+  // so a picker always has an active theme to preview.
+  const activeTheme = themes.find((theme) => theme.id === activeId) ?? themes[0]!;
+  const preview = getThemePreview(activeTheme);
 
   // `compact` stays absolute to its trigger: a fixed descendant of the docs'
   // sticky mobile bar is offset by that containing block in Chromium.
@@ -135,16 +138,14 @@ export function ThemePicker({
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`Theme: ${activeTheme?.label ?? 'Select theme'}`}
+        aria-label={`Theme: ${activeTheme.label}`}
         onClick={() => setOpen(!open)}
         // The compact trigger stands alone on a touch surface, so it takes the
         // 44px minimum the dialog row inherits from the dialog around it.
-        className={`group/theme-preview flex min-w-0 items-center gap-2 rounded px-2 py-1 font-mono text-sm focus-visible:outline-2 focus-visible:outline-current ${inDialog ? '' : 'min-h-11 min-w-11'}`}
-        style={activeTheme ? getThemePreviewStyle(activeTheme) : undefined}
+        className={`group/theme-preview ${themePreviewButton({ kind: 'trigger' })} ${inDialog ? '' : 'min-h-11 min-w-11'}`}
+        style={preview.style}
       >
-        {activeTheme
-          ? <ThemePreview theme={activeTheme} label={inDialog ? activeTheme.label : 'Theme'} />
-          : <span>Select theme</span>}
+        <ThemePreview colors={preview.swatch} label={inDialog ? activeTheme.label : 'Theme'} />
         <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
       </button>
 

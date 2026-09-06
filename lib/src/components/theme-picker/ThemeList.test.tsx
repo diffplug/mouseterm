@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { completeThemeVars, type DormouseTheme } from '../../lib/themes';
+import { resolveThemeVars, type DormouseTheme } from '../../lib/themes';
 import { ThemeList } from './ThemeList';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -66,7 +66,7 @@ describe('ThemeList', () => {
     expect(rows[0].parentElement!.style.color).toBe('rgb(171, 205, 239)');
     expect((container.firstElementChild as HTMLElement).style.backgroundColor).toBe('rgb(17, 34, 51)');
     expect(rows[0].getAttribute('aria-checked')).toBe('true');
-    const resolvedLight = completeThemeVars(light.vars, light.type);
+    const resolvedLight = resolveThemeVars(light);
     const expected = document.createElement('div');
     expected.style.color = resolvedLight['--vscode-terminal-foreground'];
     expect(rows[1].parentElement!.style.backgroundColor).toBe('rgb(255, 255, 255)');
@@ -89,7 +89,7 @@ describe('ThemeList', () => {
 
   it('shows only the overflowing directions at the top, middle, and bottom', () => {
     render();
-    const scroll = container.querySelector('[role="menuitemradio"]')!.parentElement!.parentElement!.parentElement!;
+    const scroll = container.querySelector<HTMLElement>('[data-theme-list-scroll]')!;
     expect(fades()).toEqual(['below']);
     act(() => { scroll.scrollTop = 50; scroll.dispatchEvent(new Event('scroll')); });
     expect(fades()).toEqual(['above', 'below']);

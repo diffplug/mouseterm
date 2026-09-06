@@ -38,16 +38,16 @@ describe('ThemePicker', () => {
   it('shares the active theme preview between the closed trigger and its list entry', () => {
     act(() => root.render(<ThemePicker variant="settings-dialog" />));
 
-    const trigger = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
-    // The collapsed trigger has to carry the same swatch as the row it stands
-    // in for, so collapsed and expanded read as one control.
-    expect(trigger?.querySelector('span[class*="rounded-full"]')).not.toBeNull();
-    act(() => trigger!.click());
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
+    act(() => trigger.click());
     const selected = container.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')!;
-    expect(selected.parentElement!.style.color).toBe(trigger!.style.color);
-    expect(selected.parentElement!.style.backgroundColor).toBe(trigger!.style.backgroundColor);
-    expect(selected.querySelector('span[class*="rounded-full"]')?.outerHTML)
-      .toBe(trigger!.querySelector('span[class*="rounded-full"]')?.outerHTML);
+    // The collapsed trigger has to carry the same palette and the same swatch —
+    // both circles — as the row it stands in for, so collapsed and expanded read
+    // as one control. Non-null on both sides: a missing swatch must fail here.
+    expect(selected.parentElement!.style.color).toBe(trigger.style.color);
+    expect(selected.parentElement!.style.backgroundColor).toBe(trigger.style.backgroundColor);
+    expect(selected.querySelector('[data-theme-swatch]')!.outerHTML)
+      .toBe(trigger.querySelector('[data-theme-swatch]')!.outerHTML);
   });
 
   /** Open the compact picker and return its menu panel. */

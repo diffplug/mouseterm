@@ -200,30 +200,27 @@ playground navbar — carries none**.
   `restorePocketTheme` as its `restore` argument so the browser-chrome sync rides
   the same lifecycle.
 - The two `/playground/pocket` marketing mounts and docs pages keep the
-  free-floating `compact` picker (rationale), the docs placing it floating at
-  `lg` and inline in the mobile bar. **Both variants show the active theme's
-  `ThemeSwatch`** — beside its label on the dialog trigger, beside the word
-  "Theme" in `compact`.
+  free-floating `compact` picker (rationale), the docs placing it floating at `lg`
+  and inline in the mobile bar. **Both variants show the active theme's
+  preview** — beside its label on the dialog trigger, beside the word "Theme" in
+  `compact` — so trigger and entry read as one control.
 - **The picker renders the bundled default through hydration, then reconciles
   stored themes and selection in a layout effect** (rationale).
-- **Must share `ThemePicker` and its `ThemeList` across theme-selection placements.**
-- **Must preview each candidate with its resolved terminal foreground/background**,
-  resolving omissions for its polarity.
-- **Must share swatches, labels, palettes, and foreground-tinted borders
-  across entries and triggers** through `ThemePreview`.
-- **Must underline hover without visually marking selection, preserving preview colors.**
-- **Must use the active terminal background for 8px entry gaps and fades.**
-  **Must use 4px corners for entries and triggers,
-  independent of the circular swatch** (Concentric-Corners exception).
-- **Must fill the swatch circle with the resolved active-header background
-  and its 7px dot with the runtime focus-ring pick**, compositing alpha over
-  the sidebar as in the app (rationale). Pinned by
-  `lib/src/components/theme-picker/ThemeSwatch.test.ts`.
-- **Must show 32px fades only toward overflowing entries**, at least twice the gap,
-  updating on scroll, content changes, and resize. Pinned by `lib/src/components/theme-picker/ThemeList.test.tsx`.
-- **Must style surrounding picker chrome with `--color-*` utilities.** A host
-  rendering library JSX scans `lib/src` and imports
-  `theme-colors.css`, or none of those utilities reach it (rationale).
+- **Every candidate previews in its own palette**, resolved through
+  `resolveThemeVars`, the path `applyTheme` paints, so no preview shows a color
+  the app would not: the entry takes that theme's terminal foreground/background,
+  its swatch the active-header fill and the runtime's focus-ring pick
+  (rationale). Omissions resolve from the candidate's polarity, never the
+  document's, and **previewing neither applies a theme nor writes storage**.
+- **Hover underlines the label; nothing tints an entry to mark selection**, which
+  would overwrite the palette it exists to show.
+- **Fades appear only toward a direction still holding entries**, painted in the
+  active terminal background, updating on scroll, content, and resize.
+- **Chrome outside the previews styles itself in `--color-*` utilities.** A host
+  rendering library JSX scans `lib/src` and imports `theme-colors.css`, or none
+  of those utilities reach it (rationale). Controls *inside* one take
+  `themePreviewButton`, inheriting the candidate's `currentColor`
+  (Concentric-Corners exception: entry corners against the swatch).
 - **`onPick` reports the choice, not the change.** `restoreActiveTheme` persists
   the id it resolved, so `dormouse:active-theme` exists whether or not anyone
   chose, and `subscribeToActiveTheme` is silent on a re-pick. Only the picker
@@ -256,9 +253,10 @@ playground navbar — carries none**.
 
 Source of truth: `ThemePicker` in `lib/src/components/ThemePicker.tsx`;
 `ThemeList` in `lib/src/components/theme-picker/ThemeList.tsx`;
-`ThemePreview` / `getThemePreviewStyle` in
-`lib/src/components/theme-picker/ThemePreview.tsx`; `getThemeSwatchColors` in
-`lib/src/components/theme-picker/ThemeSwatch.tsx`;
+`getThemePreview` in `lib/src/components/theme-picker/ThemePreview.tsx`;
+`getThemeSwatchColors` in `lib/src/components/theme-picker/ThemeSwatch.tsx` —
+each pinned by the test beside it; `resolveThemeVars` in
+`lib/src/lib/themes/apply.ts`; `themePreviewButton` in `lib/src/components/design.tsx`;
 `lib/src/components/SettingsDialog.tsx`; `setDefaultThemeId()` /
 `restoreActiveTheme()` in `lib/src/lib/themes/apply.ts`; `useRestoredTheme()` in
 `lib/src/lib/themes/use-restored-theme.ts`; `restorePocketTheme` in

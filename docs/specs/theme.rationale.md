@@ -58,5 +58,11 @@ fill and runtime focus-ring pick show the chrome's two accent roles.
 Quiet Light uses green header fills and a purple focus border, so
 a background circle plus a focus dot hid the green. Resolving and flattening the
 candidate first also avoids showing translucent selection fills at an opacity the
-app never uses. The swatch remains circular while its enclosing entry takes the
-Settings controls' 4px corners, a requested exception to concentric geometry.
+app never uses — which is also why the preview shares `applyTheme`'s
+`resolveThemeVars` rather than resolving on its own: a preview that skipped the
+selection flatten would show a candidate at an alpha the app never paints, and
+nothing would catch the divergence. The swatch remains circular while its
+enclosing entry takes the Settings controls' 4px corners: a 16px circle inset
+8px from an entry edge shares no corner with it, so the concentric derivation
+has nothing to match, and the entry keeps the radius every other Settings
+control has.

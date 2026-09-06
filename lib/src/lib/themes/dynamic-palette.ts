@@ -140,6 +140,37 @@ export interface DynamicPaletteValues {
   focusBorder: string;
 }
 
+/** Where each palette input comes from: the semantic token the running app
+ *  reads, and the `--vscode-*` var `lib/src/theme-colors.css` aliases it to.
+ *  A caller resolving a theme off the document (the picker previewing a
+ *  candidate) has only the latter. Pinned to the stylesheet by
+ *  `dynamic-palette.sources.test.ts`. */
+export const DYNAMIC_PALETTE_SOURCES: Record<
+  keyof DynamicPaletteValues,
+  { token: string; vscodeVar: string }
+> = {
+  appBg: { token: '--color-app-bg', vscodeVar: '--vscode-sideBar-background' },
+  headerInactiveBg: { token: '--color-header-inactive-bg', vscodeVar: '--vscode-list-inactiveSelectionBackground' },
+  headerInactiveFg: { token: '--color-header-inactive-fg', vscodeVar: '--vscode-list-inactiveSelectionForeground' },
+  terminalBg: { token: '--color-terminal-bg', vscodeVar: '--vscode-terminal-background' },
+  terminalFg: { token: '--color-terminal-fg', vscodeVar: '--vscode-terminal-foreground' },
+  headerActiveBg: { token: '--color-header-active-bg', vscodeVar: '--vscode-list-activeSelectionBackground' },
+  // The only input the app reads as a raw `--vscode-*` var, not through a token.
+  focusBorder: { token: '--vscode-focusBorder', vscodeVar: '--vscode-focusBorder' },
+};
+
+/** Collect `pickDynamicPalette`'s inputs by reading one name per field. */
+export function dynamicPaletteValuesFrom(
+  from: 'token' | 'vscodeVar',
+  read: (name: string) => string,
+): DynamicPaletteValues {
+  const values = {} as DynamicPaletteValues;
+  for (const [field, source] of Object.entries(DYNAMIC_PALETTE_SOURCES)) {
+    values[field as keyof DynamicPaletteValues] = read(source[from]);
+  }
+  return values;
+}
+
 export interface DynamicPaletteCandidate {
   sourceVar: string;
   value: string;

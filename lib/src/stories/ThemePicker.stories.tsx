@@ -63,6 +63,11 @@ async function openMenu({ canvasElement }: { canvasElement: HTMLElement }) {
   await new Promise((resolve) => setTimeout(resolve, 100));
 }
 
+/** The list's scroll container, which owns the fades. */
+function scrollerOf(canvasElement: HTMLElement): HTMLElement {
+  return canvasElement.querySelector<HTMLElement>('[data-theme-list-scroll]')!;
+}
+
 /** Resting state: the trigger alone, which is all these pages show until clicked. */
 export const Closed: Story = {};
 
@@ -115,8 +120,7 @@ export const ScrolledMiddle: Story = {
   args: { maxHeight: '260px' },
   play: async (context) => {
     await openMenu(context);
-    const first = within(context.canvasElement).getAllByRole('menuitemradio')[0];
-    const scroller = first.parentElement!.parentElement!.parentElement!;
+    const scroller = scrollerOf(context.canvasElement);
     scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) / 2;
     await waitFor(() => {
       expect(context.canvasElement.querySelector('[data-scroll-fade="above"]')).not.toBeNull();
@@ -131,8 +135,7 @@ export const ScrolledBottom: Story = {
   parameters: OpenWithInstalledThemes.parameters,
   play: async (context) => {
     await openMenu(context);
-    const first = within(context.canvasElement).getAllByRole('menuitemradio')[0];
-    const scroller = first.parentElement!.parentElement!.parentElement!;
+    const scroller = scrollerOf(context.canvasElement);
     scroller.scrollTop = scroller.scrollHeight;
     await waitFor(() => {
       expect(context.canvasElement.querySelector('[data-scroll-fade="above"]')).not.toBeNull();
