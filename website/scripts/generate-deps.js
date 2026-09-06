@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertWorkspaceCoverage, getDependencyNames } from "./dependency-workspaces.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "../..");
@@ -15,17 +16,20 @@ const themeExtensionsPath = resolve(repoRoot, "lib/src/lib/themes/bundled-extens
 // A package belongs here if its dependencies reach a user's disk, however they
 // get there: `dormouse-sidecar` ships as a Tauri bundle resource
 // (`standalone/src-tauri/tauri.conf.json` -> `bundle.resources`), node_modules
-// and all, and `server` is installed and run by a selfhoster (SELF_HOST.md) —
+// and all, and `relay` is installed and run by a selfhoster (SELF_HOST.md) —
 // `web-push` in particular signs with a private key and makes outbound
-// requests. See SECURITY.md, "Dependency Supply Chain".
+// requests. See docs/specs/security-supply-chain.md -> "Disclosure".
 const productDependencyFilters = [
   "dor",
   "dormouse",
   "dormouse-standalone",
   "dormouse-lib",
   "dormouse-sidecar",
-  "server",
+  "relay",
 ];
+// Neither package installs an artifact on a user's disk. Any new workspace
+// requires classification here or a runtime edge from a product root.
+const excludedWorkspacePackages = ["canopy", "dormouse-website"];
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf-8"));
@@ -56,13 +60,6 @@ function getWorkspacePackages() {
       pkg: readJson(resolve(absoluteDir, "package.json")),
     };
   });
-}
-
-function getDependencyNames(pkg) {
-  return [
-    ...Object.keys(pkg.dependencies ?? {}),
-    ...Object.keys(pkg.optionalDependencies ?? {}),
-  ];
 }
 
 function getPackageJsonPath(fromDir, packageName) {
@@ -104,6 +101,7 @@ function getHomepage(pkg) {
 }
 
 const workspacePackages = getWorkspacePackages();
+assertWorkspaceCoverage(workspacePackages, productDependencyFilters, excludedWorkspacePackages);
 const workspacePackagesByName = new Map(workspacePackages.map((workspacePackage) => [
   workspacePackage.pkg.name,
   workspacePackage,
@@ -228,7 +226,20 @@ if (vscodeBuiltInThemes.length > 0) {
     homepage: "https://github.com/microsoft/vscode/tree/main/extensions",
   });
 }
-deps.push(...themeExtensions.filter((dep) => !isVscodeBuiltInTheme(dep)));
+// `extensionId` is the join key that pins these records to the themes actually
+// compiled in (lib/src/lib/themes/bundled-extensions.test.ts); the disclosure
+// table shows the same five columns as every other row, so project it away.
+deps.push(
+  ...themeExtensions
+    .filter((dep) => !isVscodeBuiltInTheme(dep))
+    .map(({ name, version, license, author, homepage }) => ({
+      name,
+      version,
+      license,
+      author,
+      homepage,
+    })),
+);
 
 // Manual overrides for dependencies missing license or author in their metadata
 const missingLicense = {
@@ -240,6 +251,9 @@ const missingAuthor = {
   "@tauri-apps/plugin-shell": "Tauri Apps Contributors",
   "@tauri-apps/plugin-updater": "Tauri Apps Contributors",
   "@xterm/xterm": "Christopher Jeffrey, SourceLair Private Company, xterm.js authors",
+  // Both ship an `authors` array rather than npm's singular `author` field.
+  "@zxing/browser": "David Werth, Luiz Barni",
+  "@zxing/library": "Adrian Toșcă, David Werth, Luiz Barni",
   "atomically": "Fabio Spampinato",
   "inherits": "Isaac Z. Schlueter",
   "minimalistic-assert": "Calvin Metcalf",

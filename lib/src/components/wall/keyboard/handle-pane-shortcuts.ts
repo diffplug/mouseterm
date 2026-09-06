@@ -1,11 +1,10 @@
 import {
   dismissOrToggleAlert,
   getActivity,
-  isUntouched,
   toggleSessionTodo,
 } from '../../../lib/terminal-registry';
-import { randomKillChar } from '../../KillConfirm';
-import { isToolParams } from '../browser-surface';
+import { hasTerminal } from 'dor/commands/types';
+import { surfaceKindFromParams } from '../browser-surface';
 import { ARROW_OPPOSITES, isArrowKey, type NavHistoryRef, type WallKeyboardCtx } from './types';
 
 function findAlertButtonForSession(id: string): HTMLButtonElement | null {
@@ -54,7 +53,7 @@ export function handlePaneShortcuts(
   if (isArrowKey(e.key) && (e.metaKey || e.ctrlKey)) {
     e.preventDefault();
     e.stopPropagation();
-    if (!sid) return true;
+    if (!sid || ctx.selectedTypeRef.current !== 'pane') return true;
 
     const dir = e.key;
     const hist = navHistory.current;
@@ -82,29 +81,16 @@ export function handlePaneShortcuts(
   if ((e.key === 'k' || e.key === 'x') && sid) {
     e.preventDefault();
     e.stopPropagation();
-    const isTool = isToolParams(ctx.nav.paneParams(sid));
-    if (ctx.selectedTypeRef.current === 'door') {
-      const item = ctx.doorsRef.current.find((d) => d.id === sid);
-      if (item) {
-        ctx.handleReattachRef.current(item, {
-          enterPassthrough: false,
-          afterRestore: !isTool && isUntouched(sid) ? 'kill-immediately' : 'confirm-kill',
-        });
-      }
-      return true;
-    }
-    if (!isTool && isUntouched(sid)) {
-      ctx.killPaneImmediately(sid);
-      return true;
-    }
-    const char = randomKillChar();
-    ctx.setConfirmKill({ id: sid, char });
+    ctx.requestKill(sid);
     return true;
   }
 
   if (e.key === ',' && sid) {
     e.preventDefault();
     e.stopPropagation();
+    // Only a visible terminal header mounts the rename editor. Setting the
+    // global rename gate for a Door/browser would strand keyboard dispatch.
+    if (ctx.selectedTypeRef.current !== 'pane' || !hasTerminal(surfaceKindFromParams(ctx.nav.paneParams(sid)))) return true;
     ctx.setRenamingPaneId(sid);
     return true;
   }
@@ -150,8 +136,8 @@ export function handlePaneShortcuts(
     e.preventDefault();
     e.stopPropagation();
     // Reuse the header's own onContextMenu path: dispatch a synthetic
-    // contextmenu at the header's bottom-left corner so the menu opens anchored
-    // under the header's left edge. Browser-surface panes carry no
+    // contextmenu at the header's bottom-left corner as the reveal origin.
+    // Browser-surface panes carry no
     // `data-pane-header-for`, so the lookup misses and the key is a consumed
     // no-op — the spec'd behavior for surfaces with no header context menu.
     const header = findPaneHeaderForSession(sid);

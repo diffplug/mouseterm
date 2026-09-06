@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import { userEvent, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import type { DormouseTheme } from '../lib/themes';
 import { OVERLAY_MAX_HEIGHT_VAR } from '../components/design';
 import { ThemePicker } from '../components/ThemePicker';
@@ -11,9 +11,8 @@ import { ThemePicker } from '../components/ThemePicker';
  * a baseboard uses the `settings-dialog` variant instead, which
  * `Modals/SettingsDialog` covers in place.
  *
- * Right-aligned with headroom below, matching both real mounts: the menu opens
- * `right-0` from the trigger, so it needs room to its left, and the open list
- * needs room beneath.
+ * Right-aligned with headroom below, matching both real mounts. The shared
+ * anchored-menu geometry keeps the fixed panel inside the viewport.
  */
 function PickerStory({ maxHeight }: { maxHeight?: string }) {
   return (
@@ -64,12 +63,26 @@ async function openMenu({ canvasElement }: { canvasElement: HTMLElement }) {
   await new Promise((resolve) => setTimeout(resolve, 100));
 }
 
+/** The list's scroll container, which owns the fades. */
+function scrollerOf(canvasElement: HTMLElement): HTMLElement {
+  return canvasElement.querySelector<HTMLElement>('[data-theme-list-scroll]')!;
+}
+
 /** Resting state: the trigger alone, which is all these pages show until clicked. */
 export const Closed: Story = {};
 
-/** The bundled set. The active row carries the list-selection palette. */
+/** The bundled set. Each entry previews its own palette; hover underlines its label. */
 export const Open: Story = {
   play: openMenu,
+};
+
+/** Its green headers and purple focus accent must both appear, including at rest. */
+export const QuietLight: Story = {
+  play: async (context) => {
+    await openMenu(context);
+    await userEvent.click(within(context.canvasElement).getByRole('menuitemradio', { name: 'Quiet Light' }));
+    await openMenu(context);
+  },
 };
 
 /**
@@ -100,4 +113,33 @@ export const OpenOnShortViewport: Story = {
     primedInstalledThemes: Array.from({ length: 10 }, (_, i) => installedTheme(i)),
   },
   play: openMenu,
+};
+
+/** Both fades appear while entries remain in both scroll directions. */
+export const ScrolledMiddle: Story = {
+  args: { maxHeight: '260px' },
+  play: async (context) => {
+    await openMenu(context);
+    const scroller = scrollerOf(context.canvasElement);
+    scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) / 2;
+    await waitFor(() => {
+      expect(context.canvasElement.querySelector('[data-scroll-fade="above"]')).not.toBeNull();
+      expect(context.canvasElement.querySelector('[data-scroll-fade="below"]')).not.toBeNull();
+    });
+  },
+};
+
+/** At the end, only the top fade remains and uninstall stays reachable. */
+export const ScrolledBottom: Story = {
+  args: { maxHeight: '260px' },
+  parameters: OpenWithInstalledThemes.parameters,
+  play: async (context) => {
+    await openMenu(context);
+    const scroller = scrollerOf(context.canvasElement);
+    scroller.scrollTop = scroller.scrollHeight;
+    await waitFor(() => {
+      expect(context.canvasElement.querySelector('[data-scroll-fade="above"]')).not.toBeNull();
+      expect(context.canvasElement.querySelector('[data-scroll-fade="below"]')).toBeNull();
+    });
+  },
 };

@@ -110,6 +110,10 @@ jobs:
           cd standalone
           release_dir="src-tauri/target/${{ matrix.target }}/release"
           manifest="artifact-manifest.sha256"
+          # ZIP artifact transport loses executable bits. Attest the original
+          # executable inventory alongside content hashes for local restoration.
+          executables="artifact-executables.txt"
+          : > "$executables"
 
           {
             [[ -f "$release_dir/dormouse.exe" ]] && printf '%s\n' "$release_dir/dormouse.exe"
@@ -127,6 +131,7 @@ jobs:
             [[ -d sidecar ]] && find -L sidecar -type f -print
             [[ -d src-tauri/binaries ]] && find -L src-tauri/binaries -type f -print
           } | sort -u | while IFS= read -r file; do
+            if [[ -x "$file" ]]; then printf '%s\n' "$file" >> "$executables"; fi
             if command -v sha256sum >/dev/null 2>&1; then
               sha256sum "$file"
             else
@@ -135,6 +140,11 @@ jobs:
           done > "$manifest"
 
           [[ -s "$manifest" ]]
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$executables" >> "$manifest"
+          else
+            shasum -a 256 "$executables" >> "$manifest"
+          fi
 
       - name: Attest artifact manifest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -152,6 +162,7 @@ jobs:
           include-hidden-files: true
           path: |
             standalone/artifact-manifest.sha256
+            standalone/artifact-executables.txt
             standalone/src-tauri/target/${{ matrix.target }}/release/dormouse.exe
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
             standalone/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
@@ -196,7 +207,7 @@ jobs:
         run: pnpm --filter dormouse build
 
       - name: Package extension
-        run: pnpm --dir vscode-ext exec vsce package --no-dependencies
+        run: pnpm --dir vscode-ext exec vsce package --no-dependencies --baseImagesUrl https://dormouse.sh/guide
 
       - name: Generate artifact manifest
         shell: bash

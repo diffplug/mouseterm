@@ -6,7 +6,6 @@ import {
   type LathTree,
   leafTree,
   leaves,
-  validate,
 } from '../../lib/lath/model';
 import type { Direction } from '../../lib/lath/layout';
 import {
@@ -141,8 +140,8 @@ export function leafMetaFromPersistedDoor(item: PersistedDoor): LeafMeta {
 
 /** Whether minimizing this leaf should park it rather than remove it: true when the
  *  Surface's state lives in its DOM. Browser Surfaces qualify (an iframe document, a
- *  screencast canvas); terminals do not — the PTY holds their state and the registry
- *  replays it (docs/specs/tiling-engine.md → "Parked leaves"). */
+ *  screencast canvas); terminals do not — the registry retains their xterm instance
+ *  and remounts it (docs/specs/tiling-engine.md → "Parked leaves"). */
 export function shouldParkOnMinimize(meta: LeafMeta): boolean {
   // A tool parks for the same reason a browser does: once it serves, its
   // framed document lives in the pane's DOM and no registry can replay it.
@@ -272,7 +271,7 @@ export function createLathWallEngine(
       //    Wall always seeds ≥1 pane).
       if (isLathPersistedLayout(lathBlob)) {
         const tree = lathBlob.tree as LathTree;
-        if (validate(tree).length === 0 && leaves(tree).length > 0) {
+        if (leaves(tree).length > 0) {
           store.seed(tree, [...Object.entries(lathBlob.leafMeta), ...doorMeta]);
           return { paneIds: store.leafIds(), fresh: false };
         }

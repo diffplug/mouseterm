@@ -44,16 +44,16 @@ function fakeLath(params: Record<string, unknown>) {
 
 let container: HTMLDivElement;
 let root: Root;
-let currentCommand: string | null = 'pnpm storybook';
+let currentCommand: string | null = 'x';
 
 vi.mock('../../lib/terminal-registry', () => ({
-  getTerminalPaneState: () => ({ currentCommand }),
+  getTerminalPaneState: () => ({ currentCommand: currentCommand === null ? null : { id: currentCommand, rawCommandLine: currentCommand } }),
 }));
 
 beforeEach(() => {
   vi.useFakeTimers();
   resetToolAnnounces();
-  currentCommand = 'pnpm storybook';
+  currentCommand = 'x';
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -275,4 +275,28 @@ describe('agent-browser retirement on command exit', () => {
     expect(state.params).not.toHaveProperty('renderMode');
     expect(state.params).not.toHaveProperty('syncEngaged');
   });
+});
+
+
+it('does not frame or re-key a different command running in a Tool Session', async () => {
+  currentCommand = 'cat untrusted.log';
+  recordToolAnnounce('tool-1', { port: 6006, name: null, key: ['spoof'], dehydrate: false, persist: null });
+  const { state, platform } = await run({ surfaceType: 'tool', command: 'x', toolPort: 'auto' }, [[tcp(6006)], [tcp(6006)]]);
+  expect(platform.getOpenPorts).not.toHaveBeenCalled();
+  expect(state.params.url).toBeUndefined();
+  expect(state.params.toolKey).toBeUndefined();
+});
+
+it('ignores a scan that finishes after the command has changed', async () => {
+  const { lath, state } = fakeLath({ surfaceType: 'tool', command: 'x', toolPort: 'announced' });
+  recordToolAnnounce('tool-1', { port: 6006, name: null, key: null, dehydrate: false, persist: null });
+  let resolve!: (ports: OpenPort[]) => void;
+  const platform = new FakePtyAdapter();
+  platform.getOpenPorts = vi.fn(() => new Promise<OpenPort[]>(r => { resolve = r; }));
+  setPlatform(platform);
+  function Probe() { useToolServing({ lath, doorsRef: { current: [] } }); return null; }
+  await act(async () => { root.render(<Probe />); });
+  currentCommand = 'cat other.log';
+  await act(async () => { resolve([tcp(6006)]); });
+  expect(state.params.url).toBeUndefined();
 });

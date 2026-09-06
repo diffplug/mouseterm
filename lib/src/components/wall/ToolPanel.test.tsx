@@ -70,12 +70,12 @@ describe('ToolPanel', () => {
     expect(half('browser').style.visibility).toBe('hidden');
   });
 
-  it('flips once it serves, and back when the header pins the terminal', () => {
+  it('shows the browser once serving, ignoring retired terminal-pin params', () => {
     show(serving);
     expect(half('browser').style.visibility).toBe('visible');
     show({ ...serving, showTerminal: true });
-    expect(half('terminal').style.visibility).toBe('visible');
-    expect(half('browser').style.visibility).toBe('hidden');
+    expect(half('terminal').style.visibility).toBe('hidden');
+    expect(half('browser').style.visibility).toBe('visible');
   });
 
   it('parks the browser while it is hidden, so a screencast stops decoding', () => {
@@ -110,9 +110,9 @@ describe('the port-conflict face', () => {
     expect(container.querySelector('[data-testid="browser"]')).toBeNull();
   });
 
-  it('flips back to the terminal when the chip pins it', () => {
+  it('keeps a conflict visible despite retired terminal-pin params', () => {
     show({ ...conflicted, showTerminal: true });
-    expect(half('terminal').style.visibility).toBe('visible');
+    expect(half('terminal').style.visibility).toBe('hidden');
   });
 });
 

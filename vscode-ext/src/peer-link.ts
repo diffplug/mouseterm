@@ -1,5 +1,5 @@
 /**
- * Cross-window broker/client transport for the remote Host. The bind-as-lease,
+ * Cross-window broker/client transport for the Burrow. The bind-as-lease,
  * monotone-role, and mutual-handshake contracts live in `docs/specs/vscode.md`
  * → "Peer surfaces across windows".
  */
@@ -13,8 +13,8 @@ import { join } from 'node:path';
 import type * as vscode from 'vscode';
 
 import type {
-  RemoteHostCommand,
-  RemoteHostResult,
+  BurrowCommand,
+  BurrowResult,
 } from '../../lib/src/host/remote/service-protocol';
 import {
   FrameDecoder,
@@ -39,7 +39,7 @@ import { log } from './log';
 /**
  * What this module needs from the router, injected rather than imported: the
  * router calls into the link to reach other windows, so importing back would be
- * a cycle. The four command members reach `remote-host.ts`, which imports this
+ * a cycle. The four command members reach `burrow.ts`, which imports this
  * module for the sending half and so cannot be imported back either.
  */
 export interface PeerLinkDeps {
@@ -62,24 +62,24 @@ export interface PeerLinkDeps {
    */
   streamPty(ptyId: string, sink: PtySink): () => void;
   writePty(ptyId: string, data: string): void;
-  resizePty(ptyId: string, cols: number, rows: number): void;
+  resizePty(ptyId: string, cols: number, rows: number, repaint?: boolean): void;
   /**
    * Broker side: run a webview command from `from` on this window's service.
    * The answer goes back through {@link sendCommandResult}, so the answering
    * module is the one that remembers which window is owed it.
    */
-  handleForwardedCommand(payload: RemoteHostCommand, from: PeerLinkClient): void;
+  handleForwardedCommand(payload: BurrowCommand, from: PeerLinkClient): void;
   /** Broker side: that window is gone, so nothing it asked can be answered. */
   dropForwardedCommands(from: PeerLinkClient): void;
   /** Client side: the broker answered a command this window forwarded. */
-  deliverCommandResult(payload: RemoteHostResult): void;
-  /** Client side: a Host UI event, for this window's webviews to render. */
+  deliverCommandResult(payload: BurrowResult): void;
+  /** Client side: a Burrow UI event, for this window's webviews to render. */
   deliverUiEvent(payload: unknown): void;
   /**
    * Broker side: that window just finished the handshake. Nothing about the
-   * Host has changed *because* it joined, so the events its webviews gate
-   * themselves on are never coming on their own — whoever holds the Host state
-   * has to hand it the current one now (`remote-host.ts`).
+   * Burrow has changed *because* it joined, so the events its webviews gate
+   * themselves on are never coming on their own — whoever holds the Burrow state
+   * has to hand it the current one now (`burrow.ts`).
    */
   onClientAuthenticated(client: PeerLinkClient): void;
 }
@@ -90,7 +90,7 @@ export function configurePeerLink(next: PeerLinkDeps): void {
   deps = next;
 }
 
-const TOKEN_FILE = 'remote-host.peer-token';
+const TOKEN_FILE = 'burrow.peer-token';
 
 /**
  * How long a window losing the exclusive create will wait for the winner's
@@ -270,11 +270,6 @@ export interface PeerLinkClient {
   handshakeTimer: ReturnType<typeof setTimeout> | null;
 }
 
-/** Where bytes from another window's PTY go, once something asks for them. */
-export interface RemotePtySink {
-  onData(data: string): void;
-  onExit(exitCode: number): void;
-}
 
 let server: Server | null = null;
 /**
@@ -286,7 +281,7 @@ let server: Server | null = null;
  * verdict `server !== null` is true while this window may be about to give the
  * socket up, so every *role* answer reads this instead — otherwise an enroll or
  * a secrets-change landing inside that window is told it is the broker, starts
- * a service, and the stand-down never tears it down: two Hosts under one hostId,
+ * a service, and the stand-down never tears it down: two Burrows under one burrowId,
  * displacing each other on the relay forever.
  */
 let brokerConfirmed = false;
@@ -301,7 +296,10 @@ const routePtyIds = new Map<string, string>();
 const remotePtyHandles = new Set<string>();
 /** Stable handles for repeated resolves of one PTY on one live peer socket. */
 const peerRouteIds = new WeakMap<PeerLinkClient, Map<string, string>>();
-const remoteSinks = new Map<string, Set<RemotePtySink>>();
+/** Where another window's PTY output goes, once something asks for it. The
+ *  same sink shape the local registry serves — a foreign stream is the local
+ *  one with a socket in the middle, not a second contract. */
+const remoteSinks = new Map<string, Set<PtySink>>();
 
 interface PendingRemoteSubscription {
   client: PeerLinkClient;
@@ -338,7 +336,7 @@ function ask(
   client: PeerLinkClient,
   // Surface/directory requests use this response table. Stream readiness has
   // its own subscribe table below; everything after readiness is one-way and
-  // correlated by `ptyId` or by the `rhId` already inside it.
+  // correlated by `ptyId` or by the `burrowRequestId` already inside it.
   frame: Extract<PeerLinkRequest, { kind: 'request' }>,
 ): Promise<PeerLinkResponse | null> {
   return new Promise((resolve) => {
@@ -464,7 +462,7 @@ function isFrameObject(frame: unknown): frame is Record<string, unknown> {
  * budget before the window that actually owns the thing is even asked.
  *
  * `op` is opaque — the operation map lives in
- * `lib/src/remote/host/peer-surfaces.ts`. The single exception is
+ * `lib/src/remote/burrow/peer-surfaces.ts`. The single exception is
  * {@link routedPtyId}: an answer that names a PTY is how this window learns
  * where that PTY lives, and every later write, resize, and subscribe depends on
  * knowing.
@@ -520,7 +518,7 @@ export function isRemotePtyHandle(ptyId: string): boolean {
 }
 
 /** Resolve once the owning window has installed the sink and checked liveness. */
-export function remoteSubscribe(ptyId: string, sink: RemotePtySink): Promise<void> {
+export function remoteSubscribe(ptyId: string, sink: PtySink): Promise<void> {
   const client = routes.get(ptyId);
   const ownerPtyId = routePtyIds.get(ptyId);
   if (!client || !ownerPtyId) {
@@ -545,7 +543,7 @@ export function remoteSubscribe(ptyId: string, sink: RemotePtySink): Promise<voi
     : Promise.resolve();
 }
 
-export function remoteUnsubscribe(ptyId: string, sink: RemotePtySink): void {
+export function remoteUnsubscribe(ptyId: string, sink: PtySink): void {
   const sinks = remoteSinks.get(ptyId);
   if (!sinks?.delete(sink) || sinks.size > 0) return;
   // Last viewer gone: stop the owner forwarding. The route stays — "nobody is
@@ -570,26 +568,26 @@ export function remoteWrite(ptyId: string, data: string): boolean {
   return true;
 }
 
-export function remoteResize(ptyId: string, cols: number, rows: number): boolean {
+export function remoteResize(ptyId: string, cols: number, rows: number, repaint?: boolean): boolean {
   const client = routes.get(ptyId);
   const ownerPtyId = routePtyIds.get(ptyId);
   if (!client || !ownerPtyId) return false;
-  send(client, { kind: 'resizePty', ptyId: ownerPtyId, cols, rows });
+  send(client, { kind: 'resizePty', ptyId: ownerPtyId, cols, rows, repaint });
   return true;
 }
 
 /**
  * Answer one forwarded command, to the window that forwarded it and to nobody
  * else. A result posted to every window would settle nothing anywhere else —
- * only the adapter that minted the `rhId` holds a pending command for it — and
+ * only the adapter that minted the `burrowRequestId` holds a pending command for it — and
  * would put one window's enrollment secrets in front of another's webviews.
  */
-export function sendCommandResult(client: PeerLinkClient, payload: RemoteHostResult): void {
+export function sendCommandResult(client: PeerLinkClient, payload: BurrowResult): void {
   send(client, { kind: 'commandResult', payload });
 }
 
 /**
- * Put a Host UI event in front of every window's webviews. The pairing modal
+ * Put a Burrow UI event in front of every window's webviews. The pairing modal
  * may be answered from any of them, so the queue cannot be addressed.
  */
 export function broadcastUiEvent(payload: unknown): void {
@@ -597,9 +595,9 @@ export function broadcastUiEvent(payload: unknown): void {
 }
 
 /**
- * Put a Host UI event in front of one window's webviews — the joining window's
+ * Put a Burrow UI event in front of one window's webviews — the joining window's
  * catch-up, which nobody else needs and which carries no state another window
- * has not already been told (`remote-host.ts`).
+ * has not already been told (`burrow.ts`).
  */
 export function sendUiEvent(client: PeerLinkClient, payload: unknown): void {
   send(client, { kind: 'uiEvent', payload });
@@ -673,7 +671,7 @@ function onServerFrame(client: PeerLinkClient, frame: unknown): void {
     // Joining changes the answer set even if no surface changed while the
     // socket was down, so every peer-backed snapshot must be reconsidered.
     deps?.invalidateDirectory();
-    // And nothing about the Host changed *because* it joined, so the state its
+    // And nothing about the Burrow changed *because* it joined, so the state its
     // webviews gate on has to be handed to it rather than waited for.
     deps?.onClientAuthenticated(client);
     return;
@@ -682,7 +680,8 @@ function onServerFrame(client: PeerLinkClient, frame: unknown): void {
   const response = message as PeerLinkResponse;
   if (response.kind === 'data') {
     for (const routeId of matchingRoutes(client, response.ptyId)) {
-      for (const sink of remoteSinks.get(routeId) ?? []) sink.onData(response.data);
+      const chunk = { data: response.data, textData: response.textData };
+      for (const sink of remoteSinks.get(routeId) ?? []) sink.onData(chunk);
     }
     return;
   }
@@ -837,7 +836,7 @@ export function remoteNotifyPeerChange(): void {
  * behind it, and holding it until some window binds would answer it long after
  * the console call or the dialog that asked gave up.
  */
-export function forwardCommand(payload: RemoteHostCommand): boolean {
+export function forwardCommand(payload: BurrowCommand): boolean {
   if (!client || client.destroyed) return false;
   respond({ kind: 'command', payload });
   return true;
@@ -876,7 +875,7 @@ async function onClientFrame(socket: Socket, frame: unknown): Promise<void> {
       const { ptyId } = request;
       let exitedWhileSubscribing = false;
       const stop = deps.streamPty(ptyId, {
-        onData: (data) => respondTo(socket, { kind: 'data', ptyId, data }),
+        onData: ({ data, textData }) => respondTo(socket, { kind: 'data', ptyId, data, textData }),
         onExit: (exitCode) => {
           exitedWhileSubscribing = true;
           respondTo(socket, { kind: 'exit', ptyId, exitCode });
@@ -902,7 +901,7 @@ async function onClientFrame(socket: Socket, frame: unknown): Promise<void> {
       deps?.writePty(request.ptyId, request.data);
       break;
     case 'resizePty':
-      deps?.resizePty(request.ptyId, request.cols, request.rows);
+      deps?.resizePty(request.ptyId, request.cols, request.rows, request.repaint);
       break;
     case 'commandResult':
       deps?.deliverCommandResult(request.payload);
@@ -1052,7 +1051,7 @@ const settleListeners = new Set<() => void>();
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Join the contention for the Host, reporting `true` exactly once if this
+ * Join the contention for the Burrow, reporting `true` exactly once if this
  * window wins it. Idempotent; the returned promise resolves as soon as a role
  * is settled, so a caller that must know whether to route locally can wait.
  *
@@ -1083,7 +1082,7 @@ export function ensurePeerNet(onRole: (broker: boolean) => void): Promise<void> 
   return settled;
 }
 
-/** Whether this window holds the Host — verified, not merely bound. */
+/** Whether this window holds the Burrow — verified, not merely bound. */
 export function isPeerBroker(): boolean {
   return server !== null && brokerConfirmed;
 }
@@ -1093,7 +1092,7 @@ export function isPeerBroker(): boolean {
  * broker, or the link stood down for good. Not a latch — a broker dying takes
  * its clients back to unsettled while they race for the bind, which is exactly
  * the window in which a command has something to wait for rather than nothing
- * to reach (`remote-host.ts`).
+ * to reach (`burrow.ts`).
  */
 export function isPeerLinkSettled(): boolean {
   // A destroyed socket is not a role: `close` is a later tick, and until it

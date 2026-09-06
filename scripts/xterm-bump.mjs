@@ -4,7 +4,7 @@
  * upstream commit — and writes it into `lib/` and `standalone/`.
  *
  * Renovate proposes the newest version of each package independently, which is
- * usually a set spanning two commits: the four packages ship from one repo but
+ * usually a set spanning two commits: the packages ship from one repo but
  * carry independent beta counters, and an addon is only published when its own
  * content changes. `scripts/xterm-lint.mjs` rejects such a set; this script
  * produces the one to replace it with.
@@ -19,15 +19,21 @@
  *
  * `--canopy <forkVersion>` repins canopy onto a fork release that has already
  * been cut: the tarball URL, the pristine upstream addon and core, all to the
- * commit that fork version encodes.
+ * commit named by the released tarball's core peer dependency.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CORE = '@xterm/xterm';
-const ADDONS = ['@xterm/addon-fit', '@xterm/addon-unicode-graphemes', '@xterm/addon-webgl'];
+const ADDONS = [
+  '@xterm/addon-fit',
+  '@xterm/addon-image',
+  '@xterm/addon-unicode-graphemes',
+  '@xterm/addon-webgl',
+];
 const FORK_ADDON = '@diffplug/xterm-addon-webgl-sdf';
 const UPSTREAM_REPO = 'xtermjs/xterm.js';
 
@@ -61,6 +67,28 @@ async function betas(name) {
   );
 }
 
+/** Read the published manifest without extracting any archive paths to disk. */
+async function forkManifest(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`release ${res.status} for ${url}`);
+  const tar = gunzipSync(Buffer.from(await res.arrayBuffer()));
+  for (let offset = 0; offset + 512 <= tar.length;) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const name = header.toString('utf8', 0, 100).replace(/\0.*$/, '');
+    const sizeText = header.toString('ascii', 124, 136).replace(/\0.*$/, '').trim();
+    if (!/^[0-7]+$/.test(sizeText)) throw new Error('invalid release tar entry size');
+    const size = parseInt(sizeText, 8);
+    const start = offset + 512;
+    if (start + size > tar.length) throw new Error('truncated release tar entry');
+    if (name === 'package/package.json' && (header[156] === 0 || header[156] === 48)) {
+      return JSON.parse(tar.toString('utf8', start, start + size));
+    }
+    offset = start + Math.ceil(size / 512) * 512;
+  }
+  throw new Error('release tarball has no regular package/package.json');
+}
+
 /** Rewrite exact dependency pins in a workspace package.json, in place. */
 function repin(rel, pins) {
   const before = read(rel);
@@ -78,31 +106,23 @@ function repin(rel, pins) {
 // --- canopy mode: repin onto an already-cut fork release ---------------------
 
 if (canopyFlag !== -1) {
-  const sdf = /-sdf(\d+)\.\d+$/.exec(canopyVersion);
+  const sdf = /^\d+\.\d+\.\d+-sdf(\d+)\.\d+$/.exec(canopyVersion);
   if (!sdf) {
     console.error(`--canopy expects <addon-version>-sdf<coreBeta>.<iteration>, got "${canopyVersion}"`);
     process.exit(1);
   }
-  const coreBeta = Number(sdf[1]);
-  const [core, webgl] = await Promise.all([betas(CORE), betas('@xterm/addon-webgl')]);
-  // The -sdfNNN tag records only the counter, which repeats across release lines, so
-  // registry order would hand back the OLDEST line carrying it. Take the newest, and
-  // say so when the tag was ambiguous — the tag cannot prove which line it meant.
-  const candidates = [...core.keys()].filter((v) => betaOf(v) === coreBeta).sort(newestFirst);
-  const coreVersion = candidates[0];
-  if (!coreVersion) {
-    console.error(`no published ${CORE} at beta.${coreBeta} — is the fork version right?`);
-    process.exit(1);
-  }
-  if (candidates.length > 1) {
-    console.log(
-      `note: beta.${coreBeta} exists on ${candidates.length} release lines ` +
-      `(${candidates.join(', ')}); assuming the newest. Confirm against the fork's base commit ` +
-      'before trusting the pins below.\n',
-    );
+  const url = `https://github.com/diffplug/xterm.js/releases/download/sdf-v${canopyVersion}/diffplug-xterm-addon-webgl-sdf-${canopyVersion}.tgz`;
+  const [core, webgl, manifest] = await Promise.all([
+    betas(CORE), betas('@xterm/addon-webgl'), forkManifest(url),
+  ]);
+  const peer = manifest.peerDependencies?.[CORE];
+  const coreVersion = /^\^(\d+\.\d+\.\d+-beta\.\d+)$/.exec(peer)?.[1];
+  if (manifest.name !== FORK_ADDON || manifest.version !== canopyVersion ||
+      !coreVersion || betaOf(coreVersion) !== Number(sdf[1]) || !core.has(coreVersion)) {
+    throw new Error(`release manifest identity/core peer disagrees with ${canopyVersion}: ${peer}`);
   }
   const head = core.get(coreVersion).gitHead;
-  const webglVersion = [...webgl.entries()].find(([, m]) => m.gitHead === head)?.[0];
+  const webglVersion = [...webgl.entries()].find(([, m]) => m.gitHead === head && m.peer === peer)?.[0];
   if (!webglVersion) {
     console.error(
       `no @xterm/addon-webgl published from ${head.slice(0, 8)} (${coreVersion}) — canopy's ` +
@@ -111,7 +131,6 @@ if (canopyFlag !== -1) {
     );
     process.exit(1);
   }
-  const url = `https://github.com/diffplug/xterm.js/releases/download/sdf-v${canopyVersion}/diffplug-xterm-addon-webgl-sdf-${canopyVersion}.tgz`;
   repin('canopy/package.json', { [FORK_ADDON]: url, '@xterm/addon-webgl': webglVersion, [CORE]: coreVersion });
   console.log(
     `canopy → fork ${canopyVersion}, ${CORE} ${coreVersion}, @xterm/addon-webgl ${webglVersion}` +
@@ -148,12 +167,12 @@ for (const version of coreVersions) {
     const missing = ADDONS.filter((n) => !(n in set)).map((n) => n.replace('@xterm/', ''));
     console.log(
       `note: newest core ${version} has no matching publish of ${missing.join(', ')} — ` +
-      'falling back to the newest commit that published all four\n',
+      'falling back to the newest commit that published every tracked package\n',
     );
   }
 }
 if (!chosen) {
-  console.error('no upstream commit has all four packages published — check the registry by hand');
+  console.error('no upstream commit has every tracked package published — check the registry by hand');
   process.exit(1);
 }
 
@@ -172,7 +191,10 @@ for (const name of ADDONS) {
 }
 
 const current = JSON.parse(read('lib/package.json')).dependencies;
-const changed = [CORE, ...ADDONS].filter((n) => current[n] !== chosen.set[n]);
+const standaloneCurrent = JSON.parse(read('standalone/package.json')).dependencies;
+const changed = [CORE, ...ADDONS].filter(
+  (n) => current[n] !== chosen.set[n] || standaloneCurrent[n] !== chosen.set[n],
+);
 
 console.log(`Coherent @xterm/* set from ${UPSTREAM_REPO}@${chosen.gitHead.slice(0, 8)}:\n`);
 for (const name of [CORE, ...ADDONS]) {

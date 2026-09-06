@@ -5,6 +5,7 @@
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -32,6 +33,8 @@ import { ToolPaneHeader } from './ToolPaneHeader';
 import { TerminalPaneHeader } from './TerminalPaneHeader';
 import { SurfacePaneHeader } from './SurfacePaneHeader';
 import { AlertSpeechIndicator } from './AlertSpeechIndicator';
+import { TerminalContext } from './TerminalContext';
+import { TerminalContextContext } from './wall-context';
 
 /** Widened pointer target over each (thin) sash band, in px. */
 const SASH_HIT = 8;
@@ -104,15 +107,23 @@ const TAB_COMPONENTS: Record<string, ComponentType<PaneProps>> = {
   tool: ToolPaneHeader,
 };
 
-/** For a terminal Surface the pane id is its session id (docs/specs/layout.md). */
-function TerminalLeafOverlay({ id }: PaneProps) {
-  return <AlertSpeechIndicator sessionId={id} />;
+/** For a terminal Surface the pane id is its session id (docs/specs/layout.md).
+ *  The terminal context floats over the whole leaf, so it lives here rather than
+ *  in the body, whose clipping box it must escape. */
+function TerminalLeafOverlay({ id, title, params }: PaneProps) {
+  const { mounted } = useContext(TerminalContextContext);
+  return (
+    <>
+      <AlertSpeechIndicator sessionId={id} />
+      {mounted?.id === id && <TerminalContext {...mounted} title={title} tool={params?.surfaceType === 'tool'} />}
+    </>
+  );
 }
 
-// Whole-leaf overlays keyed by `leafMeta.component`: pointer-transparent chrome
-// spanning header *and* body, which neither the Body nor the Tab slot can cover.
-// Keyed off the same metadata as those two so leaf content resolves one way, not
-// one way plus a surface-kind branch in the render path.
+// Whole-leaf overlays keyed by `leafMeta.component`: chrome spanning header *and*
+// body, which neither the Body nor the Tab slot can cover. Keyed off the same
+// metadata as those two so leaf content resolves one way, not one way plus a
+// surface-kind branch in the render path.
 const OVERLAY_COMPONENTS: Record<string, ComponentType<PaneProps>> = {
   terminal: TerminalLeafOverlay,
   // A tool has a PTY, so it rings like a terminal whichever half is forward.

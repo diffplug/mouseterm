@@ -83,12 +83,16 @@ export function createScreenshotLoop(deps: ScreenshotLoopDeps): ScreenshotLoop {
     const part = bytes as Uint8Array<ArrayBuffer>;
     createImageBitmap(new Blob([part], { type: mime })).then((bitmap) => {
       // A newer shot landed first (or we're gone) — drop this one.
-      if (
-        disposed ||
-        mySeq !== seq ||
-        (deps.getProvisionalGeneration?.() ?? 0) !== provisionalAtStart
-      ) {
+      if (disposed || mySeq !== seq) {
         bitmap.close();
+        return;
+      }
+      if ((deps.getProvisionalGeneration?.() ?? 0) !== provisionalAtStart) {
+        bitmap.close();
+        // A provisional can land during decode as well as during the host
+        // capture. The stream may now be quiet; keep the sharpening shot owed.
+        dirty = true;
+        schedule();
         return;
       }
       // Record only once actually drawn, so a shot dropped by the seq guard never

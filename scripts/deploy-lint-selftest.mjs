@@ -31,83 +31,92 @@
  * way in, and the backups are gitignored so they cannot be staged by accident.
  */
 
-import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
+import { writeFileSync } from 'node:fs';
 
+import { makeSelftest, readRepoFile } from './lint-kit.mjs';
 import { INSTALLERS, RULES } from './deploy-lint.mjs';
 
-const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+const selftest = makeSelftest('deploy-lint.mjs', '.selftest.bak');
 
-/** Run the real lint in a child, so a thrown rule cannot pass as a failure. */
-function lintFails() {
-  try {
-    execFileSync('node', [join(repoRoot, 'scripts', 'deploy-lint.mjs')], { stdio: 'pipe' });
-    return false;
-  } catch {
-    return true;
-  }
-}
-
-const weak = [];
-let held = 0;
-
-for (const { rule, patterns, skip = {}, exactMatches = {} } of RULES) {
+for (const {
+  rule,
+  patterns,
+  skip = {},
+  exactMatches = {},
+  forbidden = false,
+  violation,
+  violations,
+} of RULES) {
   for (const { platform, file } of INSTALLERS) {
     if (platform in skip) continue;
     const pattern = patterns[platform];
     if (!pattern) continue;
 
-    const path = join(repoRoot, file);
-    const original = readFileSync(path, 'utf8');
+    // A forbidden rule is the inverse: deleting nothing proves nothing, so the
+    // mutation is to ADD the thing the spec bans and require the lint to fail.
+    // Without this the rule is a claim that something is checked — a pattern
+    // that matches nothing passes whether or not it could ever match.
+    if (forbidden) {
+      if (pattern.test(readRepoFile(file))) {
+        selftest.weak.push(
+          `${platform.padEnd(8)} ${rule}\n      pattern already matches the pristine file`,
+        );
+        continue;
+      }
+      const platformViolations = violations?.[platform] ?? (violation ? [violation] : []);
+      if (platformViolations.length === 0) {
+        selftest.weak.push(
+          `${platform.padEnd(8)} ${rule}\n      no forbidden-text mutation is defined`,
+        );
+        continue;
+      }
+      for (const forbiddenText of platformViolations) {
+        selftest.withAppended(
+          file,
+          `\n${forbiddenText}\n`,
+          `${platform.padEnd(8)} ${rule}\n      forbidden shape ${JSON.stringify(forbiddenText)} stays green — the rule checks nothing`,
+        );
+      }
+      continue;
+    }
+
+    // Matched and edited in the same normalized form the lint reads, so a
+    // `core.autocrlf` checkout does not report every span rule as unmatched.
+    // The byte-exact backup `withMutation` takes is what the file is restored
+    // from, so writing normalized text mid-run costs nothing.
+    const original = readRepoFile(file);
     const match = original.match(pattern);
     if (!match) {
-      weak.push(`${platform.padEnd(8)} ${rule}\n      pattern does not match the pristine file`);
+      selftest.weak.push(
+        `${platform.padEnd(8)} ${rule}\n      pattern does not match the pristine file`,
+      );
       continue;
     }
 
     // Remove one occurrence. For a control the installer writes at several
     // sites on purpose, `exactMatches` is what makes removing any one a failure.
-    const backup = `${path}.selftest.bak`;
-    copyFileSync(path, backup);
-    try {
-      writeFileSync(path, original.replace(match[0], ''));
-      if (lintFails()) held += 1;
-      else weak.push(`${platform.padEnd(8)} ${rule}`);
-    } finally {
-      copyFileSync(backup, path);
-      rmSync(backup, { force: true });
-    }
+    selftest.withMutation(
+      file,
+      (path) => writeFileSync(path, original.replace(match[0], '')),
+      `${platform.padEnd(8)} ${rule}`,
+    );
 
     // For an exact-count rule, an added copy must fail too — exact is what
     // forces a deliberate count bump when a new site appears, instead of a
     // floor silently absorbing it.
     if (exactMatches[platform] === undefined) continue;
-    copyFileSync(path, backup);
-    try {
-      writeFileSync(path, `${original}\n${match[0]}\n`);
-      if (lintFails()) held += 1;
-      else
-        weak.push(
-          `${platform.padEnd(8)} ${rule}\n      an added copy stays green — the count must compare exactly, not as a floor`,
-        );
-    } finally {
-      copyFileSync(backup, path);
-      rmSync(backup, { force: true });
-    }
+    selftest.withAppended(
+      file,
+      `\n${match[0]}\n`,
+      `${platform.padEnd(8)} ${rule}\n      an added copy stays green — the count must compare exactly, not as a floor`,
+    );
   }
 }
 
-if (weak.length > 0) {
-  console.error('deploy-lint-selftest: checks that stayed green when they should have gone red\n');
-  for (const w of weak) console.error(`  ${w}\n`);
-  console.error(
-    'For a removed control: the pattern matches text that is not the control —\n' +
-      'usually the identifier rather than the message or comparison, or a comment\n' +
-      'that describes the rule. Anchor it on something only the control itself\n' +
-      'says. For an added copy: the fix is in deploy-lint.mjs, not the pattern.',
-  );
-  process.exit(1);
-}
-
-console.log(`deploy-lint-selftest: OK (${held}/${held} checks are load-bearing)`);
+selftest.finish(
+  'deploy-lint-selftest',
+  'For a removed control: the pattern matches text that is not the control —\n' +
+    'usually the identifier rather than the message or comparison, or a comment\n' +
+    'that describes the rule. Anchor it on something only the control itself\n' +
+    'says. For an added copy: the fix is in deploy-lint.mjs, not the pattern.',
+);

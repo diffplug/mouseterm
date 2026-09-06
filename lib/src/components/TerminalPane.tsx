@@ -53,7 +53,7 @@ export function TerminalPane({ id, isFocused = true }: TerminalPaneProps) {
       // Cancel any pending trailing refit — no fit after unmount.
       throttledRefit.cancel();
       // Unmount DOM element — registry entry and Session survive
-      unmountElement(id);
+      unmountElement(id, container);
     };
   }, [id]);
 

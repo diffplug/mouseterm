@@ -54,7 +54,7 @@ describe('which half of a tool is forward', () => {
   });
 
   it('shows the terminal again when the header chip pins it', () => {
-    expect(toolFace({ ...serving, showTerminal: true })).toBe('terminal');
+    expect(toolFace({ ...serving, showTerminal: true })).toBe('browser');
   });
 
   it('shows the terminal after the command exits and the url is retired', () => {

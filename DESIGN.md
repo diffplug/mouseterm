@@ -139,11 +139,13 @@ This system has no "primary" accent in the brand sense. The closest analogue is 
 - **Success** (`var(--vscode-terminal-ansiGreen)`): TODO check, theme-store install confirm.
 - **Alarm** (`var(--vscode-terminal-ansiYellow)` baseline; runtime-overridden): alert tint. `computeDynamicPalette()` replaces each `--color-alarm-vs-*` token with plain white or black by the OKLab lightness of its background (active header, inactive header, Door, or terminal body), so ringing bells and the whole-Pane spoken-alarm treatment stay maximally legible on any surface.
 
-### Fixed Exception
-- **Window Close Hover** (`#b92a1b`): the only literal color in the whole system. Native OS close-button hover on Windows/Linux chrome buttons; matches the platform convention across themes.
+### Fixed Exceptions
+Every literal color the Host-Theme-Only Rule below permits, in full. Each is here because the surface it paints is not read as part of the theme; a literal anywhere else is a bug.
+- **Window Close Hover** (`#b92a1b`): native OS close-button hover on Windows/Linux chrome buttons; matches the platform convention across themes.
+- **Setup QR** (`#ffffff` ground, `#000000` modules, in `lib/src/components/QrCode.tsx`): a phone camera reads this control, not a person. Scanners expect dark-on-light and many refuse an inverted code, and no theme token promises either the polarity or the contrast ratio in both light and dark.
 
 ### Named Rules
-**The Host-Theme-Only Rule.** Never write a hex value or `oklch()` literal into `theme.css` or a component. Never use `var(..., fallback)` chains. Every color must resolve through `--vscode-*` or one of the body-published runtime picks (`--color-door-*`, `--color-focus-ring`, `--color-alarm-vs-*`). The one allowed exception is `#b92a1b` for native window-close hover.
+**The Host-Theme-Only Rule.** Never write a hex value or `oklch()` literal into `theme-colors.css`, `theme.css`, or a component. Never use `var(..., fallback)` chains. Every color must resolve through `--vscode-*` or one of the body-published runtime picks (`--color-door-*`, `--color-focus-ring`, `--color-alarm-vs-*`). The only exceptions are the ones rostered under Fixed Exceptions above, and adding one means adding it there.
 
 **The Bg-Only Chrome Rule.** Pane headers, doors, and the baseboard convey hierarchy through background shifts only. Do not add borders or shadows to "make the hierarchy work." If a high-contrast theme makes a header look flat against the app bg, that is the user's theme speaking; do not override.
 
@@ -186,7 +188,7 @@ Shadows appear only on **raised surfaces that float above content**: popovers, t
 
 **The Inset-Over-Border Rule.** When a surface needs a 1px stroke that may toggle on state change (active vs. inactive), prefer `shadow-[inset_0_0_0_1px_…]` over `border`. The shadow does not affect layout; the border does.
 
-**The Concentric-Corners Rule.** When a rounded corner nests inside another rounded corner (a focus ring wrapping a pane, an outline hugging a rounded surface), both arcs must share a corner center: outer radius = inner radius + the gap between them. Resolve violations by growing the outer radius — never tighten the inner one. Rings at zero offset keep the wrapped element's radius. Source of truth: the `SELECTION_RING_INFLATE_PX` / `PANE_SELECTION_RING_RADIUS_PX` derivation in `lib/src/components/design.tsx`.
+**The Concentric-Corners Rule.** When a rounded corner nests inside another rounded corner (a focus ring wrapping a pane, an outline hugging a rounded surface), both arcs must share a corner center: outer radius = inner radius + the gap between them. Resolve violations by growing the outer radius — never tighten the inner one. Rings at zero offset keep the wrapped element's radius. Theme-picker exception: `docs/specs/theme.md` → "Where the user picks a theme". Source of truth: the `SELECTION_RING_INFLATE_PX` / `PANE_SELECTION_RING_RADIUS_PX` derivation in `lib/src/components/design.tsx`.
 
 ## 5. Components
 
@@ -217,14 +219,15 @@ The flat segments inside a `PopupButtonRow` — the row owns the border, backgro
 #### Chrome Button (window controls)
 The Windows/Linux native-style window control row in the standalone app bar.
 - **Variants:** `icon` (h-5 min-w-5, hover bg-current/10), `labeled` (h-5 min-w-5 px-1.5 text-xs), `window` (w-11, hover bg-current/10), `windowClose` (w-11, hover bg `#b92a1b` text-white).
-- **The exception:** `windowClose` is the only place a literal hex color is permitted, because the platform convention is a hard red regardless of theme.
+- **The exception:** `windowClose` is one of the two rostered literal hex colors (Fixed Exceptions), because the platform convention is a hard red regardless of theme.
 
 ### Cards / Containers
 
 The system uses **raised surfaces**, not "cards." There are no nested cards. There is no resting card grid.
 - **Raised surface** (`PopupButtonRow`, tooltips, popups): `bg-surface-raised`, `border border-border`, `rounded` (4px), `shadow-md`, `font-mono text-sm`.
-- **Dialog** (`KillConfirm`, `TodoAlertDialog`): `bg-surface-raised`, `border border-border`, `rounded-lg` (8px), `shadow-lg`, generous padding (`px-6 py-4` for kill-confirm).
+- **Dialog** (`KillConfirm`, the terminal context's detail dialogs): `bg-surface-raised`, `border border-border`, `rounded-lg` (8px), `shadow-lg`, generous padding (`px-6 py-4` for kill-confirm).
 - **Modal** (`ThemePicker` dropdown, `ThemeDebugger`, `ThemeStoreDialog`): `bg-surface-raised`, `border`, `rounded`, `shadow-2xl`, fixed-position with viewport-clamped sizing.
+- **On-palette surface** (theme previews): a surface painting a *previewed* palette rather than the host's, so its controls take `themePreviewButton` and inherit `currentColor` instead of `text-muted` / `hover:bg-foreground/10` / `outline-focus-ring`. `docs/specs/theme.md` → "Where the user picks a theme" owns candidate palettes, selection, and scroll affordances.
 
 **The Viewport-Bound Rule.** Anything floating over the viewport takes its height cap from `OVERLAY_MAX_HEIGHT` in `design.tsx` — `.modal` for a `ModalFrame` surface (the viewport minus `MODAL_OVERLAY_INSET` doubled), `.popover` for an anchored overlay (matching `clampOverlayPosition`'s margin). Don't hand-write a `vh`/`dvh` literal at the call site: the six that predated this token had drifted to five different budgets, and one silently shadowed its own overlay's padding. Each entry reads its own custom property first (`--overlay-max-h-modal` / `--overlay-max-h-popover`), so a story — or a host with less room than the window — can narrow one bound without touching the component. They are deliberately separate: a popover inside a modal is a DOM descendant of it, and custom properties inherit, so one shared knob would cap the dialog too. A deliberately *smaller* budget than the viewport (a context menu at `max-h-[70vh]`) is a different decision and stays at the call site.
 
@@ -232,12 +235,13 @@ The system uses **raised surfaces**, not "cards." There are no nested cards. The
 - Used by `ThemePicker`. Style: `bg-input-bg`, `border border-input-border`, `rounded`, `font-mono`, `text-sm`.
 - **Focus:** native browser focus outline; this is acceptable because the entire input lives inside a raised surface that already has `shadow-2xl` and a border.
 - **Form fields inside a dialog** use the underlined pair in `design.tsx` instead, so a form mixing them reads as one: `NumericInput` for a number (filtered at the keystroke, sized in `ch`) and `TextInput` for a string (full width, `type` passed through — `type="password"` for a credential). The app has no checkbox anywhere: a boolean is an `OnOffSwitch`.
+- **On/off switch:** a compact track with the thumb left when off and right when on, followed by only the current `On` / `Off` label. Off is neutral; on uses the host link accent. Its 60×24px button uses the subdued action tint and hover from `design.tsx`, with native keyboard and disabled-fieldset behavior. Nested settings text aligns through `UNDER_SWITCH_INDENT`.
 
 ### Navigation
 
 The system has no traditional product top-nav. Three surfaces play navigational roles:
 - **Workspace strip** (standalone app bar, top): horizontal tabs, one per Workspace, for switching between Workspaces within one window. Inactive tabs carry the union alert/TODO indicators (bell + TODO pill) borrowed from the Door vocabulary; the active tab carries none. This is standalone app-bar chrome around the Wall — see `docs/specs/layout.md` and `docs/specs/alert.md` — and its exact visual treatment is being designed in Storybook. VS Code surfaces the same status on its own native tab/badge chrome instead (`docs/specs/vscode.md`).
-- **Baseboard** (bottom of the app): horizontal strip of doors representing minimized panes plus chrome action buttons. Doors are the primary navigation affordance to a minimized terminal. Button style: `h-5 rounded px-1.5 text-sm font-medium font-mono text-muted` with `hover:bg-surface-raised hover:text-foreground transition-colors`.
+- **Baseboard** (bottom of the app): horizontal strip of doors representing minimized panes plus chrome action buttons. Doors are the primary navigation affordance to a minimized terminal. Buttons use `chromeButton` with 24px height, muted text, and `hover:text-foreground`; Settings icons use square buttons with 2px gaps, while labeled overflow buttons keep horizontal padding.
 - **Pane Header (TerminalPaneHeader)**: the tab-replacing strip at the top of each pane. Lath is a headless tiling engine with no tab-bar chrome of its own; the React header IS the tab.
 
 ### Signature Components
@@ -256,7 +260,7 @@ The most distinctive motion in the system. Implemented as `clip-path` reveals, n
 - **Reduced-motion:** all of the above are nulled.
 
 #### Marching Ants (Command Mode)
-The selection ring around the focused pane in command mode is an SVG with `stroke-dasharray` and an infinite `marching-ants` keyframe that increments `stroke-dashoffset` by `var(--march-offset)`. Color: `var(--color-focus-ring)`. This is the system's only ongoing animation; it is meant to be the visual signature of "you are now in command mode." The ring stays crisp while travelling; motion reads instead from soft directional bands drawn behind each edge, sized by how fast that edge is moving across itself.
+The selection ring around the focused pane in command mode is an SVG with `stroke-dasharray` and a `marching-ants` keyframe that increments `stroke-dashoffset` by `var(--march-offset)`. Color: `var(--color-focus-ring)`. It is the visual signature of "you are now in command mode," so it marches in a short burst on entry and on each selection change rather than forever — an idle wall runs no animation (timing in `docs/specs/layout.md` → Selection overlay). The ring stays crisp while travelling; motion reads instead from soft directional bands drawn behind each edge, sized by how fast that edge is moving across itself.
 
 #### Focus Ring Travel & Header Crossfade
 When selection moves between panes/doors, the focus ring **glides** to the new target over 220ms (`FOCUS_MOTION_MS`, half the pane-motion duration) on the house curve `cubic-bezier(0.22, 1, 0.36, 1)`, and the source/destination pane headers crossfade their active/inactive palette over the same 220ms (`HEADER_PALETTE_TRANSITION_CLASS` in `design.tsx`), so the two read as one gesture. The ring's rect is a per-frame JS tween (`rect-tween.ts`), not a CSS transition; same-identity re-measures (sash drag, window resize, animator frames) snap 1:1, and a pane↔door move lerps the corner radii so the shape never pops. Reduced motion nulls both: the ring snaps and the header palette swaps instantly.
@@ -275,8 +279,8 @@ When selection moves between panes/doors, the focus ring **glides** to the new t
 - **Do** use the spring-overshoot curve `cubic-bezier(0.34, 1.56, 0.64, 1)` only for state-resolution moments (TODO check, kill confirm, copy flash), and keep durations short (220–500ms).
 
 ### Don't:
-- **Don't** write a hex color anywhere except `#b92a1b` for the windowClose hover. No exceptions. No `oklch()` literals either; even those bypass the host theme.
-- **Don't** add `var(--vscode-*, #fallback)` fallback chains in `theme.css`. The runtime host plus the resolver are responsible for providing the variable; a fallback hides a real bug.
+- **Don't** write a hex color outside the Fixed Exceptions roster above — and adding one is an edit to that roster, not a local judgement call. No `oklch()` literals either; even those bypass the host theme.
+- **Don't** add `var(--vscode-*, #fallback)` fallback chains in `theme-colors.css` or `theme.css`. The runtime host plus the resolver are responsible for providing the variable; a fallback hides a real bug.
 - **Don't** add borders or shadows to pane headers or doors to "make the hierarchy work." The hierarchy is `header-active-bg` vs. `header-inactive-bg`. If a high-contrast theme makes that look flat, accept it.
 - **Don't** introduce a `text-muted` color inside an active or inactive pane header. Header-internal text inherits the header foreground; muting inside it breaks the focus signal.
 - **Don't** use rounded SaaS cards, gradient accents, gradient text, or glassmorphism. PRODUCT.md names these directly: "Generic SaaS (rounded cards, gradients, startup illustrations)," "Electron bloat (Slack — heavy, slow-feeling, too much chrome)."
@@ -285,4 +289,4 @@ When selection moves between panes/doors, the focus ring **glides** to the new t
 - **Don't** add an emoji, mascot, or illustration to chrome. PRODUCT.md is explicit: "Overly playful (too many animations, emojis, mascots)."
 - **Don't** gate app chrome on `window.alert` / `confirm` / `prompt`. Native dialogs are not dependable in the desktop webview: the theme uninstall was gated on `confirm` and silently did nothing there, because the call returned without ever showing a dialog. Whether a given webview suppresses the panel or never implements it, a control gated on one cannot be trusted to run. Use `ModalFrame`, or make the action a single click when it is cheap and reversible. The marketing website is exempt — it only ever runs in a real browser, where `ShareUrlButton`'s `prompt` is a reasonable last-resort clipboard fallback.
 - **Don't** wrap things in containers. Most surfaces don't need one; the host's sidebar already is the container.
-- **Don't** introduce a new pass-through `--mt-*` token or a one-off color for tabs, badges, accents, or button hovers. If a new rendered surface truly needs a token that isn't in the hierarchy above, update `theme.css` and `design.tsx` together, document the addition in `docs/specs/theme.md`, and update `CONSUMED_VSCODE_KEYS` in `bundle-themes.mjs`.
+- **Don't** introduce a new pass-through `--mt-*` token or a one-off color for tabs, badges, accents, or button hovers. If a new rendered surface truly needs a token that isn't in the hierarchy above, update `theme-colors.css` and `design.tsx` together, document the addition in `docs/specs/theme.md`, and update `CONSUMED_VSCODE_KEYS` in `bundle-themes.mjs`.

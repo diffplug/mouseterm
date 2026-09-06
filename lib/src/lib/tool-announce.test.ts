@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseToolAnnounce } from './tool-announce';
-import { TerminalProtocolParser } from './terminal-protocol';
+import { collectTerminalProtocolAlerts, collectTerminalProtocolResponses, TerminalProtocolParser } from './terminal-protocol';
 import { getToolAnnounce, resetToolAnnounces } from './tool-announce-store';
 import { applyTerminalProtocolEvents } from './terminal-protocol';
 
@@ -115,4 +115,16 @@ describe('OSC 367 at the PTY boundary', () => {
     feed('plain-terminal', `\x1b]367;${serve({ port: 8080 })}\x1b\\`);
     expect(getToolAnnounce('plain-terminal')?.port).toBe(8080);
   });
+});
+
+
+it('consumes chunked OSC 367 and forwards the announcement without a terminal reply', () => {
+  const parser = new TerminalProtocolParser();
+  expect(parser.process('before\x1b]367;serve;{"port":').visibleData).toBe('before');
+  const parsed = parser.process('6006}\x1b\\after');
+  expect(parsed.visibleData).toBe('after');
+  expect(collectTerminalProtocolAlerts(parsed.events)).toEqual([
+    { kind: 'toolAnnounce', announce: { port: 6006, name: null, key: null, dehydrate: false, persist: null } },
+  ]);
+  expect(collectTerminalProtocolResponses(parsed.events)).toEqual([]);
 });

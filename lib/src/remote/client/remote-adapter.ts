@@ -12,9 +12,11 @@ import {
   utf8Encode,
   type DirectoryEntry,
   type TerminalAttachResult,
-} from 'server-lib-common';
+  type TerminalDataEvent,
+} from 'remote-lib-common';
 import type { AwaitHandle, AwaitOutcome } from '../../lib/alert-manager';
-import type { PlatformAdapter, PtyInfo, OpenPort } from '../../lib/platform/types';
+import type { PlatformAdapter, PtyDataDetail, PtyInfo, OpenPort } from '../../lib/platform/types';
+import { inputIsReplayTerminalReport } from '../../lib/terminal-report-filter';
 import type { TerminalHandlers } from './pocket-client';
 
 /**
@@ -47,7 +49,7 @@ interface Size {
 
 const DEFAULT_SIZE: Size = { cols: 80, rows: 24 };
 
-type DataHandler = (detail: { id: string; data: string }) => void;
+type DataHandler = (detail: PtyDataDetail) => void;
 type ExitHandler = (detail: { id: string; exitCode: number }) => void;
 type ListHandler = (detail: { ptys: PtyInfo[] }) => void;
 type DirectoryListener = (entries: DirectoryEntry[]) => void;
@@ -60,17 +62,21 @@ export class RemotePtyAdapter implements PlatformAdapter {
   readonly #listHandlers = new Set<ListHandler>();
   readonly #directoryListeners = new Set<DirectoryListener>();
 
-  /** Latest directory snapshot, in Host order. */
+  /** Latest directory snapshot, in Burrow order. */
   #entries: DirectoryEntry[] = [];
 
   /** Memoized directory.watch start; also the "started" guard. */
   #watchPromise: Promise<void> | null = null;
   #directorySubId: string | null = null;
+  #disposed = false;
 
   /** The one attached surface (v1: one attachment per session), or null. */
   #attached: Attachment | null = null;
   /** Bumped on every setActivePane so a superseded async attach can bail. */
   #activeGeneration = 0;
+  // A stale detach is keyed by surfaceId on the wire: finish it before another
+  // attachment to that same surface can start (rapid A → B → A switching).
+  #attachQueue: Promise<void> = Promise.resolve();
   /** Last size seen, so a re-attach can reuse it if the caller omits one. */
   #lastSize: Size = DEFAULT_SIZE;
 
@@ -92,6 +98,7 @@ export class RemotePtyAdapter implements PlatformAdapter {
 
   /** Detach the live surface and stop watching the directory. */
   async dispose(): Promise<void> {
+    this.#disposed = true;
     const attached = this.#attached;
     this.#attached = null;
     this.#activeGeneration++;
@@ -112,7 +119,8 @@ export class RemotePtyAdapter implements PlatformAdapter {
   // --- Directory (onPtyList + adapter-specific getters) --------------------
 
   requestInit(): void {
-    void this.#ensureDirectoryWatch();
+    if (this.#disposed) return;
+    void this.#ensureDirectoryWatch().catch(() => {});
     // Give a resuming UI the latest known list immediately.
     if (this.#entries.length > 0) this.#emitPtyList();
   }
@@ -144,17 +152,24 @@ export class RemotePtyAdapter implements PlatformAdapter {
   }
 
   #ensureDirectoryWatch(): Promise<void> {
+    if (this.#disposed) return Promise.resolve();
     if (!this.#watchPromise) {
       this.#watchPromise = this.#client
         .watchDirectory((entries) => this.#onSnapshot(entries))
         .then((subId) => {
-          this.#directorySubId = subId;
+          if (this.#disposed) this.#client.unsubscribe(subId);
+          else this.#directorySubId = subId;
+        })
+        .catch((error: unknown) => {
+          this.#watchPromise = null;
+          throw error;
         });
     }
     return this.#watchPromise;
   }
 
   #onSnapshot(entries: DirectoryEntry[]): void {
+    if (this.#disposed) return;
     this.#entries = entries;
     this.#emitPtyList();
     for (const listener of this.#directoryListeners) listener(entries);
@@ -179,16 +194,24 @@ export class RemotePtyAdapter implements PlatformAdapter {
    * `onPtyData`, `terminal.closed` becomes `onPtyExit`.
    */
   async setActivePane(id: string, cols?: number, rows?: number): Promise<void> {
+    if (this.#disposed) return;
     const size = normalizeSize(cols, rows, this.#lastSize);
     this.#lastSize = size;
+    const generation = ++this.#activeGeneration;
+    const activation = this.#attachQueue.then(() => this.#activatePane(id, size, generation));
+    this.#attachQueue = activation.catch(() => {});
+    await activation;
+  }
+
+  async #activatePane(id: string, size: Size, generation: number): Promise<void> {
+    if (generation !== this.#activeGeneration) return;
 
     if (this.#attached?.surfaceId === id) {
       // Already the active surface — a size change is just a resize.
-      void this.#client.resize(id, size.cols, size.rows);
+      await this.#client.resize(id, size.cols, size.rows);
       return;
     }
 
-    const generation = ++this.#activeGeneration;
     const prev = this.#attached;
     this.#attached = null;
     if (prev) {
@@ -200,15 +223,19 @@ export class RemotePtyAdapter implements PlatformAdapter {
     }
     if (generation !== this.#activeGeneration) return; // superseded mid-detach
 
+    let closed = false;
     const handlers: TerminalHandlers = {
-      onData: (bytes) => this.#emitData(id, bytes),
-      onClosed: (exitCode) => this.#emitExit(id, exitCode),
+      onData: (event) => { if (!closed) this.#emitData(id, event); },
+      onClosed: (exitCode) => {
+        closed = true;
+        this.#emitExit(id, exitCode);
+      },
     };
     const { subId } = await this.#client.attach(id, size.cols, size.rows, handlers);
-    if (generation !== this.#activeGeneration) {
-      // A newer setActivePane won the race — undo this stale attach.
+    if (closed || generation !== this.#activeGeneration) {
+      // Superseded or closed before its response: never resurrect this attach.
       this.#client.unsubscribe(subId);
-      void this.#client.detach(id, subId).catch(() => {});
+      await this.#client.detach(id, subId).catch(() => {});
       return;
     }
     this.#attached = { surfaceId: id, subId };
@@ -222,17 +249,21 @@ export class RemotePtyAdapter implements PlatformAdapter {
   // --- PTY core ------------------------------------------------------------
 
   writePty(id: string, data: string): void {
-    if (this.#attached?.surfaceId !== id) return; // Host only accepts the attached pane
-    void this.#client.write(id, toBase64Url(utf8Encode(data)));
+    if (this.#attached?.surfaceId !== id) return; // Burrow only accepts the attached pane
+    // The Burrow discards these anyway (remote-api.md -> "Terminal surfaces"), so
+    // don't spend the relay on them.
+    if (inputIsReplayTerminalReport(data)) return;
+    void this.#client.write(id, toBase64Url(utf8Encode(data))).catch(() => {});
   }
 
   resizePty(id: string, cols: number, rows: number): void {
     if (this.#attached?.surfaceId !== id) return;
-    this.#lastSize = { cols, rows };
-    void this.#client.resize(id, cols, rows);
+    const size = normalizeSize(cols, rows, this.#lastSize);
+    this.#lastSize = size;
+    void this.#client.resize(id, size.cols, size.rows).catch(() => {});
   }
 
-  // Panes are Host-owned: the phone never spawns or kills them.
+  // Panes are Burrow-owned: the phone never spawns or kills them.
   spawnPty(): void {}
   killPty(): void {}
 
@@ -252,15 +283,27 @@ export class RemotePtyAdapter implements PlatformAdapter {
     this.#exitHandlers.delete(handler);
   }
 
-  #emitData(id: string, bytes: string): void {
-    const data = utf8Decode(fromBase64Url(bytes));
-    for (const handler of this.#dataHandlers) handler({ id, data });
+  #emitData(id: string, event: TerminalDataEvent): void {
+    if (this.#disposed) return;
+    let data: string;
+    let textData: string | undefined;
+    try {
+      data = utf8Decode(fromBase64Url(event.bytes));
+      // Omitted means identical; an explicitly empty text projection stays empty.
+      textData = event.text === undefined ? undefined : utf8Decode(fromBase64Url(event.text));
+    } catch {
+      // Both projections describe one chunk: never deliver only its valid half.
+      console.warn('[pocket] discarding malformed terminal data');
+      return;
+    }
+    for (const handler of this.#dataHandlers) handler({ id, data, textData });
   }
 
   #emitExit(id: string, exitCode?: number): void {
+    if (this.#disposed) return;
     if (this.#attached?.surfaceId === id) this.#attached = null;
     // An absent exitCode is an UNKNOWN termination (signal-only, killed, or a
-    // non-selfhost Host that never reports one) — not a clean exit. Coercing it
+    // non-selfhost Burrow that never reports one) — not a clean exit. Coercing it
     // to 0 would paint an abnormal close as success. Map it to the same -1
     // sentinel the local path uses (terminal-lifecycle.ts `exitCode ?? -1`),
     // which renders as a nonzero "failure" exit, so remote and local agree.
@@ -289,16 +332,16 @@ export class RemotePtyAdapter implements PlatformAdapter {
     return null;
   }
 
-  // Resume-path replay: the Host has no per-pane replay buffer in v1, so ignore.
+  // Resume-path replay: the Burrow has no per-pane replay buffer in v1, so ignore.
   onPtyReplay(): void {}
   offPtyReplay(): void {}
 
-  // Host-initiated persistence flush: not driven from the phone.
+  // Burrow-initiated persistence flush: not driven from the phone.
   onRequestSessionFlush(): void {}
   offRequestSessionFlush(): void {}
   notifySessionFlushComplete(): void {}
 
-  // Alerts are Host-authoritative (surfaced via the directory snapshot), so the
+  // Alerts are Burrow-authoritative (surfaced via the directory snapshot), so the
   // phone-side alert controls are inert.
   alertRemove(): void {}
   alertSetWatchedCommands(): void {}

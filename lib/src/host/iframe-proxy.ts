@@ -31,19 +31,38 @@
  *     matches no route, and renders its own 404), and it would not survive onto
  *     root-relative sub-resource requests at all. The dedicated server and the
  *     loopback bind are mitigations, **not** the boundary — the port is
- *     discoverable in seconds. The boundary is the `Host` check plus the
- *     conditional `Origin` vouch below: this server admits anyone and vouches
- *     for no one it did not serve. See `./loopback-guard.ts`.
+ *     discoverable in seconds.
+ *
+ * The boundary is three checks, and which one applies depends on what is being
+ * asked for (`./loopback-guard.ts`, `docs/specs/security-local.md` → "Loopback Listeners"):
+ *   - `Host` names this grant's own port, so DNS rebinding fails. Both paths.
+ *   - `Origin` is this grant's own before the proxy will relabel it as the
+ *     upstream's. Vouching for a stranger is what turns a transparent proxy
+ *     into a CSRF amplifier; a foreign origin is forwarded, not blocked, so the
+ *     upstream applies its own policy. Both paths.
+ *   - The **embedder chain** — who may frame this proxy at all — governs the
+ *     two privileges a request header cannot: taking the upstream's framing
+ *     controls away, and injecting a shim that reads the framed page's URLs
+ *     back out. Neither is per-request (an iframe navigation carries no
+ *     `Origin`, and `Sec-Fetch-Site` says `cross-site` for our own webview and
+ *     for an attacker page alike), so both are conditioned on a
+ *     `frame-ancestors` allowing only the grant's own origin (for nested frames)
+ *     and the app's validated chain, which the browser enforces. With no chain
+ *     the proxy takes nothing away and injects nothing, which leaves a caller
+ *     exactly what the upstream would have given it directly.
  */
 import * as http from 'http';
 import * as net from 'net';
 import type { IframeProxyResult } from '../lib/platform/iframe-proxy-types';
-import { isLoopbackHost, isOwnOrigin } from './loopback-guard';
+import { isForeignOrigin, isLoopbackHost, isOwnOrigin } from './loopback-guard';
 import {
-  STRIP_RESPONSE_HEADERS,
+  FRAMING_RESPONSE_HEADERS,
+  HOP_BY_HOP_RESPONSE_HEADERS,
   errorPageHtml,
+  frameAncestorsCsp,
   instrumentHtml,
   isBlockedAddress,
+  normalizeEmbedderOrigins,
   timedOutPage,
   unreachablePage,
   type ErrorPage,
@@ -75,6 +94,14 @@ interface Grant {
   proxyOrigin: string;
   server: http.Server;
   lastUsed: number;
+  /**
+   * The webview's own ancestor chain, or `null` when the caller supplied none
+   * this grant can use. It decides both privileges this server hands out — the
+   * framing-header replacement and the shim — because it is the only thing that
+   * names *who may frame the proxy*, which is the question `Origin` cannot
+   * answer on a navigation.
+   */
+  embedderOrigins: string[] | null;
 }
 
 const grants = new Map<number, Grant>();
@@ -88,9 +115,15 @@ let lastSweep = 0;
  */
 export async function createIframeProxyUrl(
   targetUrl: string,
-  opts?: { log?: ProxyLogger },
+  opts?: { log?: ProxyLogger; embedderOrigins?: unknown },
 ): Promise<IframeProxyResult> {
   if (opts?.log) log = opts.log;
+  const embedderOrigins = normalizeEmbedderOrigins(opts?.embedderOrigins);
+  if (embedderOrigins === null) {
+    // Not fatal: the frame still loads, it just gets the upstream's own framing
+    // headers and no shim — the leader chord and URL tracking go with them.
+    log('[iframe-proxy] no usable embedder origin chain: serving pass-through headers and no shim');
+  }
 
   let upstream: URL;
   try {
@@ -120,6 +153,7 @@ export async function createIframeProxyUrl(
     proxyOrigin: '',
     server: null as unknown as http.Server,
     lastUsed: now,
+    embedderOrigins,
   };
   const server = http.createServer((req, res) => handleRequest(grant, req, res));
   server.on('upgrade', (req, socket, head) => handleUpgrade(grant, req, socket as net.Socket, head));
@@ -156,6 +190,32 @@ function listen(server: http.Server): Promise<number> {
   });
 }
 
+/**
+ * The rules every upstream request obeys, whichever path it takes: Host is the
+ * upstream's, the proxy vouches with an Origin only for a caller it actually
+ * served, and loopback cookies never cross.
+ *
+ * The Origin rewrite is the proxy vouching for the request upstream, and
+ * vouching for a stranger is what turns a transparent proxy into a CSRF
+ * amplifier: the port is discoverable, so any page could otherwise POST here
+ * and have its `Origin: https://evil.example` relabelled as the upstream's own
+ * — defeating exactly the origin check the rewrite exists to satisfy. Forward a
+ * foreign Origin untouched instead of blocking it: the upstream then sees the
+ * truth and applies its own policy, which leaves the proxy granting nothing the
+ * attacker did not already have by hitting the upstream's port directly. An
+ * absent Origin stays absent — that is a top-level navigation or a same-origin
+ * GET, the ordinary iframe case.
+ *
+ * Cookies share the loopback hostname across ports; these are not upstream
+ * credentials.
+ */
+function upstreamRequestHeaders(grant: Grant, req: http.IncomingMessage): http.OutgoingHttpHeaders {
+  const headers: http.OutgoingHttpHeaders = { ...req.headers, host: grant.upstream.host };
+  if (isOwnOrigin(req.headers.origin, grant.port)) headers.origin = grant.upstream.origin;
+  delete headers.cookie;
+  return headers;
+}
+
 function handleRequest(grant: Grant, req: http.IncomingMessage, res: http.ServerResponse): void {
   if (!isLoopbackHost(req.headers.host, grant.port)) {
     // DNS rebinding: a hostile domain re-pointed at 127.0.0.1 reaches this
@@ -164,33 +224,22 @@ function handleRequest(grant: Grant, req: http.IncomingMessage, res: http.Server
     res.writeHead(421).end();
     return;
   }
-  grant.lastUsed = Date.now();
+  // Refreshed for anyone but a caller that has *named itself* as foreign. The
+  // sliding TTL exists so a live frame keeps its grant, and a live frame's
+  // navigations and sub-resource loads carry no `Origin` at all — so "own
+  // origin only" would expire a grant the user is still looking at. What it
+  // must not do is let a page that says `Origin: https://evil.example` hold a
+  // closed pane's grant, and its upstream binding, open indefinitely.
+  if (!isForeignOrigin(req.headers.origin, grant.port)) grant.lastUsed = Date.now();
   const path = req.url ?? '/';
 
-  const headers: http.OutgoingHttpHeaders = { ...req.headers };
-  headers.host = grant.upstream.host;
-  // Present the request as coming from the upstream's own origin so origin-aware
-  // dev servers (Vary: Origin, CSRF checks) treat it as same-origin, and drop
-  // Accept-Encoding so HTML comes back identity (we rewrite it).
-  //
-  // Only for a caller we actually served. This rewrite is the proxy vouching
-  // for the request upstream, and vouching for a stranger is what turns a
-  // transparent proxy into a CSRF amplifier: the port is discoverable, so any
-  // page could otherwise POST here and have its `Origin: https://evil.example`
-  // relabelled as the upstream's own — defeating exactly the origin check the
-  // rewrite exists to satisfy. Forward a foreign Origin untouched instead of
-  // blocking it: the upstream then sees the truth and applies its own policy,
-  // which leaves the proxy granting nothing the attacker did not already have
-  // by hitting the upstream's port directly.
-  //
-  // An absent Origin stays absent, as before — that is a top-level navigation
-  // or a same-origin GET, which is the ordinary iframe case.
-  if (isOwnOrigin(req.headers.origin, grant.port)) {
-    headers.origin = grant.upstream.origin;
+  const headers = upstreamRequestHeaders(grant, req);
+  // Referer needs no own-origin test: it only substitutes our own proxy origin,
+  // so a foreign referer already passes through untouched.
+  if (typeof headers.referer === 'string') {
+    headers.referer = rewriteOrigin(headers.referer, grant.proxyOrigin, grant.upstream.origin);
   }
-  // Referer needs no such test: it only substitutes our own proxy origin, so a
-  // foreign referer already passes through untouched.
-  if (typeof headers.referer === 'string') headers.referer = headers.referer.split(grant.proxyOrigin).join(grant.upstream.origin);
+  // Drop Accept-Encoding so HTML comes back identity — we rewrite it.
   delete headers['accept-encoding'];
 
   const upstreamReq = http.request({
@@ -202,16 +251,19 @@ function handleRequest(grant: Grant, req: http.IncomingMessage, res: http.Server
     headers,
   }, (upstreamRes) => {
     const contentType = String(upstreamRes.headers['content-type'] ?? '');
-    if (!/text\/html/i.test(contentType)) {
+    const embedder = grant.embedderOrigins?.[0];
+    if (!/text\/html/i.test(contentType) || embedder === undefined) {
       passThrough(grant, upstreamRes, res);
       return;
     }
     // Any http upstream is framed, loopback or remote: sanitizeResponseHeaders
-    // strips its frame-blocking headers (X-Frame-Options / CSP frame-ancestors)
-    // and streamHtml injects the shim. A site's "do not embed" is overridden
-    // because the embed is the user's own `dor iframe`, not a third party framing
-    // them — the same trust boundary as the agent-browser renderer.
-    streamHtml(grant, upstreamRes, res);
+    // replaces its frame-blocking headers (X-Frame-Options / CSP
+    // frame-ancestors) with one allowing same-grant nesting plus this webview's
+    // own ancestor chain, and streamHtml injects the shim. A site's "do not
+    // embed" is overridden because the embed is the user's own `dor iframe`,
+    // not a third party framing them — a stranger's foreign ancestor still
+    // fails the policy.
+    streamHtml(grant, embedder, upstreamRes, res);
   });
   upstreamReq.on('error', (err) => {
     // Once we've begun streaming the response we can't swap in an error page —
@@ -223,7 +275,7 @@ function handleRequest(grant: Grant, req: http.IncomingMessage, res: http.Server
       return;
     }
     const code = (err as { code?: string }).code;
-    serveErrorPage(res, code === 'ETIMEDOUT'
+    serveErrorPage(grant, res, code === 'ETIMEDOUT'
       ? timedOutPage(grant.upstream)
       : unreachablePage(grant.upstream, err.message));
   });
@@ -242,6 +294,7 @@ function handleRequest(grant: Grant, req: http.IncomingMessage, res: http.Server
 function passThrough(grant: Grant, upstreamRes: http.IncomingMessage, res: http.ServerResponse): void {
   const outHeaders = sanitizeResponseHeaders(grant, upstreamRes.headers);
   res.writeHead(upstreamRes.statusCode ?? 200, outHeaders);
+  upstreamRes.on('error', () => res.destroy());
   upstreamRes.pipe(res);
 }
 
@@ -251,7 +304,15 @@ function passThrough(grant: Grant, upstreamRes: http.IncomingMessage, res: http.
 // latin1 is byte-preserving, so searching/rewriting ASCII tags and re-encoding
 // can't corrupt multibyte bytes in <head> (e.g. an em-dash in <title>). The
 // response is chunked (no content-length) since instrumentation changes length.
-function streamHtml(grant: Grant, upstreamRes: http.IncomingMessage, res: http.ServerResponse): void {
+function streamHtml(
+  grant: Grant,
+  // Taken as an argument rather than read off the grant so the type carries the
+  // invariant: there is no instrumented response without an embedder to address
+  // the shim to. A grant with no chain goes through `passThrough` instead.
+  embedderOrigin: string,
+  upstreamRes: http.IncomingMessage,
+  res: http.ServerResponse,
+): void {
   const outHeaders = sanitizeResponseHeaders(grant, upstreamRes.headers);
   outHeaders['content-type'] = 'text/html; charset=utf-8';
   delete outHeaders['content-length'];
@@ -268,7 +329,7 @@ function streamHtml(grant: Grant, upstreamRes: http.IncomingMessage, res: http.S
     // prefix, then hand the remainder to a raw pipe (backpressure + end).
     handled = true;
     upstreamRes.off('data', onData);
-    res.write(Buffer.from(instrumentHtml(text), 'latin1'));
+    res.write(Buffer.from(instrumentHtml(text, embedderOrigin), 'latin1'));
     pending = Buffer.alloc(0);
     upstreamRes.pipe(res);
   };
@@ -277,25 +338,45 @@ function streamHtml(grant: Grant, upstreamRes: http.IncomingMessage, res: http.S
   upstreamRes.on('end', () => {
     if (handled) return; // the pipe ends `res`
     // Whole document arrived before any head marker — instrument and finish.
-    res.end(Buffer.from(instrumentHtml(pending.toString('latin1')), 'latin1'));
+    res.end(Buffer.from(instrumentHtml(pending.toString('latin1'), embedderOrigin), 'latin1'));
   });
   upstreamRes.on('error', () => { if (!res.writableEnded) res.destroy(); });
 }
 
 function sanitizeResponseHeaders(grant: Grant, headers: http.IncomingHttpHeaders): http.OutgoingHttpHeaders {
   const out: http.OutgoingHttpHeaders = {};
+  const replaceFraming = grant.embedderOrigins !== null;
   for (const [name, value] of Object.entries(headers)) {
     if (value === undefined) continue;
-    if (STRIP_RESPONSE_HEADERS.has(name.toLowerCase())) continue;
+    const lower = name.toLowerCase();
+    if (HOP_BY_HOP_RESPONSE_HEADERS.has(lower) || lower === 'set-cookie') continue;
+    // Replaced, never merely dropped: this proxy may only take the upstream's
+    // "do not embed" away if it puts back one that names the exact allowed set:
+    // this per-grant origin plus the app's validated ancestor chain
+    // (`FRAMING_RESPONSE_HEADERS`).
+    if (replaceFraming && FRAMING_RESPONSE_HEADERS.has(lower)) continue;
     out[name] = value;
+  }
+  if (grant.embedderOrigins !== null) {
+    out['content-security-policy'] = frameAncestorsCsp(grant.embedderOrigins);
   }
   // Keep upstream redirects on the proxy origin so they don't bounce the frame
   // straight at the un-instrumented upstream.
   const loc = out.location;
-  if (typeof loc === 'string' && loc.startsWith(grant.upstream.origin)) {
-    out.location = grant.proxyOrigin + loc.slice(grant.upstream.origin.length);
+  if (typeof loc === 'string') {
+    out.location = rewriteOrigin(loc, grant.upstream.origin, grant.proxyOrigin);
   }
   return out;
+}
+
+// Compare parsed origins, never string prefixes or embedded query values.
+// A foreign redirect/referer must keep its authority and its payload intact.
+function rewriteOrigin(value: string, from: string, to: string): string {
+  try {
+    const url = new URL(value);
+    if (url.origin === from) return `${to}${url.pathname}${url.search}${url.hash}`;
+  } catch { /* Relative Locations and malformed headers pass through unchanged. */ }
+  return value;
 }
 
 // --- WebSocket upgrade passthrough (dev-server HMR, openvscode-server) -------
@@ -312,28 +393,45 @@ function handleUpgrade(grant: Grant, req: http.IncomingMessage, socket: net.Sock
     socket.destroy();
     return;
   }
-  grant.lastUsed = Date.now();
+  if (!isForeignOrigin(req.headers.origin, grant.port)) grant.lastUsed = Date.now();
   socket.on('error', () => {});
-  const path = req.url ?? '/';
-  const targetPort = Number(grant.upstream.port) || 80;
-  const vouch = isOwnOrigin(req.headers.origin, grant.port);
+  const headers = upstreamRequestHeaders(grant, req);
 
-  const upstream = net.connect(targetPort, grant.upstream.hostname, () => {
-    const headerLines: string[] = [];
-    for (let i = 0; i < req.rawHeaders.length; i += 2) {
-      const name = req.rawHeaders[i];
-      const lower = name.toLowerCase();
-      if (lower === 'host') headerLines.push(`Host: ${grant.upstream.host}`);
-      else if (lower === 'origin') headerLines.push(`Origin: ${vouch ? grant.upstream.origin : req.rawHeaders[i + 1]}`);
-      else headerLines.push(`${name}: ${req.rawHeaders[i + 1]}`);
+  // Parse the HTTP handshake before becoming a byte pipe: Set-Cookie on a 101
+  // would otherwise poison cookies belonging to other loopback ports.
+  const upstreamReq = http.request({
+    hostname: grant.upstream.hostname,
+    port: grant.upstream.port || 80,
+    method: req.method,
+    path: req.url ?? '/',
+    headers,
+  });
+  upstreamReq.on('upgrade', (response, upstream, upstreamHead) => {
+    upstream.setTimeout(0);
+    const lines: string[] = [];
+    for (let i = 0; i < response.rawHeaders.length; i += 2) {
+      if (response.rawHeaders[i].toLowerCase() === 'set-cookie') continue;
+      lines.push(`${response.rawHeaders[i]}: ${response.rawHeaders[i + 1]}`);
     }
-    upstream.write(`GET ${path} HTTP/1.1\r\n${headerLines.join('\r\n')}\r\n\r\n`);
-    if (head && head.length) upstream.write(head);
+    socket.write(`HTTP/1.1 ${response.statusCode} ${response.statusMessage}\r\n${lines.join('\r\n')}\r\n\r\n`);
+    if (upstreamHead.length) socket.write(upstreamHead);
+    if (head.length) upstream.write(head);
+    upstream.on('error', () => socket.destroy());
+    upstream.on('close', () => socket.destroy());
+    socket.on('close', () => upstream.destroy());
     socket.pipe(upstream);
     upstream.pipe(socket);
   });
-  upstream.on('error', () => socket.destroy());
-  socket.on('close', () => upstream.destroy());
+  upstreamReq.on('response', (response) => {
+    // A rejected upgrade is still an ordinary response with the same cookie boundary.
+    const res = new http.ServerResponse(req);
+    res.assignSocket(socket);
+    passThrough(grant, response, res);
+  });
+  upstreamReq.on('error', () => socket.destroy());
+  upstreamReq.setTimeout(UPSTREAM_IDLE_TIMEOUT_MS, () => upstreamReq.destroy());
+  socket.on('close', () => upstreamReq.destroy());
+  upstreamReq.end();
 }
 
 function sweepGrants(now: number): void {
@@ -350,12 +448,16 @@ function sweepGrants(now: number): void {
   }
 }
 
-function serveErrorPage(res: http.ServerResponse, page: ErrorPage): void {
-  const html = instrumentHtml(errorPageHtml(page));
+function serveErrorPage(grant: Grant, res: http.ServerResponse, page: ErrorPage): void {
+  // Dormouse's own page, so it is instrumented and framed on the same terms as
+  // an upstream's: with a known embedder, or not at all.
+  const embedderOrigins = grant.embedderOrigins;
+  const html = embedderOrigins ? instrumentHtml(errorPageHtml(page), embedderOrigins[0]) : errorPageHtml(page);
   res.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'content-length': Buffer.byteLength(html).toString(),
     'cache-control': 'no-store',
+    ...(embedderOrigins ? { 'content-security-policy': frameAncestorsCsp(embedderOrigins) } : {}),
   });
   res.end(html);
 }

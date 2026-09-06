@@ -1,27 +1,22 @@
+import type { ToolAnnounce } from '../../lib/src/lib/tool-announce';
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../../lib/src/lib/terminal-context-types';
 import type {
-  ActivityNotification,
   AwaitOutcome,
   AwaitUntil,
-  SessionStatus,
-  TodoState,
 } from '../../lib/src/lib/alert-manager';
 import type { AlertSettings } from '../../lib/src/lib/alert-settings';
 import type { TerminalSemanticEvent } from '../../lib/src/lib/terminal-state';
 import type { TerminalColors } from '../../lib/src/lib/terminal-protocol';
 import type { DorControlCancelPayload, DorControlRequestPayload, DorControlResponsePayload } from '../../dor/src/protocol';
-import type {
-  AgentBrowserStreamStatusResult,
-  IframeProxyResult,
-  OpenPort,
-  ToolControlResult,
-  ToolHostRequest,
-} from '../../lib/src/lib/platform/types';
+import type { AgentBrowserStreamStatusResult, AlertStateDetail, IframeProxyResult, OpenPort, ToolControlResult, ToolHostRequest } from '../../lib/src/lib/platform/types';
 import type { VSCodeWorkbenchCommand } from '../../lib/src/lib/vscode-keybindings';
-import type { RemoteHostCommand, RemoteHostResult } from '../../lib/src/host/remote/service-protocol';
+import type { BurrowCommand, BurrowResult } from '../../lib/src/host/remote/service-protocol';
+import type { VolatileNotepadSnapshot } from '../../lib/src/lib/notepad/types';
 
 // Messages from webview → extension host
 export type WebviewMessage =
-  | { type: 'pty:spawn'; id: string; options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] } }
+  | { type: 'pty:context'; request: TerminalContextRequest; requestId: string }
+  | { type: 'pty:spawn'; id: string; options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[]; helper?: HelperIdentity } }
   | { type: 'pty:input'; id: string; data: string }
   | { type: 'pty:resize'; id: string; cols: number; rows: number }
   | { type: 'pty:kill'; id: string }
@@ -40,17 +35,26 @@ export type WebviewMessage =
   | { type: 'agentBrowser:open'; url: string; headed?: boolean; binaryPath?: string; requestId: string }
   | { type: 'agentBrowser:popOut'; session: string; url?: string; rect?: { x: number; y: number; width: number; height: number }; binaryPath?: string; requestId: string }
   | { type: 'agentBrowser:popIn'; session: string; url?: string; binaryPath?: string; requestId: string }
-  | { type: 'iframe:createProxyUrl'; url: string; requestId: string }
+  | { type: 'iframe:createProxyUrl'; url: string; embedderOrigins: string[]; requestId: string }
   | { type: 'tool:control'; request: ToolHostRequest; requestId: string }
-  // Peer surfaces: the remote Host runs in the extension host, but the terminals
+  // Peer surfaces: the Burrow runs in the extension host, but the terminals
   // live in whichever webview opened them. See docs/specs/vscode.md → "Peer
   // surfaces". `op` is opaque to the router: the operation map lives in
-  // `lib/src/remote/host/peer-surfaces.ts`, so a new peer operation adds no
+  // `lib/src/remote/burrow/peer-surfaces.ts`, so a new peer operation adds no
   // message type here.
   | { type: 'peer:answer'; requestId: string; results: unknown[] }
   | { type: 'peer:notify' }
-  // One command for the Host service (`lib/src/host/remote/service-protocol.ts`).
-  | { type: 'remoteHost:command'; payload: RemoteHostCommand }
+  // One command for the Burrow service (`lib/src/host/remote/service-protocol.ts`).
+  | { type: 'burrow:command'; payload: BurrowCommand }
+  // The notepad archive lives in shared storage, which only the extension host can
+  // reach, so the webview drives it as compare-and-swap: `state` is the whole
+  // serialized archive and `baseRevision` the token `notepad:load` handed back
+  // (docs/specs/notepad.md). `notepad:volatile` is the live mirror — fire and
+  // forget, since nothing waits on it and the next snapshot supersedes it.
+  | { type: 'notepad:load'; requestId: string }
+  | { type: 'notepad:save'; requestId: string; state: string; baseRevision: string | null }
+  | { type: 'notepad:reset'; requestId: string }
+  | { type: 'notepad:volatile'; snapshot: VolatileNotepadSnapshot }
   | { type: 'dormouse:init' }
   | ({ type: 'dormouse:themeColors' } & TerminalColors)
   | { type: 'dormouse:saveState'; state: unknown }
@@ -75,6 +79,7 @@ export type WebviewMessage =
   | { type: 'alert:awaitCancel'; requestId: string };
 
 export interface PtyInfo {
+  helper?: HelperIdentity;
   id: string;
   alive: boolean;
   exitCode?: number;
@@ -83,8 +88,13 @@ export interface PtyInfo {
 
 // Messages from extension host → webview
 export type ExtensionMessage =
-  | { type: 'pty:data'; id: string; data: string }
+  | { type: 'pty:contextResult'; result: TerminalContextInfo; requestId: string }
+  // `textData` is the chunk with string-control payloads removed, for the
+  // prompt heuristic. Omitted when it would equal `data` — the common case —
+  // so this never doubles the bytes on the wire (docs/specs/transport.md).
+  | { type: 'pty:data'; id: string; data: string; textData?: string }
   | { type: 'pty:exit'; id: string; exitCode: number }
+  | { type: 'terminal:toolAnnounce'; id: string; announce: ToolAnnounce }
   | { type: 'terminal:semanticEvents'; id: string; events: TerminalSemanticEvent[] }
   | { type: 'pty:list'; ptys: PtyInfo[] }
   | { type: 'pty:replay'; id: string; data: string }
@@ -103,10 +113,14 @@ export type ExtensionMessage =
   | { type: 'iframe:proxyUrl'; requestId: string; result: IframeProxyResult }
   | { type: 'tool:result'; requestId: string; result: ToolControlResult }
   | { type: 'peer:ask'; requestId: string; op: string; params: unknown }
-  // Broadcast to every webview: `rhId` carries a per-adapter tag, so only the
+  // Broadcast to every webview: `burrowRequestId` carries a per-adapter tag, so only the
   // one that asked finds a pending command to settle.
-  | { type: 'remoteHost:result'; payload: RemoteHostResult }
-  | { type: 'remoteHost:event'; payload: unknown }
+  | { type: 'burrow:result'; payload: BurrowResult }
+  | { type: 'burrow:event'; payload: unknown }
+  // One reply shape for all three archive requests: `result` carries whatever
+  // that request returns, and a failure crosses as `ok: false` rather than
+  // silence, because the webview's port turns it into the closure error path.
+  | { type: 'notepad:result'; requestId: string; ok: boolean; result?: unknown; error?: string }
   | {
       type: 'dormouse:newTerminal';
       shell?: string;
@@ -120,17 +134,9 @@ export type ExtensionMessage =
   | { type: 'dormouse:flushSessionSave'; requestId: string }
   | ({ type: 'dor:controlRequest' } & DorControlRequestPayload)
   | ({ type: 'dor:controlCancel' } & DorControlCancelPayload)
-  // Alert state updates
-  | {
-    type: 'alert:state';
-    id: string;
-    status: SessionStatus;
-    watchingEnabled: boolean;
-    todo: TodoState;
-    notification: ActivityNotification | null;
-    attentionDismissedRing: boolean;
-    awaited: boolean;
-  }
+  // Alert state updates. The whole `AlertState` crosses as one piece, so a new
+  // alert field needs no edit here — the other three adapters already spread it.
+  | ({ type: 'alert:state' } & AlertStateDetail)
   | { type: 'alert:awaitResult'; requestId: string; outcome: AwaitOutcome }
   | { type: 'alert:watchedCommands'; names: string[] }
   | { type: 'alert:settings'; settings: AlertSettings };

@@ -1,0 +1,704 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * The scan path through the whole `App`: the capability gate in front of it,
+ * the parse, whether the token is spent on a registration or retired, the
+ * two-digit waiting screen, and the connect a successful pairing continues
+ * into.
+ *
+ * `App.test.tsx` covers the screens in isolation and `ScanInvitation.test.tsx`
+ * the reader; neither can see the state machine between them, which is what
+ * this file drives. The doubles stop at `App`'s own module boundary.
+ */
+import { act, StrictMode } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { generateNoiseKeyPair, toBase64Url, type PairingInvitation } from 'remote-lib-common';
+
+import App, {
+  CAMERA_BOOTSTRAP_MESSAGE,
+  BURROWS_EMPTY,
+  BURROWS_TITLE,
+  SCAN_LABEL,
+  UNSUPPORTED_BROWSER_TITLE,
+} from './App';
+import type { ConnectResult, PairingResult } from '../client/pocket-client';
+import {
+  PAIRING_DENIAL_MESSAGES,
+  SETUP_CODE_DEAD_MESSAGE,
+  RelayRefusalError,
+  SetupTokenInvalidError,
+  PasskeyUnavailableError,
+} from '../client/pocket-client';
+import type { KnownBurrowV1 } from '../client/pocket-db';
+import {
+  alertText,
+  buttonNamed,
+  click,
+  invitationUrl as sharedInvitationUrl,
+  pairingCode,
+  rowFor,
+  settle,
+} from './app-test-utils';
+import { setNativeFieldValue } from '../../lib/dom';
+
+const fake = vi.hoisted(() => ({
+  noiseSupported: true as boolean,
+  hasPriorUse: false,
+  sessionToken: null as string | null,
+  setup: vi.fn<(credential: { setupToken: string }, label: string) => Promise<unknown>>(),
+  signin: vi.fn<() => Promise<unknown>>(),
+  retireSetupToken: vi.fn<(token: string) => Promise<void>>(),
+  retirePendingDeletions: vi.fn<() => Promise<void>>(),
+  listKnownBurrows: vi.fn<() => Promise<KnownBurrowV1[]>>(),
+  listBurrows: vi.fn<() => Promise<Array<{ burrowId: string; label: string; online: boolean }>>>(),
+  pair: vi.fn<
+    (
+      invitation: PairingInvitation,
+      label: string,
+      onCode?: (code: string) => void,
+    ) => Promise<PairingResult>
+  >(),
+  connect: vi.fn<(burrowId: string) => Promise<ConnectResult>>(),
+  forgetBurrow: vi.fn<(burrowId: string) => Promise<void>>(),
+  clientClose: vi.fn<() => void>(),
+  hello: vi.fn<() => Promise<unknown>>(),
+  adapterInit: vi.fn<() => Promise<void>>(),
+  adapterDispose: vi.fn<() => void>(),
+}));
+
+// The one shared module that is doubled, and only for its probe: the gate has
+// to be driven both ways, and nothing else in `remote-lib-common` may change.
+vi.mock('remote-lib-common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('remote-lib-common')>()),
+  probeNoiseSupport: () => Promise.resolve(fake.noiseSupported),
+}));
+
+vi.mock('../client/push-subscribe', () => ({
+  getPushAvailability: () => Promise.resolve('unsupported'),
+  hasCurrentPushSubscription: () => Promise.resolve(false),
+  isInstalledWebApp: () => true,
+  needsHomeScreenInstall: () => false,
+  subscribeToPushInBrowser: () => Promise.reject(new Error('not under test')),
+}));
+
+// Only `PocketClient` is doubled: the error classes and their messages are the
+// real ones, so a test asserting on what the screen says is asserting on what
+// ships rather than on a string this file made up.
+vi.mock('../client/pocket-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../client/pocket-client')>()),
+  PocketClient: class {
+    socketOpen = true;
+    get sessionToken() {
+      return fake.sessionToken;
+    }
+    hasPriorUse = () => fake.hasPriorUse;
+    registeredPushEndpoint = () => null;
+    setOnBurrowGone = () => undefined;
+    close = () => fake.clientClose();
+    openSocket = async () => undefined;
+    setup = (credential: { setupToken: string }, label: string) => fake.setup(credential, label);
+    signin = () => fake.signin();
+    retireSetupToken = (token: string) => fake.retireSetupToken(token);
+    retirePendingDeletions = () => fake.retirePendingDeletions();
+    listKnownBurrows = () => fake.listKnownBurrows();
+    listBurrows = () => fake.listBurrows();
+    forgetBurrow = (burrowId: string) => fake.forgetBurrow(burrowId);
+    pair = (
+      invitation: PairingInvitation,
+      label: string,
+      onCode?: (code: string) => void,
+    ) => fake.pair(invitation, label, onCode);
+    connect = (burrowId: string) => fake.connect(burrowId);
+    hello = () => fake.hello();
+    getPushConfig = async () => null;
+    listPushSubscribedBurrows = async () => [];
+  },
+}));
+
+vi.mock('../client/remote-adapter', () => ({
+  RemotePtyAdapter: class {
+    init = () => fake.adapterInit();
+    dispose = async () => fake.adapterDispose();
+  },
+}));
+
+vi.mock('../client/webauthn', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../client/webauthn')>()),
+  browserWebAuthn: {},
+}));
+vi.mock('./PocketWall', () => ({
+  PocketWall: ({ onError }: { onError?: (error: unknown) => void }) => (
+    <button onClick={() => onError?.(new Error('terminal attach refused'))}>Fail attachment</button>
+  ),
+}));
+vi.mock('../../lib/platform', () => ({ setPlatform: () => undefined }));
+vi.mock('../../lib/terminal-registry', () => ({
+  disposeAllSessions: () => undefined,
+  initAlertStateReceiver: () => undefined,
+}));
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+/** The label Pocket suggests from an installed app; see `deviceLabel`. */
+const DEVICE_LABEL = 'Dormouse Pocket (Home Screen)';
+
+let container: HTMLDivElement;
+let root: Root;
+
+/** A record as a successful pairing writes one. */
+async function knownBurrow(burrowId: string, label = 'First laptop'): Promise<KnownBurrowV1> {
+  const clientStatic = await generateNoiseKeyPair();
+  return {
+    burrowId,
+    accountId: 'owner',
+    label,
+    burrowStaticPublicKey: toBase64Url((await generateNoiseKeyPair()).publicKey),
+    clientStaticKeyPair: {
+      privateKey: clientStatic.privateKey as CryptoKey,
+      publicKeyRaw: toBase64Url(clientStatic.publicKey),
+    },
+    passkeyCredentialId: 'cred-1',
+    passkeyPublicKeyHash: 'hash-1',
+    authorization: { state: 'paired', deliveryId: `delivery-${burrowId}`, approvedAt: 1 },
+  };
+}
+
+/** A real pairing URL for the origin this app is served from. */
+const invitationUrl = () => sharedInvitationUrl(location.origin);
+
+beforeEach(() => {
+  fake.noiseSupported = true;
+  fake.hasPriorUse = false;
+  fake.sessionToken = null;
+  fake.setup.mockReset().mockImplementation(async () => {
+    fake.hasPriorUse = true;
+    return {};
+  });
+  fake.signin.mockReset().mockImplementation(async () => {
+    fake.sessionToken = 'tok';
+    return {};
+  });
+  fake.retireSetupToken.mockReset().mockResolvedValue(undefined);
+  fake.retirePendingDeletions.mockReset().mockResolvedValue(undefined);
+  fake.listKnownBurrows.mockReset().mockResolvedValue([]);
+  fake.listBurrows.mockReset().mockResolvedValue([]);
+  fake.pair.mockReset();
+  fake.connect.mockReset().mockResolvedValue({ ok: true, burrowLabel: 'First laptop' });
+  fake.forgetBurrow.mockReset().mockResolvedValue(undefined);
+  fake.clientClose.mockReset();
+  fake.hello.mockReset().mockResolvedValue({});
+  fake.adapterInit.mockReset().mockResolvedValue(undefined);
+  fake.adapterDispose.mockReset();
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+});
+
+async function boot(props: Partial<Parameters<typeof App>[0]> = {}): Promise<void> {
+  act(() => {
+    root.render(
+      <StrictMode>
+        <App {...props} />
+      </StrictMode>,
+    );
+  });
+  // The capability probe settles before anything is on screen.
+  await settle();
+}
+
+/** Open the scanner and paste one code into it, as a user without a camera would. */
+async function pasteCode(url: string): Promise<void> {
+  await click(container, SCAN_LABEL);
+  const input = container.querySelector<HTMLInputElement>('#pocket-paste-code')!;
+  act(() => setNativeFieldValue(input, url));
+  act(() => {
+    container.querySelector('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+  });
+  await settle();
+}
+
+describe('the capability gate', () => {
+  /**
+   * Runtimes are gated, not degraded: every ceremony needs X25519, so a browser
+   * without it gets a fixed upgrade requirement and performs no remote
+   * operation at all.
+   */
+  it('shows a fixed upgrade requirement and asks the Relay nothing', async () => {
+    fake.noiseSupported = false;
+
+    await boot();
+
+    expect(container.textContent).toContain(UNSUPPORTED_BROWSER_TITLE);
+    expect(buttonNamed(container, 'Sign in with passkey')).toBeNull();
+    expect(buttonNamed(container, SCAN_LABEL)).toBeNull();
+    expect(fake.signin).not.toHaveBeenCalled();
+    expect(fake.listBurrows).not.toHaveBeenCalled();
+  });
+
+  it('lets a capable runtime through to the auth screen', async () => {
+    await boot();
+
+    expect(container.textContent).not.toContain(UNSUPPORTED_BROWSER_TITLE);
+    expect(buttonNamed(container, SCAN_LABEL)).not.toBeNull();
+  });
+});
+
+describe('a first run, from the scan to the terminal', () => {
+  it('registers with the scanned token, pairs, shows the code, and connects', async () => {
+    const { url, invitation } = await invitationUrl();
+    let releasePair!: (result: PairingResult) => void;
+    fake.pair.mockImplementation((_invitation, _label, onCode) => {
+      onCode?.('07');
+      return new Promise<PairingResult>((resolve) => {
+        releasePair = resolve;
+      });
+    });
+    await boot();
+
+    await pasteCode(url);
+
+    // The token created the passkey, so there is nothing left to retire.
+    expect(fake.setup).toHaveBeenCalledWith({ setupToken: invitation.setupToken }, DEVICE_LABEL);
+    expect(fake.signin).toHaveBeenCalledOnce();
+    expect(fake.retireSetupToken).not.toHaveBeenCalled();
+    // The invitation reached `pair` as the parser produced it.
+    expect(fake.pair.mock.calls[0]![0].inviteId).toBe(invitation.inviteId);
+
+    // The digits are on screen while the outcome is pending.
+    // Matched on the live region's accessible name, not on the sentence beside
+    // it: the identity of this screen is an accessibility contract, and the copy
+    // around it is not (`PAIRING_CODE_LABEL`).
+    expect(pairingCode(container)).toBe('07');
+
+    const record = await knownBurrow(invitation.burrowId);
+    releasePair({ ok: true, record });
+    await settle();
+
+    expect(fake.connect).toHaveBeenCalledWith(invitation.burrowId);
+    // Approving on the laptop lands the phone in a terminal, not back on a list.
+    expect(buttonNamed(container, `‹ ${BURROWS_TITLE}`)).not.toBeNull();
+  });
+
+  it('reports a pairing the laptop refused, and lands on the Burrows list', async () => {
+    const { url } = await invitationUrl();
+    fake.pair.mockResolvedValue({
+      ok: false,
+      message: PAIRING_DENIAL_MESSAGES['user-denied'],
+    });
+    await boot();
+
+    await pasteCode(url);
+
+    expect(alertText(container)).toBe(PAIRING_DENIAL_MESSAGES['user-denied']);
+    expect(fake.connect).not.toHaveBeenCalled();
+    expect(buttonNamed(container, 'Refresh')).not.toBeNull();
+  });
+
+  /**
+   * `pair` reports denials as a result but *throws* for a Burrow-static mismatch,
+   * a dismissed authenticator prompt, and a lost passkey cache. The two-digit
+   * waiting screen renders no error, so a throw that left the user there would
+   * hide the one sentence that path exists to deliver.
+   */
+  it('leaves the waiting screen for a throw, where the message can be read', async () => {
+    const { url } = await invitationUrl();
+    fake.pair.mockRejectedValue(
+      new Error('This computer is presenting a different identity than the one this phone paired with.'),
+    );
+    await boot();
+
+    await pasteCode(url);
+
+    expect(alertText(container)).toBe(
+      'This computer is presenting a different identity than the one this phone paired with.',
+    );
+    // The Burrows list, not the pairing screen: `Refresh` exists only there.
+    expect(buttonNamed(container, 'Refresh')).not.toBeNull();
+    expect(buttonNamed(container, 'Cancel')).toBeNull();
+  });
+
+  /**
+   * The connect that follows an approved pairing runs with the two-digit screen
+   * still up, so a Burrow that refuses it — busy, protocol-rejected — or a
+   * dismissed biometric inside `connect` has the same nowhere-to-show problem
+   * the pairing half had.
+   */
+  it('leaves the waiting screen when the connect after a pairing is refused', async () => {
+    const { url, invitation } = await invitationUrl();
+    fake.pair.mockResolvedValue({ ok: true, record: await knownBurrow(invitation.burrowId) });
+    fake.connect.mockResolvedValue({
+      ok: false,
+      message: 'The computer is already handling as many phones as it can. Try again shortly.',
+      pairingRequired: false,
+    });
+    await boot();
+
+    await pasteCode(url);
+
+    expect(alertText(container)).toBe(
+      'The computer is already handling as many phones as it can. Try again shortly.',
+    );
+    expect(buttonNamed(container, 'Refresh')).not.toBeNull();
+  });
+});
+
+describe('a phone that is already signed in', () => {
+  it('retires the scanned token rather than registering a second passkey', async () => {
+    const { url, invitation } = await invitationUrl();
+    fake.hasPriorUse = true;
+    fake.pair.mockResolvedValue({
+      ok: true,
+      record: await knownBurrow(invitation.burrowId),
+    });
+    await boot();
+
+    // Sign in first, as a returning browser does.
+    await click(container, 'Sign in with passkey');
+    await pasteCode(url);
+
+    expect(fake.setup).not.toHaveBeenCalled();
+    expect(fake.retireSetupToken).toHaveBeenCalledWith(invitation.setupToken);
+  });
+
+  /**
+   * A code the Relay refuses is dead: pairing with it would fail at the Burrow
+   * anyway, and the only recovery is a fresh one from the computer.
+   */
+  it('aborts on a refused retirement and says to scan a new code', async () => {
+    const { url } = await invitationUrl();
+    fake.hasPriorUse = true;
+    fake.retireSetupToken.mockRejectedValue(new SetupTokenInvalidError());
+    await boot();
+
+    await click(container, 'Sign in with passkey');
+    await pasteCode(url);
+
+    expect(alertText(container)).toBe(SETUP_CODE_DEAD_MESSAGE);
+    expect(fake.pair).not.toHaveBeenCalled();
+  });
+
+  it('registers when the Relay has never heard of the credential this browser holds', async () => {
+    // `setup` caches the passkey before `setupFinish`, so a first run whose
+    // `finish` never reached the Relay leaves a browser that reads as
+    // returning while holding a credential the account never got. Every later
+    // scan would sign in, fail, and leave clearing site data as the only way
+    // out — so the Relay's 404 outranks this browser's own record.
+    const { url, invitation } = await invitationUrl();
+    fake.hasPriorUse = true;
+    fake.signin.mockReset().mockImplementationOnce(async () => {
+      throw new RelayRefusalError('unknown credential', 404);
+    });
+    fake.signin.mockImplementation(async () => {
+      fake.sessionToken = 'tok';
+      return {};
+    });
+    fake.pair.mockResolvedValue({ ok: true, record: await knownBurrow(invitation.burrowId) });
+    await boot();
+
+    await pasteCode(url);
+
+    expect(fake.setup).toHaveBeenCalledWith({ setupToken: invitation.setupToken }, DEVICE_LABEL);
+    // The token made the passkey, so there is nothing left to retire, and the
+    // scan carries on into the pairing it was for.
+    expect(fake.retireSetupToken).not.toHaveBeenCalled();
+    expect(fake.pair).toHaveBeenCalledOnce();
+  });
+
+  it('does not register when the sign-in failed for any other reason', async () => {
+    // A dismissed authenticator prompt or a dead radio proves nothing about
+    // what the Relay holds, so it must not spend the scanned token. Nor does
+    // any *other* refusal: a signin challenge that expired while the user sat
+    // at the Face ID prompt answers 400, a rejected assertion 401, and a
+    // restarting self-hosted Relay 502 — registering on one of those would
+    // spend the single-use setup token and mint a redundant second passkey.
+    const { url } = await invitationUrl();
+    fake.hasPriorUse = true;
+    fake.signin.mockReset().mockRejectedValue(new Error('The operation was aborted.'));
+    await boot();
+
+    await pasteCode(url);
+
+    expect(fake.setup).not.toHaveBeenCalled();
+    expect(fake.pair).not.toHaveBeenCalled();
+  });
+
+  it.each([400, 401, 502])('does not register on a %i refusal either', async (status) => {
+    const { url } = await invitationUrl();
+    fake.hasPriorUse = true;
+    fake.signin
+      .mockReset()
+      .mockRejectedValue(new RelayRefusalError('refused this attempt', status));
+    await boot();
+
+    await pasteCode(url);
+
+    expect(fake.setup).not.toHaveBeenCalled();
+    expect(fake.pair).not.toHaveBeenCalled();
+  });
+
+  it('signs in first when the browser holds a passkey but no session', async () => {
+    const { url, invitation } = await invitationUrl();
+    fake.hasPriorUse = true;
+    fake.pair.mockResolvedValue({ ok: true, record: await knownBurrow(invitation.burrowId) });
+    await boot();
+
+    await pasteCode(url);
+
+    expect(fake.signin).toHaveBeenCalledOnce();
+    expect(fake.setup).not.toHaveBeenCalled();
+    expect(fake.retireSetupToken).toHaveBeenCalledWith(invitation.setupToken);
+  });
+});
+
+describe('the Burrows list', () => {
+  it('shows the pinned records, labeled locally, with the Relay’s online state', async () => {
+    fake.hasPriorUse = true;
+    fake.listKnownBurrows.mockResolvedValue([
+      await knownBurrow('burrow-1', 'First laptop'),
+      await knownBurrow('burrow-2', 'Second laptop'),
+    ]);
+    fake.listBurrows.mockResolvedValue([
+      { burrowId: 'burrow-1', label: 'a name the Relay holds', online: true },
+      // Enrolled, but this phone has no record for it: not a row.
+      { burrowId: 'burrow-3', label: 'Someone else’s', online: true },
+    ]);
+    await boot();
+
+    await click(container, 'Sign in with passkey');
+
+    expect(container.textContent).toContain('First laptop');
+    expect(container.textContent).not.toContain('a name the Relay holds');
+    expect(container.textContent).not.toContain('Someone else’s');
+    // No `GET /api/burrows` row means offline, not absent.
+    expect(rowFor(container, 'Second laptop').textContent).toContain('Offline');
+  });
+
+  /**
+   * An authenticated `pairing-required` removes local authorization without
+   * discarding the pin, so the row offers *Pair again* — which starts at the
+   * scanner, the only place a pairing can start.
+   */
+  it('turns a pairing-required denial into Pair again', async () => {
+    fake.hasPriorUse = true;
+    const paired = await knownBurrow('burrow-1');
+    fake.listKnownBurrows.mockResolvedValueOnce([paired]).mockResolvedValue([
+      { ...paired, authorization: { state: 'pairing-required' } },
+    ]);
+    fake.listBurrows.mockResolvedValue([{ burrowId: 'burrow-1', label: '', online: true }]);
+    fake.connect.mockResolvedValue({
+      ok: false,
+      message: 'This computer no longer recognizes this phone. Scan a new code to pair again.',
+      pairingRequired: true,
+    });
+    await boot();
+    await click(container, 'Sign in with passkey');
+
+    await click(container, 'Connect');
+
+    expect(alertText(container)).toContain('no longer recognizes this phone');
+    expect(buttonNamed(container, 'Pair again')).not.toBeNull();
+    await click(container, 'Pair again');
+    expect(container.querySelector('#pocket-paste-code')).not.toBeNull();
+  });
+
+  it('removes a record and re-reads the list', async () => {
+    fake.hasPriorUse = true;
+    fake.listKnownBurrows.mockResolvedValueOnce([await knownBurrow('burrow-1')]).mockResolvedValue([]);
+    fake.listBurrows.mockResolvedValue([{ burrowId: 'burrow-1', label: '', online: true }]);
+    await boot();
+    await click(container, 'Sign in with passkey');
+
+    await click(container, 'Remove');
+
+    expect(fake.forgetBurrow).toHaveBeenCalledWith('burrow-1');
+    expect(container.textContent).toContain(BURROWS_EMPTY);
+  });
+
+  it('retries owed deletions on every visit to the list', async () => {
+    fake.hasPriorUse = true;
+    await boot();
+
+    await click(container, 'Sign in with passkey');
+
+    expect(fake.retirePendingDeletions).toHaveBeenCalled();
+  });
+
+  /**
+   * The Burrow authorized the connection, so a session exists — and then the
+   * adapter's first `directory.watch` failed and the user is back on a list
+   * with no way to end anything. A session left up here is one the phone goes
+   * on keepaliving while holding one of the Burrow's slots.
+   */
+  it('ends the session when the adapter cannot stand up on it', async () => {
+    fake.hasPriorUse = true;
+    fake.listKnownBurrows.mockResolvedValue([await knownBurrow('burrow-1')]);
+    fake.listBurrows.mockResolvedValue([{ burrowId: 'burrow-1', label: '', online: true }]);
+    fake.adapterInit.mockRejectedValue(new Error('the directory did not answer'));
+    await boot();
+    await click(container, 'Sign in with passkey');
+
+    await click(container, 'Connect');
+
+    expect(alertText(container)).toContain('the directory did not answer');
+    expect(buttonNamed(container, 'Connect')).not.toBeNull();
+    expect(fake.adapterDispose).toHaveBeenCalled();
+    expect(fake.clientClose).toHaveBeenCalled();
+  });
+
+  it('ends an authorized session when hello fails before adapter creation', async () => {
+    fake.hasPriorUse = true;
+    fake.listKnownBurrows.mockResolvedValue([await knownBurrow('burrow-1')]);
+    fake.listBurrows.mockResolvedValue([{ burrowId: 'burrow-1', label: '', online: true }]);
+    fake.hello.mockRejectedValue(new Error('hello refused'));
+    await boot();
+    await click(container, 'Sign in with passkey');
+    await click(container, 'Connect');
+
+    expect(alertText(container)).toContain('hello refused');
+    expect(buttonNamed(container, 'Connect')).not.toBeNull();
+    expect(fake.adapterInit).not.toHaveBeenCalled();
+    expect(fake.clientClose).toHaveBeenCalled();
+  });
+
+  it('returns to sign-in when the cached proof key disappears', async () => {
+    fake.hasPriorUse = true;
+    fake.listKnownBurrows.mockResolvedValue([await knownBurrow('burrow-1')]);
+    fake.listBurrows.mockResolvedValue([{ burrowId: 'burrow-1', label: '', online: true }]);
+    fake.connect.mockRejectedValue(new PasskeyUnavailableError());
+    await boot();
+    await click(container, 'Sign in with passkey');
+    await click(container, 'Connect');
+
+    expect(alertText(container)).toContain('Sign in again');
+    expect(buttonNamed(container, 'Sign in with passkey')).not.toBeNull();
+    expect(fake.clientClose).toHaveBeenCalled();
+  });
+
+  it('ends the session and reports a terminal attachment failure on the Burrows list', async () => {
+    fake.hasPriorUse = true;
+    fake.listKnownBurrows.mockResolvedValue([await knownBurrow('burrow-1')]);
+    fake.listBurrows.mockResolvedValue([{ burrowId: 'burrow-1', label: '', online: true }]);
+    await boot();
+    await click(container, 'Sign in with passkey');
+    await click(container, 'Connect');
+    await click(container, 'Fail attachment');
+
+    expect(alertText(container)).toContain('terminal attach refused');
+    expect(buttonNamed(container, 'Connect')).not.toBeNull();
+    expect(fake.adapterDispose).toHaveBeenCalled();
+    expect(fake.clientClose).toHaveBeenCalled();
+  });
+});
+
+describe('leaving the scanner', () => {
+  it('returns a signed-out phone to the auth screen', async () => {
+    await boot();
+
+    await click(container, SCAN_LABEL);
+    expect(container.querySelector('#pocket-paste-code')).not.toBeNull();
+
+    await click(container, 'Cancel');
+
+    expect(buttonNamed(container, SCAN_LABEL)).not.toBeNull();
+    expect(container.querySelector('#pocket-paste-code')).toBeNull();
+  });
+
+  it('returns a signed-in phone to its Burrows list', async () => {
+    fake.hasPriorUse = true;
+    await boot();
+    await click(container, 'Sign in with passkey');
+
+    await click(container, SCAN_LABEL);
+    await click(container, 'Cancel');
+
+    expect(buttonNamed(container, 'Refresh')).not.toBeNull();
+  });
+
+  /**
+   * Cancelling the wait is not a failure to report at the user: the ceremony
+   * they abandoned has nothing left to say to them.
+   */
+  it('reads the list on the way back, since the scan may have signed in', async () => {
+    // `onScanned` signs in and only reads the Burrows list on a path that reaches
+    // pairing, so a scan that failed after sign-in has a session and no list.
+    // Cancelling into an empty list would be a lie.
+    const { url } = await invitationUrl();
+    fake.setup.mockRejectedValue(new Error(SETUP_CODE_DEAD_MESSAGE));
+    fake.listKnownBurrows.mockResolvedValue([await knownBurrow('burrow-1')]);
+    fake.listBurrows.mockResolvedValue([{ burrowId: 'burrow-1', label: '', online: true }]);
+    await boot();
+    await click(container, SCAN_LABEL);
+    const input = container.querySelector<HTMLInputElement>('#pocket-paste-code')!;
+    act(() => setNativeFieldValue(input, url));
+    act(() => {
+      container.querySelector('form')!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+    await settle();
+    // Setup failed but sign-in did not run; give the phone a session anyway,
+    // as a scan that got past setup and failed later would have.
+    fake.sessionToken = 'tok';
+
+    await click(container, 'Cancel');
+
+    expect(container.textContent).toContain('First laptop');
+    expect(container.textContent).not.toContain(BURROWS_EMPTY);
+  });
+
+  it('leaves no error behind when the waiting screen is cancelled', async () => {
+    const { url } = await invitationUrl();
+    let releasePair!: (result: PairingResult) => void;
+    fake.pair.mockImplementation((_invitation, _label, onCode) => {
+      onCode?.('42');
+      return new Promise<PairingResult>((resolve) => {
+        releasePair = resolve;
+      });
+    });
+    await boot();
+    await pasteCode(url);
+    expect(container.textContent).toContain('42');
+
+    await click(container, 'Cancel');
+    releasePair({ ok: false, message: 'The computer did not answer.' });
+    await settle();
+
+    expect(alertText(container)).toBeNull();
+    expect(buttonNamed(container, 'Refresh')).not.toBeNull();
+  });
+});
+
+it('never opens a camera on a screen that is gone', async () => {
+  // The scanner's own teardown is `ScanInvitation.test.tsx`'s; this is the one
+  // thing only the app can prove — that leaving the screen unmounts it.
+  const stopped: number[] = [];
+  const startScan = async (video: HTMLVideoElement) => {
+    (video as unknown as { srcObject: unknown }).srcObject = {
+      getTracks: () => [{ stop: () => stopped.push(1) }],
+    };
+    return { stop: () => stopped.push(1) };
+  };
+  await boot({ startScan });
+
+  await click(container, SCAN_LABEL);
+  await click(container, 'Cancel');
+
+  expect(stopped.length).toBeGreaterThan(0);
+});
+
+it('leads with the camera-bootstrap copy when the fragment brought us here', async () => {
+  await boot({ arrivedByCamera: true });
+
+  expect(container.textContent).toContain(CAMERA_BOOTSTRAP_MESSAGE);
+  // Nothing was spent: the run has no token, and no Relay call was made.
+  expect(fake.setup).not.toHaveBeenCalled();
+  expect(fake.retireSetupToken).not.toHaveBeenCalled();
+});

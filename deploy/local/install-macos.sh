@@ -1,13 +1,13 @@
 #!/bin/bash
 #
-# Install the Dormouse coordinating server on this Mac as a per-login
+# Install the Dormouse coordinating Relay on this Mac as a per-login
 # LaunchAgent, fronted by `tailscale serve` on the node's own HTTPS name.
 #
 # Running this a second time updates the installed release from the current
 # checkout. It never pulls, fetches, switches branches, or installs an updater:
 # the checkout you are standing in is the release source.
 #
-# See SELF_HOST.md for the runbook and docs/specs/server.md for the runtime
+# See SELF_HOST.md for the runbook and docs/specs/relay.md for the runtime
 # contract this installs.
 #
 # Usage:
@@ -23,9 +23,11 @@ set -euo pipefail
 
 # macOS ships bash 3.2; nothing here may use bash 4+ syntax.
 
-LABEL="sh.dormouse.server"
-INSTALL_ROOT="$HOME/Library/Application Support/Dormouse Server"
-LOG_DIR="$HOME/Library/Logs/Dormouse Server"
+LABEL="sh.dormouse.relay"
+# What LABEL was before the Relay rename; unloaded once, never migrated.
+RETIRED_LABEL="sh.dormouse.server"
+INSTALL_ROOT="$HOME/Library/Application Support/Dormouse Relay"
+LOG_DIR="$HOME/Library/Logs/Dormouse Relay"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOOPBACK_PORT=3100
 
@@ -166,16 +168,16 @@ fs.renameSync(tmp, link);
 # what separates the release that is supposed to be serving from an orphan of an
 # older one still holding it.
 #
-# The server writes {pid, releaseId, port} at successful bind
-# (server/src/runtime-file.ts), so this is a file read and a liveness check
+# The Relay writes {pid, releaseId, port} at successful bind
+# (relay/src/runtime-file.ts), so this is a file read and a liveness check
 # rather than lsof forensics over the process table. Empty means "unknown",
-# never "nobody": a stale file whose pid is dead, a server started outside the
+# never "nobody": a stale file whose pid is dead, a Relay started outside the
 # installer, and a foreign process that got the port first are all
 # indistinguishable from here, and all must fail the comparison rather than
 # pass it.
 listening_release() {
   local port="$1" file pid release rport
-  file="$INSTALL_ROOT/run/server.json"
+  file="$INSTALL_ROOT/run/relay.json"
   [ -r "$file" ] || return 0
   pid="$(sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$file" | head -1)"
   release="$(sed -n 's/.*"releaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | head -1)"
@@ -223,7 +225,7 @@ ts() {
 
 # ------------------------------------------------------------------ start ----
 
-printf '%sDormouse selfhost server — macOS installer%s\n' "$C_BLD" "$C_OFF"
+printf '%sDormouse selfhost Relay — macOS installer%s\n' "$C_BLD" "$C_OFF"
 [ "$TEST_MODE" = "1" ] && warn "DORMOUSE_INSTALL_TEST=1 — launchd and Serve will not be touched."
 
 step "Checking Tailscale"
@@ -257,10 +259,25 @@ case ",$CERT_DOMAINS," in
     ;;
 esac
 
+# Match run-relay's KEY=VALUE parser: the last assignment wins, and only
+# a matched pair of double quotes is removed. Never source configuration.
+env_file_value() {
+  [ -r "$1" ] || return 1
+  awk -v key="$2" '
+    index($0, key "=") == 1 { value = substr($0, length(key) + 2) }
+    END {
+      if (value ~ /^".*"$/) value = substr(value, 2, length(value) - 2)
+      printf "%s", value
+    }
+  ' "$1"
+}
+
 # --------------------------------------------------------- origin identity ---
 
 CONFIG_DIR="$INSTALL_ROOT/config"
-ENV_FILE="$CONFIG_DIR/server.env"
+ENV_FILE="$CONFIG_DIR/relay.env"
+RUN_DIR="$INSTALL_ROOT/run"
+ENROLL_OFFER_FILE="$RUN_DIR/enroll-offer.json"
 STATE_DIR="$INSTALL_ROOT/state"
 RELEASES_DIR="$INSTALL_ROOT/releases"
 BIN_DIR="$INSTALL_ROOT/bin"
@@ -270,7 +287,7 @@ PREVIOUS_LINK="$INSTALL_ROOT/previous"
 FIRST_INSTALL=1
 if [ -f "$ENV_FILE" ]; then
   FIRST_INSTALL=0
-  EXISTING_ORIGIN="$(sed -n 's/^DORMOUSE_ORIGIN=//p' "$ENV_FILE" | head -1 | sed 's/^"//; s/"$//')"
+  EXISTING_ORIGIN="$(env_file_value "$ENV_FILE" DORMOUSE_ORIGIN)"
   if [ -n "$EXISTING_ORIGIN" ] && [ "$EXISTING_ORIGIN" != "$ORIGIN" ]; then
     printf '\n' >&2
     warn "This machine already has an installation bound to a DIFFERENT origin."
@@ -278,11 +295,11 @@ if [ -f "$ENV_FILE" ]; then
     warn "  derived:   $ORIGIN"
     warn ""
     warn "DORMOUSE_ORIGIN is durable WebAuthn identity: it is the source of the"
-    warn "passkey rpId and of the Host's ConnectionPolicy. Rewriting it invalidates"
-    warn "the registered passkey and every enrolled Host — they must be re-enrolled."
+    warn "passkey rpId and of the Burrow's ConnectionPolicy. Rewriting it invalidates"
+    warn "the registered passkey and every enrolled Burrow — they must be re-enrolled."
     warn ""
     warn "This usually means the Tailscale node was renamed or re-enrolled."
-    die "refusing to silently rewrite the origin. Decide deliberately: restore the old node name, or plan the passkey + Host re-enrollment and remove $ENV_FILE by hand."
+    die "refusing to silently rewrite the origin. Decide deliberately: restore the old node name, or plan the passkey + Burrow re-enrollment and remove $ENV_FILE by hand."
   fi
 fi
 
@@ -312,7 +329,7 @@ else
 fi
 
 NODE_PIN="$(json_query "$REPO_ROOT/package.json" "devEngines.runtime.version" || echo "")"
-[ -n "$NODE_PIN" ] || die "root package.json has no devEngines.runtime.version. SECURITY.md keys a mechanical FAIL IF to that exact field."
+[ -n "$NODE_PIN" ] || die "root package.json has no devEngines.runtime.version. docs/specs/security-supply-chain.md keys a mechanical FAIL IF to that exact field."
 case "$NODE_PIN" in
   *.*.*) : ;;
   *) die "devEngines.runtime.version must be an exact MAJOR.MINOR.PATCH version, got '$NODE_PIN'." ;;
@@ -367,10 +384,10 @@ pnpm --filter dormouse-lib build:pocket >/dev/null 2>&1 || die "pocket build fai
 [ -f "$REPO_ROOT/lib/dist-pocket/index.html" ] || die "lib/dist-pocket/index.html missing after the pocket build."
 ok "pocket app built"
 
-info "building server (and server-lib-common)"
-pnpm --filter server build >/dev/null 2>&1 || die "server build failed. Run: pnpm --filter server build"
-[ -f "$REPO_ROOT/server/dist/index.js" ] || die "server/dist/index.js missing after the server build."
-ok "server built"
+info "building Relay (and remote-lib-common)"
+pnpm --filter relay build >/dev/null 2>&1 || die "Relay build failed. Run: pnpm --filter relay build"
+[ -f "$REPO_ROOT/relay/dist/index.js" ] || die "relay/dist/index.js missing after the Relay build."
+ok "Relay built"
 
 # Resolve the exact Node the build ran under. pnpm honors devEngines
 # (onFail: download), so this is the pinned runtime, not whatever is on PATH.
@@ -388,13 +405,23 @@ NODE_BUILD_ARCH="$("$NODE_BIN" -e 'process.stdout.write(process.arch)')"
 [ "$NODE_BUILD_VERSION" = "v$NODE_PIN" ] || die "the build ran under Node $NODE_BUILD_VERSION but the repository pins v$NODE_PIN."
 ok "pinned runtime: $NODE_BUILD_VERSION ($NODE_BUILD_ARCH)"
 
+# A release id can repeat within one second. Claim its directory exclusively;
+# an existing path may be a live release and must never be cleared for staging.
+create_release_stage() {
+  mkdir "$1" || return 1
+  mkdir "$1/lib" "$1/runtime"
+}
+
 # ------------------------------------------------------------- stage build ---
 
 step "Staging the new release"
 
 mkdir -p "$RELEASES_DIR" "$BIN_DIR"
-mkdir -p "$CONFIG_DIR" "$STATE_DIR"
-chmod 0700 "$CONFIG_DIR" "$STATE_DIR"
+mkdir -p "$CONFIG_DIR" "$STATE_DIR" "$RUN_DIR"
+# Explicit, not left to the umask: nothing has narrowed it by this point, and
+# the `umask 077` further down is scoped to the first-install branch — so an
+# update run would otherwise create these 0755.
+chmod 0700 "$CONFIG_DIR" "$STATE_DIR" "$RUN_DIR"
 mkdir -p "$LOG_DIR"
 
 BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -402,8 +429,7 @@ RELEASE_ID="$(date -u +%Y%m%dT%H%M%SZ)-$GIT_SHORT"
 [ "$GIT_DIRTY" = "true" ] && RELEASE_ID="$RELEASE_ID-dirty"
 STAGE="$RELEASES_DIR/$RELEASE_ID"
 
-rm -rf "$STAGE"
-mkdir -p "$STAGE/lib" "$STAGE/runtime"
+create_release_stage "$STAGE" || die "could not create a new release directory: $STAGE (existing releases are never overwritten)."
 
 info "pnpm deploy --prod --legacy"
 WS_STATE_BACKUP=""
@@ -411,15 +437,15 @@ if [ -f "$WS_STATE" ]; then
   WS_STATE_BACKUP="$(mktemp -t dormouse-wsstate)"
   cp -p "$WS_STATE" "$WS_STATE_BACKUP"
 fi
-pnpm --filter server deploy --prod --legacy "$STAGE/server" >/dev/null 2>&1 \
-  || die "pnpm deploy failed. Run: pnpm --filter server deploy --prod --legacy /tmp/dormouse-deploy-probe"
+pnpm --filter relay deploy --prod --legacy "$STAGE/relay" >/dev/null 2>&1 \
+  || die "pnpm deploy failed. Run: pnpm --filter relay deploy --prod --legacy /tmp/dormouse-deploy-probe"
 restore_workspace_state
-[ -f "$STAGE/server/dist/index.js" ] || die "the deployed server tree has no dist/index.js."
-[ -d "$STAGE/server/node_modules/server-lib-common" ] || die "the deployed server tree is missing the injected server-lib-common workspace package."
-ok "production server tree staged"
+[ -f "$STAGE/relay/dist/index.js" ] || die "the deployed Relay tree has no dist/index.js."
+[ -d "$STAGE/relay/node_modules/remote-lib-common" ] || die "the deployed Relay tree is missing the injected remote-lib-common workspace package."
+ok "production Relay tree staged"
 
-# server/src/config.ts resolves the pocket dir two levels up from
-# server/dist/config.js, i.e. <release>/lib/dist-pocket. Match that layout so no
+# relay/src/config.ts resolves the pocket dir two levels up from
+# relay/dist/config.js, i.e. <release>/lib/dist-pocket. Match that layout so no
 # DORMOUSE_POCKET_DIR override is needed.
 cp -R "$REPO_ROOT/lib/dist-pocket" "$STAGE/lib/dist-pocket"
 [ -f "$STAGE/lib/dist-pocket/index.html" ] || die "pocket app did not land in the release."
@@ -459,29 +485,40 @@ ok "release $RELEASE_ID staged"
 
 step "Runtime configuration"
 
-if [ ! -f "$ENV_FILE" ]; then
-  SETUP_PASSWORD=""
+# 32 bytes of the platform CSPRNG as 64 lowercase hex characters. The enrollment
+# offer is the one secret this installer mints; the Relay owns its setup
+# password and persists it under state/ on first boot. Never substitute $RANDOM,
+# a timestamp, or any other non-CSPRNG source.
+random_hex32() {
   if [ -x /usr/bin/xxd ]; then
-    SETUP_PASSWORD="$(/usr/bin/xxd -p -l 32 -c 32 /dev/urandom)"
+    /usr/bin/xxd -p -l 32 -c 32 /dev/urandom
   elif [ -x /usr/bin/openssl ]; then
-    SETUP_PASSWORD="$(/usr/bin/openssl rand -hex 32)"
+    /usr/bin/openssl rand -hex 32
   else
-    die "no way to generate a high-entropy password (need /usr/bin/xxd or /usr/bin/openssl)."
+    die "no way to generate a high-entropy secret (need /usr/bin/xxd or /usr/bin/openssl)."
   fi
-  # Both generators above produce 32 random bytes, i.e. 64 hex characters. The
-  # guard counts characters, so it must be 64 — checking for 32 would pass a
-  # regression to `-l 16`, which is half the entropy SECURITY.md claims.
-  [ ${#SETUP_PASSWORD} -ge 64 ] || die "generated setup password is implausibly short; refusing to install it."
+}
 
+# Which installer-owned keys is the env file $1 missing (absent, or present
+# with an empty value)? Echoes them space-separated; empty output means the
+# file is one a run of this installer finished writing.
+env_missing_keys() {
+  local key missing=""
+  for key in DORMOUSE_ORIGIN DORMOUSE_STATE_DIR DORMOUSE_BIND_HOST PORT; do
+    [ -n "$(env_file_value "$1" "$key")" ] || missing="$missing $key"
+  done
+  printf '%s' "$missing"
+}
+
+if [ ! -f "$ENV_FILE" ]; then
   umask 077
   cat > "$ENV_FILE" <<ENV_EOF
-# Dormouse selfhost server — installer-owned runtime configuration.
+# Dormouse selfhost Relay — installer-owned runtime configuration.
 # Generated $BUILT_AT. Preserved byte-for-byte across updates.
 #
-# DORMOUSE_ORIGIN is durable WebAuthn identity (passkey rpId + Host
+# DORMOUSE_ORIGIN is durable WebAuthn identity (passkey rpId + Burrow
 # ConnectionPolicy). Changing it invalidates the registered passkey and every
-# enrolled Host. See docs/specs/server.md, "Configuration".
-DORMOUSE_SETUP_PASSWORD=$SETUP_PASSWORD
+# enrolled Burrow. See docs/specs/relay.md, "Configuration".
 DORMOUSE_ORIGIN=$ORIGIN
 DORMOUSE_STATE_DIR=$STATE_DIR
 DORMOUSE_BIND_HOST=127.0.0.1
@@ -489,27 +526,39 @@ PORT=$LOOPBACK_PORT
 NODE_ENV=production
 ENV_EOF
   chmod 0600 "$ENV_FILE"
-  unset SETUP_PASSWORD
-  ok "generated config/server.env (mode 0600) with a locally generated setup password"
-  detail "the password was not printed; retrieve it with: manage show-password"
+  ok "generated config/relay.env (mode 0600)"
 else
   chmod 0600 "$ENV_FILE"
-  ok "preserved the existing config/server.env"
+  ok "preserved the existing config/relay.env"
 fi
+
+# A file that exists is not necessarily one an install finished writing. Killed
+# between creating config/relay.env and filling it, it leaves a truncated file
+# that the branch above happily "preserves" — and then the bind-host guard below
+# tells the operator to *fix* a file whose repair is `rm`, on every run, forever.
+# The two cases are indistinguishable from here and their repairs are opposite,
+# so this names what is missing and changes nothing: DORMOUSE_ORIGIN is durable
+# WebAuthn identity and may already have enrolled a Burrow.
+ENV_MISSING="$(env_missing_keys "$ENV_FILE")"
+[ -z "$ENV_MISSING" ] || die "config/relay.env is missing installer-owned keys:$ENV_MISSING
+An install interrupted between creating that file and writing it leaves exactly this. Nothing has been changed. The repair depends on which one it is:
+  - nothing enrolled yet (no $STATE_DIR/burrows.json): remove the file and re-run this installer
+      rm '$ENV_FILE'
+  - otherwise: restore the missing key(s) by hand, and leave DORMOUSE_ORIGIN exactly as it is — it is durable WebAuthn identity, and rewriting it invalidates the registered passkey and every enrolled Burrow."
 
 # The bind host is a security boundary whenever the TLS proxy is local: Serve
 # reaches the app over loopback, so an unbound socket would also publish the
 # plaintext port to the LAN and to the tailnet.
-grep -q '^DORMOUSE_BIND_HOST=127\.0\.0\.1$' "$ENV_FILE" \
-  || die "config/server.env must set DORMOUSE_BIND_HOST=127.0.0.1. Fix it before continuing — Tailscale access control is not a reason to expose the plaintext backend."
-grep -q "^PORT=$LOOPBACK_PORT$" "$ENV_FILE" \
-  || die "config/server.env must set PORT=$LOOPBACK_PORT to match the Serve mapping."
+[ "$(env_file_value "$ENV_FILE" DORMOUSE_BIND_HOST)" = "127.0.0.1" ] \
+  || die "config/relay.env must set DORMOUSE_BIND_HOST=127.0.0.1. Fix it before continuing — Tailscale access control is not a reason to expose the plaintext backend."
+[ "$(env_file_value "$ENV_FILE" PORT)" = "$LOOPBACK_PORT" ] \
+  || die "config/relay.env must set PORT=$LOOPBACK_PORT to match the Serve mapping."
 
 # ------------------------------------------------------------- bin scripts ---
 
 step "Installing the service wrapper and management helper"
 
-cat > "$BIN_DIR/run-server" <<'RUNSERVER_EOF'
+cat > "$BIN_DIR/run-relay" <<'RUNSERVER_EOF'
 #!/bin/bash
 # Installed by deploy/local/install-macos.sh. Stable across releases.
 #
@@ -520,12 +569,12 @@ cat > "$BIN_DIR/run-server" <<'RUNSERVER_EOF'
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="$ROOT/config/server.env"
+ENV_FILE="$ROOT/config/relay.env"
 
-[ -r "$ENV_FILE" ] || { echo "run-server: cannot read $ENV_FILE" >&2; exit 78; }
+[ -r "$ENV_FILE" ] || { echo "run-relay: cannot read $ENV_FILE" >&2; exit 78; }
 
-# Parse KEY=VALUE lines. Deliberately not `source`/`eval`: this file holds the
-# setup password, and a config file should not be able to execute code.
+# Parse KEY=VALUE lines. Deliberately not `source`/`eval`: a config file should
+# not be able to execute code.
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in ''|'#'*) continue ;; esac
   case "$line" in *=*) ;; *) continue ;; esac
@@ -542,33 +591,37 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "$ENV_FILE"
 
 NODE_BIN="$ROOT/current/runtime/node"
-ENTRY="$ROOT/current/server/dist/index.js"
-[ -x "$NODE_BIN" ] || { echo "run-server: missing runtime $NODE_BIN" >&2; exit 78; }
-[ -f "$ENTRY" ] || { echo "run-server: missing entrypoint $ENTRY" >&2; exit 78; }
+ENTRY="$ROOT/current/relay/dist/index.js"
+[ -x "$NODE_BIN" ] || { echo "run-relay: missing runtime $NODE_BIN" >&2; exit 78; }
+[ -f "$ENTRY" ] || { echo "run-relay: missing entrypoint $ENTRY" >&2; exit 78; }
 
-# Tell the server who it is. It records {pid, releaseId, port} here once it has
+# Tell the Relay who it is. It records {pid, releaseId, port} here once it has
 # actually bound, which is how `manage` and the installer answer "which release
 # is answering?" without reconstructing it from the process table. Set here
-# rather than in server.env because it is derived from `current`, which moves.
-export DORMOUSE_RUNTIME_FILE="$ROOT/run/server.json"
+# rather than in relay.env because it is derived from `current`, which moves.
+export DORMOUSE_RUNTIME_FILE="$ROOT/run/relay.json"
+# The installer mints this only until burrows.json records the first enrollment.
+export DORMOUSE_ENROLL_TOKEN_FILE="$ROOT/run/enroll-offer.json"
 RELEASE_TARGET="$(readlink "$ROOT/current" 2>/dev/null || true)"
 [ -n "$RELEASE_TARGET" ] && export DORMOUSE_RELEASE_ID="${RELEASE_TARGET##*/}"
 
 exec "$NODE_BIN" "$ENTRY"
 RUNSERVER_EOF
-chmod 0700 "$BIN_DIR/run-server"
-ok "bin/run-server"
+chmod 0700 "$BIN_DIR/run-relay"
+ok "bin/run-relay"
 
 cat > "$BIN_DIR/manage" <<'MANAGE_EOF'
 #!/bin/bash
 # Installed by deploy/local/install-macos.sh.
 set -euo pipefail
 
-LABEL="sh.dormouse.server"
+LABEL="sh.dormouse.relay"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="$ROOT/config/server.env"
+ENV_FILE="$ROOT/config/relay.env"
+OFFER_FILE="$ROOT/run/enroll-offer.json"
 STATE_DIR="$ROOT/state"
-LOG_DIR="$HOME/Library/Logs/Dormouse Server"
+NODE_BIN="$ROOT/current/runtime/node"
+LOG_DIR="$HOME/Library/Logs/Dormouse Relay"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 # A test install (DORMOUSE_INSTALL_ROOT) keeps its logs and plist inside its own
 # root, so `manage` must follow them there rather than at the real HOME paths.
@@ -586,9 +639,21 @@ fail() { printf '  %s✗%s %s\n' "$C_RED" "$C_OFF" "$1"; FAILURES=$((FAILURES + 
 note() { printf '  %s%s%s\n' "$C_DIM" "$1" "$C_OFF"; }
 warn() { printf '  %s!%s %s\n' "$C_YEL" "$C_OFF" "$1"; }
 
+# Match run-relay's KEY=VALUE parser: the last assignment wins, and only
+# a matched pair of double quotes is removed. Never source configuration.
+env_file_value() {
+  [ -r "$1" ] || return 1
+  awk -v key="$2" '
+    index($0, key "=") == 1 { value = substr($0, length(key) + 2) }
+    END {
+      if (value ~ /^".*"$/) value = substr(value, 2, length(value) - 2)
+      printf "%s", value
+    }
+  ' "$1"
+}
+
 env_value() {
-  [ -r "$ENV_FILE" ] || return 1
-  sed -n "s/^$1=//p" "$ENV_FILE" | head -1 | sed 's/^"//; s/"$//'
+  env_file_value "$ENV_FILE" "$1"
 }
 
 PORT="$(env_value PORT || echo 3100)"
@@ -634,11 +699,31 @@ release_field() {
   sed -n "s/^$1=//p" "$target" | head -1
 }
 
+# Mode alone accepts a private path owned by another account. Compare numeric
+# uids so ownership does not depend on directory-service name resolution.
+# $1 = path, $2 = expected octal mode, $3 = label.
+owner_only() {
+  local out mode owner me
+  me="$(id -u)"
+  out="$(stat -f '%Lp %u' "$1" 2>/dev/null || true)"
+  if [ -z "$out" ]; then
+    fail "$3 is missing: $1"
+    return
+  fi
+  mode="${out%% *}"
+  owner="${out#* }"
+  if [ "$mode" = "$2" ] && [ "$owner" = "$me" ]; then
+    pass "$3 is mode 0$2, owned by uid $me"
+  else
+    fail "$3 is mode 0$mode owned by uid $owner — expected mode 0$2 owned by uid $me"
+  fi
+}
+
 # Which release is serving port $1? Empty when that cannot be established —
 # see the full rationale on the installer's copy of this function.
 listening_release() {
   local port="$1" file pid release rport
-  file="$ROOT/run/server.json"
+  file="$ROOT/run/relay.json"
   [ -r "$file" ] || return 0
   pid="$(sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$file" | head -1)"
   release="$(sed -n 's/.*"releaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | head -1)"
@@ -679,8 +764,33 @@ wait_for_health() {
   return 1
 }
 
+# Is anything in a captured listener list bound somewhere other than
+# 127.0.0.1:$1? $1 = the port, $2 = the `lsof` lines. Exit 0 when at least one
+# line is off-loopback.
+#
+# Captured because `printf … | grep -qv` exits at the first non-matching line;
+# the writer's SIGPIPE becomes the pipeline status under `set -o pipefail`,
+# reporting "loopback only" for a list that begins with an off-loopback bind.
+has_off_loopback() {
+  grep -qv "127\.0\.0\.1:$1" <<<"$2"
+}
+
+# Does captured `serve status` output ($2) map the ROOT path to 127.0.0.1:$1?
+# Root-scoped and right-bounded for the two reasons the installer's own
+# `serve_state` carries: `/api` on this port is not `/` on this port, and
+# `127.0.0.1:31000` contains `127.0.0.1:3100`. Either one green-ticked a node
+# whose origin served someone else's app at `/`.
+#
+# This bets on `serve status`'s layout, which the installer's conflict gate
+# already bets on. The bet fails toward a red verify on a healthy node rather
+# than a green one on a broken node, which is the direction this command exists
+# to get right.
+serve_proxies_root() {
+  grep -qE '^\|-- / +proxy .*127\.0\.0\.1:'"$1"'([^0-9]|$)' <<<"$2"
+}
+
 cmd_status() {
-  printf '\nDormouse selfhost server\n'
+  printf '\nDormouse selfhost Relay\n'
   printf '  install root : %s\n' "$ROOT"
   printf '  origin       : %s\n' "${ORIGIN:-<unset>}"
   printf '  loopback     : http://127.0.0.1:%s\n' "$PORT"
@@ -740,11 +850,6 @@ cmd_verify() {
     else
       fail "plist is missing RunAtLoad or KeepAlive"
     fi
-    if grep -q "DORMOUSE_SETUP_PASSWORD" "$PLIST"; then
-      fail "plist contains the setup password — it must live only in config/server.env"
-    else
-      pass "plist carries no credential"
-    fi
   else
     fail "LaunchAgent plist missing or invalid: $PLIST"
   fi
@@ -765,7 +870,7 @@ cmd_verify() {
   listeners="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | tail -n +2 || true)"
   if [ -z "$listeners" ]; then
     fail "nothing is listening on port $PORT"
-  elif printf '%s\n' "$listeners" | grep -qv '127\.0\.0\.1:'"$PORT"; then
+  elif has_off_loopback "$PORT" "$listeners"; then
     fail "port $PORT is bound off-loopback — fix DORMOUSE_BIND_HOST=127.0.0.1"
     printf '%s\n' "$listeners" | sed 's/^/      /'
   else
@@ -808,42 +913,34 @@ cmd_verify() {
   if [ -z "$serve_out" ]; then
     fail "tailscale serve reports no configuration"
   else
-    if printf '%s' "$serve_out" | grep -q "127.0.0.1:$PORT"; then
-      pass "Serve proxies to 127.0.0.1:$PORT"
+    if serve_proxies_root "$PORT" "$serve_out"; then
+      pass "Serve proxies / to 127.0.0.1:$PORT"
     else
-      fail "Serve does not proxy to 127.0.0.1:$PORT"
+      fail "Serve does not proxy / to 127.0.0.1:$PORT"
       printf '%s\n' "$serve_out" | sed 's/^/      /'
     fi
-    if [ -n "$ORIGIN" ] && printf '%s' "$serve_out" | grep -q "${ORIGIN#https://}"; then
+    if [ -n "$ORIGIN" ] && grep -q "${ORIGIN#https://}" <<<"$serve_out"; then
       pass "Serve origin matches DORMOUSE_ORIGIN ($ORIGIN)"
     else
       fail "Serve origin does not match DORMOUSE_ORIGIN ($ORIGIN)"
     fi
   fi
 
-  # Serve and Funnel are one configuration surface, and Funnel publishes this
-  # exact origin to the public internet. The whole security analysis of the
-  # selfhost server assumes a tailnet-only origin — most of all the setup
-  # password, whose hardening is a constant-time compare and a 250ms delay
-  # (SECURITY.md, "The setup password"). So this is checked, never assumed.
-  local funnel_out
-  funnel_out="$(ts funnel status 2>/dev/null || true)"
-  if printf '%s\n%s' "$serve_out" "$funnel_out" | grep -qi 'funnel on'; then
-    fail "tailscale funnel is ON — this origin is published to the public internet"
-    printf '%s\n' "$funnel_out" | sed 's/^/      /'
+  owner_only "$ROOT/config" 700 'config/'
+  owner_only "$STATE_DIR" 700 'state/'
+  owner_only "$ROOT/run" 700 'run/'
+  owner_only "$ENV_FILE" 600 'config/relay.env'
+
+  # The enrollment offer is single-use: absent means it was spent (or never
+  # minted by an older installer), which is healthy. Only its permissions are
+  # this command's business, and only while it is there.
+  if [ -f "$OFFER_FILE" ]; then
+    owner_only "$OFFER_FILE" 600 'run/enroll-offer.json'
   else
-    pass "tailscale funnel is off (the origin stays tailnet-only)"
+    note "no enrollment offer on disk (spent, or minted by an older installer)"
   fi
 
-  local cfg_mode state_mode env_mode
-  cfg_mode="$(stat -f '%Lp' "$ROOT/config" 2>/dev/null || echo '???')"
-  state_mode="$(stat -f '%Lp' "$STATE_DIR" 2>/dev/null || echo '???')"
-  env_mode="$(stat -f '%Lp' "$ENV_FILE" 2>/dev/null || echo '???')"
-  [ "$cfg_mode" = "700" ] && pass "config/ is mode 0700" || fail "config/ is mode $cfg_mode, expected 700"
-  [ "$state_mode" = "700" ] && pass "state/ is mode 0700" || fail "state/ is mode $state_mode, expected 700"
-  [ "$env_mode" = "600" ] && pass "config/server.env is mode 0600" || fail "config/server.env is mode $env_mode, expected 600"
-
-  if grep -q '^DORMOUSE_BIND_HOST=127\.0\.0\.1$' "$ENV_FILE" 2>/dev/null; then
+  if [ "$(env_value DORMOUSE_BIND_HOST)" = "127.0.0.1" ]; then
     pass "DORMOUSE_BIND_HOST=127.0.0.1"
   else
     fail "DORMOUSE_BIND_HOST is not pinned to 127.0.0.1"
@@ -868,7 +965,7 @@ cmd_verify() {
   local src
   src="$(release_field source_checkout || echo '')"
   if [ -n "$src" ]; then
-    if grep -q "$src" "$PLIST" 2>/dev/null || grep -q "$src" "$ROOT/bin/run-server" 2>/dev/null; then
+    if grep -q "$src" "$PLIST" 2>/dev/null || grep -q "$src" "$ROOT/bin/run-relay" 2>/dev/null; then
       fail "the LaunchAgent or wrapper references the source checkout ($src)"
     else
       pass "the installed service does not reference the source checkout"
@@ -886,9 +983,9 @@ cmd_verify() {
 
 cmd_logs() {
   mkdir -p "$LOG_DIR"
-  touch "$LOG_DIR/server.out.log" "$LOG_DIR/server.err.log"
-  printf 'tailing %s/{server.out.log,server.err.log} — ctrl-c to stop\n\n' "$LOG_DIR"
-  tail -n 50 -f "$LOG_DIR/server.out.log" "$LOG_DIR/server.err.log"
+  touch "$LOG_DIR/relay.out.log" "$LOG_DIR/relay.err.log"
+  printf 'tailing %s/{relay.out.log,relay.err.log} — ctrl-c to stop\n\n' "$LOG_DIR"
+  tail -n 50 -f "$LOG_DIR/relay.out.log" "$LOG_DIR/relay.err.log"
 }
 
 cmd_restart() {
@@ -903,7 +1000,7 @@ cmd_restart() {
 }
 
 cmd_show_password() {
-  printf '\n%sWARNING%s the setup password gates account creation and Host enrollment.\n' "$C_YEL" "$C_OFF"
+  printf '\n%sWARNING%s the setup password gates Burrow enrollment.\n' "$C_YEL" "$C_OFF"
   printf 'It is about to be printed to this terminal. Make sure nobody is looking\n'
   printf 'over your shoulder and that this session is not being recorded or shared.\n\n'
   if [ ! -t 0 ]; then
@@ -914,7 +1011,17 @@ cmd_show_password() {
   local reply=""
   read -r reply || true
   case "$reply" in y|Y|yes|YES) ;; *) printf 'aborted\n'; return 1 ;; esac
-  printf '\n  %s\n\n' "$(env_value DORMOUSE_SETUP_PASSWORD)"
+  local password_file="$STATE_DIR/setup-password.json" password
+  if ! password="$("$NODE_BIN" -e '
+const fs = require("fs");
+const stored = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+if (!stored || !/^[0-9a-f]{64}$/.test(stored.password)) process.exit(1);
+process.stdout.write(stored.password);
+' "$password_file")"; then
+    printf 'could not read a valid Relay-generated setup password from %s\n' "$password_file" >&2
+    return 1
+  fi
+  printf '\n  %s\n\n' "$password"
 }
 
 cmd_serve() {
@@ -975,40 +1082,50 @@ cmd_uninstall() {
   launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || true
   rm -f "$PLIST"
   # Turn off only the mapping this installer owns.
-  if ts serve status 2>/dev/null | grep -q "127.0.0.1:$PORT"; then
+  local serve_out
+  serve_out="$(ts serve status 2>/dev/null || true)"
+  # Root-scoped, because `serve --bg off` resets the node's whole Serve config:
+  # an unscoped port match turned off a root mapping this install never owned —
+  # the operator's own, which the installer itself refuses to repoint without a
+  # confirm — whenever our port happened to sit on some other path.
+  if serve_proxies_root "$PORT" "$serve_out"; then
     if ts serve --bg off 2>/dev/null; then
       printf 'turned off the Serve mapping to 127.0.0.1:%s\n' "$PORT"
     else
       printf 'could not turn off the Serve mapping; check "tailscale serve status" and remove it by hand\n' >&2
     fi
   else
-    printf 'left the Serve config alone (it does not point at 127.0.0.1:%s)\n' "$PORT"
+    printf 'left the Serve config alone (it does not map / to 127.0.0.1:%s)\n' "$PORT"
   fi
-  # bin/run-server, not bin: this script lives there too, and "purge" — the
+  # bin/run-relay, not bin: this script lives there too, and "purge" — the
   # command the message above points at — is unreachable once it is deleted.
   rm -rf "$ROOT/releases" "$ROOT/current" "$ROOT/previous" "$ROOT/run"
-  rm -f "$ROOT/bin/run-server"
+  rm -f "$ROOT/bin/run-relay"
   printf '\nuninstalled. config and state remain at:\n  %s\n  %s\n\n' "$ROOT/config" "$STATE_DIR"
   printf 'delete them irreversibly with:\n\n  "%s" purge\n\n' "$ROOT/bin/manage"
 }
 
 cmd_purge() {
-  printf '\n%sIRREVERSIBLE%s This deletes the account, enrolled Hosts, push\n' "$C_RED" "$C_OFF"
-  printf 'subscriptions, and the VAPID key:\n  %s\n  %s\n\n' "$STATE_DIR" "$ROOT/config"
-  printf 'Registered passkeys and enrolled Hosts will have to be set up again.\n\n'
+  printf '\n%sIRREVERSIBLE%s This deletes the account, enrolled Burrows, push\n' "$C_RED" "$C_OFF"
+  printf 'subscriptions, the VAPID key, and any unspent enrollment offer:\n  %s\n  %s\n  %s\n\n' \
+    "$STATE_DIR" "$ROOT/config" "$ROOT/run"
+  printf 'Registered passkeys and enrolled Burrows will have to be set up again.\n\n'
   printf 'Type exactly: DELETE DORMOUSE STATE\n> '
   local reply=""
   read -r reply || true
   if [ "$reply" != "DELETE DORMOUSE STATE" ]; then printf 'aborted\n'; return 1; fi
-  rm -rf "$STATE_DIR" "$ROOT/config"
+  # run/ too: an unspent enroll-offer.json redeems for a Burrow enrollment without
+  # any existing account, and redemption mkdir-recreates the state this command
+  # just deleted. Leaving it behind would make "IRREVERSIBLE" false for a day.
+  rm -rf "$STATE_DIR" "$ROOT/config" "$ROOT/run"
   printf 'purged.\n'
-  # bin/run-server is what "uninstall" removes, so its absence means the
+  # bin/run-relay is what "uninstall" removes, so its absence means the
   # LaunchAgent and the code are already gone and this script is the last thing
   # standing. It cannot delete itself out from under the shell running it. The
   # logs live outside ROOT on a real install, so LOG_DIR has to be named too or
-  # the printed command leaves them behind. (~/Library/Logs/Dormouse Server is
+  # the printed command leaves them behind. (~/Library/Logs/Dormouse Relay is
   # dormouse-owned, so deleting it leaves no empty directory behind.)
-  if [ ! -e "$ROOT/bin/run-server" ]; then
+  if [ ! -e "$ROOT/bin/run-relay" ]; then
     printf '\nthe LaunchAgent and code were already uninstalled; what remains\n'
     printf 'is this script and the logs:\n\n  rm -rf "%s" "%s"\n\n' "$ROOT" "$LOG_DIR"
   fi
@@ -1030,10 +1147,10 @@ usage: manage <command>
 
   status          LaunchAgent, process, health, Serve origin, and release
   verify          run every acceptance check; exits nonzero on any failure
-  logs            tail the local server logs
+  logs            tail the local Relay logs
   restart         kickstart the LaunchAgent and wait for health
   show-password   warn, then display the setup password locally
-  serve           re-apply the Tailscale Serve mapping for this server
+  serve           re-apply the Tailscale Serve mapping for this Relay
   rollback        switch to the retained previous release, preserving state
   uninstall       remove LaunchAgent + code (keeps config, state, this script)
   purge           irreversibly delete config and state
@@ -1049,22 +1166,21 @@ ok "bin/manage"
 
 step "Health-checking the candidate release"
 
-# Disposable: a throwaway state dir, a throwaway password and an ephemeral port,
-# so nothing touches the live service or the real state while we prove the new
-# code boots and serves.
+# Disposable: a throwaway state dir and an ephemeral port, so nothing touches
+# the live service or the real state while we prove the new code boots, mints
+# its credential, and serves.
 PROBE_PORT="$("$STAGE/runtime/node" -e 'const n=require("net");const s=n.createServer();s.listen(0,"127.0.0.1",()=>{const p=s.address().port;s.close(()=>process.stdout.write(String(p)))});')"
 PROBE_STATE="$(mktemp -d -t dormouse-probe-state)"
 PROBE_LOG="$(mktemp -t dormouse-probe-log)"
 chmod 0700 "$PROBE_STATE"
 
 env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
-  DORMOUSE_SETUP_PASSWORD="candidate-probe-$RELEASE_ID" \
   DORMOUSE_ORIGIN="$ORIGIN" \
   DORMOUSE_STATE_DIR="$PROBE_STATE" \
   DORMOUSE_BIND_HOST=127.0.0.1 \
   PORT="$PROBE_PORT" \
   NODE_ENV=production \
-  "$STAGE/runtime/node" "$STAGE/server/dist/index.js" > "$PROBE_LOG" 2>&1 &
+  "$STAGE/runtime/node" "$STAGE/relay/dist/index.js" > "$PROBE_LOG" 2>&1 &
 PROBE_PID=$!
 
 probe_cleanup() {
@@ -1072,6 +1188,18 @@ probe_cleanup() {
   wait "$PROBE_PID" 2>/dev/null || true
   rm -rf "$PROBE_STATE"
   rm -f "$PROBE_LOG"
+}
+
+# One exit for every candidate failure, the counterpart of the Linux installer's:
+# show what the candidate said, tear the probe down, discard the half-staged
+# release, and say the live service was never touched. Typing it out per check
+# is how a check that forgets `rm -rf "$STAGE"` gets written.
+die_candidate() {
+  echo "--- candidate output ---" >&2
+  cat "$PROBE_LOG" >&2
+  probe_cleanup
+  rm -rf "$STAGE"
+  die "$1 The live service was left untouched."
 }
 
 PROBE_OK=0
@@ -1083,22 +1211,20 @@ while [ $i -lt 60 ]; do
   i=$((i + 1))
 done
 
-if [ "$PROBE_OK" != "1" ]; then
-  echo "--- candidate output ---" >&2
-  cat "$PROBE_LOG" >&2
-  probe_cleanup
-  rm -rf "$STAGE"
-  die "the candidate release did not answer /api/hello. The live service was left untouched."
-fi
+[ "$PROBE_OK" = "1" ] || die_candidate "the candidate release did not answer /api/hello."
 ok "candidate answers /api/hello (scrubbed PATH, ephemeral port $PROBE_PORT)"
 
-if curl -sf -o /dev/null "http://127.0.0.1:$PROBE_PORT/"; then
-  ok "candidate serves the Pocket app"
-else
-  probe_cleanup
-  rm -rf "$STAGE"
-  die "the candidate release did not serve the Pocket index. The live service was left untouched."
-fi
+curl -sf -o /dev/null "http://127.0.0.1:$PROBE_PORT/" || die_candidate "the candidate release did not serve the Pocket index."
+ok "candidate serves the Pocket app"
+
+"$STAGE/runtime/node" -e '
+const fs = require("fs");
+const file = process.argv[1];
+const stored = JSON.parse(fs.readFileSync(file, "utf8"));
+if (!stored || !/^[0-9a-f]{64}$/.test(stored.password)) process.exit(1);
+if ((fs.statSync(file).mode & 0o777) !== 0o600) process.exit(1);
+' "$PROBE_STATE/setup-password.json" || die_candidate "the candidate did not generate an owner-only setup password."
+ok "candidate generated its setup password in owner-only state"
 probe_cleanup
 
 # ----------------------------------------------------------- switch release --
@@ -1136,7 +1262,7 @@ write_plist() {
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/bash</string>
-		<string>$BIN_DIR/run-server</string>
+		<string>$BIN_DIR/run-relay</string>
 	</array>
 	<key>WorkingDirectory</key>
 	<string>$INSTALL_ROOT</string>
@@ -1151,9 +1277,9 @@ write_plist() {
 	<key>ProcessType</key>
 	<string>Background</string>
 	<key>StandardOutPath</key>
-	<string>$LOG_DIR/server.out.log</string>
+	<string>$LOG_DIR/relay.out.log</string>
 	<key>StandardErrorPath</key>
-	<string>$LOG_DIR/server.err.log</string>
+	<string>$LOG_DIR/relay.err.log</string>
 </dict>
 </plist>
 PLIST_EOF
@@ -1193,7 +1319,7 @@ rollback_release() {
   fi
   # A 200 does not say who answered: the rejected release's own process holding
   # the port would otherwise read as the previous release being healthy again.
-  # listening_release only runs once curl succeeds, so a still-starting server
+  # listening_release only runs once curl succeeds, so a still-starting Relay
   # costs nothing here.
   local old_id serving j=0
   old_id="$(basename "$OLD_RELEASE")"
@@ -1221,6 +1347,14 @@ ok "wrote and linted $PLIST"
 if [ "$TEST_MODE" = "1" ]; then
   warn "test mode: skipping launchctl bootout/bootstrap/kickstart"
 else
+  # The pre-rename agent, if this machine ever ran one. It still holds $PORT and
+  # would race the new label for it, so it is unloaded before we bootstrap ours.
+  # Best-effort: absent is the ordinary case.
+  if launchctl bootout "gui/$UID/$RETIRED_LABEL" 2>/dev/null; then
+    detail "unloaded the retired $RETIRED_LABEL agent"
+  fi
+  rm -f "$HOME/Library/LaunchAgents/$RETIRED_LABEL.plist"
+
   BOOTOUT_OUT="$(launchctl bootout "gui/$UID/$LABEL" 2>&1)" && BOOTOUT_RC=0 || BOOTOUT_RC=$?
   if [ "$BOOTOUT_RC" != "0" ]; then
     case "$BOOTOUT_OUT" in
@@ -1264,7 +1398,7 @@ else
     else
       warn "the new release never answered http://127.0.0.1:$LOOPBACK_PORT/api/hello"
     fi
-    [ -f "$LOG_DIR/server.err.log" ] && tail -30 "$LOG_DIR/server.err.log" >&2
+    [ -f "$LOG_DIR/relay.err.log" ] && tail -30 "$LOG_DIR/relay.err.log" >&2
     rollback_release || true
     die "update FAILED. Rollback was attempted — this is not a success, whatever the previous release now reports."
   fi
@@ -1283,6 +1417,46 @@ fi
 
 step "Configuring Tailscale Serve"
 
+# What does an existing Serve configuration say about the root path? Echoes
+# `loopback` (already proxying to the port $1), `conflict` (root mapped
+# somewhere else), or `none`. $2 is captured `tailscale serve status` output.
+#
+# Captured, and searched with a here-string, because the pipe form decided a
+# gate rather than a report: `printf … | grep -q` exits at the first match, the
+# writer takes SIGPIPE, and under `set -o pipefail` the 141 reads as "no
+# match". Past the pipe buffer, `serve status` carrying a foreign root mapping
+# took NEITHER branch — so the `confirm` below never ran and the install
+# repointed the operator's root path silently.
+serve_state() {
+  # Both arms are scoped to the root line, because that is the path this
+  # function answers about. A bare `127.0.0.1:$1` anywhere in the output said
+  # `loopback` for a config whose ROOT was foreign and whose /api happened to
+  # sit on this port: the confirm was skipped, the mutation was skipped, and
+  # the install ended reporting the origin as ours while / served someone else.
+  if grep -qE '^\|-- / +proxy .*127\.0\.0\.1:'"$1"'([^0-9]|$)' <<<"$2"; then
+    printf 'loopback\n'
+  elif grep -qE '^\|-- / +proxy' <<<"$2"; then
+    printf 'conflict\n'
+  else
+    printf 'none\n'
+  fi
+}
+
+# The first root-path proxy target in captured `serve status` output ($1), or
+# nothing. The first line is taken by parameter expansion rather than `| head
+# -1`, which exits after one line and leaves `sed` to die of SIGPIPE. That 141
+# is absorbed here by two facts, neither of them "this is a helper": `printf`
+# runs last, so $? is 0 by return, and the single call site below is a `$( )`,
+# which bash enters without `errexit` absent `inherit_errexit` (bash 3.2 has
+# none). Lose either — end on the failing assignment, or call this outside a
+# substitution — and the 141 aborts the install again, so the expansion stays.
+# It is hygiene rather than a pinned control, which is why nothing lints it.
+serve_root_target() {
+  local targets
+  targets="$(sed -n 's%^|-- / *proxy *%%p' <<<"$1")"
+  printf '%s' "${targets%%$'\n'*}"
+}
+
 SERVE_BEFORE="$(ts serve status 2>&1 || true)"
 if [ -n "$SERVE_BEFORE" ]; then
   detail "existing Serve configuration:"
@@ -1290,16 +1464,19 @@ if [ -n "$SERVE_BEFORE" ]; then
 fi
 
 NEEDS_SERVE=1
-if printf '%s' "$SERVE_BEFORE" | grep -q "127.0.0.1:$LOOPBACK_PORT"; then
-  ok "Serve already proxies to 127.0.0.1:$LOOPBACK_PORT"
-  NEEDS_SERVE=0
-elif printf '%s' "$SERVE_BEFORE" | grep -qE '^\|-- / +proxy'; then
-  EXISTING_TARGET="$(printf '%s' "$SERVE_BEFORE" | sed -n 's%^|-- / *proxy *%%p' | head -1)"
-  warn "the root HTTPS path is already mapped to something else: ${EXISTING_TARGET:-<unknown>}"
-  warn "Dormouse needs / on this node to serve the Pocket app at the passkey origin."
-  confirm "Repoint / to 127.0.0.1:$LOOPBACK_PORT?" \
-    || die "left the Serve config alone. Resolve the hostname/path conflict, then re-run."
-fi
+case "$(serve_state "$LOOPBACK_PORT" "$SERVE_BEFORE")" in
+  loopback)
+    ok "Serve already proxies to 127.0.0.1:$LOOPBACK_PORT"
+    NEEDS_SERVE=0
+    ;;
+  conflict)
+    EXISTING_TARGET="$(serve_root_target "$SERVE_BEFORE")"
+    warn "the root HTTPS path is already mapped to something else: ${EXISTING_TARGET:-<unknown>}"
+    warn "Dormouse needs / on this node to serve the Pocket app at the passkey origin."
+    confirm "Repoint / to 127.0.0.1:$LOOPBACK_PORT?" \
+      || die "left the Serve config alone. Resolve the hostname/path conflict, then re-run."
+    ;;
+esac
 
 if [ "$TEST_MODE" = "1" ]; then
   warn "test mode: skipping the Serve mutation"
@@ -1312,9 +1489,14 @@ fi
 
 if [ "$TEST_MODE" != "1" ]; then
   SERVE_AFTER="$(ts serve status 2>&1 || true)"
-  printf '%s' "$SERVE_AFTER" | grep -q "127.0.0.1:$LOOPBACK_PORT" \
+  # Not root-scoped, unlike the gate above and `manage verify`: this asserts
+  # that OUR mutation landed, and both branches that reach it ran
+  # `ts serve --bg` or found / already ours, so / is ours here unless Tailscale
+  # returned 0 having done nothing. A root-scoped `die` at this point would
+  # abort an install whose service is already up, the day the layout changes.
+  grep -qE "127\.0\.0\.1:$LOOPBACK_PORT([^0-9]|\$)" <<<"$SERVE_AFTER" \
     || { printf '%s\n' "$SERVE_AFTER" >&2; die "Serve does not report a proxy to 127.0.0.1:$LOOPBACK_PORT."; }
-  printf '%s' "$SERVE_AFTER" | grep -q "$TS_DNS" \
+  grep -q "$TS_DNS" <<<"$SERVE_AFTER" \
     || { printf '%s\n' "$SERVE_AFTER" >&2; die "Serve does not report the expected HTTPS origin $ORIGIN."; }
   ok "Serve reports $ORIGIN -> 127.0.0.1:$LOOPBACK_PORT"
 fi
@@ -1343,6 +1525,47 @@ else
   ok "pruned $PRUNED old release(s); config and state untouched"
 fi
 
+# ------------------------------------------------------------ enroll offer ---
+
+# run/enroll-offer.json, the one-time offer redeemed at POST /api/burrow/enroll in
+# place of the setup password (docs/specs/security-remote.md → "Credentials at rest").
+#
+# Last state mutation: minting burns the previous unspent offer, so the release,
+# HTTPS Serve mapping, and pruning must all have succeeded first. The Relay
+# reads this file fresh; nothing needs it at service start.
+#
+# burrows.json is the durable "first Burrow happened" marker. Emptying its rows
+# revokes Burrows but does not silently reopen this bootstrap credential.
+if [ -e "$STATE_DIR/burrows.json" ]; then
+  rm -f "$ENROLL_OFFER_FILE"
+  ok "a Burrow has already enrolled — no one-click enrollment offer minted"
+else
+  ENROLL_TOKEN="$(random_hex32)"
+  [ ${#ENROLL_TOKEN} -ge 64 ] || die "generated enroll token is implausibly short; refusing to write the enrollment offer."
+  # Build an owner-only file beside the destination, then rename it into place.
+  # Redemption may claim the live path at any instant; it must see one complete
+  # generation or the other, never the truncate/chmod/write steps of a mint.
+  ENROLL_OFFER_TMP="$(mktemp "$RUN_DIR/.enroll-offer.XXXXXX")" \
+    || die "could not create a temporary enrollment offer."
+  chmod 0600 "$ENROLL_OFFER_TMP"
+  # mintedAt is read here, at write time, and never from BUILT_AT: the 24-hour
+  # expiry runs from the mint, and the build that precedes it is not free.
+  if ! printf '{"origin":"%s","token":"%s","mintedAt":"%s"}\n' \
+    "$ORIGIN" "$ENROLL_TOKEN" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$ENROLL_OFFER_TMP"; then
+    rm -f "$ENROLL_OFFER_TMP"
+    unset ENROLL_TOKEN ENROLL_OFFER_TMP
+    die "could not write the temporary enrollment offer."
+  fi
+  if ! mv -f "$ENROLL_OFFER_TMP" "$ENROLL_OFFER_FILE"; then
+    rm -f "$ENROLL_OFFER_TMP"
+    unset ENROLL_TOKEN ENROLL_OFFER_TMP
+    die "could not publish the enrollment offer."
+  fi
+  unset ENROLL_OFFER_TMP
+  unset ENROLL_TOKEN
+  ok "minted run/enroll-offer.json (mode 0600) — a one-time enrollment offer for a Burrow on this machine"
+fi
+
 # ---------------------------------------------------------------- summary ---
 
 step "Installed"
@@ -1359,8 +1582,9 @@ printf '    manage:  "%s" <status|verify|logs|restart|show-password|serve|rollba
 printf '\n'
 
 if [ "$FIRST_INSTALL" = "1" ]; then
-  printf '    First install. Retrieve the generated setup password when you are ready\n'
-  printf '    to create the passkey and enroll a Host:\n\n'
+  printf '    First install. Retrieve the Relay-generated setup password when you are ready\n'
+  printf '    to enroll a Burrow by hand (the one-time offer card in the Burrow'"'"'s\n'
+  printf '    Remote control settings needs no password):\n\n'
   printf '        "%s" show-password\n\n' "$BIN_DIR/manage"
 fi
 

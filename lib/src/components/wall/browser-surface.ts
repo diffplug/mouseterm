@@ -4,7 +4,11 @@
  * BrowserPanel shell, the Wall (dispatch + lifecycle + CLI type), and the
  * dev-server-port correlation, so the classification never drifts between them.
  */
-import type { RenderMode } from './agent-browser-screen';
+import {
+  browserDisplayMode,
+  type BrowserDisplayMode,
+  type RenderMode,
+} from './agent-browser-screen';
 import type { SurfaceKind } from 'dor/commands/types';
 
 type BrowserParamsLike = {
@@ -12,12 +16,11 @@ type BrowserParamsLike = {
   renderMode?: unknown;
   session?: unknown;
   url?: unknown;
-  /** Tool only: the header chip pinning the terminal forward past serving. */
-  showTerminal?: unknown;
   /** Tool only: the ports found when autobind refused to choose. */
   toolPortConflict?: unknown;
   /** Tool only: the approval this Surface is waiting on before it runs. */
   toolPending?: unknown;
+  syncEngaged?: unknown;
 };
 
 function asParams(params: unknown): BrowserParamsLike {
@@ -90,8 +93,8 @@ export function toolPendingFromParams(params: unknown): ToolPending | null {
  */
 export type ToolFace = 'terminal' | 'browser' | 'port-conflict' | 'pending-approval';
 
-/** What occupies the tool's second half, ignoring the terminal pin, or null
- *  when it has none yet — the header chip's gate as well as `toolFace`'s
+/** What occupies the tool's second half,  or null
+ *  when it has none yet — `toolFace`'s
  *  browser branch, so both read the mutual exclusion from one place. */
 export function toolSecondFace(params: unknown): 'browser' | 'port-conflict' | null {
   if (!isToolParams(params)) return null;
@@ -101,10 +104,9 @@ export function toolSecondFace(params: unknown): 'browser' | 'port-conflict' | n
 
 export function toolFace(params: unknown): ToolFace {
   if (!isToolParams(params)) return 'terminal';
-  // Checked before everything, including the terminal pin: until the human
+  // Checked before everything: until the human
   // approves, there is no terminal to show — nothing has spawned.
   if (toolPendingFromParams(params) !== null) return 'pending-approval';
-  if (asParams(params).showTerminal === true) return 'terminal';
   return toolSecondFace(params) ?? 'terminal';
 }
 
@@ -146,6 +148,18 @@ export function isBrowserParams(params: unknown): boolean {
   const p = asParams(params);
   if (isToolParams(params)) return false;
   return p.surfaceType === 'browser' || typeof p.renderMode === 'string';
+}
+
+/** Browser display identity projected from canonical persisted params. An old
+ *  agent-browser row with no `syncEngaged` keeps the controller's default:
+ *  resize with pane. */
+export function browserDisplayModeFromParams(params: unknown): BrowserDisplayMode | undefined {
+  if (!isBrowserParams(params)) return undefined;
+  const p = asParams(params);
+  return browserDisplayMode({
+    renderMode: resolveRenderMode(p),
+    syncEngaged: p.syncEngaged !== false,
+  });
 }
 
 /** The Surface kind these params describe — the params → kind step beneath

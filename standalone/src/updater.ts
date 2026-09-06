@@ -122,7 +122,7 @@ export function openIssueSearch(error: string): void {
 
 export function startUpdateCheck(): void {
   if (BROWSER_DEV_HOST) return;
-  void runUpdateCheck();
+  void runUpdateCheck().catch((e) => console.error('[updater] Startup failed:', e));
 }
 
 async function runUpdateCheck(): Promise<void> {
@@ -135,21 +135,42 @@ async function runUpdateCheck(): Promise<void> {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       localStorage.removeItem(STORAGE_KEY);
-      const marker = JSON.parse(raw);
-      if (marker.failed) {
+      // Narrowed once, so every field below is an ordinary read. JSON cannot
+      // produce an explicitly-present `undefined`, so `=== undefined` and
+      // `!(key in marker)` agree here.
+      const marker = JSON.parse(raw) as Record<string, unknown> | null;
+      if (!marker || typeof marker !== 'object' || Array.isArray(marker)) {
+        throw new Error('Invalid update marker');
+      }
+      if (marker.failed === true
+        && typeof marker.version === 'string' && marker.version
+        && (marker.error === undefined || typeof marker.error === 'string')) {
         setState({
           status: 'post-update-failure',
           version: marker.version,
-          error: marker.error,
+          error: marker.error as string | undefined,
         });
         hadFailureMarker = true;
-      } else if (marker.from && marker.to) {
-        setState({ status: 'post-update-success', from: marker.from, to: marker.to });
-        setTimeout(() => {
-          if (state.status === 'post-update-success') {
-            setState({ status: 'idle' });
-          }
-        }, 10_000);
+      } else if (marker.failed === undefined
+        && typeof marker.from === 'string' && marker.from
+        && typeof marker.to === 'string' && marker.to) {
+        // The marker precedes install because Windows kills this process. Only
+        // the version running on the next launch confirms installation worked.
+        if (marker.to !== currentVersion) {
+          setState({
+            status: 'post-update-failure',
+            version: marker.to,
+            error: `Expected version ${marker.to} after update, but running ${currentVersion}.`,
+          });
+          hadFailureMarker = true;
+        } else {
+          setState({ status: 'post-update-success', from: marker.from, to: marker.to });
+          setTimeout(() => {
+            if (state.status === 'post-update-success') {
+              setState({ status: 'idle' });
+            }
+          }, 10_000);
+        }
       }
     }
   } catch {

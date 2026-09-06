@@ -60,14 +60,18 @@ export function allocateChildSpans(
       const share = (i: number): number =>
         activeWeight > 0 ? (children[i].weight / activeWeight) * remaining : remaining / activeCount;
       let clampedAny = false;
+      let pinned = 0;
       for (let i = 0; i < n; i++) {
         if (!clamped[i] && share(i) < mins[i] - 1e-9) {
           clamped[i] = true;
           frac[i] = mins[i];
-          remaining -= mins[i];
+          pinned += mins[i];
           clampedAny = true;
         }
       }
+      // Classify the whole pass against one budget; changing it mid-pass can
+      // incorrectly pin later children whose redistributed share exceeds their min.
+      remaining -= pinned;
       if (!clampedAny) {
         for (let i = 0; i < n; i++) if (!clamped[i]) frac[i] = share(i);
         break;
@@ -117,6 +121,10 @@ function forEachChildRect(
   }
 }
 
+function nonnegativeRect(rect: Rect): Rect {
+  return { ...rect, width: Math.max(0, rect.width), height: Math.max(0, rect.height) };
+}
+
 function layoutNode(node: LathNode, rect: Rect, opts: LayoutOpts, out: Map<LeafId, Rect>): void {
   if (node.kind === 'leaf') {
     out.set(node.id, rect);
@@ -130,7 +138,7 @@ function layoutNode(node: LathNode, rect: Rect, opts: LayoutOpts, out: Map<LeafI
  *  stored weights are never rewritten. Negative/zero rects clamp to zero-size, never crash. */
 export function layout(tree: LathTree, rect: Rect, opts: LayoutOpts): Map<LeafId, Rect> {
   const out = new Map<LeafId, Rect>();
-  if (tree.root) layoutNode(tree.root, rect, opts, out);
+  if (tree.root) layoutNode(tree.root, nonnegativeRect(rect), opts, out);
   return out;
 }
 
@@ -139,7 +147,7 @@ export function layout(tree: LathTree, rect: Rect, opts: LayoutOpts): Map<LeafId
 export function nodeRectAtPath(tree: LathTree, rect: Rect, opts: LayoutOpts, path: number[]): Rect | null {
   let node = tree.root;
   if (!node) return null;
-  let cur = rect;
+  let cur = nonnegativeRect(rect);
   for (const idx of path) {
     if (node.kind !== 'split') return null;
     if (idx < 0 || idx >= node.children.length) return null;
@@ -243,6 +251,6 @@ export function sashes(
       walk(child.node, childRect, [...path, i]);
     });
   };
-  if (tree.root) walk(tree.root, rect, []);
+  if (tree.root) walk(tree.root, nonnegativeRect(rect), []);
   return out;
 }

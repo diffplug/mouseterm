@@ -1,13 +1,23 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  PAIRING_OUTCOME_COPY,
+  PAIRING_OUTCOME_LABEL,
+} from '../components/RemoteControlSection';
+import { enrollmentOfferPath } from '../host/remote/enroll-offer';
+import { SETUP_CODE_DEAD_MESSAGE } from '../remote/client/pocket-client';
+import { PAIRING_CODE_LABEL } from '../remote/pocket-app/App';
+import { SCAN_REJECTED_MESSAGE } from '../remote/pocket-app/ScanInvitation';
+import { SCAN_LABEL } from '../remote/setup-copy';
 import { ITERM2_COMPAT_VERSION } from './terminal-protocol';
 import { OPEN_PORT_TIMEOUT_MS } from './platform/types';
 
 // Pins for constants defined in more than one language/runtime, where an
-// import is impossible (the sidecar is plain CJS, the Tauri backend is Rust)
-// and only a "keep in sync" comment tied the copies together. Each test
+// import is impossible (the sidecar is plain CJS, the Tauri backend is Rust,
+// the installers are sh and PowerShell) and only a "keep in sync" comment tied
+// the copies together. Each test
 // fs-reads the sibling definition and compares values, so drifting one copy
 // fails loudly. Pattern per AGENTS.md — a "must stay in sync" claim names the
 // test that pins it.
@@ -48,7 +58,132 @@ describe('dor control-socket proof-domain mirrors', () => {
   }
 });
 
-// docs/specs/standalone.md -> "Rust <-> sidecar bridge"
+// docs/specs/relay.md -> "Remote control, in the Settings dialog". The Burrow
+// reads the installer's enrollment offer from the path each installer writes it
+// to, and nothing links the two sides at build time — a drift is a one-click
+// enrollment that silently never appears. The whole path is followed, root and
+// leaf: the file name is as much of a shared constant as the directory.
+describe('enrollment-offer path mirrors the installers', () => {
+  const HOME = '/home/ned';
+
+  /** The shell forms the installers' path variables use, and nothing else. */
+  const expand = (expr: string, vars: Record<string, string>) =>
+    expr
+      .replace(/\$\{(\w+):-([^}]*)\}/g, (_, name: string, fallback: string) => vars[name] || fallback)
+      .replace(/\$(\w+)/g, (whole: string, name: string) => vars[name] ?? whole);
+
+  /** `ENROLL_OFFER_FILE` as one of the `sh` installers assembles it. */
+  const shellOfferFile = (file: string, env: Record<string, string> = {}) => {
+    const source = readRepoFile(file);
+    const vars: Record<string, string> = { HOME, ...env };
+    let resolved = '';
+    // Each one is defined in terms of the one before it, so they resolve in order.
+    for (const name of ['INSTALL_ROOT', 'RUN_DIR', 'ENROLL_OFFER_FILE'] as const) {
+      resolved = expand(extract(source, file, new RegExp(`^${name}="([^"]+)"$`, 'm')), vars);
+      vars[name] = resolved;
+    }
+    return resolved;
+  };
+
+  it('follows the macOS offer path', () => {
+    expect(enrollmentOfferPath('darwin', {}, HOME)).toBe(
+      shellOfferFile('deploy/local/install-macos.sh'),
+    );
+  });
+
+  it('follows the Linux offer path, XDG_DATA_HOME set or not', () => {
+    const file = 'deploy/local/install-linux.sh';
+    const env = { XDG_DATA_HOME: '/data' };
+    expect(enrollmentOfferPath('linux', env, HOME)).toBe(shellOfferFile(file, env));
+    expect(enrollmentOfferPath('linux', {}, HOME)).toBe(shellOfferFile(file));
+  });
+
+  it('follows the Windows offer path', () => {
+    const file = 'deploy/local/install-windows.ps1';
+    const source = readRepoFile(file);
+    const variable = extract(source, file, /^\$INSTALL_ROOT = Join-Path \$env:(\w+) '[^']+'$/m);
+    const local = 'C:\\Users\\ned\\AppData\\Local';
+    const root = join(
+      local,
+      extract(source, file, /^\$INSTALL_ROOT = Join-Path \$env:\w+ '([^']+)'$/m),
+    );
+    const run = join(root, extract(source, file, /^\$RUN_DIR = Join-Path \$INSTALL_ROOT '([^']+)'$/m));
+    const offerFile = join(
+      run,
+      extract(source, file, /^\$ENROLL_OFFER_FILE = Join-Path \$RUN_DIR '([^']+)'$/m),
+    );
+    expect(enrollmentOfferPath('win32', { [variable]: local }, HOME)).toBe(offerFile);
+  });
+});
+
+// scripts/pairing-walkthrough/README.md -> Steps. The walkthrough drives the
+// built Pocket app from plain Node, so it cannot import either constant; a
+// drift is not a failed build but a run that stalls against a live Chrome and a
+// real Relay, saying only that it never found the button.
+describe('the pairing walkthrough mirrors the copy it clicks', () => {
+  const file = 'scripts/pairing-walkthrough/steps.mjs';
+  const source = readRepoFile(file);
+
+  it('presses the scan button by its shipped label', () => {
+    expect(extract(source, file, /^const SCAN_LABEL = '([^']+)';$/m)).toBe(SCAN_LABEL);
+  });
+
+  it('finds the two digits by the live region’s shipped accessible name', () => {
+    const selector = extract(source, file, /^const PAIRING_CODE_REGION = '([^']+)';$/m);
+    expect(selector).toBe(`[role="status"][aria-label="${PAIRING_CODE_LABEL}"]`);
+  });
+
+  it('finds the pairing report by the live region’s shipped accessible name', () => {
+    const selector = extract(source, file, /^const PAIRING_OUTCOME_REGION = '([^']+)';$/m);
+    expect(selector).toBe(`[role="status"][aria-label="${PAIRING_OUTCOME_LABEL}"]`);
+  });
+
+  // Not copy but a log line: the harness prints where the Burrow keeps its
+  // state and the walkthrough parses it back out. Rendered with a stand-in path
+  // rather than compared as text, so the two only have to agree on what the
+  // line looks like — the `[dev:standalone:ab]` prefix `log()` adds is free to
+  // change, and the capture group has to survive.
+  it('parses the state directory the harness actually logs', () => {
+    const harness = 'standalone/scripts/dev-agent-browser.mjs';
+    const template = extract(
+      readRepoFile(harness),
+      harness,
+      /^\s*log\(`([^`]*\$\{stateDir\})`\);$/m,
+    );
+    const prefix = extract(
+      readRepoFile(harness),
+      harness,
+      /^\s*console\.error\(`(.*)\$\{message\}`\);$/m,
+    );
+    const pattern = extract(source, file, /^const BURROW_STATE_DIR_LINE = \/(.+)\/;$/m);
+
+    const dir = '/tmp/dormouse-123-browser-state';
+    const logged = prefix + template.replace('${stateDir}', dir);
+    expect(logged.match(new RegExp(pattern))?.[1]).toBe(dir);
+  });
+
+  // The screens' structure says only that a ceremony ended or a code was
+  // refused; the scenarios turn on *which* one, so these prefixes are the
+  // harness's one match on copy. What has to hold is not the wording but that
+  // each prefix still picks out exactly one of the shipped sentences — a
+  // rewrite that let two of them share an opening would otherwise leave
+  // `--scenario wrong-code` passing on a run that paired a phone.
+  const REFUSALS = { dead: SETUP_CODE_DEAD_MESSAGE, rejected: SCAN_REJECTED_MESSAGE };
+  it.each([
+    ['OUTCOME_PAIRED', PAIRING_OUTCOME_COPY],
+    ['OUTCOME_CODE_MISMATCH', PAIRING_OUTCOME_COPY],
+    ['OUTCOME_CANCELLED', PAIRING_OUTCOME_COPY],
+    // `--scenario expired-code` turns on which refusal a pasted code earns.
+    ['REFUSED_EXPIRED', REFUSALS],
+    ['REFUSED_NOT_A_CODE', REFUSALS],
+  ] as const)('%s names exactly one shipped sentence', (name, sentences) => {
+    const prefix = extract(source, file, new RegExp(`^const ${name} = '([^']+)';$`, 'm'));
+    const matched = Object.values(sentences).filter((sentence) => sentence.startsWith(prefix));
+    expect(matched).toHaveLength(1);
+  });
+});
+
+// docs/specs/standalone.md -> "Rust ↔ sidecar bridge"
 describe('OPEN_PORT_TIMEOUT_MS mirrors', () => {
   it('matches the sidecar copy in standalone/sidecar/pty-core.js', () => {
     const file = 'standalone/sidecar/pty-core.js';

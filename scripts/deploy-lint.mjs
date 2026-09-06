@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Mechanical check for the self-host installer invariants in `SECURITY.md`
- * ("Credentials at rest", "Network posture (self-hosted)"). Runs from the repo
+ * Mechanical check for the installer invariants in `docs/specs/security-remote.md`
+ * ("Credentials at rest", "Network posture (self-hosted)") and SELF_HOST.md. Runs from the repo
  * root via `pnpm test` (see the root package.json). Exits non-zero with a
  * per-violation report naming the rule that was broken.
  *
@@ -9,9 +9,9 @@
  * now nothing executed them. No workflow parses `deploy/local/`, no script
  * references it, and the installers are the one part of the tree that CI never
  * touches — so the rules were enforced entirely by whoever remembered to read
- * them. The observed cost of that is real: the macOS `manage verify` checks
- * file modes but not owner while the Linux one checks both, which is the same
- * rule held to two different standards, found by an audit rather than a build.
+ * them. The observed cost of that is real: the macOS `manage verify` once checked
+ * modes without owners while Linux checked both; the owner rules below now
+ * pin the same property on all three platforms.
  *
  * The check: every installer must still contain the load-bearing control each
  * rule names. This is a *textual* check on purpose — the same ceiling
@@ -23,7 +23,11 @@
  *     variable, passes here. The security audit still owns that.
  *   - It says nothing about the *generated* `manage` scripts beyond the fact
  *     that the installer writes the checks into them. Whether `manage verify`
- *     passes on a real install is what `manage verify` is for.
+ *     passes on a real install is what `manage verify` is for. The decisions
+ *     that turn on searching unbounded CLI output are executed rather than
+ *     read: `scripts/installer-verify-test.mjs` extracts those functions from
+ *     these files and drives them, because each once matched the right string
+ *     and returned the wrong answer.
  *   - Windows is checked at the same depth as the other two, which is worth
  *     stating plainly: nothing in CI can execute PowerShell here, so for that
  *     file this lint is the *only* automated signal that a control survives.
@@ -33,12 +37,9 @@
  * omitted — an unexplained gap is how the owner-check divergence happened.
  */
 
-import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+import { readRepoFile } from './lint-kit.mjs';
 
 /** The three shipped installers, by the platform name the specs use. */
 export const INSTALLERS = [
@@ -60,6 +61,14 @@ export const INSTALLERS = [
  * `scripts/deploy-lint-selftest.mjs` is what keeps that honest: it removes each
  * matched control in turn and requires this lint to fail.
  *
+ * `forbidden` inverts the rule: the pattern must match NOTHING, for a `FAIL IF`
+ * that names a thing an installer must not do. Anchored on the act the spec
+ * forbids rather than on the subject, so prose explaining why the thing is
+ * absent is not itself the violation, and paired with `violation` or
+ * platform-specific `violations` — the text `deploy-lint-selftest.mjs`
+ * appends to prove every forbidden shape is checked rather than merely absent.
+ * `exactMatches` is meaningless beside it and is refused.
+ *
  * `exactMatches` is for a control the installer writes at several sites on
  * purpose — in its own body and into the generated `manage` — where matching
  * only one would let the others be deleted silently. Setting it is a claim that
@@ -69,6 +78,64 @@ export const INSTALLERS = [
  * require at least one match.
  */
 export const RULES = [
+  {
+    rule: 'State outlives code — staging never overwrites an existing release directory',
+    patterns: {
+      macOS: /mkdir "\$1" \|\| return 1|create_release_stage "\$STAGE" \|\| die/,
+      Linux: /mkdir "\$1" \|\| return 1|create_release_stage "\$STAGE" \|\| die/,
+      Windows: /-Script 'require\("fs"\)\.mkdirSync\(process\.argv\[2\]\);' -Arguments @\(\$STAGE\)\s+if \(\$r\.ExitCode -ne 0\) \{ Die/,
+    },
+    exactMatches: { macOS: 2, Linux: 2, Windows: 1 },
+  },
+  {
+    rule: 'Network posture — binding checks read the value the service will export',
+    patterns: {
+      macOS: /\[ "\$\((?:env_file_value "\$ENV_FILE"|env_value) DORMOUSE_BIND_HOST\)" = "127\.0\.0\.1" \]/,
+      Linux: /\[ "\$\((?:env_file_value "\$ENV_FILE"|env_value) DORMOUSE_BIND_HOST\)" = "127\.0\.0\.1" \]/,
+      Windows: /\$lastValue = \$value\s+\}\s+return \$lastValue/,
+    },
+    exactMatches: { macOS: 2, Linux: 2, Windows: 2 },
+  },
+  {
+    rule: 'Credentials at rest — permission checks bind ownership to the installing account',
+    patterns: {
+      macOS: /me="\$\(id -u\)"|out="\$\(stat -f '%Lp %u' "\$1"|if \[ "\$mode" = "\$2" \] && \[ "\$owner" = "\$me" \]/,
+      Linux: /me="\$\(id -un\)"|out="\$\(stat -c '%a %U' "\$1"|if \[ "\$mode" = "\$2" \] && \[ "\$owner" = "\$me" \]/,
+      Windows: /\$ownerSid = \$acl\.GetOwner\(\[Security\.Principal\.SecurityIdentifier\]\)\.Value\s+if \(\$ownerSid -ne \$script:CurrentUserSid\) \{\s+return \[pscustomobject\]@\{ Ok = \$false;/,
+    },
+    exactMatches: { macOS: 3, Linux: 3, Windows: 2 },
+  },
+  {
+    rule: 'Credentials at rest — unix verify checks every protected path through owner_only',
+    patterns: {
+      macOS: /owner_only "\$(?:ROOT\/(?:config|run)|STATE_DIR|ENV_FILE|OFFER_FILE)" (?:700|600)/,
+      Linux: /owner_only "\$(?:ROOT\/(?:config|run)|STATE_DIR|ENV_FILE|OFFER_FILE)" (?:700|600)/,
+    },
+    exactMatches: { macOS: 5, Linux: 5 },
+    skip: { Windows: 'Test-OwnerOnly implements the same account/DACL property instead of unix modes' },
+  },
+  {
+    rule: 'Credentials at rest — Windows rejects a NULL or empty DACL',
+    patterns: {
+      Windows: /if \(\$rules\.Count -eq 0\) \{\s+return \[pscustomobject\]@\{ Ok = \$false; Reason = 'DACL has no access rules' \}/,
+    },
+    exactMatches: { Windows: 2 },
+    skip: { macOS: 'unix modes apply', Linux: 'unix modes apply' },
+  },
+  {
+    rule: 'A 200 does not say who answered — Windows health waits honor the requested release',
+    patterns: { Windows: /\(-not \$ExpectedRelease -or \(Get-ListeningRelease\) -eq \$ExpectedRelease\)/ },
+    exactMatches: { Windows: 2 },
+    skip: { macOS: 'wait_for_health binds identity directly', Linux: 'service_healthy binds identity directly' },
+  },
+  {
+    rule: 'A 200 does not say who answered — Windows restart and rollback request a nonempty release',
+    patterns: {
+      Windows: /\$expected = Get-CurrentRelease|if \(-not \$expected\) \{ Write-Host 'current release pointer is missing'; return 1 \}|-Seconds 40 -ExpectedRelease \$(?:expected|prev)/,
+    },
+    exactMatches: { Windows: 4 },
+    skip: { macOS: 'wait_for_health binds identity directly', Linux: 'service_healthy binds identity directly' },
+  },
   {
     // The *refusal*, not the value: the literal `DORMOUSE_BIND_HOST=127.0.0.1`
     // also appears in the env-file heredoc, so matching it would keep passing
@@ -81,7 +148,7 @@ export const RULES = [
     },
   },
   {
-    rule: 'Credentials at rest — the setup password is generated locally from a CSPRNG',
+    rule: 'Credentials at rest — the enrollment-offer generator is a platform CSPRNG',
     patterns: {
       macOS: /\/dev\/urandom/,
       Linux: /randomBytes\(32\)/,
@@ -89,27 +156,72 @@ export const RULES = [
     },
   },
   {
-    // Anchored on each guard's own comparison. `-ge 64` occurs exactly once in
-    // either shell installer, but a bare /64/ on Windows also matched two
-    // `exit 64` argument-parse lines and the guard's *explanatory comment* —
-    // so the prose about the rule survived deleting the rule.
-    rule: 'Credentials at rest — the entropy guard counts 64 hex characters, not 32',
+    // The setup password belongs to Relay state. Supplying the former
+    // environment input from any installer path would restore the exact
+    // operator-chosen credential this audit is meant to exclude.
+    //
+    // Anchored on the assignment, not the bare identifier: the name alone would
+    // make a comment telling an operator the key is now inert a lint failure —
+    // `config/relay.env` is preserved byte-for-byte, so an upgraded install
+    // keeps exporting a dead one and naming it is how that gets explained.
+    rule: 'Credentials at rest — no installer supplies a setup password as configuration',
+    forbidden: true,
+    violations: {
+      macOS: [
+        'DORMOUSE_SETUP_PASSWORD=weak',
+        '<key>DORMOUSE_SETUP_PASSWORD</key><string>weak</string>',
+      ],
+      Linux: ['DORMOUSE_SETUP_PASSWORD=weak'],
+      Windows: [
+        'DORMOUSE_SETUP_PASSWORD=weak',
+        "EnvironmentVariables['DORMOUSE_SETUP_PASSWORD'] = 'weak'",
+      ],
+    },
     patterns: {
-      macOS: /-ge 64/,
-      Linux: /-ge 64/,
-      Windows: /\$SETUP_PASSWORD\.Length -lt 64/,
+      // A LaunchAgent supplies environment through plist keys, not `KEY=`.
+      macOS: /DORMOUSE_SETUP_PASSWORD\s*=|<key>\s*DORMOUSE_SETUP_PASSWORD\s*<\/key>/,
+      Linux: /DORMOUSE_SETUP_PASSWORD\s*=/,
+      // The PowerShell supply site is a hashtable index, not a `KEY=` line.
+      Windows: /DORMOUSE_SETUP_PASSWORD\s*=|EnvironmentVariables\['DORMOUSE_SETUP_PASSWORD'\]/,
     },
   },
   {
-    // Anchored on the failure message, not the identifier: the latter also
-    // appears in the env heredoc, in `show-password`, and in the candidate
-    // probe's throwaway password, so deleting the whole check left it green.
-    // The character class covers the Windows copy, which says `config\\server.env`.
-    rule: 'Credentials at rest — manage verify fails when the service definition carries the password',
+    // The management path may reveal the credential, but must read the value
+    // the Relay persisted rather than recreating an operator-controlled source.
+    rule: 'Credentials at rest — manage show-password reads the Relay state file',
     patterns: {
-      macOS: /it must live only in config[\\/]server\.env/,
-      Linux: /it must live only in config[\\/]server\.env/,
-      Windows: /it must live only in config[\\/]server\.env/,
+      macOS: /password_file="\$STATE_DIR\/setup-password\.json"/,
+      Linux: /password_file="\$STATE_DIR\/setup-password\.json"/,
+      Windows: /Join-Path \$StateDir 'setup-password\.json'/,
+    },
+    exactMatches: { macOS: 1, Linux: 1, Windows: 1 },
+  },
+  {
+    // Each installer reads the record twice — `manage show-password` and the
+    // candidate probe — in scopes that cannot share a helper, and each spells
+    // the shape out. `isSetupPassword` in `relay/src/setup-password.ts` is the
+    // real definition; nothing links these copies to it, so a drift to `{32}`
+    // would halve the entropy the audit claims with every other rule green.
+    // Counted, because matching one copy would let the other be relaxed alone.
+    rule: 'Credentials at rest — every installer setup-password reader requires 64 hex characters',
+    patterns: {
+      macOS: /\[0-9a-f\]\{64\}/,
+      Linux: /\[0-9a-f\]\{64\}/,
+      Windows: /\[0-9a-f\]\{64\}/,
+    },
+    exactMatches: { macOS: 2, Linux: 2, Windows: 2 },
+  },
+  {
+    // Windows-only, and the only thing enforcing owner-only on `burrows.json`
+    // there, so an enumeration that failed must not print the same Note as an
+    // account that was never created.
+    rule: 'Credentials at rest — manage verify fails when state\\ cannot be enumerated',
+    patterns: { Windows: /state\\ could not be enumerated/ },
+    skip: {
+      macOS:
+        'the per-file walk is Windows-only — `relay/src/state.ts` writes 0o600 and it holds on unix, so the mode check on `state/` is the whole control (docs/specs/security-remote.md -> "Credentials at rest")',
+      Linux:
+        'the per-file walk is Windows-only, for the reason stated in the macOS skip; Linux checks mode and owner on `state/` itself',
     },
   },
   {
@@ -131,22 +243,223 @@ export const RULES = [
     },
   },
   {
-    rule: 'Network posture — manage verify fails on an active Tailscale Funnel',
+    // The inverse of a control: Funnel is a deployment choice the application
+    // boundary is expected to survive, so an installer that inspects, warns
+    // about, or flips it would re-introduce the tailnet-only premise the
+    // analysis no longer makes. Anchored on the CLI and the setting, not on the
+    // word: every way to judge Funnel state has to name one of them first.
+    //
+    // Both halves of the anchoring are load-bearing, and each was wrong once.
+    // `\b` on the verb, or `its funnel state` matches `ts` mid-word and the
+    // prose explaining the absence becomes the violation. The gap, or
+    // `ts --json funnel status` walks straight through a `\s+`; `violation`
+    // below carries a flag so the self-test spends that gap rather than
+    // proving only the form nobody would hide behind.
+    rule: 'Network posture — no installer or `manage` makes Funnel state a verdict',
+    forbidden: true,
+    violation: 'tailscale --json funnel status',
     patterns: {
-      macOS: /funnel on/i,
-      Linux: /funnel on/i,
-      Windows: /funnel on/i,
+      macOS: /(?:\btailscale|\bts)\b[^\n]{0,20}funnel|AllowFunnel/i,
+      Linux: /(?:\btailscale|\bts)\b[^\n]{0,20}funnel|AllowFunnel/i,
+      Windows: /(?:\btailscale|\bInvoke-Tailscale)\b[^\n]{0,20}funnel|AllowFunnel/i,
     },
   },
   {
-    // Anchored on the two paths that matter. A bare `chmod 0700` also matches
-    // `run-server`, `manage` and the probe state dir, and `Protect-Path` has
+    // Anchored on the three paths that matter. A bare `chmod 0700` also matches
+    // `run-relay`, `manage` and the probe state dir, and `Protect-Path` has
     // six hits, so relaxing config/+state/ to 0755 passed.
-    rule: 'Credentials at rest — config/ and state/ are created owner-only',
+    //
+    // Every path is named, because a pattern that stops short of the last one
+    // matches as a strict prefix of the line: `"$CONFIG_DIR" "$STATE_DIR"`
+    // stayed green after `"$RUN_DIR"` — the offer's directory — was deleted
+    // from the same chmod. Windows matches its three calls as one span for the
+    // same reason; they are written as one block on purpose.
+    rule: 'Credentials at rest — config/, state/ and run/ are created owner-only',
     patterns: {
-      macOS: /chmod 0700 "\$CONFIG_DIR" "\$STATE_DIR"/,
-      Linux: /chmod 0700 "\$CONFIG_DIR" "\$STATE_DIR"/,
-      Windows: /Protect-Path -Path \$CONFIG_DIR -Directory/,
+      macOS: /chmod 0700 "\$CONFIG_DIR" "\$STATE_DIR" "\$RUN_DIR"/,
+      Linux: /chmod 0700 "\$CONFIG_DIR" "\$STATE_DIR" "\$RUN_DIR"/,
+      Windows:
+        /Protect-Path -Path \$CONFIG_DIR -Directory\n\s*Protect-Path -Path \$STATE_DIR -Directory\n\s*Protect-Path -Path \$RUN_DIR -Directory/,
+    },
+  },
+  {
+    // The token is minted by the named generator the CSPRNG rule above matches
+    // at its definition.
+    // Anchored on the mint itself: swapping in $RANDOM, a timestamp, or a
+    // reused password would rewrite exactly this line.
+    rule: 'Credentials at rest — the enroll token comes from the named CSPRNG',
+    patterns: {
+      macOS: /ENROLL_TOKEN="\$\(random_hex32\)"/,
+      Linux: /ENROLL_TOKEN="\$\(random_hex32\)"/,
+      Windows: /\$enrollToken = New-RandomHex32/,
+    },
+  },
+  {
+    rule: "Credentials at rest — the enroll token's entropy guard counts 64 hex characters",
+    patterns: {
+      macOS: /\$\{#ENROLL_TOKEN\} -ge 64/,
+      Linux: /\$\{#ENROLL_TOKEN\} -ge 64/,
+      Windows: /\$enrollToken\.Length -lt 64/,
+    },
+  },
+  {
+    rule: 'Credentials at rest — burrows.json permanently closes installer offer bootstrap',
+    patterns: {
+      macOS:
+        /if \[ -e "\$STATE_DIR\/burrows\.json" \]; then\n\s*rm -f "\$ENROLL_OFFER_FILE"/,
+      Linux:
+        /if \[ -e "\$STATE_DIR\/burrows\.json" \]; then\n\s*rm -f "\$ENROLL_OFFER_FILE"/,
+      Windows:
+        /if \(Test-Path -LiteralPath \(Join-Path \$STATE_DIR 'burrows\.json'\)\) \{\n\s*Remove-Item -LiteralPath \$ENROLL_OFFER_FILE/,
+    },
+  },
+  {
+    // The offer header is adjacent to the end of pruning, making it the last
+    // state mutation before the read-only summary. Pinning that boundary catches
+    // a move back above Serve without coupling the lint to every Serve command.
+    rule: 'Credentials at rest — enrollment offer is minted after pruning and Serve',
+    patterns: {
+      macOS:
+        /ok "pruned \$PRUNED old release\(s\); config and state untouched"\nfi\n\n# -+ enroll offer/,
+      Linux:
+        /ok "pruned \$PRUNED old release\(s\); config and state untouched"\nfi\n\n# -+ enroll offer/,
+      Windows:
+        /Write-Ok "pruned \$pruned old release\(s\); config and state untouched"\n  \}\n\n  # -+ enroll offer/,
+    },
+  },
+  {
+    // Two adjacent operations, matched as one span, because the control is their
+    // ORDER: a same-directory temp file, restricted, and only then the token.
+    //
+    // BOTH operands are pinned. Leaving the second line's operand off — on the
+    // theory that the line above already anchors the identifier's spelling, so
+    // repeating it would pin spelling rather than order — left the rule
+    // satisfied by restricting the WRONG file: `chmod 0600 "$ENV_FILE"` on the
+    // line after the offer's truncation matched, and the offer stayed under the
+    // directory's default permissions with the lint green.
+    rule: 'Credentials at rest — the offer file is restricted to the installing user before the token is written',
+    patterns: {
+      macOS:
+        /ENROLL_OFFER_TMP="\$\(mktemp "\$RUN_DIR\/\.enroll-offer\.XXXXXX"\)" \\\n\s*\|\| die "could not create a temporary enrollment offer\."\n\s*chmod 0600 "\$ENROLL_OFFER_TMP"/,
+      Linux:
+        /ENROLL_OFFER_TMP="\$\(mktemp "\$RUN_DIR\/\.enroll-offer\.XXXXXX"\)" \\\n\s*\|\| die "could not create a temporary enrollment offer\."\n\s*chmod 0600 "\$ENROLL_OFFER_TMP"/,
+      Windows:
+        /\[IO\.File\]::WriteAllText\(\$offerTemp, ''\)\n\s*Protect-Path -Path \$offerTemp\b/,
+    },
+  },
+  {
+    // Same-directory rename is the publication point: the live path contains a
+    // complete old offer, a complete new offer, or nothing because redemption
+    // claimed it — never an in-progress write.
+    rule: 'Credentials at rest — the completed enrollment offer is published by atomic rename',
+    patterns: {
+      macOS: /mv -f "\$ENROLL_OFFER_TMP" "\$ENROLL_OFFER_FILE"/,
+      Linux: /mv -f "\$ENROLL_OFFER_TMP" "\$ENROLL_OFFER_FILE"/,
+      Windows: /fs\.renameSync\(process\.argv\[2\], process\.argv\[3\]\)/,
+    },
+  },
+  {
+    // `config/relay.env` can still carry operator-supplied private VAPID keys.
+    // macOS reaches the owner-only property with `umask 077` covering the
+    // heredoc; the other two bind creation and restriction as one span.
+    rule: 'Credentials at rest — config/relay.env is created owner-only',
+    patterns: {
+      macOS: /umask 077\n\s*cat > "\$ENV_FILE"/,
+      Linux: /: > "\$ENV_FILE"\n\s*chmod 0600 "\$ENV_FILE"/,
+      Windows: /\[IO\.File\]::WriteAllText\(\$ENV_FILE, ''\)\n\s*Protect-Path -Path \$ENV_FILE\b/,
+    },
+  },
+  {
+    // A gate, not a report, which is why it is its own rule: past the pipe
+    // buffer the piped ladder took NEITHER branch, so `confirm` never ran and
+    // the install repointed the operator's root Serve path without asking.
+    //
+    // Every root-path Serve match, counted: the gate's two arms, plus
+    // `serve_proxies_root`, which asks the same question about the same output
+    // for `manage verify` and for uninstall — the rule below counts those two
+    // consumers, since this one cannot. All are scoped to the root line and
+    // right-bounded — an unscoped port match said "already ours" for a config
+    // whose root was foreign, and for one on :31000.
+    rule: 'Network posture — every root-path Serve match is scoped to / and bounded on the port',
+    patterns: {
+      macOS: /grep -qE '\^\\\|-- \/ \+proxy \.\*127\\\.0\\\.0\\\.1:'"\$1"'\(\[\^0-9\]\|\$\)' <<<"\$2"|grep -qE '\^\\\|-- \/ \+proxy' <<<"\$2"/,
+      Linux: /grep -qE '\^\\\|-- \/ \+proxy \.\*127\\\.0\\\.0\\\.1:'"\$1"'\(\[\^0-9\]\|\$\)' <<<"\$2"|grep -qE '\^\\\|-- \/ \+proxy' <<<"\$2"/,
+    },
+    skip: {
+      Windows:
+        'its ladder, verify and uninstall checks are all `-match` over a string already captured from `Invoke-Tailscale`, so there is no pipeline to take SIGPIPE; the root scoping and the port bound are pinned on this platform by the rule below, which counts all three inline `-match` sites',
+    },
+    exactMatches: { macOS: 3, Linux: 3 },
+  },
+  {
+    // The rule above counts the helper's own text, so it stays green when a
+    // CALLER stops asking — `serve_proxies_root` survives on `manage verify`'s
+    // call alone, and the shell test pins that its answer is right, never that
+    // uninstall consults it. Reviewing this branch proved it: the uninstall
+    // scoping was deletable on all three platforms with every gate green. This
+    // counts the consumers instead.
+    //
+    // Windows spells the match inline at all three sites rather than through a
+    // helper, so the pattern is variable-agnostic — $PORT in `Invoke-Verify`
+    // and `Invoke-Uninstall`, $LOOPBACK_PORT at the install-time gate — and runs
+    // through the `([^0-9]|$)` tail. Both halves are load-bearing and neither
+    // was covered at first: stopping the pattern before the tail left the
+    // right-bound deletable at the two $PORT sites, and counting only $PORT
+    // left the gate — the one arm where a wrong answer is a mutation, not a
+    // report — pinned by nothing at all. Each revert kept every gate green.
+    // `SERVE_AFTER` is excluded on purpose: it is bounded but not root-scoped,
+    // because it asserts our own `serve --bg` landed rather than auditing a
+    // foreign config.
+    rule: 'Network posture — every root-path Serve decision consults the root-scoped match',
+    patterns: {
+      macOS: /if serve_proxies_root "\$PORT" "\$serve_out"; then/,
+      Linux: /if serve_proxies_root "\$PORT" "\$serve_out"; then/,
+      Windows:
+        /-match \('\(\?m\)\^\\\|--\\s\+\/\\s\+proxy\.\*' \+ \[regex\]::Escape\("127\.0\.0\.1:\$(?:LOOPBACK_)?PORT"\) \+ '\(\[\^0-9\]\|\$\)'\)/,
+    },
+    exactMatches: { macOS: 2, Linux: 2, Windows: 3 },
+  },
+  {
+    // Windows takes the same match inline rather than through a helper, so it
+    // is pinned on what the check says instead. The `/` in the message is the
+    // control: it is the difference between a claim about the origin serving
+    // Pocket at the root and a claim about the port appearing somewhere.
+    rule: 'Network posture — manage verify names the root path in its Serve verdict',
+    patterns: {
+      macOS: /Serve does not proxy \/ to 127\.0\.0\.1:/,
+      Linux: /Serve does not proxy \/ to 127\.0\.0\.1:/,
+      Windows: /Serve does not proxy \/ to 127\.0\.0\.1:/,
+    },
+  },
+  {
+    // The other half of "preserved byte-for-byte": a file that exists is not
+    // necessarily one an install finished writing, and the preserve branch
+    // cannot tell. Anchored on the message, since that is the whole control —
+    // it names the missing keys and sends the operator to `rm`, where the
+    // bind-host guard below it says "fix it" about a file with nothing in it.
+    // `scripts/installer-verify-test.mjs` drives the unix `env_missing_keys`.
+    rule: 'Credentials at rest — a half-written config/relay.env is named, not preserved',
+    patterns: {
+      macOS: /config\/relay\.env is missing installer-owned keys/,
+      Linux: /config\/relay\.env is missing installer-owned keys/,
+      Windows: /config\\relay\.env is missing installer-owned keys/,
+    },
+  },
+  {
+    // `run/` is the whole claim — docs/specs/security-remote.md's FAIL IF carries the why — so
+    // the pattern pins the path segment and not the basename: a rename is not
+    // this rule's business, and pinning it would redden the lint for the wrong
+    // reason. Two lines as one span, because what decides the placement is the
+    // offer deriving from that directory.
+    //
+    // Placement is textual; lifecycle is executable. CI's Linux test-mode
+    // install requires rotation across two pre-enrollment runs, then creates
+    // burrows.json and requires a third run to leave no offer.
+    rule: 'Credentials at rest — the enrollment offer is written under run/, never config/ or state/',
+    patterns: {
+      macOS: /RUN_DIR="\$INSTALL_ROOT\/run"\n\s*ENROLL_OFFER_FILE="\$RUN_DIR\//,
+      Linux: /RUN_DIR="\$INSTALL_ROOT\/run"\n\s*ENROLL_OFFER_FILE="\$RUN_DIR\//,
+      Windows: /\$RUN_DIR = Join-Path \$INSTALL_ROOT 'run'\n\s*\$ENROLL_OFFER_FILE = Join-Path \$RUN_DIR /,
     },
   },
   {
@@ -249,7 +562,10 @@ export function check() {
   const failures = [];
   let checked = 0;
 
-  for (const { rule, patterns, skip = {}, exactMatches = {} } of RULES) {
+  for (const { rule, patterns, skip = {}, exactMatches = {}, forbidden = false } of RULES) {
+  if (forbidden && Object.keys(exactMatches).length > 0) {
+    throw new Error(`${rule}: a forbidden rule counts to zero, so exactMatches cannot apply`);
+  }
   for (const { platform, file } of INSTALLERS) {
     if (platform in skip) continue;
     const pattern = patterns[platform];
@@ -260,12 +576,12 @@ export function check() {
     checked += 1;
     let text;
     try {
-      text = readFileSync(join(repoRoot, file), 'utf8');
+      text = readRepoFile(file);
     } catch {
       failures.push(`${rule}\n    ${file}: missing`);
       continue;
     }
-    const want = exactMatches[platform];
+    const want = forbidden ? 0 : exactMatches[platform];
     const found =
       text.match(new RegExp(pattern.source, `${pattern.flags.replace('g', '')}g`))?.length ?? 0;
     if (want === undefined) {
@@ -278,7 +594,9 @@ export function check() {
       );
     } else if (found > want) {
       failures.push(
-        `FAIL IF ${rule}\n    ${file} matches ${pattern} ${found}x, expected exactly ${want} — if a site was added on purpose, bump exactMatches in the same commit`,
+        forbidden
+          ? `FAIL IF ${rule}\n    ${file} matches ${pattern} ${found}x, expected none — the spec forbids this, so remove it rather than relaxing the rule`
+          : `FAIL IF ${rule}\n    ${file} matches ${pattern} ${found}x, expected exactly ${want} — if a site was added on purpose, bump exactMatches in the same commit`,
       );
     }
   }
@@ -290,10 +608,10 @@ export function check() {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { failures, checked } = check();
   if (failures.length > 0) {
-    console.error('deploy-lint: the installers no longer hold controls SECURITY.md requires\n');
+    console.error('deploy-lint: the installers no longer hold controls docs/specs/security-remote.md requires\n');
     for (const failure of failures) console.error(`  ${failure}\n`);
     console.error(
-      'Each line above maps to a FAIL IF in SECURITY.md. If a control moved rather than\n' +
+      'Each line above maps to docs/specs/security-remote.md or SELF_HOST.md. If a control moved rather than\n' +
         'disappeared, update the pattern in scripts/deploy-lint.mjs in the same commit.',
     );
     process.exit(1);

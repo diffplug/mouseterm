@@ -10,6 +10,8 @@
 
 export interface PromptSubmitState {
   inPaste: boolean;
+  // At most five bytes: a prefix of either six-byte paste marker.
+  pendingMarker?: string;
 }
 
 export interface PromptSubmitResult {
@@ -27,6 +29,7 @@ export function createPromptSubmitState(): PromptSubmitState {
 export function detectPromptSubmit(current: PromptSubmitState, input: string): PromptSubmitResult {
   let inPaste = current.inPaste;
   let submitted = false;
+  input = (current.pendingMarker ?? '') + input;
 
   for (let index = 0; index < input.length; index += 1) {
     const rest = input.slice(index);
@@ -39,6 +42,9 @@ export function detectPromptSubmit(current: PromptSubmitState, input: string): P
       inPaste = false;
       index += BRACKETED_PASTE_END.length - 1;
       continue;
+    }
+    if (BRACKETED_PASTE_START.startsWith(rest) || BRACKETED_PASTE_END.startsWith(rest)) {
+      return { state: { inPaste, pendingMarker: rest }, submitted };
     }
     const char = input[index];
     if (!inPaste && (char === '\r' || char === '\n')) submitted = true;
