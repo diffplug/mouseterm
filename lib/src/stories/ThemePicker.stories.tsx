@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import { userEvent, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import type { DormouseTheme } from '../lib/themes';
 import { OVERLAY_MAX_HEIGHT_VAR } from '../components/design';
 import { ThemePicker } from '../components/ThemePicker';
@@ -66,7 +66,7 @@ async function openMenu({ canvasElement }: { canvasElement: HTMLElement }) {
 /** Resting state: the trigger alone, which is all these pages show until clicked. */
 export const Closed: Story = {};
 
-/** The bundled set. The active row carries the list-selection palette. */
+/** The bundled set. Each row previews its own palette; an inset border marks selection. */
 export const Open: Story = {
   play: openMenu,
 };
@@ -99,4 +99,35 @@ export const OpenOnShortViewport: Story = {
     primedInstalledThemes: Array.from({ length: 10 }, (_, i) => installedTheme(i)),
   },
   play: openMenu,
+};
+
+/** Both fades appear while entries remain in both scroll directions. */
+export const ScrolledMiddle: Story = {
+  args: { maxHeight: '260px' },
+  play: async (context) => {
+    await openMenu(context);
+    const first = within(context.canvasElement).getAllByRole('menuitemradio')[0];
+    const scroller = first.parentElement!.parentElement!.parentElement!;
+    scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) / 2;
+    await waitFor(() => {
+      expect(context.canvasElement.querySelector('[data-scroll-fade="above"]')).not.toBeNull();
+      expect(context.canvasElement.querySelector('[data-scroll-fade="below"]')).not.toBeNull();
+    });
+  },
+};
+
+/** At the end, only the top fade remains and uninstall stays reachable. */
+export const ScrolledBottom: Story = {
+  args: { maxHeight: '260px' },
+  parameters: OpenWithInstalledThemes.parameters,
+  play: async (context) => {
+    await openMenu(context);
+    const first = within(context.canvasElement).getAllByRole('menuitemradio')[0];
+    const scroller = first.parentElement!.parentElement!.parentElement!;
+    scroller.scrollTop = scroller.scrollHeight;
+    await waitFor(() => {
+      expect(context.canvasElement.querySelector('[data-scroll-fade="above"]')).not.toBeNull();
+      expect(context.canvasElement.querySelector('[data-scroll-fade="below"]')).toBeNull();
+    });
+  },
 };

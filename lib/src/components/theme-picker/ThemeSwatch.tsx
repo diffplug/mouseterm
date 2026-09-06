@@ -2,9 +2,9 @@ import type { DormouseTheme } from '../../lib/themes';
 
 export function ThemeSwatch({ theme }: { theme: DormouseTheme }) {
   return (
-    <span className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+    <span aria-hidden="true" className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center">
       <span
-        className="block h-3.5 w-3.5 rounded-full border border-border"
+        className="block h-3.5 w-3.5 rounded-full border border-current/25"
         style={{ backgroundColor: theme.swatch }}
       />
       <span

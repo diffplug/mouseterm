@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { CaretDownIcon, XIcon } from '@phosphor-icons/react';
+import { CaretDownIcon } from '@phosphor-icons/react';
 import type { DormouseTheme } from '../lib/themes';
 import {
   applyTheme,
@@ -11,10 +11,11 @@ import {
   setActiveThemeId,
 } from '../lib/themes';
 import { ThemeDebuggerDialog } from './ThemeDebugger';
-import { ThemeSwatch } from './theme-picker/ThemeSwatch';
+import { ThemeList } from './theme-picker/ThemeList';
+import { getThemePreviewStyle, ThemePreview } from './theme-picker/ThemePreview';
 import { ThemeStoreDialog } from './theme-picker/ThemeStoreDialog';
 import { useAnchoredMenu, useCloseOnOutsideAndEscape } from './use-anchored-menu';
-import { chromeButton, modalIconButton, OVERLAY_MAX_HEIGHT, POPUP_SURFACE_CLASS } from './design';
+import { OVERLAY_MAX_HEIGHT, POPUP_SURFACE_CLASS } from './design';
 
 /**
  * `compact` is the free-floating trigger used by the website's Pocket
@@ -138,12 +139,12 @@ export function ThemePicker({
         onClick={() => setOpen(!open)}
         // The compact trigger stands alone on a touch surface, so it takes the
         // 44px minimum the dialog row inherits from the dialog around it.
-        className={`${chromeButton({ kind: 'labeled' })} ${inDialog ? '' : 'min-h-11 min-w-11'}`}
+        className={`flex min-w-0 items-center gap-2 rounded px-2 py-1 font-mono text-sm hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-current ${inDialog ? '' : 'min-h-11 min-w-11'}`}
+        style={activeTheme ? getThemePreviewStyle(activeTheme) : undefined}
       >
-        {activeTheme ? <ThemeSwatch theme={activeTheme} /> : null}
-        <span className="min-w-0 truncate">
-          {inDialog ? (activeTheme?.label ?? 'Select theme') : 'Theme'}
-        </span>
+        {activeTheme
+          ? <ThemePreview theme={activeTheme} label={inDialog ? activeTheme.label : 'Theme'} />
+          : <span>Select theme</span>}
         <CaretDownIcon size={10} weight="bold" className="shrink-0 opacity-65" aria-hidden="true" />
       </button>
 
@@ -158,57 +159,12 @@ export function ThemePicker({
           className={`${POPUP_SURFACE_CLASS} flex flex-col overflow-hidden ${OVERLAY_MAX_HEIGHT.popover}`}
           style={menuStyle}
         >
-          {/* max-h-80 is a ceiling on a tall screen, never a floor: the panel's
-              own viewport cap shrinks this further on a short one. */}
-          <div className="max-h-80 min-h-0 flex-1 overflow-y-auto py-1">
-            {themes.map((theme) => {
-              const isActive = theme.id === activeId;
-              const isInstalled = theme.origin.kind === 'installed';
-              return (
-                <div
-                  key={theme.id}
-                  className={`flex items-center transition-colors ${
-                    isActive
-                      ? 'bg-header-active-bg text-header-active-fg'
-                      : 'text-foreground'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={isActive}
-                    onClick={() => selectTheme(theme.id)}
-                    className={`flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-3 text-left text-sm ${
-                      isInstalled ? 'pr-1' : 'pr-3'
-                    }`}
-                    style={{ color: 'inherit' }}
-                  >
-                    <ThemeSwatch theme={theme} />
-                    <span className="min-w-0 flex-1 truncate">{theme.label}</span>
-                  </button>
-                  {isInstalled ? (
-                    <button
-                      type="button"
-                      aria-label={`Uninstall ${theme.label}`}
-                      title={`Uninstall ${theme.label}`}
-                      // Bigger target and a gap from the row's select action:
-                      // unlike `WatchedCommandList`'s remove, undoing this
-                      // means re-finding the extension on OpenVSX.
-                      className={modalIconButton({ class: 'mr-2 ml-1 p-1.5' })}
-                      style={{ color: 'inherit' }}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        deleteTheme(theme);
-                      }}
-                    >
-                      <XIcon size={12} weight="bold" />
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
+          <ThemeList
+            themes={themes}
+            activeId={activeId}
+            onSelect={selectTheme}
+            onUninstall={deleteTheme}
+          />
 
           <div className="shrink-0 border-t border-border p-1">
             <button

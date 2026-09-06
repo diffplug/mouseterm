@@ -35,13 +35,19 @@ describe('ThemePicker', () => {
   // would fail on any equivalent restyle and pass on real breakage, so it lives
   // in `Modals/…`/`Components/ThemePicker` Chromatic stories instead
   // (`OpenOnShortViewport`). `design.test.ts` pins the cap to its constants.
-  it('shows the active theme swatch on the collapsed trigger', () => {
+  it('shares the active theme preview between the closed trigger and its list entry', () => {
     act(() => root.render(<ThemePicker variant="settings-dialog" />));
 
     const trigger = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
     // The collapsed trigger has to carry the same swatch as the row it stands
     // in for, so collapsed and expanded read as one control.
     expect(trigger?.querySelector('span[class*="rounded-full"]')).not.toBeNull();
+    act(() => trigger!.click());
+    const selected = container.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')!;
+    expect(selected.parentElement!.style.color).toBe(trigger!.style.color);
+    expect(selected.parentElement!.style.backgroundColor).toBe(trigger!.style.backgroundColor);
+    expect(selected.querySelector('span[class*="rounded-full"]')?.outerHTML)
+      .toBe(trigger!.querySelector('span[class*="rounded-full"]')?.outerHTML);
   });
 
   /** Open the compact picker and return its menu panel. */

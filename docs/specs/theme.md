@@ -206,8 +206,18 @@ playground navbar — carries none**.
   "Theme" in `compact`.
 - **The picker renders the bundled default through hydration, then reconciles
   stored themes and selection in a layout effect** (rationale).
-- **The picker styles itself in `--color-*` utilities like any other
-  component.** A host rendering library JSX scans `lib/src` and imports
+- **Must use `ThemePicker` for every theme-selection placement**, with
+  `ThemeList` owning its preview rows and scroll affordances.
+- **Must preview each candidate with its resolved terminal foreground/background**,
+  including missing-token defaults for its own polarity. **Must share the
+  circle swatch, label treatment, and palette between list entries and the
+  closed trigger** through `ThemePreview`. **Must mark selection with an inset
+  border and preserve preview colors on selection and hover.**
+- **Must show an edge fade only while entries overflow in that direction**,
+  updating on scroll, content
+  changes, and resize. Pinned by `lib/src/components/theme-picker/ThemeList.test.tsx`.
+- **Must style surrounding picker chrome with `--color-*` utilities.** A host
+  rendering library JSX scans `lib/src` and imports
   `theme-colors.css`, or none of those utilities reach it (rationale).
 - **`onPick` reports the choice, not the change.** `restoreActiveTheme` persists
   the id it resolved, so `dormouse:active-theme` exists whether or not anyone
@@ -239,7 +249,11 @@ playground navbar — carries none**.
   the panel cap shrinks it on a short screen while the footer stays put. Pinned
   by the `OpenOnShortViewport` story, not a unit test (rationale).
 
-Source of truth: `lib/src/components/SettingsDialog.tsx`; `setDefaultThemeId()` /
+Source of truth: `ThemePicker` in `lib/src/components/ThemePicker.tsx`;
+`ThemeList` in `lib/src/components/theme-picker/ThemeList.tsx`;
+`ThemePreview` / `getThemePreviewStyle` in
+`lib/src/components/theme-picker/ThemePreview.tsx`;
+`lib/src/components/SettingsDialog.tsx`; `setDefaultThemeId()` /
 `restoreActiveTheme()` in `lib/src/lib/themes/apply.ts`; `useRestoredTheme()` in
 `lib/src/lib/themes/use-restored-theme.ts`; `restorePocketTheme` in
 `lib/src/remote/pocket-app/pocket-theme.ts`; `useAnchoredMenu` /
