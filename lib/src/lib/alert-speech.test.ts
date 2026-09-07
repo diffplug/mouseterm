@@ -1,3 +1,4 @@
+import { alertDiagnosticsConfig } from './alert-diagnostics-config';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./platform', () => ({
@@ -83,6 +84,7 @@ function ringTwoWithFirstSpeaking(): void {
 }
 
 beforeEach(() => {
+  alertDiagnosticsConfig.enabled = true;
   vi.useFakeTimers();
   stubSpeechSynthesis();
   records = [];
@@ -98,6 +100,7 @@ afterEach(() => {
   clearTerminalActivity();
   applyAlertSettingsFromHost(DEFAULT_ALERT_SETTINGS);
   configureAlertDiagnostics('off');
+  alertDiagnosticsConfig.enabled = false;
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });

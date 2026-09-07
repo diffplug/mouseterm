@@ -1,4 +1,5 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { alertDiagnosticsConfig } from '../lib/alert-diagnostics-config';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -7,8 +8,10 @@ import type { AlertDiagnostic } from '../lib/alert-diagnostics';
 
 const dirs: string[] = [];
 const journals: ReturnType<typeof createAlertJournal>[] = [];
+beforeEach(() => { alertDiagnosticsConfig.enabled = true; });
 afterEach(async () => {
   await Promise.all(journals.splice(0).map((j) => j.close()));
+  alertDiagnosticsConfig.enabled = false;
   await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 async function setup() {

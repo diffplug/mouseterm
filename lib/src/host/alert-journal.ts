@@ -1,6 +1,7 @@
 import { mkdir, open, readdir, stat, unlink, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { alertDiagnosticsConfig } from '../lib/alert-diagnostics-config';
 import type { AlertDiagnostic, DiagnosticFields } from '../lib/alert-diagnostics';
 
 const FILE_BYTES = 4 * 1024 * 1024;
@@ -91,7 +92,7 @@ export function createAlertJournal(stateDir: string, warn: (message: string) => 
   }
 
   function append(value: unknown): void {
-    if (closed || !stateDir || !isAlertDiagnostic(value)) return;
+    if (!alertDiagnosticsConfig.enabled || closed || !stateDir || !isAlertDiagnostic(value)) return;
     const { version, source, seq, at, monotonicMs, event, fields } = value;
     const line = JSON.stringify({ version, source, seq, at, monotonicMs, event, fields }) + '\n';
     if (Buffer.byteLength(line) > 8192 || queue.length >= MAX_QUEUED) { dropped++; return; }

@@ -1,3 +1,4 @@
+import { alertDiagnosticsConfig } from './alert-diagnostics-config';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { alertDiagnostic, configureAlertDiagnostics, type AlertDiagnostic } from './alert-diagnostics';
 import { AlertManager } from './alert-manager';
@@ -5,6 +6,7 @@ import { AlertManager } from './alert-manager';
 let records: AlertDiagnostic[];
 let manager: AlertManager;
 beforeEach(() => {
+  alertDiagnosticsConfig.enabled = true;
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   records = [];
   configureAlertDiagnostics('test', (record) => records.push(record));
@@ -13,6 +15,7 @@ beforeEach(() => {
 afterEach(() => {
   manager.dispose();
   configureAlertDiagnostics('off');
+  alertDiagnosticsConfig.enabled = false;
   vi.useRealTimers();
 });
 

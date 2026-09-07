@@ -1,3 +1,5 @@
+import { alertDiagnosticsConfig } from './alert-diagnostics-config';
+
 /** Local observability only: never use these records to drive alert state. */
 export type DiagnosticFields = Record<string, string | number | boolean | null>;
 export interface AlertDiagnostic {
@@ -17,14 +19,14 @@ let windowAt = 0;
 let windowCount = 0;
 let dropped = 0;
 
-export function alertDiagnosticsEnabled(): boolean { return sink !== undefined; }
+export function alertDiagnosticsEnabled(): boolean { return alertDiagnosticsConfig.enabled && sink !== undefined; }
 
 export function diagnosticId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function configureAlertDiagnostics(label: string, write?: (record: AlertDiagnostic) => void): void {
-  sink = write;
+  sink = alertDiagnosticsConfig.enabled ? write : undefined;
   source = `${label}:${diagnosticId()}`;
   seq = windowCount = dropped = 0;
   windowAt = performance.now();
@@ -34,7 +36,7 @@ export function configureAlertDiagnostics(label: string, write?: (record: AlertD
 /** Callers pass metadata only; speech.request alone carries sanitized spoken text.
  * Bound event storms before IPC and signal loss. Disk/IPC failure cannot affect alerts. */
 export function alertDiagnostic(event: string, fields: DiagnosticFields = {}): void {
-  if (!sink) return;
+  if (!alertDiagnosticsEnabled() || !sink) return;
   try {
     const monotonicMs = performance.now();
     const record = (name: string, data: DiagnosticFields): AlertDiagnostic => ({
@@ -57,7 +59,7 @@ export function alertDiagnostic(event: string, fields: DiagnosticFields = {}): v
 }
 
 export function observeAlertFocus(): () => void {
-  if (typeof window === 'undefined') return () => {};
+  if (!alertDiagnosticsEnabled() || typeof window === 'undefined') return () => {};
   const record = (event: Event): void => alertDiagnostic('renderer.focus', {
     trigger: event.type, focused: document.hasFocus(), visibility: document.visibilityState,
   });
