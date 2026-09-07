@@ -27,7 +27,7 @@ const started = [];
  * `logPath`, and hand back a handle whose `lines` the caller can poll.
  *
  * **Its own process group, always.** `pnpm dev:relay` and
- * `pnpm dev:standalone:ab` each fan out into a tree (pnpm → node → vite →
+ * `pnpm innerdogfood` each fan out into a tree (pnpm → node → vite →
  * esbuild), and killing only the pnpm shim orphans everything under it.
  * `detached: true` plus a `process.kill(-pid)` at teardown takes the group.
  */

@@ -182,6 +182,10 @@ class MockElement {
 
   addEventListener(): void {}
   removeEventListener(): void {}
+  querySelector(): MockElement | null {
+    return null;
+  }
+
   querySelectorAll(): MockElement[] {
     return [];
   }

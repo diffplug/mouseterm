@@ -57,7 +57,7 @@ let shuttingDown = false;
 let requestSeq = 0;
 
 function log(message) {
-  console.error(`[dev:standalone:ab] ${message}`);
+  console.error(`[innerdogfood] ${message}`);
 }
 
 function sendSse(res, event, data) {

@@ -519,7 +519,7 @@ Source of truth: `init_log` / `read_update_log` in `standalone/src-tauri/src/lib
 
 Source of truth: `standalone/package.json` (package scripts),
 `standalone/src-tauri/tauri.conf.json` (`build`, `bundle.resources`), and the root
-`package.json` for the `dev:standalone*` orchestration.
+`package.json` for the `dev:standalone` and `innerdogfood` orchestration.
 
 - `stage` = `stage:dor-cli` (build + stage the dor CLI, `docs/specs/dor-cli.md`)
   plus `stage:sidecar-proxy` (`build-sidecar-proxy.mjs` bundles the
@@ -538,7 +538,7 @@ Source of truth: `standalone/package.json` (package scripts),
   Frontend edits hot-reload, but changes to the sidecar, the staged dor CLI, or the
   bundled `lib/src/host/` sources need a manual re-stage and app restart — the dev
   loop does not watch them.
-- `pnpm dev:standalone:ab` runs the sidecar + webview in a normal browser via the
+- `pnpm innerdogfood` runs the sidecar + webview in a normal browser via the
   browser-dev harness instead of the Tauri WebView (`docs/specs/transport.md`,
   Standalone browser-dev harness).
 

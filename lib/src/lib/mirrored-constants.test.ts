@@ -141,7 +141,7 @@ describe('the pairing walkthrough mirrors the copy it clicks', () => {
   // Not copy but a log line: the harness prints where the Burrow keeps its
   // state and the walkthrough parses it back out. Rendered with a stand-in path
   // rather than compared as text, so the two only have to agree on what the
-  // line looks like — the `[dev:standalone:ab]` prefix `log()` adds is free to
+  // line looks like — the `[innerdogfood]` prefix `log()` adds is free to
   // change, and the capture group has to survive.
   it('parses the state directory the harness actually logs', () => {
     const harness = 'standalone/scripts/dev-agent-browser.mjs';
