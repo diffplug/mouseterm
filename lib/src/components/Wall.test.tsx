@@ -1681,11 +1681,18 @@ describe('Wall on the Lath engine', () => {
     return container.querySelector<HTMLElement>('[aria-labelledby="notepad-archive-failure-title"]');
   }
 
-  function clickButton(label: string): void {
+  /** Answer the prompt and settle the closure it starts. Both answers run an async
+   *  chain that ends on the two-phase kill's deferred removal timer, so the click's
+   *  own async work is awaited BEFORE `flush()` registers the timer that has to fire
+   *  after it. A bare `act(click)` leaves the two `setTimeout(0)`s racing: the
+   *  removal is registered while the test awaits `flush()`, so it lands second and
+   *  the leaf is still mid-fade when the assertion runs. */
+  async function clickButton(label: string): Promise<void> {
     const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find((candidate) => candidate.textContent?.trim() === label);
     expect(button, `no "${label}" button`).toBeDefined();
-    act(() => { button!.click(); });
+    await act(async () => { button!.click(); });
+    await flush();
   }
 
   /** The pane header's Kill button — a user-visible closure, which does prompt.
@@ -1853,9 +1860,7 @@ describe('Wall on the Lath engine', () => {
     await clickHeaderKill('pane-a');
     expect(archiveFailureModal()).not.toBeNull();
     setBusy(true);
-    clickButton('Close anyway');
-    await flush();
-    await flush();
+    await clickButton('Close anyway');
     expect(getNotes('pane-a')).toHaveLength(1);
     expect(dispose).not.toHaveBeenCalled();
     expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
@@ -1925,8 +1930,7 @@ describe('Wall on the Lath engine', () => {
     act(() => { addPlainNote('pane-a', 'keep me'); });
     await clickHeaderKill('pane-a');
 
-    clickButton('Keep open');
-    await flush();
+    await clickButton('Keep open');
 
     expect(archiveFailureModal()).toBeNull();
     expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
@@ -1942,8 +1946,7 @@ describe('Wall on the Lath engine', () => {
     act(() => { addPlainNote('pane-a', 'expendable'); });
     await clickHeaderKill('pane-a');
 
-    clickButton('Close anyway');
-    await flush();
+    await clickButton('Close anyway');
 
     expect(archiveFailureModal()).toBeNull();
     expect(container.querySelector('[data-lath-leaf="pane-a"]')).toBeNull();
@@ -1972,12 +1975,10 @@ describe('Wall on the Lath engine', () => {
 
     // A's prompt is the one on screen; B's is behind it.
     expect(archiveFailureModal()?.textContent).toContain('a could not be written');
-    clickButton('Keep open');
-    await flush();
+    await clickButton('Keep open');
 
     expect(archiveFailureModal()?.textContent).toContain('b could not be written');
-    clickButton('Close anyway');
-    await flush();
+    await clickButton('Close anyway');
 
     expect(archiveFailureModal()).toBeNull();
     expect(container.querySelector('[data-lath-leaf="pane-a"]')).not.toBeNull();
