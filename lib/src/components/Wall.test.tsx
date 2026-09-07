@@ -1681,12 +1681,13 @@ describe('Wall on the Lath engine', () => {
     return container.querySelector<HTMLElement>('[aria-labelledby="notepad-archive-failure-title"]');
   }
 
-  /** Answer the prompt and settle the closure it starts. Both answers run an async
+  /** Answer the prompt and settle the closure it starts. `Close anyway` runs an async
    *  chain that ends on the two-phase kill's deferred removal timer, so the click's
    *  own async work is awaited BEFORE `flush()` registers the timer that has to fire
    *  after it. A bare `act(click)` leaves the two `setTimeout(0)`s racing: the
    *  removal is registered while the test awaits `flush()`, so it lands second and
-   *  the leaf is still mid-fade when the assertion runs. */
+   *  the leaf is still mid-fade when the assertion runs. (`Keep open` only shifts the
+   *  prompt queue, so it needs no ordering — one helper still covers both.) */
   async function clickButton(label: string): Promise<void> {
     const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find((candidate) => candidate.textContent?.trim() === label);
