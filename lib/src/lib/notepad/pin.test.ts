@@ -103,6 +103,25 @@ describe('revealNoteSource', () => {
     expect(markersOf(src).every((marker) => !marker.isDisposed)).toBe(true);
   });
 
+  it('resolves markers after the source view has mounted and refit', () => {
+    const lines = [...LINES];
+    const { terminal, scrollToLine } = makeTerminal(lines, { viewportY: 40, baseY: 40 });
+    mocks.getTerminalInstance.mockReturnValue(terminal);
+    const { noteId, source: src } = pinnedNote();
+    const target = new EventTarget();
+    target.addEventListener('dormouse:reveal-note-source', () => {
+      // Model the marker movement caused by refitting the source's new view.
+      lines.unshift('new wrapped row');
+      for (const marker of markersOf(src)) marker.line += 1;
+    });
+    vi.stubGlobal('window', target);
+    try {
+      expect(revealNoteSource('term-1', noteId)).toEqual({ ok: true });
+      expect(scrollToLine).toHaveBeenCalledWith(1);
+      expect(getMouseSelectionState('term-1').selection).toMatchObject({ startRow: 1, endRow: 2 });
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it('reports a note that has no pin', () => {
     const noteId = addPlainNote('term-1', 'typed by hand');
     expect(revealNoteSource('term-1', noteId)).toEqual({ ok: false, reason: 'no-source', kept: false });

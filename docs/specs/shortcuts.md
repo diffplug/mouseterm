@@ -95,3 +95,5 @@ The standalone host contributes no chords; `docs/specs/standalone.md` owns its n
 ## Future
 
 Workspace switch / create / close / rename shortcuts (command mode) are staged with the workspaces rollout ([layout.md](layout.md#future), **Scope: workspaces-rollout**), following the tmux *window* bindings the rest of the keymap mirrors; listed here once bound.
+
+Tool context and its terminal keyboard routing follow `docs/specs/terminal-context.md` → Tool context.

@@ -260,3 +260,9 @@ Source of truth: `getScrollbackReceived` / `getScrollbackSince` in `vscode-ext/s
 **Must acknowledge Windows directory opening when Explorer starts**, reporting process-launch errors without waiting for its exit. macOS and Linux retain opener exit-error reporting.
 
 Source of truth: `TerminalContextRequest` in `lib/src/lib/terminal-context-types.ts`; `PtyInfo` in `lib/src/lib/platform/types.ts`; `resumeOrRestore` in `lib/src/lib/reconnect.ts`; `context` in `standalone/sidecar/pty-core.js`; `attachRouter` in `vscode-ext/src/message-router.ts`.
+
+## Tool transport
+
+**Must forward parsed OSC 367 announcements from the PTY owner to its renderer**, without reparsing live display bytes or answering from a viewer (`docs/specs/dor-tool.md` → OSC 367). Tool persistence follows `docs/specs/dor-tool.md` → Persistence and hosts.
+
+Source of truth: `ExtensionMessage` in `vscode-ext/src/message-types.ts`; `ownerStream` in `lib/src/host/remote/sidecar-entry.ts`.

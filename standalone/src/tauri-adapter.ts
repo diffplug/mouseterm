@@ -1,3 +1,4 @@
+import { recordToolAnnounce } from '../../lib/src/lib/tool-announce-store';
 import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../../lib/src/lib/terminal-context-types';
 import { invoke as rawInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -17,6 +18,8 @@ import type {
   PtyDataDetail,
   PtyInfo,
   BurrowLink,
+  ToolControlResult,
+  ToolHostRequest,
 } from "dormouse-lib/lib/platform/types";
 import type {
   NotepadArchiveLoadResult,
@@ -178,6 +181,7 @@ export class TauriAdapter implements PlatformAdapter {
         // reaches xterm.js instead, and answering is the owner's alone.
         const { id, data } = event.payload;
         const parsed = new TerminalProtocolParser(themeColorProvider).process(data);
+        for (const event of parsed.events) if (event.kind === 'toolAnnounce') recordToolAnnounce(id, event.announce);
         applyTerminalSemanticEvents(id, collectTerminalSemanticEvents(parsed.events));
         for (const handler of this.replayHandlers) {
           handler({ id, data: parsed.visibleData });
@@ -324,6 +328,15 @@ export class TauriAdapter implements PlatformAdapter {
     try {
       return await rawInvoke<string>("read_clipboard_text");
     } catch { return null; }
+  }
+
+  async toolControl(request: ToolHostRequest): Promise<ToolControlResult> {
+    // The sidecar owns the filesystem (shared lib/src/host/tool-host.ts).
+    try {
+      return await rawInvoke<ToolControlResult>("tool_control", { request });
+    } catch (err) {
+      return { status: "error", message: errMessage(err) };
+    }
   }
 
   async createIframeProxyUrl(targetUrl: string): Promise<IframeProxyResult> {
