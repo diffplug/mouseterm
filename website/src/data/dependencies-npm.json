@@ -43,7 +43,7 @@
   },
   {
     "name": "@tauri-apps/plugin-shell",
-    "version": "2.3.5",
+    "version": "2.3.6",
     "license": "MIT OR Apache-2.0",
     "author": "Tauri Apps Contributors",
     "homepage": "https://github.com/tauri-apps/plugins-workspace"
