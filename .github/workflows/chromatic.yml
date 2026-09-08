@@ -7,11 +7,31 @@ on:
     paths:
       - 'lib/**'
       - 'docs/stories/**'
+      # The lockfile is the root's, so an in-range bump of a rendering dependency
+      # reaches the stories while matching neither glob above. Here it refreshes
+      # the baseline against the commit that moved the dependency, so the pixel
+      # change is attributed there rather than surfacing inside the next
+      # unrelated `lib/**` PR and being accepted as that PR's. Deliberately not
+      # on `pull_request`: a dependency change is global, so TurboSnap cannot
+      # narrow it and every dependency PR would bill a full run.
+      - 'pnpm-lock.yaml'
+      # `lib/.storybook/main.ts` aliases these three to source, putting them in the
+      # story dependency graph exactly as `lib/src` is: `Wall` reaches all three,
+      # and `PocketWall.stories.tsx` imports `remote-lib-common` directly. Push-only
+      # for the reason above; they nearly always change alongside `lib/**`, so the
+      # marginal build count is close to zero.
+      - 'dor/**'
+      - 'remote-lib-common/**'
+      - 'dor-lib-common/**'
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'lib/**'
       - 'docs/stories/**'
+  # Manual rebaseline. No glob catches every rendering input, and a commit editing
+  # these globs — this file — matches none of them, so without a dispatch the only
+  # way to refresh main's baseline is to wait for an unrelated qualifying commit.
+  workflow_dispatch:
 
 permissions:
   contents: read
