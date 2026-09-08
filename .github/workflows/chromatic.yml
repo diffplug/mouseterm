@@ -7,6 +7,14 @@ on:
     paths:
       - 'lib/**'
       - 'docs/stories/**'
+      # The lockfile is the root's, so an in-range bump of a rendering dependency
+      # reaches the stories while matching neither glob above. Here it refreshes
+      # the baseline against the commit that moved the dependency, so the pixel
+      # change is attributed there rather than surfacing inside the next
+      # unrelated `lib/**` PR and being accepted as that PR's. Deliberately not
+      # on `pull_request`: a dependency change is global, so TurboSnap cannot
+      # narrow it and every dependency PR would bill a full run.
+      - 'pnpm-lock.yaml'
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
