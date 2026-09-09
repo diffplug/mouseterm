@@ -35,7 +35,10 @@ export interface TokenHint {
   text: string;
 }
 
-export type CopyFlashKind = 'raw' | 'rewrapped';
+/** `'notepad'` rides the same flash as the two copies: capturing a selection
+ *  confirms in place and dismisses the popup, it does not open the notepad
+ *  (docs/specs/notepad.md → Capture). */
+export type CopyFlashKind = 'raw' | 'rewrapped' | 'notepad';
 
 export interface MouseSelectionState {
   mouseReporting: MouseTrackingMode;
@@ -44,8 +47,8 @@ export interface MouseSelectionState {
   selection: Selection | null;
   hintToken: TokenHint | null;
   /**
-   * Set briefly after Cmd+C / Cmd+Shift+C or a popup-button click, so the
-   * popup can flash a "Copied!" confirmation before everything clears.
+   * Set briefly after Cmd+C / Cmd+Shift+C / Cmd+N or a popup-button click, so
+   * the popup can flash a confirmation before everything clears.
    */
   copyFlash: CopyFlashKind | null;
 }
@@ -126,6 +129,10 @@ export function setSelection(id: string, selection: Selection | null): void {
   const s = ensure(id);
   if (s.selection === null && selection === null) return;
   s.selection = selection;
+  if (selection === null) {
+    s.copyFlash = null;
+    s.hintToken = null;
+  }
   notify();
 }
 
@@ -237,17 +244,18 @@ export function setDragAlt(id: string, altKey: boolean): void {
 }
 
 /**
- * Trigger the "Copied!" flash. The popup reads `copyFlash` and renders a
- * confirmation state; after `durationMs` the flash clears along with the
- * selection, dismissing the popup.
+ * Trigger the confirmation flash ("Copied!", or "Added" for a notepad capture).
+ * The popup reads `copyFlash` and renders a confirmation state; after
+ * `durationMs` the flash clears along with the selection, dismissing the popup.
  */
 export function flashCopy(id: string, kind: CopyFlashKind, durationMs = 700): void {
   const s = ensure(id);
+  const selection = s.selection;
   s.copyFlash = kind;
   notify();
   setTimeout(() => {
     const current = states.get(id);
-    if (!current || current.copyFlash !== kind) return;
+    if (current !== s || current.selection !== selection || current.copyFlash !== kind) return;
     current.copyFlash = null;
     current.selection = null;
     notify();

@@ -4,7 +4,6 @@ import {
   flattenScenario,
   SCENARIO_SHELL_PROMPT,
   SCENARIO_LS_OUTPUT,
-  SCENARIO_ANSI_COLORS,
 } from '../lib/platform';
 import type { ActivityState } from '../lib/terminal-registry';
 import { requireElement, settleTerminals, waitForCondition } from './settle-terminals';
@@ -101,20 +100,13 @@ async function minimizeFirstVisiblePane() {
 
 async function openAlertDialog() {
   const alertButton = await requireElement<HTMLButtonElement>('[data-alert-button-for]', 'alert bell');
-  alertButton.click();
-  await requireElement('[role="dialog"]', 'TODO and alert dialog');
+  alertButton.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+  await requireElement('[data-terminal-context]', 'terminal context');
+  await settleTerminals();
 }
 
 export const Default: Story = {
   parameters: { fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) } },
-};
-
-export const WithLsOutput: Story = {
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_LS_OUTPUT) } },
-};
-
-export const WithAnsiColors: Story = {
-  parameters: { fakePty: { scenario: flattenScenario(SCENARIO_ANSI_COLORS) } },
 };
 
 export const MultiPane: Story = {
@@ -132,36 +124,6 @@ export const WithDoors: Story = {
     await minimizeFirstVisiblePane();
     await minimizeFirstVisiblePane();
     await settleTerminals();
-  },
-};
-
-export const AlertEnabledIdlePane: Story = {
-  args: {
-    initialPaneIds: ['wall-alert-enabled'],
-  },
-  parameters: {
-    fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
-    ...withPrimedActivity({
-      'wall-alert-enabled': {
-        status: 'NOTHING_TO_SHOW',
-        todo: false,
-      },
-    }),
-  },
-};
-
-export const AlertRingingPane: Story = {
-  args: {
-    initialPaneIds: ['wall-alert-ringing'],
-  },
-  parameters: {
-    fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
-    ...withPrimedActivity({
-      'wall-alert-ringing': {
-        status: 'ALERT_RINGING',
-        todo: false,
-      },
-    }),
   },
 };
 
@@ -199,26 +161,11 @@ export const AlertModalOpen: Story = {
     }),
   },
   play: async () => {
-    // Settle first: the bell only offers the dialog once the primed ALERT_RINGING
+    // Settle first: the bell only offers the context once the primed ALERT_RINGING
     // status has landed, so clicking it earlier is a no-op and the story
-    // snapshots a wall with no dialog.
+    // snapshots a wall with no context.
     await settleTerminals();
     await openAlertDialog();
-  },
-};
-
-export const TodoAfterDismiss: Story = {
-  args: {
-    initialPaneIds: ['wall-todo-after-dismiss'],
-  },
-  parameters: {
-    fakePty: { scenario: flattenScenario(SCENARIO_SHELL_PROMPT) },
-    ...withPrimedActivity({
-      'wall-todo-after-dismiss': {
-        status: 'ALERT_RINGING',
-        todo: true,
-      },
-    }),
   },
 };
 
@@ -262,5 +209,17 @@ export const MultipleRingingSessions: Story = {
         todo: false,
       },
     }),
+  },
+};
+
+/** Real context and helper lifecycle, backed by the deterministic demo shell. */
+export const TerminalContext: Story = {
+  args: { initialPaneIds: ['context-live'], initialMode: 'passthrough' },
+  parameters: { fakePty: { scenario: SCENARIO_SHELL_PROMPT } },
+  play: async () => {
+    await settleTerminals();
+    const header = await requireElement('[data-pane-header-for="context-live"]', 'terminal header');
+    header.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+    await waitForCondition(() => !!document.querySelector('[data-helper-terminal]'));
   },
 };

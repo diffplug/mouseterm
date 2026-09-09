@@ -1,14 +1,22 @@
 import { describe, expect, it } from 'vitest';
+import { POSIX_ESCAPABLE } from './posix-escape';
+import { shellEscapePosix } from './shell-escape';
 import {
+  commandArgv0,
   createTerminalPaneState,
   cwdDisplay,
   cwdFromManualPath,
   cwdFromOsc7,
+  cwdFromOsc633,
+  cwdFromOsc1337,
+  cwdFromProcessPath,
   cwdFromOsc9_9,
   cwdIdentity,
+  MAX_CWD_LENGTH,
   COMMAND_FAIL_GLYPH,
   DEFAULT_IDLE_TITLE,
   deriveHeader,
+  explainTerminalTitle,
   deriveSurfaceLabel,
   buildAppTitleResolver,
   groupTerminalPanes,
@@ -47,6 +55,12 @@ describe('terminal CWD normalization', () => {
     });
   });
 
+  it.each([cwdFromManualPath, cwdFromProcessPath, cwdFromOsc633, cwdFromOsc1337, cwdFromOsc9_9])('preserves literal percent escapes and whitespace in native CWDs (%s)', (parse) => {
+    expect(parse('/repo/literal%20name  ')?.path).toBe('/repo/literal%20name  ');
+    expect(parse('/repo/%2F%25%07')?.path).toBe('/repo/%2F%25%07');
+    expect(parse('  relative path  ')?.path).toBe('  relative path  ');
+  });
+
   it('marks OSC 9;9 Windows paths and leaves other paths unknown', () => {
     expect(cwdFromOsc9_9('C:\\repo', 100)?.pathKind).toBe('windows');
     expect(cwdFromOsc9_9('\\\\server\\share\\repo', 100)).toMatchObject({
@@ -57,6 +71,41 @@ describe('terminal CWD normalization', () => {
       pathKind: 'unknown',
       isRemote: false,
     });
+  });
+
+  // A CWD is retained per Session, rendered in the header, and used as a
+  // grouping key, so it is bounded and stripped of control characters on the
+  // way in — every source, not only the shell scripts Dormouse injects, since
+  // OSC 7 / 9;9 / 1337 are emitted by any program the user runs.
+  it('bounds every CWD source and strips control characters', () => {
+    expect(cwdFromOsc9_9('/repo/a\x07b\x9c', 100)?.path).toBe('/repo/ab');
+    expect(cwdFromOsc633('/repo/a\x00b', 100)?.path).toBe('/repo/ab');
+    expect(cwdFromOsc7('file:///repo/a%07b', 100)?.path).toBe('/repo/ab');
+    // The host slice stops at the `?`/`#` delimiters the URL parser honours, so
+    // a query or fragment tail never reaches `host` — the audit's payload lands
+    // outside it, and a `?` tail cannot make a local CWD read as remote.
+    expect(cwdFromOsc7('file://ok.example?a%1Bb%5D0;PWNED%07', 100)?.host).toBe('ok.example');
+    expect(cwdFromOsc7('file://localhost?x/repo/app', 100)?.host).toBe('localhost');
+    expect(cwdFromOsc7('file://localhost?x/repo/app', 100)?.isRemote).toBe(false);
+    expect(cwdFromOsc7('file://prod-box#frag/repo', 100)?.host).toBe('prod-box');
+    // Where the slice and the parser disagree by more than case, the parser's
+    // mapped host wins: an ignorable code point inside `localhost` is removed
+    // there, so it cannot survive as an invisible host that reads as remote.
+    expect(cwdFromOsc7('file://loc%E2%80%8Balhost/repo/app', 100)?.host).toBeUndefined();
+    expect(cwdFromOsc7('file://loc%E2%80%8Balhost/repo/app', 100)?.isRemote).toBe(false);
+    expect(cwdFromOsc7('file://%C2%ADlocalhost/x', 100)?.isRemote).toBe(false);
+    expect(cwdFromOsc7('file://%F0%9F%92%A9/x', 100)?.host).toBe('xn--ls8h');
+    // The two the slice exists to preserve, which the parser erases: case, and
+    // the `localhost` spelling the file scheme flattens to the empty string.
+    expect(cwdFromOsc7('file://Prod-Box/repo', 100)?.host).toBe('Prod-Box');
+    expect(cwdFromOsc7('file://localhost/repo', 100)?.host).toBe('localhost');
+
+    const long = `/${'a'.repeat(MAX_CWD_LENGTH * 3)}`;
+    expect(cwdFromOsc9_9(long, 100)?.path.length).toBe(MAX_CWD_LENGTH);
+    expect(cwdFromOsc633(long, 100)?.path.length).toBe(MAX_CWD_LENGTH);
+    const osc7 = cwdFromOsc7(`file://localhost${long}`, 100)!;
+    expect(osc7.path.length).toBeLessThanOrEqual(MAX_CWD_LENGTH);
+    expect(osc7.uri.length).toBe(MAX_CWD_LENGTH);
   });
 
   it('builds shortest unique labels without losing remote hosts', () => {
@@ -79,6 +128,12 @@ describe('terminal CWD normalization', () => {
     expect(cwdDisplay(share, { maxSegments: 2 })).toBe('\\\\server\\share\\repo\\app');
     expect(labels.get(cwdIdentity(share))).toBe('\\\\server\\share\\repo\\app');
     expect(labels.get(cwdIdentity(otherShare))).toBe('\\\\server\\other\\repo\\app');
+  });
+
+  it('abbreviates the home directory in full labels without matching a sibling', () => {
+    expect(cwdDisplay(cwd('/home/user/project'), { style: 'full', homePath: '/home/user' })).toBe('~/project');
+    expect(cwdDisplay(cwd('/home/username'), { style: 'full', homePath: '/home/user' })).toBe('/home/username');
+    expect(cwdDisplay(cwd('C:\\Users\\Me\\project'), { style: 'full', homePath: 'c:\\users\\me' })).toBe('~\\project');
   });
 });
 
@@ -266,10 +321,73 @@ describe('command title summarizer', () => {
     expect(summarizeCommandLine('ssh prod-box')).toBe('ssh prod-box');
   });
 
+  // One name per program: the launcher suffix is dropped everywhere, so the
+  // header reads the same name as the WATCHING rule row and the bell tooltip.
+  it('reads a Windows launcher as the program it launches', () => {
+    expect(summarizeCommandLine('vim.exe notes.txt')).toBe('vim');
+    expect(summarizeCommandLine('cargo.exe watch -x test')).toBe('cargo watch -x test');
+    expect(summarizeCommandLine('C:\\tools\\nodejs\\npm.cmd')).toBe('npm');
+    expect(summarizeCommandLine('C:\\tools\\nodejs\\npm.cmd run dev')).toBe('npm run dev');
+  });
+
   it('keeps pipelines and compound commands recognizable', () => {
     expect(summarizeCommandLine('cat package.json | jq .name')).toBe('cat package.json | ...');
     expect(summarizeCommandLine('cd lib && pnpm test')).toBe('cd lib ...');
     expect(summarizeCommandLine('"my command" "quoted arg"')).toBe('my command quoted arg');
+  });
+});
+
+describe('command tokenizer dialects', () => {
+  // A backslash is a path separator unless it precedes something a shell really
+  // escapes, so both dialects reduce to the bare program name.
+  it.each([
+    // Windows: absolute paths, launchers, a quoted path with spaces.
+    ['C:\\tools\\dor.cmd tool storybook', 'dor', 'dor tool storybook'],
+    ['C:\\Users\\me\\.claude\\local\\claude', 'claude', 'claude'],
+    ['"C:\\Program Files\\nodejs\\npm.cmd" run dev', 'npm', 'npm run dev'],
+    ['\\\\build\\share\\tools\\claude.exe --print', 'claude', 'claude --print'],
+    ['FOO=1 "C:\\Program Files\\nodejs\\npm.cmd" run dev', 'npm', 'npm run dev'],
+    // PowerShell's call operator, the only way that shell runs a quoted path.
+    // Without the leading-`&` skip it reads as a boundary and argv0 is null.
+    ['& "C:\\Program Files\\nodejs\\npm.cmd" run dev', 'npm', 'npm run dev'],
+    ['& C:\\tools\\dor.cmd tool storybook', 'dor', 'dor tool storybook'],
+    // POSIX escapes keep their meaning.
+    ['/opt/my\\ tools/claude --print', 'claude', 'claude --print'],
+    ['grep \\*.ts src', 'grep', 'grep *.ts src'],
+    ['echo a\\\\b', 'echo', 'echo a\\b'],
+  ])('reduces %j to %j / %j', (raw, argv0, summary) => {
+    expect(commandArgv0(raw)).toBe(argv0);
+    expect(summarizeCommandLine(raw)).toBe(summary);
+  });
+
+  // An unquoted Windows path with spaces is undecidable without probing the
+  // filesystem — `A\B C\D.cmd` is equally `A\B` plus an argument — so the
+  // tokenizer splits it and argv0 misses rather than naming the wrong program.
+  it('leaves an unquoted Windows path with spaces split', () => {
+    expect(commandArgv0('C:\\Program Files\\nodejs\\npm.cmd run dev')).toBe('Program');
+    expect(commandArgv0('"C:\\Program Files\\Git\\bin\\bash" scripts\\bootstrap.cmd')).toBe('bash');
+  });
+
+  it('pins the ordinary POSIX argv[0] escape cost of dialect-free tokenizing', () => {
+    expect(commandArgv0('foo\\-bar')).toBe('-bar');
+  });
+
+  // `POSIX_ESCAPABLE` is `shellEscapePosix`'s set; the tokenizer unescapes it.
+  // The two halves must name the same characters or a path Dormouse escaped for
+  // a drag-and-drop paste renders with stray backslashes in the pane header.
+  const ESCAPABLE = ` \t!"#$&'()*;<>?[]\`{|}~\\`;
+
+  it('is exactly the set spelled out here, so a change to it lands in this file', () => {
+    // Both directions, so neither a new nor a dropped member slips through.
+    expect(Array.from(ESCAPABLE).filter((char) => !POSIX_ESCAPABLE.test(char))).toEqual([]);
+    const printable = Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i));
+    expect(printable.filter((char) => POSIX_ESCAPABLE.test(char)).join('')).toBe(
+      Array.from(ESCAPABLE).filter((char) => char !== '\t').sort().join(''),
+    );
+  });
+
+  it.each(Array.from(ESCAPABLE))('round-trips %j out of shellEscapePosix', (char) => {
+    expect(summarizeCommandLine(`cat ${shellEscapePosix(`a${char}b`)}`)).toBe(`cat a${char}b`);
   });
 });
 
@@ -299,11 +417,11 @@ describe('header and grouping derivation', () => {
   it('deriveSurfaceLabel composes deriveHeader + resolveDisplayPrimary for one pane', () => {
     // A real command label wins; the fallback title is ignored.
     const running = runningPane('/repo/app', 'pnpm test --watch');
-    expect(deriveSurfaceLabel(running, [running], () => null, 'door title')).toBe('pnpm test --watch');
+    expect(deriveSurfaceLabel(running, () => null, 'door title')).toBe('pnpm test --watch');
     // An idle pane stays <idle> (resolveDisplayPrimary substitutes the fallback
     // only for the generic command title, not for idle).
     const idle = createTerminalPaneState();
-    expect(deriveSurfaceLabel(idle, [idle], () => null, 'door title')).toBe(DEFAULT_IDLE_TITLE);
+    expect(deriveSurfaceLabel(idle, () => null, 'door title')).toBe(DEFAULT_IDLE_TITLE);
   });
 
   it('lets fresh app-sent terminal titles override running command labels', () => {
@@ -402,6 +520,13 @@ describe('header and grouping derivation', () => {
     })).toEqual({
       primary: 'npm run build',
     });
+  });
+
+  it.each(['osc99', 'osc777'] as const)('keeps %s diagnostics out of command-start fallbacks', (source) => {
+    const pane = createTerminalPaneState({ title: { title: 'Finished tests', source, updatedAt: 1 } });
+    const running = reduceTerminalState(pane, { type: 'commandStart', source: 'osc133_boundaries' }, { now: () => 2 });
+    expect(running.currentCommand?.displayCommand).toBe('shell');
+    expect(deriveHeader(running, [running]).primary).toBe('shell');
   });
 
   it('does not use rich notification titles as tab title overrides', () => {
@@ -583,3 +708,15 @@ function runningPane(path: string, command: string, host?: string) {
     },
   });
 }
+
+
+describe('terminal context title explanation', () => {
+  it('keeps the winning completed-command OSC after the shell replaces that channel', () => {
+    const pane = createTerminalPaneState({
+      lastCommand: { id: 'run', rawCommandLine: 'pnpm dev', displayCommand: 'pnpm dev', startedAt: 1, finishedAt: 3, source: 'osc633_E', cwdAtStart: null, finalTerminalTitle: { source: 'osc2', title: 'Dev server', updatedAt: 2 } },
+      titleCandidates: { osc2: { source: 'osc2', title: 'zsh', updatedAt: 4 } },
+    });
+    expect(explainTerminalTitle(pane)).toContainEqual({ source: 'OSC 2 (command)', value: 'Dev server', note: 'Used by command title' });
+    expect(explainTerminalTitle(pane)).toContainEqual({ source: 'OSC 2', value: 'zsh', note: 'Not used' });
+  });
+});

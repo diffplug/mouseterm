@@ -1,8 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { useEffect, useRef } from 'react';
-import { toBase64Url, utf8Encode, type DirectoryEntry } from 'server-lib-common';
+import { toBase64Url, utf8Encode, type DirectoryEntry } from 'remote-lib-common';
 import { ConnectedView } from '../remote/pocket-app/App';
-import { PocketWall } from '../remote/pocket-app/PocketWall';
 import { RemotePtyAdapter, type RemoteAdapterClient } from '../remote/client/remote-adapter';
 import type { TerminalHandlers } from '../remote/client/pocket-client';
 import { setPlatform } from '../lib/platform';
@@ -28,7 +27,7 @@ const SINGLE_SESSION: DirectoryEntry[] = [
   },
 ];
 
-// Streamed once the wall attaches the pane — stands in for the Host's repaint.
+// Streamed once the wall attaches the pane — stands in for the Burrow's repaint.
 const SPLASH = b64(
   [
     '\x1b[32mDormouse Pocket\x1b[0m connected to \x1b[36mStudio iMac\x1b[0m\r\n',
@@ -41,7 +40,7 @@ const SPLASH = b64(
 /**
  * Network-free {@link RemoteAdapterClient}: serves a fixed directory snapshot and
  * echoes a splash through the attach handlers, so `PocketWall` renders its real
- * `MobileTerminalUi` + `MobileWall` composition without a live Host.
+ * `MobileTerminalUi` + `MobileWall` composition without a live Burrow.
  */
 class FakeRemoteClient implements RemoteAdapterClient {
   #snapshot: DirectoryEntry[];
@@ -61,7 +60,7 @@ class FakeRemoteClient implements RemoteAdapterClient {
   async attach(_surfaceId: string, cols: number, rows: number, handlers: TerminalHandlers) {
     const subId = `attach-${++this.#n}`;
     // Push after the pane's xterm (and its onPtyData handler) is mounted.
-    queueMicrotask(() => handlers.onData(SPLASH));
+    queueMicrotask(() => handlers.onData({ bytes: SPLASH }));
     return { subId, result: { cols, rows } };
   }
 
@@ -71,7 +70,7 @@ class FakeRemoteClient implements RemoteAdapterClient {
   unsubscribe() {}
 }
 
-function PocketWallStory({ connected = false }: { connected?: boolean }) {
+function PocketWallStory() {
   const adapterRef = useRef<RemotePtyAdapter | null>(null);
   if (!adapterRef.current) {
     // Mirror App.tsx's onConnect: stand up the adapter as the platform, prep a
@@ -97,19 +96,16 @@ function PocketWallStory({ connected = false }: { connected?: boolean }) {
       className="overflow-hidden border border-border shadow-2xl"
       style={{ width: 390, height: 760 }}
     >
-      {connected ? (
-        <ConnectedView
-          host={{
-            hostId: 'host-studio',
-            label: 'Studio iMac with a deliberately long connected-host title',
-            online: true,
-          }}
-          adapter={adapterRef.current}
-          onLeave={() => {}}
-        />
-      ) : (
-        <PocketWall adapter={adapterRef.current} />
-      )}
+      <ConnectedView
+        burrow={{
+          burrowId: 'burrow-studio',
+          label: 'Studio iMac with a deliberately long connected-burrow title',
+          online: true,
+          needsPairing: false,
+        }}
+        adapter={adapterRef.current}
+        onLeave={() => {}}
+      />
     </div>
   );
 }
@@ -125,19 +121,11 @@ const meta: Meta<typeof PocketWallStory> = {
 export default meta;
 type Story = StoryObj<typeof PocketWallStory>;
 
-// Smoke story: one attached session streaming a splash. Proves the
-// adapter → directory → MobileWall wiring (the composition itself is also
-// exercised by `App/MobileTerminalUi`'s PocketWall story with a FakePtyAdapter).
-export const SingleSession: Story = {};
-
 // Full connected shell: shared header chrome, back action, long-title
 // truncation, and the transition into the remote terminal composition.
-export const ConnectedShell: Story = {
-  args: { connected: true },
-};
+export const ConnectedShell: Story = {};
 
 // Canonical Pocket default theme, pinned for automated visual regression.
 export const ConnectedShellKimbieDark: Story = {
-  args: { connected: true },
   globals: { theme: 'Kimbie Dark' },
 };

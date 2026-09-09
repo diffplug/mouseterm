@@ -1,6 +1,13 @@
 import type { ActivityNotification, ProtocolProgressUpdate } from './alert-manager';
 import { parseColor } from './css-color';
 import {
+  STRING_CONTROL_INTRODUCER,
+  STRING_CONTROL_INTRODUCER_SCAN,
+  stringControlEndScan,
+  stringControlKind,
+  type StringControlKind,
+} from './terminal-controls';
+import {
   cwdFromOsc1337,
   cwdFromOsc633,
   cwdFromOsc7,
@@ -38,6 +45,21 @@ export interface TerminalProtocolAlertSink {
 export interface TerminalProtocolParseResult {
   visibleData: string;
   events: TerminalProtocolEvent[];
+  /**
+   * `visibleData` with every OSC/DCS/SOS/PM/APC payload removed, for consumers
+   * reading output as text (prompt detection). Every other control is left for
+   * `stripTerminalControls` to interpret. Identical to `visibleData` whenever
+   * the chunk carries no string control, which is the common case.
+   */
+  textData: string;
+  /**
+   * Where a consumer that joined *inside* the string control open when this
+   * chunk arrived may start reading `visibleData`: `0` when none was open, the
+   * offset just past that string once it ends, and `null` while it is still
+   * unterminated. Only a forwarded string can be open — a consumed one never
+   * reaches `visibleData` at all.
+   */
+  resumedStringEnd: number | null;
 }
 
 interface Osc99PendingNotification {
@@ -48,16 +70,29 @@ interface Osc99PendingNotification {
 
 const OSC_INCOMPLETE_LIMIT = 16_384;
 const NO_EVENTS: readonly TerminalProtocolEvent[] = Object.freeze([]);
-// Standalone BEL, OSC introducers (ESC ] / 0x9D), and the iTerm2 extended-DA query (ESC [ > q / 0x9B > q).
-const NEEDS_PARSE_RE = /[\x07\x1b\x9b\x9d]/;
+// Standalone BEL, ESC, and the iTerm2 extended-DA query's C1 introducer
+// (0x9B > q) — plus, derived from the shared grammar so a family added there
+// cannot be missed here, every C1 string introducer.
+const NEEDS_PARSE_RE = new RegExp(`[\\x07\\x1b\\x9b]|${STRING_CONTROL_INTRODUCER.source}`);
 const OSC99_PENDING_TTL_MS = 60_000;
 const OSC99_MAX_PENDING_IDS = 64;
 const TITLE_LIMIT = 256;
 const BODY_LIMIT = 4096;
+// The OSC 633 `E` command line. Bounded and sanitized like every other value
+// that comes off the wire and is then *retained*: it is re-tokenized on every
+// header derivation and is the key `dor ensure --restart` matches on, and
+// `decodeOsc633Value` actively re-introduces control characters that the
+// emit-side escaping had removed (`docs/specs/terminal-escapes.md`).
+const COMMAND_LINE_LIMIT = 2048;
 const OSC99_PENDING_TITLE_LIMIT = 2048;
 const OSC99_PENDING_BODY_LIMIT = 16_384;
 const OSC99_SUPPORT_PAYLOAD = 'o=always:p=title,body';
 const OSC99_RESPONSE_ID_RE = /^[^\s:;\x00-\x1f\x7f-\x9f]+$/;
+// Every OSC id `parseOsc` claims. Anything else is xterm.js's, which is what
+// lets an unterminated one stream instead of filling `pending`.
+const OSC_CONSUMED_IDS = new Set(['0', '2', '7', '9', '10', '11', '12', '50', '52', '99', '133', '633', '777']);
+// The OSC 1337 subcommands ImageAddon owns; every other 1337 is consumed.
+const OSC1337_FORWARDED = ['File=', 'MultipartFile=', 'FilePart=', 'FileEnd', 'ReportCellSize'] as const;
 const TERMINAL_BELL_NOTIFICATION: ActivityNotification = { source: 'BEL', title: 'Terminal bell', body: null };
 // Mirrors ITERM2_COMPAT_VERSION in standalone/sidecar/pty-core.js — pinned by
 // mirrored-constants.test.ts (terminal-escapes.md: one compatibility version
@@ -66,56 +101,182 @@ export const ITERM2_COMPAT_VERSION = '3.5.0';
 export const ITERM2_DEVICE_ATTRIBUTES_RESPONSE = `\x1bP>|iTerm2 ${ITERM2_COMPAT_VERSION}\x1b\\`;
 
 export class TerminalProtocolParser {
+  /**
+   * Bytes re-read at the head of the next chunk: an unterminated OSC this
+   * parser will consume, or a partial `CSI > q` in ground text. **Never set
+   * while {@link forwarding} is** — the two are assigned in branches that each
+   * end the chunk, and `processForwarded` never reads this, so a byte held here
+   * mid-string would rejoin the stream after the string it belonged inside.
+   */
   private pending = '';
+  /**
+   * Non-null while a string control the parser does not consume streams
+   * straight through to xterm.js. `kind` is remembered because BEL ends only an
+   * OSC — resuming a sixel or a Kitty transmission as an OSC would cut it at
+   * the first BEL in its payload. `heldEsc` holds a lone trailing ESC so a
+   * split `ESC \` terminator, or a split cancel, is never emitted as text; at
+   * most one character, so forwarding never grows.
+   */
+  private forwarding: { kind: StringControlKind; heldEsc: string } | null = null;
+  // Once a consumed OSC exceeds its buffer cap, discard through its end. Its
+  // tail is still payload, and its BEL terminator must not become a new alert.
+  // Retain only a split ESC terminator/cancel, never the oversized payload.
+  private discarding: { heldEsc: string } | null = null;
   private osc99Pending = new Map<string, Osc99PendingNotification>();
 
   /** Resolves OSC 10/11/12 queries; null lets xterm.js handle the sequence. */
   constructor(private readonly colorProvider?: TerminalColorProvider) {}
 
+  /**
+   * Whether a string control is streaming through to xterm.js right now, so a
+   * consumer joining here would start mid-payload. Its counterpart is
+   * {@link TerminalProtocolParseResult.resumedStringEnd}, which says where that
+   * payload stops.
+   */
+  get isForwardingString(): boolean {
+    return this.forwarding !== null;
+  }
+
   process(data: string): TerminalProtocolParseResult {
+    if (this.discarding !== null) {
+      const text = this.discarding.heldEsc + data;
+      const end = findStringControlEnd(text, 0, 'osc');
+      if (!end) {
+        this.discarding.heldEsc = text.endsWith('\x1b') ? '\x1b' : '';
+        return { visibleData: '', textData: '', events: [], resumedStringEnd: 0 };
+      }
+      this.discarding = null;
+      return this.process(text.slice(end.end));
+    }
+    if (this.forwarding !== null) return this.processForwarded(data);
     if (this.pending === '' && !NEEDS_PARSE_RE.test(data)) {
-      return { visibleData: data, events: NO_EVENTS as TerminalProtocolEvent[] };
+      return {
+        visibleData: data,
+        events: NO_EVENTS as TerminalProtocolEvent[],
+        textData: data,
+        resumedStringEnd: 0,
+      };
     }
     const text = this.pending + data;
     this.pending = '';
     const events: TerminalProtocolEvent[] = [];
     let visibleData = '';
+    // Ground text only: no string control contributes to it, whether consumed,
+    // forwarded, or still streaming.
+    let textData = '';
     let index = 0;
 
     while (index < text.length) {
-      const osc = findNextOsc(text, index);
-      if (!osc) {
-        visibleData += stripStandaloneBells(text.slice(index), events);
+      const control = findNextStringControl(text, index);
+      if (!control) {
+        // The chunk ends in ground text, so hold back a trailing partial
+        // `CSI > q` for the next one rather than emitting it.
+        const tail = stripStandaloneBells(text.slice(index), events);
+        this.pending = takeDeviceAttributePendingSuffix(tail);
+        const ground = answerDeviceAttributeQueries(
+          this.pending ? tail.slice(0, -this.pending.length) : tail,
+          events,
+        );
+        visibleData += ground;
+        textData += ground;
         break;
       }
 
-      visibleData += stripStandaloneBells(text.slice(index, osc.index), events);
-      const terminator = findOscTerminator(text, osc.contentStart);
-      if (!terminator) {
-        const incomplete = text.slice(osc.index);
-        if (incomplete.length <= OSC_INCOMPLETE_LIMIT) this.pending = incomplete;
+      // A gap ends where an introducer begins, so nothing of it is ever held.
+      const gap = answerDeviceAttributeQueries(
+        stripStandaloneBells(text.slice(index, control.index), events),
+        events,
+      );
+      visibleData += gap;
+      textData += gap;
+
+      const controlEnd = findStringControlEnd(text, control.contentStart, control.kind);
+      if (!controlEnd) {
+        const incomplete = text.slice(control.index);
+        // A sequence we will hand to xterm.js needs no terminator to be useful,
+        // so stream it rather than spending `pending` on a payload that can be
+        // megabytes (an inline image) and is bounded downstream anyway.
+        const disposition =
+          control.kind === 'osc' ? oscDispositionAt(text, control.contentStart) : 'forward';
+        if (disposition === 'forward') {
+          visibleData += this.beginForwarding(control.kind, incomplete);
+        } else if (incomplete.length <= OSC_INCOMPLETE_LIMIT) {
+          this.pending = incomplete;
+        } else {
+          this.discarding = { heldEsc: incomplete.endsWith('\x1b') ? '\x1b' : '' };
+        }
         break;
       }
 
-      const sequence = text.slice(osc.index, terminator.end);
-      const content = text.slice(osc.contentStart, terminator.index);
-      const parsed = this.parseOsc(content);
-      if (parsed === null) {
+      const sequence = text.slice(control.index, controlEnd.end);
+      if (control.kind !== 'osc') {
+        // DCS/SOS/PM/APC carry sixel and Kitty graphics; none of it is ours,
+        // cancelled or not — xterm.js applies its own abort semantics.
         visibleData += sequence;
+      } else if (controlEnd.cancelled) {
+        // Nothing an aborted OSC carried can be trusted, so it yields no event;
+        // route it by id alone, since a payload that never finished cannot be
+        // parsed to decide. Anything that is not certainly xterm.js's is
+        // dropped rather than forwarded.
+        if (oscDispositionAt(text, control.contentStart) === 'forward') visibleData += sequence;
       } else {
-        events.push(...parsed);
+        const parsed = this.parseOsc(text.slice(control.contentStart, controlEnd.index));
+        if (parsed === null) {
+          visibleData += sequence;
+        } else {
+          events.push(...parsed);
+        }
       }
-      index = terminator.end;
+      index = controlEnd.end;
     }
 
-    const stripped = stripDeviceAttributeQueries(visibleData, events);
-    if (stripped.pending) this.pending = stripped.pending + this.pending;
-    return { visibleData: stripped.visibleData, events: filterTerminalBellEvents(events) };
+    return {
+      visibleData,
+      events: filterTerminalBellEvents(events),
+      textData,
+      // Nothing was open when this chunk arrived: whatever `pending` holds is
+      // being consumed, so it reaches no consumer at all.
+      resumedStringEnd: 0,
+    };
   }
 
-  reset(): void {
-    this.pending = '';
-    this.osc99Pending.clear();
+  private processForwarded(data: string): TerminalProtocolParseResult {
+    const { kind, heldEsc } = this.forwarding!;
+    const text = heldEsc + data;
+    const controlEnd = findStringControlEnd(text, 0, kind);
+    if (!controlEnd) {
+      return {
+        visibleData: this.beginForwarding(kind, text),
+        events: NO_EVENTS as TerminalProtocolEvent[],
+        textData: '',
+        resumedStringEnd: null,
+      };
+    }
+
+    // A cancel leaves `end` *at* the ESC that cancelled it, so those bytes are
+    // re-read from ground and reach xterm.js as the sequence they actually are.
+    this.forwarding = null;
+    const parsedRest = this.process(text.slice(controlEnd.end));
+    return {
+      visibleData: text.slice(0, controlEnd.end) + parsedRest.visibleData,
+      events: parsedRest.events,
+      textData: parsedRest.textData,
+      // The resumed payload is exactly the prefix above; the remainder was read
+      // from ground, so a late consumer may start there — cancel included, since
+      // the bytes that cancelled the string open a sequence of their own.
+      resumedStringEnd: controlEnd.end,
+    };
+  }
+
+  /**
+   * Stream the rest of a string control straight to xterm.js, holding a lone
+   * trailing ESC back so the next chunk decides whether it terminated the
+   * string or cancelled it. Returns the bytes to emit now.
+   */
+  private beginForwarding(kind: StringControlKind, text: string): string {
+    const heldEsc = text.endsWith('\x1b') ? '\x1b' : '';
+    this.forwarding = { kind, heldEsc };
+    return heldEsc ? text.slice(0, -1) : text;
   }
 
   private parseOsc(content: string): TerminalProtocolEvent[] | null {
@@ -245,6 +406,18 @@ export class TerminalProtocolParser {
   }
 }
 
+/**
+ * The optional half of the projection pair a parse result carries to its
+ * consumers: **omitted whenever it equals `visibleData`**, which is every chunk
+ * with no string control in it. One helper because that rule holds at every
+ * parse site and at every seam past them (`docs/specs/transport.md`).
+ */
+export function textProjectionOf(
+  parsed: Pick<TerminalProtocolParseResult, 'visibleData' | 'textData'>,
+): string | undefined {
+  return parsed.textData === parsed.visibleData ? undefined : parsed.textData;
+}
+
 export function applyTerminalProtocolEvents(
   sink: TerminalProtocolAlertSink,
   id: string,
@@ -259,16 +432,32 @@ export function applyTerminalProtocolEvents(
   }
 }
 
+/**
+ * The notification and progress events {@link applyTerminalProtocolEvents} acts
+ * on. An owner whose `AlertManager` lives in another process — standalone's
+ * sidecar, whose webview holds it — forwards exactly these; every other kind is
+ * the owner's own to settle, a response above all.
+ */
+export function collectTerminalProtocolAlerts(
+  events: TerminalProtocolEvent[],
+): TerminalProtocolEvent[] {
+  return events.filter((event) => event.kind === 'notification' || event.kind === 'progress');
+}
+
 export function collectTerminalProtocolResponses(events: TerminalProtocolEvent[]): string[] {
   return events.flatMap((event) => (event.kind === 'response' ? [event.data] : []));
 }
+
+// Keep ordering across successive PTY reads, including a clock adjustment. A
+// realm-wide clock orders each of its streams without retaining per-PTY state.
+const nextSemanticTimestamp = createOrderedEventTimestamp(() => Date.now());
 
 export function collectTerminalSemanticEvents(
   events: TerminalProtocolEvent[],
   options: { now?: () => number } = {},
 ): TerminalSemanticEvent[] {
   const semanticEvents: TerminalSemanticEvent[] = [];
-  const nextTimestamp = createOrderedEventTimestamp(options.now ?? Date.now);
+  const nextTimestamp = options.now ? createOrderedEventTimestamp(options.now) : nextSemanticTimestamp;
   for (const event of events) {
     if (event.kind === 'semantic') {
       semanticEvents.push(timestampSemanticEvent(event.event, nextTimestamp));
@@ -304,6 +493,8 @@ function timestampSemanticEvent(
       return { ...event, cwd: { ...event.cwd, updatedAt: nextTimestamp() } };
     case 'commandStart':
       return { ...event, startedAt: nextTimestamp() };
+    case 'commandFinish':
+      return { ...event, finishedAt: nextTimestamp() };
     case 'title':
       return { ...event, title: { ...event.title, updatedAt: nextTimestamp() } };
     default:
@@ -340,27 +531,56 @@ function filterTerminalBellEvents(events: TerminalProtocolEvent[]): TerminalProt
   });
 }
 
-function findNextOsc(text: string, from: number): { index: number; contentStart: number } | null {
-  const escIndex = text.indexOf('\x1b]', from);
-  const c1Index = text.indexOf('\x9d', from);
-  if (escIndex === -1 && c1Index === -1) return null;
-  if (escIndex !== -1 && (c1Index === -1 || escIndex < c1Index)) {
-    return { index: escIndex, contentStart: escIndex + 2 };
-  }
-  return { index: c1Index, contentStart: c1Index + 1 };
+interface StringControl {
+  index: number;
+  contentStart: number;
+  kind: StringControlKind;
 }
 
-function findOscTerminator(text: string, from: number): { index: number; end: number } | null {
-  const bel = text.indexOf('\x07', from);
-  const st = text.indexOf('\x1b\\', from);
-  const c1St = text.indexOf('\x9c', from);
-  let bestIndex = -1;
-  let bestEndOffset = 1;
-  if (bel !== -1) { bestIndex = bel; bestEndOffset = 1; }
-  if (st !== -1 && (bestIndex === -1 || st < bestIndex)) { bestIndex = st; bestEndOffset = 2; }
-  if (c1St !== -1 && (bestIndex === -1 || c1St < bestIndex)) { bestIndex = c1St; bestEndOffset = 1; }
-  if (bestIndex === -1) return null;
-  return { index: bestIndex, end: bestIndex + bestEndOffset };
+function findNextStringControl(text: string, from: number): StringControl | null {
+  STRING_CONTROL_INTRODUCER_SCAN.lastIndex = from;
+  const match = STRING_CONTROL_INTRODUCER_SCAN.exec(text);
+  if (!match) return null;
+  const introducer = match[0];
+  return {
+    index: match.index,
+    contentStart: match.index + introducer.length,
+    kind: stringControlKind(introducer),
+  };
+}
+
+interface StringControlEnd {
+  /** Where the payload stops. */
+  index: number;
+  /** Where reading resumes: past a terminator or an abort byte, but *at* an ESC
+   *  that cancelled the string, since that ESC opens a sequence of its own. */
+  end: number;
+  /** Aborted rather than terminated, so nothing it carried can be trusted. */
+  cancelled: boolean;
+}
+
+/** `null` means the answer is not in these bytes yet — read another chunk. */
+function findStringControlEnd(
+  text: string,
+  from: number,
+  kind: StringControlKind,
+): StringControlEnd | null {
+  const scan = stringControlEndScan(kind);
+  scan.lastIndex = from;
+  const match = scan.exec(text);
+  if (!match) return null;
+  const index = match.index;
+  if (text[index] !== '\x1b') {
+    // BEL and the C1 ST terminate; CAN and SUB abort. Either way the byte is
+    // the sequence's last, and reading resumes after it.
+    const aborted = text[index] === '\x18' || text[index] === '\x1a';
+    return { index, end: index + 1, cancelled: aborted };
+  }
+  // Only the byte after ESC separates an ST terminator from a new sequence
+  // cancelling this one, so a chunk ending here has to wait for the next.
+  if (index + 1 >= text.length) return null;
+  if (text[index + 1] === '\\') return { index, end: index + 2, cancelled: false };
+  return { index, end: index, cancelled: true };
 }
 
 function parseOsc7(content: string): TerminalProtocolEvent[] {
@@ -387,7 +607,16 @@ function parseOsc633(content: string): TerminalProtocolEvent[] {
     // that send raw, unescaped semicolons will see their command truncated; this
     // matches VS Code's contract rather than guessing a delimiter.
     const rawCommand = content.slice(prefix.length).split(';', 1)[0] ?? '';
-    return [{ kind: 'semantic', event: { type: 'commandLine', commandLine: decodeOsc633Value(rawCommand) } }];
+    // Bounded *before* the unescape, so a megabyte of `\xNN` is not decoded to
+    // be thrown away, and sanitized after it, because the unescape is what puts
+    // control characters back. An all-control command line reduces to nothing
+    // and is dropped rather than stored empty.
+    const commandLine = sanitizeText(
+      decodeOsc633Value(truncateText(rawCommand, COMMAND_LINE_LIMIT * 4)),
+      COMMAND_LINE_LIMIT,
+    );
+    if (commandLine === null) return [];
+    return [{ kind: 'semantic', event: { type: 'commandLine', commandLine } }];
   }
   if (fields[1] === 'P') {
     return parseOsc633Property(content.slice('633;P;'.length));
@@ -411,15 +640,50 @@ function parsePromptBoundary(fields: string[], commandStartSource: CommandRunSou
 }
 
 function parseOsc633Property(rawProperties: string): TerminalProtocolEvent[] {
-  for (const property of rawProperties.split(';')) {
-    if (!property.startsWith('Cwd=')) continue;
-    const cwd = cwdFromOsc633(property.slice('Cwd='.length));
-    return cwd ? [{ kind: 'semantic', event: { type: 'cwd', cwd } }] : [];
-  }
-  return [];
+  // P carries one property; semicolons are literal path characters. Unlike E,
+  // Cwd is emitted verbatim, so splitting it would change directory identity.
+  if (!rawProperties.startsWith('Cwd=')) return [];
+  const cwd = cwdFromOsc633(rawProperties.slice('Cwd='.length));
+  return cwd ? [{ kind: 'semantic', event: { type: 'cwd', cwd } }] : [];
 }
 
-function parseOsc1337(content: string): TerminalProtocolEvent[] {
+/**
+ * Whether the parser will consume this OSC or hand it to xterm.js, answered from
+ * the id alone (plus the subcommand for 1337) so an unterminated sequence can be
+ * routed before its terminator arrives. `null` means the answer could still
+ * change as bytes arrive — buffer and ask again.
+ */
+function oscDispositionAt(text: string, from: number): 'consume' | 'forward' | null {
+  let i = from;
+  while (i < text.length && text[i] >= '0' && text[i] <= '9') i += 1;
+  // More digits may follow, and `133` becoming `1337` flips the answer.
+  if (i === text.length) return null;
+  if (i === from || text[i] !== ';') return 'forward';
+  const id = text.slice(from, i);
+  if (id === '1337') return osc1337DispositionAt(text, i + 1);
+  return OSC_CONSUMED_IDS.has(id) ? 'consume' : 'forward';
+}
+
+function osc1337DispositionAt(text: string, from: number): 'consume' | 'forward' | null {
+  let partial = false;
+  for (const command of OSC1337_FORWARDED) {
+    if (text.startsWith(command, from)) return 'forward';
+    if (text.length - from < command.length && matchesPrefix(text, from, command)) partial = true;
+  }
+  return partial ? null : 'consume';
+}
+
+/** True when `text` from `from` is a (possibly empty) leading slice of `command`. */
+function matchesPrefix(text: string, from: number, command: string): boolean {
+  for (let k = 0; from + k < text.length; k += 1) {
+    if (text[from + k] !== command[k]) return false;
+  }
+  return true;
+}
+
+function parseOsc1337(content: string): TerminalProtocolEvent[] | null {
+  // Forwarded subcommands are ImageAddon's; `null` passes them through.
+  if (oscDispositionAt(content, 0) === 'forward') return null;
   const prefix = '1337;CurrentDir=';
   if (!content.startsWith(prefix)) return [];
   const cwd = cwdFromOsc1337(content.slice(prefix.length));
@@ -573,34 +837,24 @@ function truncateText(input: string, limit: number): string {
 }
 
 const DEVICE_ATTRIBUTE_PENDING_SUFFIXES = ['\x1b[>', '\x1b[', '\x1b', '\x9b>', '\x9b'];
+/** The iTerm2 extended-DA query, in both its ESC and C1 spellings. */
+const DEVICE_ATTRIBUTE_QUERY = /\x1b\[>q|\x9b>q/g;
 
-function stripDeviceAttributeQueries(
-  visibleData: string,
-  events: TerminalProtocolEvent[],
-): { visibleData: string; pending: string } {
-  const pending = takeDeviceAttributePendingSuffix(visibleData);
-  const searchableData = pending ? visibleData.slice(0, -pending.length) : visibleData;
-
-  if (searchableData.indexOf('\x1b[>q') === -1 && searchableData.indexOf('\x9b>q') === -1) {
-    return { visibleData: searchableData, pending };
-  }
-
-  let stripped = '';
-  let index = 0;
-  while (index < searchableData.length) {
-    const escQueryIndex = searchableData.indexOf('\x1b[>q', index);
-    const c1QueryIndex = searchableData.indexOf('\x9b>q', index);
-    if (escQueryIndex === -1 && c1QueryIndex === -1) {
-      stripped += searchableData.slice(index);
-      break;
-    }
-    const useEsc = escQueryIndex !== -1 && (c1QueryIndex === -1 || escQueryIndex < c1QueryIndex);
-    const queryIndex = useEsc ? escQueryIndex : c1QueryIndex;
-    stripped += searchableData.slice(index, queryIndex);
+/**
+ * Consume every `CSI > q` in a run of **ground text** and queue its answer.
+ *
+ * Ground only. The same bytes inside a string control belong to that sequence:
+ * deleting them corrupts a sixel or Kitty payload on its way to xterm.js *and*
+ * writes an answer nobody asked for into the PTY's input. Only the C1 spelling
+ * can arrive that way — an `ESC` would have ended the string
+ * ({@link findStringControlEnd}) — which is precisely why scanning the
+ * assembled output rather than its ground runs read as safe.
+ */
+function answerDeviceAttributeQueries(ground: string, events: TerminalProtocolEvent[]): string {
+  return ground.replace(DEVICE_ATTRIBUTE_QUERY, () => {
     events.push({ kind: 'response', data: ITERM2_DEVICE_ATTRIBUTES_RESPONSE });
-    index = queryIndex + (useEsc ? 4 : 3);
-  }
-  return { visibleData: stripped, pending };
+    return '';
+  });
 }
 
 function takeDeviceAttributePendingSuffix(visibleData: string): string {

@@ -1,3 +1,4 @@
+import { isHelperSession } from '../terminal-store';
 import type { DorControlRequestPayload, DorControlResult } from 'dor/protocol';
 
 /**
@@ -32,6 +33,10 @@ export function dispatchDorControlRequest(
   payload: DorControlRequestPayload,
   respond: (response: DorControlResult) => void,
 ): void {
+  if (payload.surfaceId && isHelperSession(payload.surfaceId)) {
+    respond({ ok: false, error: 'Helper terminals do not support dor' });
+    return;
+  }
   const { requestId } = payload;
   const controller = new AbortController();
   inFlight.set(requestId, controller);

@@ -12,7 +12,6 @@ export {
   SCENARIO_SHELL_PROMPT,
   SCENARIO_LS_OUTPUT,
   SCENARIO_ANSI_COLORS,
-  SCENARIO_LONG_RUNNING,
   SCENARIO_FAST_OUTPUT,
 } from './fake-scenarios';
 
@@ -49,6 +48,13 @@ export function setPlatform(a: PlatformAdapter): void {
 
 export function getPlatform(): PlatformAdapter {
   if (!adapter) throw new Error('Platform not initialized — call initPlatform() or setPlatform() first');
+  return adapter;
+}
+
+/** The adapter, or `null` when none is installed. For the readers that treat
+ *  "no platform yet" as an ordinary answer — unit tests and the boot frames
+ *  before `initPlatform()` — rather than as an error worth surfacing. */
+export function getPlatformOrNull(): PlatformAdapter | null {
   return adapter;
 }
 

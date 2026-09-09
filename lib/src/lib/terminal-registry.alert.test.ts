@@ -12,6 +12,14 @@ vi.mock('@xterm/addon-fit', () => {
   return { FitAddon };
 });
 
+vi.mock('@xterm/addon-image', () => {
+  class ImageAddon {
+    constructor(readonly options: Record<string, unknown>) {}
+  }
+
+  return { ImageAddon };
+});
+
 vi.mock('@xterm/addon-unicode-graphemes', () => {
   class UnicodeGraphemesAddon {}
 
@@ -21,6 +29,7 @@ vi.mock('@xterm/addon-unicode-graphemes', () => {
 vi.mock('@xterm/xterm', () => {
   class MockTerminal {
     writes: string[] = [];
+    addons: unknown[] = [];
     private dataListeners = new Set<(data: string) => void>();
     private resizeListeners = new Set<(size: { cols: number; rows: number }) => void>();
 
@@ -32,7 +41,9 @@ vi.mock('@xterm/xterm', () => {
       bracketedPasteMode: false,
     };
 
-    loadAddon(): void {}
+    loadAddon(addon: unknown): void {
+      this.addons.push(addon);
+    }
 
     open(): void {}
 
@@ -99,6 +110,7 @@ import {
   isPaneOscDriven,
   mountElement,
   clearLocalSurfaceActivity,
+  clearTerminalActivity,
   clearSessionAttention,
   restoreBrowserSurfaceTodo,
   disposeAllSessions,
@@ -110,6 +122,8 @@ import {
   focusSession,
   getOrCreateTerminal,
   getActivity,
+  getLivePersistedAlertState,
+  getActivitySnapshot,
   getTerminalShellKind,
   getTerminalPaneState,
   getWatchedCommands,
@@ -118,6 +132,7 @@ import {
   isUntouched,
   markSessionAttention,
   markSessionTodo,
+  setTerminalActivity,
   resumeTerminal,
   restoreTerminal,
   setPendingShellOpts,
@@ -128,9 +143,11 @@ import {
 import { pasteFilePaths } from './clipboard';
 import { registry } from './terminal-store';
 import { REPLAY_MODE_RESET } from './terminal-report-filter';
+import { cfg } from '../cfg';
 
 interface MockTerminalInstance {
   writes: string[];
+  addons: Array<{ constructor: { name: string }; options?: Record<string, unknown> }>;
   emitInput(data: string): void;
   emitResize(cols: number, rows: number): void;
 }
@@ -165,6 +182,10 @@ class MockElement {
 
   addEventListener(): void {}
   removeEventListener(): void {}
+  querySelector(): MockElement | null {
+    return null;
+  }
+
   querySelectorAll(): MockElement[] {
     return [];
   }
@@ -308,6 +329,95 @@ describe('terminal-registry alert behavior', () => {
     createSession(id);
 
     expect(isUntouched(id)).toBe(true);
+  });
+
+  it('loads inline-image support with per-Session resource limits', () => {
+    const entry = createSession('image-addon');
+    const addon = entry.terminal.addons.find((candidate) => candidate.constructor.name === 'ImageAddon');
+
+    expect(addon?.options).toMatchObject({
+      pixelLimit: 8_388_608,
+      storageLimit: 34,
+      sixelSupport: true,
+      iipSupport: true,
+      kittySupport: true,
+    });
+  });
+
+  it('loads no image addon when inline images are turned off', () => {
+    const previous = cfg.terminal.inlineImages;
+    cfg.terminal.inlineImages = false;
+    try {
+      const entry = createSession('image-addon-off');
+      expect(entry.terminal.addons.some((a) => a.constructor.name === 'ImageAddon')).toBe(false);
+    } finally {
+      cfg.terminal.inlineImages = previous;
+    }
+  });
+
+  it('preserves pre-registration activity through terminal creation and orphaning', () => {
+    const id = 'early-host-state';
+    setTerminalActivity(id, { status: 'ALERT_RINGING', ringSeq: 7, todo: true, awaited: true });
+    const activity = getActivity(id);
+    expect(getLivePersistedAlertState(id)).toBeNull();
+
+    createSession(id);
+    expect(getActivity(id)).toEqual(activity);
+    expect(getLivePersistedAlertState(id)).toMatchObject({ status: 'ALERT_RINGING', todo: true });
+
+    unmountElement(id);
+    mountElement(id, createContainer() as unknown as HTMLElement);
+    expect(getActivity(id)).toEqual(activity);
+
+    disposeSession(id);
+    expect(getActivitySnapshot().has(id)).toBe(false);
+    expect(getLivePersistedAlertState(id)).toBeNull();
+    createSession(id);
+    expect(getActivity(id)).toEqual(DEFAULT_ACTIVITY_STATE);
+  });
+
+  it('cache reset preserves registry membership and browser TODO', () => {
+    const id = 'cache-reset-terminal';
+    const browserId = 'cache-reset-browser';
+    createSession(id);
+    setTerminalActivity(id, { todo: true });
+    restoreBrowserSurfaceTodo({ id: browserId, surfaceType: 'browser', alert: { status: 'WATCHING_DISABLED', todo: true } });
+
+    clearTerminalActivity();
+
+    expect(getActivitySnapshot().get(id)).toEqual(DEFAULT_ACTIVITY_STATE);
+    expect(getActivity(browserId).todo).toBe(true);
+    clearLocalSurfaceActivity(browserId);
+    disposeSession(id);
+    expect(getActivitySnapshot().has(id)).toBe(false);
+  });
+
+  it('preserves early attention dismissal', () => {
+    const id = 'early-attention-dismissal';
+    fakePlatform.spawnPty(id);
+    fakePlatform.sendOutput(id, '\x07');
+    expect(getActivity(id).status).toBe('ALERT_RINGING');
+    fakePlatform.alertAttend(id);
+    expect(getActivity(id).status).toBe('WATCHING_DISABLED');
+
+    resumeTerminal(id, null, { alive: true });
+
+    expect(dismissOrToggleAlert(id, 'WATCHING_DISABLED')).toBe('dismissed');
+    // The explicit dismissal consumes the flag; a second click is at a prompt.
+    expect(dismissOrToggleAlert(id, 'WATCHING_DISABLED')).toBe('no-command');
+  });
+
+  it('retains a resumed exited Session TODO until disposal', () => {
+    const id = 'exited-host-state';
+    setTerminalActivity(id, { todo: true, ringSeq: 3 });
+    resumeTerminal(id, null, { alive: false, exitCode: 1 });
+
+    expect(registry.get(id)?.exited).toBe(true);
+    expect(getActivity(id)).toMatchObject({ todo: true, ringSeq: 3 });
+    expect(getLivePersistedAlertState(id)).toMatchObject({ todo: true });
+
+    disposeSession(id);
+    expect(getActivitySnapshot().has(id)).toBe(false);
   });
 
   /**

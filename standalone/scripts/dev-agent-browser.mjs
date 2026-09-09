@@ -45,7 +45,7 @@ const controlToken = randomBytes(24).toString('hex');
 // Overloading one token would hand the bridge to every spawned shell for free.
 const bridgeToken = randomBytes(24).toString('hex');
 const viteOrigin = `http://localhost:${vitePort}`;
-// The remote Host persists its enrollment + ACL here, under the harness's own
+// The Burrow persists its enrollment + ACL here, under the harness's own
 // temp dir so a dev run never touches the installed app's state.
 const stateDir = path.join(os.tmpdir(), `dormouse-${process.pid}-browser-state`);
 
@@ -57,7 +57,7 @@ let shuttingDown = false;
 let requestSeq = 0;
 
 function log(message) {
-  console.error(`[dev:standalone:ab] ${message}`);
+  console.error(`[innerdogfood] ${message}`);
 }
 
 function sendSse(res, event, data) {
@@ -101,24 +101,25 @@ const fireAndForget = {
   pty_spawn: ({ id, options }) => writeSidecar('pty:spawn', { id, options }),
   pty_write: ({ id, data }) => writeSidecar('pty:input', { id, data }),
   pty_resize: ({ id, cols, rows }) => writeSidecar('pty:resize', { id, cols, rows }),
+  pty_theme_colors: ({ colors }) => writeSidecar('pty:themeColors', colors),
   pty_kill: ({ id }) => writeSidecar('pty:kill', { id }),
   pty_request_init: () => writeSidecar('pty:requestInit'),
   dor_control_response: ({ response }) => writeSidecar('dor:controlResponse', response),
-  // The remote Host's whole bridge rides one passthrough, exactly as it does
-  // through Rust (`remote_host_command` in src-tauri/src/lib.rs).
-  remote_host_command: ({ payload }) => writeSidecar('remoteHost:command', payload),
+  // The Burrow's whole bridge rides one passthrough, exactly as it does
+  // through Rust (`burrow_command` in src-tauri/src/lib.rs).
+  burrow_command: ({ payload }) => writeSidecar('burrow:command', payload),
   kill_sidecar_now: () => shutdown(),
 };
 
 const invokeMap = {
   get_available_shells: (_args) => requestSidecar('pty:getShells', {}, 'pty:shells', (data) => data.shells ?? []),
   pty_get_cwd: ({ id }) => requestSidecar('pty:getCwd', { id }, 'pty:cwd', (data) => data.cwd ?? null),
+  pty_context: ({ request }) => requestSidecar('pty:context', request, 'pty:context', data => data),
   pty_get_open_ports: ({ id }) => requestSidecar('pty:getOpenPorts', { id }, 'pty:openPorts', (data) => data.ports ?? []),
-  pty_get_scrollback: ({ id }) => requestSidecar('pty:getScrollback', { id }, 'pty:scrollback', (data) => data.data ?? null),
   read_clipboard_file_paths: () => requestSidecar('clipboard:readFiles', {}, 'clipboard:files', (data) => data.paths ?? null),
   read_clipboard_image_as_file_path: () => requestSidecar('clipboard:readImage', {}, 'clipboard:image', (data) => data.path ?? null),
   read_clipboard_text: () => requestSidecar('clipboard:readText', {}, 'clipboard:text', (data) => data.text ?? null),
-  iframe_create_proxy_url: ({ target }) => requestSidecar('iframe:createProxyUrl', { target }, 'iframe:proxyUrl', (data) => data.result),
+  iframe_create_proxy_url: ({ target, embedderOrigins }) => requestSidecar('iframe:createProxyUrl', { target, embedderOrigins }, 'iframe:proxyUrl', (data) => data.result),
   agent_browser_command: ({ session, args, binaryPath }) => requestSidecar('agentBrowser:command', { session, args, binaryPath }, 'agentBrowser:result', (data) => data.result, 30000),
   agent_browser_edit: ({ session, op, binaryPath }) => requestSidecar('agentBrowser:edit', { session, op, binaryPath }, 'agentBrowser:result', (data) => data.result, 30000),
   agent_browser_screenshot: async ({ session, format, quality, binaryPath }) => {
@@ -126,7 +127,7 @@ const invokeMap = {
     // The sidecar now returns a temp-file PATH (bytes stay off the stdio pipe).
     // Production reads that file in Rust; this dev bridge has no Rust, so read it
     // in Node and re-encode to the base64 the browser-sidecar adapter expects —
-    // base64 over the dev WebSocket is fine.
+    // the base64 travels in the HTTP invoke response, outside the event stream.
     if (result && result.ok && typeof result.path === 'string') {
       const bytes = await readFile(result.path);
       return { ok: true, mime: result.mime, bytesBase64: bytes.toString('base64') };
@@ -233,7 +234,7 @@ function startSidecar() {
     },
   });
   log(`sidecar pid=${sidecar.pid}`);
-  log(`remote host state dir: ${stateDir}`);
+  log(`burrow state dir: ${stateDir}`);
 
   createInterface({ input: sidecar.stdout }).on('line', (line) => {
     let msg;

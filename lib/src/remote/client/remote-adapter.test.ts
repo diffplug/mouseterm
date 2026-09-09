@@ -6,12 +6,12 @@
  * `terminal.closed` fires `onPtyExit`, and `dispose` cleans up.
  */
 
-import { describe, expect, it } from 'vitest';
-import { toBase64Url, utf8Encode, type DirectoryEntry } from 'server-lib-common';
+import { describe, expect, it, vi } from 'vitest';
+import { MAX_TERMINAL_DIMENSION, toBase64Url, utf8Encode, type DirectoryEntry } from 'remote-lib-common';
 
 import { RemotePtyAdapter, type RemoteAdapterClient } from './remote-adapter';
 import type { TerminalHandlers } from './pocket-client';
-import type { PtyInfo } from '../../lib/platform/types';
+import type { PtyDataDetail, PtyInfo } from '../../lib/platform/types';
 
 interface AttachCall {
   surfaceId: string;
@@ -191,16 +191,91 @@ describe('RemotePtyAdapter attach / active pane', () => {
     expect(client.resizes).toEqual([{ surfaceId: 's1', cols: 120, rows: 40 }]);
   });
 
+  it('finishes a stale detach before returning to the same surface', async () => {
+    const client = new FakeClient();
+    const adapter = new RemotePtyAdapter(client);
+    const originalAttach = client.attach.bind(client);
+    let finishAttach!: () => void;
+    const pending = new Promise<void>((resolve) => { finishAttach = resolve; });
+    vi.spyOn(client, 'attach').mockImplementationOnce(async (...args) => {
+      const result = await originalAttach(...args);
+      await pending;
+      return result;
+    });
+    const first = adapter.setActivePane('s1');
+    await Promise.resolve();
+    const middle = adapter.setActivePane('s2');
+    const last = adapter.setActivePane('s1');
+    await Promise.resolve();
+    expect(client.attaches).toHaveLength(1);
+    finishAttach();
+    await Promise.all([first, middle, last]);
+    expect(client.attaches.map((call) => call.surfaceId)).toEqual(['s1', 's1']);
+    expect(client.detaches).toEqual([{ surfaceId: 's1', subId: 'attach-1' }]);
+    expect(adapter.activeSurfaceId).toBe('s1');
+    adapter.writePty('s1', 'x');
+    expect(client.writes).toHaveLength(1);
+  });
+
   it('decodes terminal.data (base64url utf8) into an onPtyData string', async () => {
     const client = new FakeClient();
     const adapter = new RemotePtyAdapter(client);
-    const data: Array<{ id: string; data: string }> = [];
+    const data: PtyDataDetail[] = [];
     adapter.onPtyData((d) => data.push(d));
 
     await adapter.setActivePane('s1', 80, 24);
-    client.lastAttach().handlers.onData(toBase64Url(utf8Encode('héllo ▲')));
+    client.lastAttach().handlers.onData({ bytes: toBase64Url(utf8Encode('héllo ▲')) });
 
-    expect(data).toEqual([{ id: 's1', data: 'héllo ▲' }]);
+    // No `text` means the two projections are identical, so `textData` stays
+    // omitted and `terminal-lifecycle`'s `textData ?? data` fallback is right.
+    expect(data).toEqual([{ id: 's1', data: 'héllo ▲', textData: undefined }]);
+  });
+
+  it('passes the text projection through, empty included', async () => {
+    const client = new FakeClient();
+    const adapter = new RemotePtyAdapter(client);
+    const data: PtyDataDetail[] = [];
+    adapter.onPtyData((d) => data.push(d));
+
+    await adapter.setActivePane('s1', 80, 24);
+    const image = 'pre\x1b]1337;File=inline=1:AAAA\x07post';
+    client.lastAttach().handlers.onData({
+      bytes: toBase64Url(utf8Encode(image)),
+      text: toBase64Url(utf8Encode('prepost')),
+    });
+    // Present and empty is authoritative: the image base64 must not reach the
+    // prompt heuristic through the `textData ?? data` fallback.
+    client.lastAttach().handlers.onData({
+      bytes: toBase64Url(utf8Encode('\x1b]1337;File=inline=1:AAAA\x07')),
+      text: toBase64Url(utf8Encode('')),
+    });
+
+    expect(data).toEqual([
+      { id: 's1', data: image, textData: 'prepost' },
+      { id: 's1', data: '\x1b]1337;File=inline=1:AAAA\x07', textData: '' },
+    ]);
+  });
+
+  it('drops a malformed projection pair and still delivers later valid data', async () => {
+    const client = new FakeClient();
+    const adapter = new RemotePtyAdapter(client);
+    const data: PtyDataDetail[] = [];
+    adapter.onPtyData((d) => data.push(d));
+    await adapter.setActivePane('s1', 80, 24);
+    const onData = client.lastAttach().handlers.onData;
+    const valid = toBase64Url(utf8Encode('valid'));
+    const overlong = toBase64Url(Uint8Array.of(0xc0, 0x80));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(() => onData({ bytes: overlong, text: valid })).not.toThrow();
+      expect(() => onData({ bytes: valid, text: overlong })).not.toThrow();
+      expect(() => onData({ bytes: '!' })).not.toThrow();
+      expect(data).toEqual([]);
+      onData({ bytes: valid });
+      expect(data).toEqual([{ id: 's1', data: 'valid', textData: undefined }]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('routes write and resize only to the attached pane', async () => {
@@ -217,7 +292,56 @@ describe('RemotePtyAdapter attach / active pane', () => {
     expect(client.resizes).toEqual([{ surfaceId: 's1', cols: 90, rows: 20 }]);
   });
 
-  it('spawnPty / killPty are no-ops (panes are Host-owned)', async () => {
+  it('never spends the relay on a report this mirror answered', async () => {
+    const client = new FakeClient();
+    const adapter = new RemotePtyAdapter(client);
+    await adapter.setActivePane('s1', 80, 24);
+
+    // What this xterm and its ImageAddon answer on `onData`; the owner's xterm
+    // has already answered, and the Burrow discards these anyway.
+    adapter.writePty('s1', '\x1b[?1;2c');
+    adapter.writePty('s1', '\x1b[24;80R');
+    adapter.writePty('s1', '\x1b_Gi=1;OK\x1b\\');
+    adapter.writePty('s1', '\x1b[?2;1;4096S');
+    adapter.writePty('s1', '\x1b]1337;ReportCellSize=14.0;7.0;1.0\x07');
+    expect(client.writes).toEqual([]);
+
+    adapter.writePty('s1', 'ls\r');
+    expect(client.writes).toEqual([{ surfaceId: 's1', bytes: toBase64Url(utf8Encode('ls\r')) }]);
+  });
+
+  it('normalizes resizes before caching dimensions for the next attachment', async () => {
+    const client = new FakeClient();
+    const adapter = new RemotePtyAdapter(client);
+    await adapter.setActivePane('s1', 80, 24);
+    adapter.resizePty('s1', NaN, Infinity);
+    adapter.resizePty('s1', 10.9, -1);
+    adapter.resizePty('s1', 1e9, NaN);
+    await adapter.setActivePane('s2');
+
+    expect(client.resizes).toEqual([
+      { surfaceId: 's1', cols: 80, rows: 24 },
+      { surfaceId: 's1', cols: 10, rows: 1 },
+      { surfaceId: 's1', cols: MAX_TERMINAL_DIMENSION, rows: 1 },
+    ]);
+    expect(client.lastAttach()).toMatchObject({ cols: MAX_TERMINAL_DIMENSION, rows: 1 });
+  });
+
+  it('settles synchronous PTY operations on connection loss and propagates awaited resizes', async () => {
+    const client = new FakeClient();
+    const adapter = new RemotePtyAdapter(client);
+    await adapter.setActivePane('s1');
+    const failure = new Error('connection ended');
+    vi.spyOn(client, 'write').mockRejectedValue(failure);
+    vi.spyOn(client, 'resize').mockRejectedValue(failure);
+    adapter.writePty('s1', 'x');
+    adapter.resizePty('s1', 90, 30);
+    await expect(adapter.setActivePane('s1', 90, 30)).rejects.toBe(failure);
+    // Let unhandled-rejection detection run before the test completes.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  it('spawnPty / killPty are no-ops (panes are Burrow-owned)', async () => {
     const client = new FakeClient();
     const adapter = new RemotePtyAdapter(client);
     adapter.spawnPty();
@@ -241,6 +365,25 @@ describe('RemotePtyAdapter attach / active pane', () => {
     // Once closed the pane is no longer attached, so writes are dropped.
     adapter.writePty('s1', 'x');
     expect(client.writes).toHaveLength(0);
+  });
+
+  it('does not resurrect a terminal closed before its attach response', async () => {
+    const client = new FakeClient();
+    const adapter = new RemotePtyAdapter(client);
+    const attach = client.attach.bind(client);
+    vi.spyOn(client, 'attach').mockImplementation(async (...args) => {
+      const result = await attach(...args);
+      args[3].onClosed?.(0);
+      return result;
+    });
+    const onExit = vi.fn();
+    adapter.onPtyExit(onExit);
+    await adapter.setActivePane('s1');
+    expect(onExit).toHaveBeenCalledWith({ id: 's1', exitCode: 0 });
+    expect(adapter.activeSurfaceId).toBeNull();
+    adapter.writePty('s1', 'x');
+    expect(client.writes).toEqual([]);
+    expect(client.unsubscribes).toContain('attach-1');
   });
 
   it('terminal.closed with an omitted exitCode surfaces the unknown-exit sentinel (-1), not 0', async () => {
@@ -272,6 +415,42 @@ describe('RemotePtyAdapter attach / active pane', () => {
 });
 
 describe('RemotePtyAdapter dispose', () => {
+  it('unsubscribes a pending watch when it lands and never restarts after disposal', async () => {
+    const client = new FakeClient();
+    let finishWatch!: (subId: string) => void;
+    const watch = vi.spyOn(client, 'watchDirectory').mockImplementation((listener) => {
+      client.snapshotListener = listener;
+      return new Promise((resolve) => { finishWatch = resolve; });
+    });
+    const adapter = new RemotePtyAdapter(client);
+    const onList = vi.fn();
+    adapter.onPtyList(onList);
+    const init = adapter.init();
+    await adapter.dispose();
+    client.pushSnapshot([entry('s1')]);
+    finishWatch('late-directory');
+    await init;
+    await adapter.init();
+    adapter.requestInit();
+    await adapter.setActivePane('s1');
+    expect(client.unsubscribes).toEqual(['late-directory']);
+    expect(onList).not.toHaveBeenCalled();
+    expect(watch).toHaveBeenCalledTimes(1);
+    expect(client.attaches).toEqual([]);
+  });
+
+  it('allows a failed requestInit watch to be retried without an unhandled rejection', async () => {
+    const client = new FakeClient();
+    const watch = vi.spyOn(client, 'watchDirectory').mockRejectedValueOnce(new Error('gone'));
+    const adapter = new RemotePtyAdapter(client);
+    adapter.requestInit();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await adapter.init();
+    expect(watch).toHaveBeenCalledTimes(2);
+    await adapter.dispose();
+    expect(client.unsubscribes).toEqual(['dir-sub']);
+  });
+
   it('detaches the live surface and unsubscribes the directory', async () => {
     const client = new FakeClient();
     const adapter = new RemotePtyAdapter(client);

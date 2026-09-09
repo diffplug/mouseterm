@@ -1,3 +1,4 @@
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../../lib/src/lib/terminal-context-types';
 import { invoke as rawInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-shell";
@@ -13,22 +14,29 @@ import type {
   IframeProxyResult,
   OpenPort,
   PlatformAdapter,
+  PtyDataDetail,
   PtyInfo,
-  RemoteHostLink,
+  BurrowLink,
 } from "dormouse-lib/lib/platform/types";
+import type {
+  NotepadArchiveLoadResult,
+  NotepadArchivePort,
+  NotepadArchiveV1,
+} from "dormouse-lib/lib/notepad/types";
 import {
   answerAskCommand,
-  createRemoteHostLinkClient,
+  createBurrowLinkClient,
   notifyCommand,
 } from "dormouse-lib/host/remote/link-client";
 import {
-  REMOTE_HOST_ASK_EVENT,
-  REMOTE_HOST_EVENT_EVENT,
-  REMOTE_HOST_RESULT_EVENT,
-  type RemoteHostAsk,
-  type RemoteHostCommand,
-  type RemoteHostResult,
+  BURROW_ASK_EVENT,
+  BURROW_EVENT_EVENT,
+  BURROW_RESULT_EVENT,
+  type BurrowAsk,
+  type BurrowCommand,
+  type BurrowResult,
 } from "dormouse-lib/host/remote/service-protocol";
+import { embedderOrigins } from "dormouse-lib/lib/embedder-origins";
 import { AlertManager } from "dormouse-lib/lib/alert-manager";
 import type { AwaitHandle, AwaitOptions } from "dormouse-lib/lib/alert-manager";
 import type { AlertSettings } from "dormouse-lib/lib/alert-settings";
@@ -39,12 +47,13 @@ import { withTimeout } from "./with-timeout";
 import {
   applyTerminalProtocolEvents,
   collectTerminalSemanticEvents,
-  collectTerminalProtocolResponses,
   TerminalProtocolParser,
+  type TerminalProtocolEvent,
 } from "dormouse-lib/lib/terminal-protocol";
-import { themeColorProvider } from "dormouse-lib/lib/terminal-theme";
+import { getTerminalTheme, onTerminalThemeChange, themeColorProvider } from "dormouse-lib/lib/terminal-theme";
+import type { TerminalSemanticEvent } from "dormouse-lib/lib/terminal-state";
 import {
-  applyTerminalSemanticEventsByPtyId,
+  applyTerminalSemanticEvents,
 } from "dormouse-lib/lib/terminal-state-store";
 import type { DorControlCancelPayload, DorControlRequestPayload } from "dor/protocol";
 import {
@@ -74,14 +83,13 @@ const errMessage = (err: unknown): string =>
  *   Shell processes
  */
 export class TauriAdapter implements PlatformAdapter {
-  private dataHandlers = new Set<(detail: { id: string; data: string }) => void>();
+  private dataHandlers = new Set<(detail: PtyDataDetail) => void>();
   private exitHandlers = new Set<(detail: { id: string; exitCode: number }) => void>();
   private listHandlers = new Set<(detail: { ptys: PtyInfo[] }) => void>();
   private replayHandlers = new Set<(detail: { id: string; data: string }) => void>();
   private filesDroppedHandlers = new Set<(paths: string[]) => void>();
   private alertStateHandlers = new Set<(detail: AlertStateDetail) => void>();
   private unlistenFns: Array<() => void> = [];
-  private protocolParsers = new Map<string, TerminalProtocolParser>();
   private alertManager = new AlertManager();
   private sessionStore = new TauriSessionStore();
   // In-process session-flush handshake (mirrors the VS Code message-router flow
@@ -93,19 +101,19 @@ export class TauriAdapter implements PlatformAdapter {
   private nextFlushRequestId = 0;
   // --- Remote host bridge (docs/specs/remote-api.md) ---
   //
-  // The Host lives in the sidecar, next to the PTYs. This webview forwards its
+  // The Burrow lives in the sidecar, next to the PTYs. This webview forwards its
   // console commands, answers what only it knows (pane names, xterm sizes), and
   // mirrors the pairing queue. Only the transport is this adapter's: one Rust
   // invoke carries everything, so an answer and a notify ride it as ordinary
-  // commands, and correlation is `rhId` — never `requestId`, which Rust
+  // commands, and correlation is `burrowRequestId` — never `requestId`, which Rust
   // swallows on any sidecar line that carries it.
-  private readonly remoteHostClient = createRemoteHostLinkClient({
-    sendCommand: (command) => this.sendRemoteHostCommand(command),
-    answerAsk: (askId, results) => this.sendRemoteHostCommand(answerAskCommand(askId, results)),
-    notify: () => this.sendRemoteHostCommand(notifyCommand()),
+  private readonly burrowClient = createBurrowLinkClient({
+    sendCommand: (command) => this.sendBurrowCommand(command),
+    answerAsk: (askId, results) => this.sendBurrowCommand(answerAskCommand(askId, results)),
+    notify: () => this.sendBurrowCommand(notifyCommand()),
   });
 
-  readonly remoteHost: RemoteHostLink = this.remoteHostClient.link;
+  readonly burrow: BurrowLink = this.burrowClient.link;
 
   constructor() {
     this.alertManager.onStateChange((id, state) => {
@@ -113,6 +121,11 @@ export class TauriAdapter implements PlatformAdapter {
         handler({ id, ...state });
       }
     });
+
+    // The sidecar parses, and it has no DOM to read the theme from, so push the
+    // resolved colors up whenever they change (the initial push is in
+    // requestInit) — mirroring VSCodeAdapter.pushThemeColors.
+    onTerminalThemeChange(() => this.pushThemeColors());
   }
 
   async init(): Promise<void> {
@@ -120,45 +133,52 @@ export class TauriAdapter implements PlatformAdapter {
     // is an independent round trip to Rust, and serializing them puts the whole
     // set in front of the first paint.
     this.unlistenFns.push(...(await Promise.all([
-      listen<{ id: string; data: string }>("pty:data", (event) => {
-        const { id, data } = event.payload;
-        const parsed = this.getProtocolParser(id).process(data);
-        applyTerminalProtocolEvents(this.alertManager, id, parsed.events);
-        const semanticEvents = collectTerminalSemanticEvents(parsed.events);
-        this.alertManager.applyTerminalSemanticEvents(id, semanticEvents);
-        applyTerminalSemanticEventsByPtyId(id, semanticEvents);
-        for (const response of collectTerminalProtocolResponses(parsed.events)) {
-          invoke("pty_write", { id, data: response });
-        }
-        if (parsed.visibleData.length === 0) return;
+      // Already parsed by the sidecar, which owns the PTY: the pair arrives as
+      // it is, and its events arrive as the two messages below
+      // (docs/specs/terminal-escapes.md → "Parsing location").
+      listen<PtyDataDetail>("pty:data", (event) => {
+        const { id, data, textData } = event.payload;
         // Feed visible data to alert manager for visual activity monitoring.
         this.alertManager.onData(id);
         for (const handler of this.dataHandlers) {
-          handler({ id, data: parsed.visibleData });
+          handler({ id, data, textData });
         }
+      }),
+
+      listen<{ id: string; events: TerminalProtocolEvent[] }>("terminal:protocolEvents", (event) => {
+        applyTerminalProtocolEvents(this.alertManager, event.payload.id, event.payload.events);
+      }),
+
+      listen<{ id: string; events: TerminalSemanticEvent[] }>("terminal:semanticEvents", (event) => {
+        const { id, events } = event.payload;
+        this.alertManager.applyTerminalSemanticEvents(id, events);
+        applyTerminalSemanticEvents(id, events);
       }),
 
       listen<{ id: string; exitCode: number }>("pty:exit", (event) => {
         this.alertManager.onExit(event.payload.id, event.payload.exitCode);
-        this.protocolParsers.delete(event.payload.id);
         for (const handler of this.exitHandlers) {
           handler(event.payload);
         }
       }),
 
       listen<{ ptys: PtyInfo[] }>("pty:list", (event) => {
+        for (const pty of event.payload.ptys) if (pty.helper) this.alertManager.setHelper(pty.id, true);
         for (const handler of this.listHandlers) {
           handler(event.payload);
         }
       }),
 
       listen<{ id: string; data: string }>("pty:replay", (event) => {
-        // Replay arrives as raw buffered output. Run it through the protocol
-        // parser so semantic OSCs (CWD, prompt, title) repopulate pane state
-        // and are stripped before xterm sees them, mirroring live pty:data.
+        // Replay arrives as raw buffered output, the one stream the sidecar does
+        // not parse. A one-shot parser here repopulates semantic state and
+        // strips OSCs before xterm sees them; its responses are dropped, since
+        // the asker is long gone (docs/specs/terminal-escapes.md). It still
+        // needs the theme: a *declined* colour query is not consumed, so it
+        // reaches xterm.js instead, and answering is the owner's alone.
         const { id, data } = event.payload;
-        const parsed = this.getProtocolParser(id).process(data);
-        applyTerminalSemanticEventsByPtyId(id, collectTerminalSemanticEvents(parsed.events));
+        const parsed = new TerminalProtocolParser(themeColorProvider).process(data);
+        applyTerminalSemanticEvents(id, collectTerminalSemanticEvents(parsed.events));
         for (const handler of this.replayHandlers) {
           handler({ id, data: parsed.visibleData });
         }
@@ -171,17 +191,17 @@ export class TauriAdapter implements PlatformAdapter {
         for (const handler of this.filesDroppedHandlers) handler(paths);
       }),
 
-      listen<RemoteHostResult>(REMOTE_HOST_RESULT_EVENT, (event) => {
-        this.remoteHostClient.onResult(event.payload);
+      listen<BurrowResult>(BURROW_RESULT_EVENT, (event) => {
+        this.burrowClient.onResult(event.payload);
       }),
 
-      listen<RemoteHostAsk>(REMOTE_HOST_ASK_EVENT, (event) => {
+      listen<BurrowAsk>(BURROW_ASK_EVENT, (event) => {
         const ask = event.payload;
-        this.remoteHostClient.onAsk(ask.rhId, ask.op, ask.params);
+        this.burrowClient.onAsk(ask.burrowRequestId, ask.op, ask.params);
       }),
 
-      listen<{ name?: string }>(REMOTE_HOST_EVENT_EVENT, (event) => {
-        this.remoteHostClient.onEvent(event.payload);
+      listen<{ name?: string }>(BURROW_EVENT_EVENT, (event) => {
+        this.burrowClient.onEvent(event.payload);
       }),
 
       listen<DorControlRequestPayload>("dor:controlRequest", (event) => {
@@ -227,13 +247,12 @@ export class TauriAdapter implements PlatformAdapter {
 
   shutdown(): void {
     this.alertManager.dispose();
-    this.protocolParsers.clear();
     for (const unlisten of this.unlistenFns) {
       unlisten();
     }
     this.unlistenFns = [];
     // Nothing will answer what is outstanding once the sidecar is gone.
-    this.remoteHostClient.dispose();
+    this.burrowClient.dispose();
     invoke("kill_sidecar_now");
   }
 
@@ -243,8 +262,15 @@ export class TauriAdapter implements PlatformAdapter {
     } catch { return []; }
   }
 
-  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void {
-    this.protocolParsers.set(id, new TerminalProtocolParser(themeColorProvider));
+  async terminalContext(request: TerminalContextRequest): Promise<TerminalContextInfo> {
+    const result = await rawInvoke<TerminalContextInfo>('pty_context', { request });
+    if (result.error) throw new Error(result.error);
+    if (request.op === 'promote') this.alertManager.setHelper(request.id, !!request.restore);
+    return result;
+  }
+
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[]; helper?: HelperIdentity }): void {
+    if (options?.helper) this.alertManager.setHelper(id, true);
     invoke("pty_spawn", { id, options });
   }
 
@@ -257,7 +283,6 @@ export class TauriAdapter implements PlatformAdapter {
   }
 
   killPty(id: string): void {
-    this.protocolParsers.delete(id);
     invoke("pty_kill", { id });
   }
 
@@ -306,7 +331,12 @@ export class TauriAdapter implements PlatformAdapter {
     // lib/src/host/iframe-proxy.ts). On failure, report unreachable so the panel
     // shows a hint rather than a never-loading frame.
     try {
-      return await rawInvoke<IframeProxyResult>("iframe_create_proxy_url", { target: targetUrl });
+      // The webview's ancestor chain decides who may frame the proxy and where
+      // its shim may post; only this realm can read it.
+      return await rawInvoke<IframeProxyResult>("iframe_create_proxy_url", {
+        target: targetUrl,
+        embedderOrigins: embedderOrigins(),
+      });
     } catch (err) {
       return { ok: false, reason: "unreachable", detail: errMessage(err) };
     }
@@ -399,11 +429,11 @@ export class TauriAdapter implements PlatformAdapter {
     return () => { this.filesDroppedHandlers.delete(handler); };
   }
 
-  onPtyData(handler: (detail: { id: string; data: string }) => void): void {
+  onPtyData(handler: (detail: PtyDataDetail) => void): void {
     this.dataHandlers.add(handler);
   }
 
-  offPtyData(handler: (detail: { id: string; data: string }) => void): void {
+  offPtyData(handler: (detail: PtyDataDetail) => void): void {
     this.dataHandlers.delete(handler);
   }
 
@@ -417,6 +447,20 @@ export class TauriAdapter implements PlatformAdapter {
 
   requestInit(): void {
     invoke("pty_request_init");
+    this.pushThemeColors();
+  }
+
+  /** Send the resolved terminal theme colors to the sidecar so its parser can
+   *  answer OSC 10/11/12 color queries (it has no DOM of its own). */
+  private pushThemeColors(): void {
+    const theme = getTerminalTheme();
+    invoke("pty_theme_colors", {
+      colors: {
+        foreground: theme.foreground,
+        background: theme.background,
+        cursor: theme.cursor,
+      },
+    });
   }
 
   onPtyList(handler: (detail: { ptys: PtyInfo[] }) => void): void {
@@ -480,9 +524,9 @@ export class TauriAdapter implements PlatformAdapter {
     );
   }
 
-  private sendRemoteHostCommand(command: RemoteHostCommand): void {
-    rawInvoke("remote_host_command", { payload: command }).catch((err) =>
-      console.error("[tauri-adapter] remote_host_command failed:", err),
+  private sendBurrowCommand(command: BurrowCommand): void {
+    rawInvoke("burrow_command", { payload: command }).catch((err) =>
+      console.error("[tauri-adapter] burrow_command failed:", err),
     );
   }
 
@@ -500,9 +544,7 @@ export class TauriAdapter implements PlatformAdapter {
     this.alertManager.setCommandWatched(name, watched);
   }
 
-  alertPublishSettings(settings: AlertSettings): void {
-    this.alertManager.setInactivityTimeoutMs(settings.inactivityTimeoutMs);
-  }
+  alertPublishSettings(settings: AlertSettings): void { this.alertManager.applySettings(settings); }
 
   alertDismiss(id: string): void {
     this.alertManager.dismissAlert(id);
@@ -558,9 +600,9 @@ export class TauriAdapter implements PlatformAdapter {
   // plumbing below it — TauriSessionStore, the Rust temp-then-rename file store,
   // the quit flush/drain ordering — is intact and still needed by the
   // workspaces-rollout scope (docs/specs/layout.md -> `## Future`). Bringing
-  // VS Code-style restoration to standalone later is flipping this flag plus
-  // adding capture to the existing quit teardown, which already has the right
-  // shape (flush -> kill -> flush -> drain).
+  // VS Code-style restoration to standalone later also needs to reconcile
+  // the unconditional boot deletion in clearLegacySessionState and add capture
+  // to the existing quit teardown (flush -> kill -> flush -> drain).
   private static PERSIST_SESSION = false;
 
   /**
@@ -587,6 +629,33 @@ export class TauriAdapter implements PlatformAdapter {
     }
   }
 
+  // --- Notepad archive (docs/specs/notepad.md) ---
+  //
+  // Compare-and-swap over the Rust file store (§Notepad archive in
+  // standalone/src-tauri/src/lib.rs): the shared archive service does the
+  // read-modify-write and retries on `'conflict'`. Nothing is parsed or repaired
+  // here — the stored string rides through as `raw`, because validating it is
+  // the shared layer's job and an unreadable archive must reach the user as
+  // unreadable rather than be quietly replaced.
+  //
+  // Failures reject rather than resolving: a closure that cannot archive its
+  // notes has to take the failure path, not silently drop them.
+  readonly notepadArchive: NotepadArchivePort = {
+    load: async (): Promise<NotepadArchiveLoadResult | null> => {
+      // `None` — nothing has ever been archived — arrives as null.
+      const stored = await rawInvoke<[string, string] | null>("load_notepad_archive");
+      if (!stored) return null;
+      const [raw, revision] = stored;
+      return { raw, revision };
+    },
+    save: (archive: NotepadArchiveV1, baseRevision: string | null) =>
+      rawInvoke<"ok" | "conflict">("save_notepad_archive", {
+        state: JSON.stringify(archive),
+        baseRevision,
+      }),
+    resetUnreadable: () => rawInvoke<void>("reset_notepad_archive"),
+  };
+
   /**
    * Delete any pre-upgrade snapshot or orphaned temp write. Those carry
    * transcripts, so ignoring the slot is not enough — the bytes have to leave the
@@ -611,14 +680,5 @@ export class TauriAdapter implements PlatformAdapter {
     } catch (err) {
       console.error('[tauri-adapter] Failed to clear legacy session state:', err);
     }
-  }
-
-  private getProtocolParser(id: string): TerminalProtocolParser {
-    let parser = this.protocolParsers.get(id);
-    if (!parser) {
-      parser = new TerminalProtocolParser(themeColorProvider);
-      this.protocolParsers.set(id, parser);
-    }
-    return parser;
   }
 }

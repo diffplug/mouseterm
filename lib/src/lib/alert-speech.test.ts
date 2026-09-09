@@ -7,7 +7,7 @@ vi.mock('./platform', () => ({
 import { startAlertSpeech, toSpokenText } from './alert-speech';
 import { getAlertSpeechState } from './alert-speech-state';
 import { applyAlertSettingsFromHost, DEFAULT_ALERT_SETTINGS } from './alert-settings';
-import { clearPrimedActivity, primeActivity } from './session-activity-store';
+import { clearTerminalActivity, setTerminalActivity } from './session-activity-store';
 import type { SessionStatus } from './alert-manager';
 import { removeTerminalPaneState, resetTerminalPaneState } from './terminal-state-store';
 import type { TerminalTitleSource } from './terminal-state';
@@ -54,7 +54,7 @@ function stubSpeechSynthesis(): void {
 
 /** Drive one Session's projected status through the activity store. */
 function setStatus(id: string, status: SessionStatus): void {
-  primeActivity(id, { status });
+  setTerminalActivity(id, { status });
 }
 
 /**
@@ -83,7 +83,7 @@ function ringTwoWithFirstSpeaking(): void {
 beforeEach(() => {
   vi.useFakeTimers();
   stubSpeechSynthesis();
-  clearPrimedActivity();
+  clearTerminalActivity();
   applyAlertSettingsFromHost({ ...DEFAULT_ALERT_SETTINGS, speakEnabled: true, speakDelayMs: SPEAK_DELAY_MS });
 });
 
@@ -91,7 +91,7 @@ afterEach(() => {
   stopSpeech?.();
   stopSpeech = null;
   for (const id of ['osc0-title', 'osc2-title', 'osc9-title']) removeTerminalPaneState(id);
-  clearPrimedActivity();
+  clearTerminalActivity();
   applyAlertSettingsFromHost(DEFAULT_ALERT_SETTINGS);
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -117,14 +117,18 @@ describe('toSpokenText', () => {
     expect(toSpokenText('a<b>c')).toBe('a b c');
   });
 
-  it('strips ampersands and control characters from untrusted titles', () => {
-    expect(toSpokenText('make&test')).toBe('make test');
+  it('strips Unicode punctuation, symbols, and control characters', () => {
+    expect(toSpokenText('**build**: eight * & 2 + 2 = 4 ✅')).toBe('build eight 2 2 4');
     expect(toSpokenText('build\u0007done\u001b')).toBe('build done');
   });
 
-  it('drops asterisks instead of saying “asterisk” aloud', () => {
-    expect(toSpokenText('eight *')).toBe('eight');
-    expect(toSpokenText('build*finished')).toBe('build finished');
+  it('elides apostrophes rather than orphaning the letter after them', () => {
+    expect(toSpokenText("build didn't; it wasn’t finished")).toBe('build didnt it wasnt finished');
+  });
+
+  it('preserves letters, numbers, and combining marks from other scripts', () => {
+    expect(toSpokenText('构建完成。終了コード：０')).toBe('构建完成 終了コード ０');
+    expect(toSpokenText('اَلْعَرَبِيَّةُ، ٢')).toBe('اَلْعَرَبِيَّةُ ٢');
   });
 
   it('collapses the whitespace its own substitutions create', () => {
@@ -137,11 +141,24 @@ describe('toSpokenText', () => {
 
   it('falls back rather than handing the engine an empty utterance', () => {
     expect(toSpokenText('<>')).toBe('terminal');
+    expect(toSpokenText('*** ✅')).toBe('terminal');
     expect(toSpokenText('   ')).toBe('terminal');
   });
 
   it('leaves an ordinary label alone', () => {
     expect(toSpokenText('pnpm test')).toBe('pnpm test');
+  });
+
+  it('redacts whole tokens before punctuation cleanup and truncation', () => {
+    expect(toSpokenText('key=k8Xq+W2m/P5rZ9vN3aT6yA== done')).toBe('key REDACTED done');
+    const prefix = 'build '.repeat(18);
+    expect(toSpokenText(`${prefix}8b7d0c4e9f2a61035e8c9d1f04a76b23`))
+      .toBe(`${prefix}REDACTED`);
+  });
+
+  it('keeps words separate when a redacted token precedes an equals sign', () => {
+    expect(toSpokenText('CargoBuildFinished=ok BackgroundTaskScheduler==finished'))
+      .toBe('REDACTED ok REDACTED finished');
   });
 });
 
@@ -189,7 +206,7 @@ describe('spoken alarms', () => {
       const id = `${source}-title`;
       setStatus(id, 'NOTHING_TO_SHOW');
       if (source === 'osc9') {
-        primeActivity(id, {
+        setTerminalActivity(id, {
           status: 'ALERT_RINGING',
           notification: { source: 'OSC 9', title: null, body: 'program title osc9' },
         });
@@ -248,7 +265,7 @@ describe('spoken alarms', () => {
     utterances[0].onstart?.();
     utterances[0].onend?.();
 
-    primeActivity('pty-1', { status: 'ALERT_RINGING', todo: true });
+    setTerminalActivity('pty-1', { status: 'ALERT_RINGING', todo: true });
     setStatus('another-pane', 'BUSY');
     expect(getAlertSpeechState('pty-1')).toBe('spoken');
   });
@@ -348,6 +365,33 @@ describe('spoken alarms', () => {
     expect(getAlertSpeechState('pty-1')).toBe('spoken');
   });
 
+  it('ignores an older ring starting after a newer ring has begun speaking', () => {
+    start();
+    ring('pty-1');
+    vi.advanceTimersByTime(SPEAK_DELAY_MS);
+    const old = utterances[0];
+    ring('pty-1');
+    vi.advanceTimersByTime(SPEAK_DELAY_MS);
+    const current = utterances[1];
+    current.onstart?.();
+    old.onstart?.();
+    old.onend?.();
+    expect(getAlertSpeechState('pty-1')).toBe('speaking');
+    current.onend?.();
+    expect(getAlertSpeechState('pty-1')).toBe('spoken');
+  });
+
+  it('ignores a captured start callback after redispatch of the same ring', () => {
+    ringTwoWithFirstSpeaking();
+    const staleStart = utterances[1].onstart;
+    setStatus('pty-1', 'NOTHING_TO_SHOW');
+    const replacement = utterances[2];
+    replacement.onstart?.();
+    staleStart?.();
+    replacement.onend?.();
+    expect(getAlertSpeechState('pty-2')).toBe('spoken');
+  });
+
   it('no-ops when the host webview has no speech backend', () => {
     vi.stubGlobal('speechSynthesis', undefined);
     start();
@@ -416,6 +460,10 @@ describe('spoken alarms', () => {
     // Dispose detaches exactly what was still tracked — the bounded tail. The
     // evicted remainder is inert regardless: its generation token is gone.
     expect(utterances.filter(u => u.onend === null)).toEqual(utterances.slice(-8));
+    utterances[0].onstart?.();
+    expect(getAlertSpeechState('pty-0')).toBeNull();
+    utterances[0].onend?.();
+    expect(getAlertSpeechState('pty-0')).toBeNull();
   });
 
   it('bounds the queued Session index when the engine silently drops utterances', () => {

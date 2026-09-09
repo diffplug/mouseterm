@@ -7,10 +7,14 @@ import {
   applyTerminalProtocolEvents,
   collectTerminalSemanticEvents,
   collectTerminalProtocolResponses,
-  TerminalProtocolParser,
   type TerminalColorProvider,
   type TerminalColors,
 } from '../../lib/src/lib/terminal-protocol';
+import {
+  createProcessedPtyStream,
+  type ProcessedPtyChunk,
+  type ProcessedPtyStream,
+} from '../../lib/src/lib/processed-pty-stream';
 import { normalizeExternalUri } from '../../lib/src/lib/external-links';
 import { VSCODE_WORKBENCH_COMMANDS } from '../../lib/src/lib/vscode-keybindings';
 import { computeWorkspaceUnion, type WorkspaceUnion } from '../../lib/src/lib/workspace-union';
@@ -21,19 +25,27 @@ import type { WebviewMessage, ExtensionMessage } from './message-types';
 import type { DorControlRequest } from './pty-manager';
 import { createStreamRelayUrl, runAgentBrowserCommand, runAgentBrowserEdit, runAgentBrowserOpen, runAgentBrowserPopIn, runAgentBrowserPopOut, runAgentBrowserScreenshot, runAgentBrowserStreamStatus } from './agent-browser-host';
 import { createIframeProxyUrl } from './iframe-proxy-host';
+import {
+  archiveVolatileMirror,
+  loadNotepadArchive,
+  mutateNotepadArchive,
+  resetUnreadableNotepadArchive,
+  saveNotepadArchive,
+} from './notepad-archive-store';
+import { refreshMirrorCwds, setVolatileForRouter, takeStagedForRouter, takeVolatileForRouter } from './notepad-volatile';
 import { ASK_BUDGET_MS } from '../../lib/src/host/remote/service-protocol';
 import { configurePeerLink, remoteNotifyPeerChange } from './peer-link';
 import { createProcessedPtyStreams } from './processed-pty-streams';
 import {
-  configureRemoteHost,
+  configureBurrow,
   deliverCommandResult,
   deliverUiEvent,
   dropForwardedCommands,
   greetPeerWindow,
   handleForwardedCommand,
-  handleRemoteHostCommand,
+  handleBurrowCommand,
   notifyDirectoryChanged,
-} from './remote-host';
+} from './burrow';
 import { log } from './log';
 import type { WebviewChannel } from './webview-messaging';
 
@@ -45,6 +57,11 @@ const clipboardOps = require('../../lib/clipboard-ops.cjs') as {
 // Global set of PTY IDs claimed by any router instance.
 // Prevents reconnecting routers from stealing PTYs owned by other webviews.
 const globalOwnedPtyIds = new Set<string>();
+
+/** How long an editor panel's disposal waits for its PTYs to say where they
+ *  are before archiving and killing them. A closing tab is not urgent, but it
+ *  must not hang on a pty host that has stopped answering. */
+const TEARDOWN_CWD_REFRESH_MS = 1000;
 
 interface ActiveRouter {
   flushSessionSave(timeoutMs?: number): Promise<void>;
@@ -65,7 +82,7 @@ interface PendingRequest {
 }
 const peerRequests = new Map<string, PendingRequest>();
 const processedPtyStreams = createProcessedPtyStreams(
-  onProcessedPtyData,
+  subscribeProcessedPty,
   onProcessedPtyExit,
   ptyManager.getPtyStatus,
 );
@@ -77,12 +94,12 @@ configurePeerLink({
   invalidateDirectory: notifyDirectoryChanged,
   streamPty: processedPtyStreams.streamPty,
   writePty: (ptyId, data) => ptyManager.write(ptyId, data),
-  resizePty: (ptyId, cols, rows) => ptyManager.resize(ptyId, cols, rows),
+  resizePty: (ptyId, cols, rows, repaint) => ptyManager.resize(ptyId, cols, rows, repaint),
   // Peer PTYs use generated provider-local route handles. Keep those handles
   // outside this window's real PTY namespace so local ids always fall through
   // to the manager that owns them.
   ownsPty: (ptyId) => ptyManager.hasPty(ptyId) || globalOwnedPtyIds.has(ptyId),
-  // The Host half: which of these fire depends on which side of the bind this
+  // The Burrow half: which of these fire depends on which side of the bind this
   // window landed on, and the link is what knows that.
   handleForwardedCommand,
   dropForwardedCommands,
@@ -91,31 +108,31 @@ configurePeerLink({
   onClientAuthenticated: greetPeerWindow,
 });
 
-configureRemoteHost({
+configureBurrow({
   brokerRequest,
   broadcastToWebviews,
   streamPty: processedPtyStreams.streamPty,
   writePty: (ptyId, data) => ptyManager.write(ptyId, data),
-  resizePty: (ptyId, cols, rows) => ptyManager.resize(ptyId, cols, rows),
+  resizePty: (ptyId, cols, rows, repaint) => ptyManager.resize(ptyId, cols, rows, repaint),
 });
 
 /**
  * Put one question to every webview in this window and settle with everything
  * they answered.
  *
- * The remote Host runs in the extension host, but a window's terminals are
- * spread across its webviews — each has its own xterm registry, so the Host can
+ * The Burrow runs in the extension host, but a window's terminals are
+ * spread across its webviews — each has its own xterm registry, so the Burrow can
  * neither list nor attach to a pane without asking. See docs/specs/vscode.md →
  * "Peer surfaces".
  *
  * `op` and `params` are opaque here on purpose: the operation map lives in
- * `lib/src/remote/host/peer-surfaces.ts`, and one fan-out rule covers all of
+ * `lib/src/remote/burrow/peer-surfaces.ts`, and one fan-out rule covers all of
  * it — every webview answers with zero or more results, so a webview that owns
  * nothing settles the request as fast as the one that does. The budget is the
  * backstop for a webview with no live content, which must not hang the phone's
  * picker; it is the *inner* one, deliberately shorter than the broker's
  * cross-window `PEER_REPLY_BUDGET_MS`, which has to contain a whole run of this
- * plus two socket hops. The asker is this window's own Host service, or the
+ * plus two socket hops. The asker is this window's own Burrow service, or the
  * broker window's over the link, never a webview; that is why it is a plain
  * promise rather than message plumbing.
  */
@@ -145,8 +162,8 @@ function brokerRequest(op: string, params: unknown): Promise<unknown[]> {
 /**
  * Post one message to every live webview in this window.
  *
- * The Host's results ride this rather than a reply to one webview: the service
- * answers an `rhId`, and only the adapter that minted it holds a pending
+ * The Burrow's results ride this rather than a reply to one webview: the service
+ * answers a `burrowRequestId`, and only the adapter that minted it holds a pending
  * command for it (`lib/src/lib/platform/vscode-adapter.ts`).
  */
 function broadcastToWebviews(message: ExtensionMessage): void {
@@ -155,6 +172,9 @@ function broadcastToWebviews(message: ExtensionMessage): void {
 
 const activeRouters = new Set<ActiveRouter>();
 let nextFlushRequestId = 0;
+/** Tags each router's contribution to the volatile notepad mirror. Per
+ *  extension-host lifetime, like the mirror itself (`notepad-volatile.ts`). */
+let nextNotepadRouterId = 0;
 const ALLOWED_WORKBENCH_COMMANDS = new Set<string>(VSCODE_WORKBENCH_COMMANDS);
 
 // Shared alert manager — survives router disposal so alert state persists
@@ -162,7 +182,13 @@ const ALLOWED_WORKBENCH_COMMANDS = new Set<string>(VSCODE_WORKBENCH_COMMANDS);
 const alertManager = new AlertManager();
 const watchedCommandHost = new WatchedCommandHost(alertManager);
 const alertSettingsHost = new AlertSettingsHost(alertManager);
-const alertProtocolParsers = new Map<string, TerminalProtocolParser>();
+/**
+ * This window's parse sites: one per PTY generation, created at spawn and fed
+ * every chunk from there, so the extension host answers each query once and both
+ * projections reach every consumer (`docs/specs/terminal-escapes.md` → "Parsing
+ * location").
+ */
+const ownerPtyStreams = new Map<string, ProcessedPtyStream>();
 
 // The extension-host parser has no DOM, so webviews push their resolved terminal
 // theme colors (see VSCodeAdapter.pushThemeColors). Cached here and read lazily
@@ -174,7 +200,7 @@ const themeColorProvider: TerminalColorProvider = (target) => latestThemeColors?
 // Subscribers that want each PTY chunk *after* OSC sequences have been parsed
 // out (display path). Decoupled from ptyManager.addCallbacks so we only run
 // the protocol parser once per chunk regardless of webview count.
-type ProcessedDataListener = (id: string, visibleData: string) => void;
+type ProcessedDataListener = (id: string, visibleData: string, textData?: string) => void;
 const processedDataListeners = new Set<ProcessedDataListener>();
 type ProcessedExitListener = (id: string, exitCode: number) => void;
 const processedExitListeners = new Set<ProcessedExitListener>();
@@ -205,20 +231,7 @@ alertManager.onStateChange((id, state) => {
 ptyManager.addCallbacks({
   onData(id: string, data: string) {
     const before = alertManager.getState(id).status;
-    const parsed = getAlertProtocolParser(id).process(data);
-    applyTerminalProtocolEvents(alertManager, id, parsed.events);
-    const semanticEvents = collectTerminalSemanticEvents(parsed.events);
-    alertManager.applyTerminalSemanticEvents(id, semanticEvents);
-    if (semanticEvents.length > 0) {
-      for (const listener of semanticEventsListeners) listener(id, semanticEvents);
-    }
-    for (const response of collectTerminalProtocolResponses(parsed.events)) {
-      ptyManager.write(id, response);
-    }
-    if (parsed.visibleData.length > 0) {
-      alertManager.onData(id);
-      for (const listener of processedDataListeners) listener(id, parsed.visibleData);
-    }
+    getOwnerPtyStream(id).write(data);
     const after = alertManager.getState(id).status;
     if (before !== after) {
       log.info(`[alert-feed] ${id}: ${before} → ${after}`);
@@ -227,7 +240,7 @@ ptyManager.addCallbacks({
   onExit(id: string, exitCode: number) {
     log.info(`[alert-feed] ${id}: PTY exited`);
     alertManager.onExit(id, exitCode);
-    alertProtocolParsers.delete(id);
+    ownerPtyStreams.delete(id);
     for (const listener of processedExitListeners) listener(id, exitCode);
   },
 });
@@ -259,13 +272,57 @@ ptyManager.onDorControlCancel((cancel) => {
   broadcastToWebviews({ type: 'dor:controlCancel', requestId: cancel.requestId });
 });
 
-function getAlertProtocolParser(id: string): TerminalProtocolParser {
-  let parser = alertProtocolParsers.get(id);
-  if (!parser) {
-    parser = new TerminalProtocolParser(themeColorProvider);
-    alertProtocolParsers.set(id, parser);
+function createOwnerPtyStream(id: string): ProcessedPtyStream {
+  return createProcessedPtyStream({
+    colorProvider: themeColorProvider,
+    onEvents(events) {
+      applyTerminalProtocolEvents(alertManager, id, events);
+      const semanticEvents = collectTerminalSemanticEvents(events);
+      alertManager.applyTerminalSemanticEvents(id, semanticEvents);
+      if (semanticEvents.length > 0) {
+        for (const listener of semanticEventsListeners) listener(id, semanticEvents);
+      }
+      for (const response of collectTerminalProtocolResponses(events)) {
+        ptyManager.write(id, response);
+      }
+    },
+    onChunk(chunk) {
+      alertManager.onData(id);
+      for (const listener of processedDataListeners) listener(id, chunk.data, chunk.textData);
+    },
+  });
+}
+
+function getOwnerPtyStream(id: string): ProcessedPtyStream {
+  let stream = ownerPtyStreams.get(id);
+  if (!stream) {
+    stream = createOwnerPtyStream(id);
+    ownerPtyStreams.set(id, stream);
   }
-  return parser;
+  return stream;
+}
+
+/**
+ * Attach one remote sink to a PTY's own parse, so it inherits the byte
+ * boundaries of everything that came before it — and, when it lands inside a
+ * forwarded string control, waits out that payload.
+ */
+function subscribeProcessedPty(
+  ptyId: string,
+  onChunk: (chunk: ProcessedPtyChunk) => void,
+): () => void {
+  const stream = getOwnerPtyStream(ptyId);
+  const unsubscribe = stream.subscribe(onChunk);
+  return () => {
+    unsubscribe();
+    // A stream stood up only to serve an attachment to a PTY that is no longer
+    // live has nothing left to parse, and the exit that would have retired it
+    // has been and gone; without this the window retains one parser per surface
+    // id that was ever attached to. Liveness, not `hasPty`, which stays true for
+    // a PTY that has already exited.
+    if (stream.hasSinks || ptyManager.getPtyStatus(ptyId)?.alive === true) return;
+    if (ownerPtyStreams.get(ptyId) === stream) ownerPtyStreams.delete(ptyId);
+  };
 }
 
 export function getAlertStates() {
@@ -281,17 +338,22 @@ export function attachRouter(
   options?: {
     reconnect?: boolean;
     killOnDispose?: boolean;
-    onSaveState?: (state: unknown) => void;
+    onSaveState?: (state: unknown) => void | PromiseLike<void>;
     savedSession?: PersistedSession | null;
     getSelectedShell?: () => { shell?: string; args?: string[] } | null;
     // Called with this webview's Workspace union status whenever it changes
     // (owned-PTY alert state, or a PTY claimed/released). The host reflects it
     // onto native chrome (tab title / view badge). See docs/specs/vscode.md.
     onUnion?: (union: WorkspaceUnion) => void;
+    // Only the notepad archive needs it: shared storage is reachable nowhere else
+    // (docs/specs/notepad.md). Absent, the archive requests answer `ok: false`
+    // rather than hang.
+    context?: vscode.ExtensionContext;
   },
 ): vscode.Disposable {
   const reconnect = options?.reconnect ?? false;
   const killOnDispose = options?.killOnDispose ?? false;
+  const notepadRouterId = `notepad-router-${++nextNotepadRouterId}`;
 
   // The router's only send path — it stamps this webview's message token, which
   // the webview requires (docs/specs/vscode.md → "Webview message
@@ -301,6 +363,7 @@ export function attachRouter(
   // Track which PTY IDs were spawned (or reconnected) through this webview
   const ownedPtyIds = new Set<string>();
   const pendingFlushRequests = new Map<string, { resolve: () => void; timeout: ReturnType<typeof setTimeout> }>();
+  let pendingSave = Promise.resolve();
   // `dor await`s this webview has parked in the shared alert manager, keyed by
   // the requestId that will carry the outcome back.
   const pendingAwaits = new Map<string, { handle: AwaitHandle; startedAt: number }>();
@@ -431,14 +494,42 @@ export function attachRouter(
   }
 
   /**
+   * Answer one notepad-archive request.
+   *
+   * Every outcome crosses back, failures included: the webview's port has no
+   * deadline of its own, and an archive that cannot be written has to surface as
+   * the closure error path rather than as a Surface that never closes
+   * (docs/specs/notepad.md → Archive and Lifecycle).
+   */
+  function respondNotepad(
+    requestId: string,
+    work: (context: vscode.ExtensionContext) => Promise<unknown>,
+  ): void {
+    const context = options?.context;
+    if (!context) {
+      void post({
+        type: 'notepad:result', requestId, ok: false,
+        error: 'the notepad archive is unavailable in this window',
+      } satisfies ExtensionMessage);
+      return;
+    }
+    work(context).then(
+      (result) => post({ type: 'notepad:result', requestId, ok: true, result } satisfies ExtensionMessage),
+      (err) => post({
+        type: 'notepad:result', requestId, ok: false, error: String(err?.message ?? err),
+      } satisfies ExtensionMessage),
+    );
+  }
+
+  /**
    * Subscribe PTY data and alert state forwarding to the webview.
    * Called when the webview sends dormouse:init (proving it has live content).
    * Returns a cleanup function that unsubscribes everything.
    */
   function connectWebview(): () => void {
-    const removeProcessedListener = onProcessedPtyData((id, visibleData) => {
+    const removeProcessedListener = onProcessedPtyData((id, visibleData, textData) => {
       if (!ownedPtyIds.has(id)) return;
-      post({ type: 'pty:data', id, data: visibleData } satisfies ExtensionMessage);
+      post({ type: 'pty:data', id, data: visibleData, textData } satisfies ExtensionMessage);
     });
     const removeSemanticListener = onTerminalSemanticEvents((id, events) => {
       if (!ownedPtyIds.has(id)) return;
@@ -451,16 +542,7 @@ export function attachRouter(
 
     const removeAlertListener = alertManager.onStateChange((id, state) => {
       if (!ownedPtyIds.has(id)) return;
-      post({
-        type: 'alert:state',
-        id,
-        status: state.status,
-        watchingEnabled: state.watchingEnabled,
-        todo: state.todo,
-        notification: state.notification,
-        attentionDismissedRing: state.attentionDismissedRing,
-        awaited: state.awaited,
-      } satisfies ExtensionMessage);
+      post({ type: 'alert:state', id, ...state } satisfies ExtensionMessage);
       notifyUnion();
     });
 
@@ -474,9 +556,28 @@ export function attachRouter(
 
   const messageDisposable = channel.onDidReceiveMessage((msg: WebviewMessage) => {
     switch (msg.type) {
+      case 'pty:context': {
+        const request = msg.request;
+        if ((request.op !== 'settings' && !ownedPtyIds.has(request.id)) || (request.op === 'promote' && request.restore && !ownedPtyIds.has(request.restore.parentId))) {
+          post({ type: 'pty:contextResult', requestId: msg.requestId, result: { error: 'Terminal is not owned by this workspace' } });
+          break;
+        }
+        ptyManager.terminalContext(request).then(result => {
+          if (!result.error && request.op === 'promote') alertManager.setHelper(request.id, !!request.restore);
+          post({ type: 'pty:contextResult', requestId: msg.requestId, result });
+        }, error => post({ type: 'pty:contextResult', requestId: msg.requestId, result: { error: String(error) } }));
+        break;
+      }
       case 'pty:spawn': {
+        if (msg.options?.helper && (!ownedPtyIds.has(msg.options.helper.parentId) || ptyManager.helperPtys.has(msg.options.helper.parentId))) {
+          post({ type: 'pty:exit', id: msg.id, exitCode: 1 });
+          break;
+        }
+        if (msg.options?.helper) alertManager.setHelper(msg.id, true);
         claim(msg.id);
-        alertProtocolParsers.set(msg.id, new TerminalProtocolParser(themeColorProvider));
+        // A fresh generation under this id: retire the parser rather than let
+        // its half-read sequence splice onto the new PTY's first bytes.
+        ownerPtyStreams.delete(msg.id);
         const spawnOptions = { ...msg.options };
         if (!spawnOptions.cwd) {
           spawnOptions.cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -492,7 +593,7 @@ export function attachRouter(
         break;
       case 'pty:kill':
         release(msg.id);
-        alertProtocolParsers.delete(msg.id);
+        ownerPtyStreams.delete(msg.id);
         ptyManager.kill(msg.id);
         break;
       case 'pty:getCwd':
@@ -634,7 +735,12 @@ export function attachRouter(
         });
         break;
       case 'iframe:createProxyUrl':
-        createIframeProxyUrl(typeof msg.url === 'string' ? msg.url : '').then(
+        createIframeProxyUrl(
+          typeof msg.url === 'string' ? msg.url : '',
+          // Validated host-side (`normalizeEmbedderOrigins`); an unusable chain
+          // costs the shim, never a wider grant.
+          Array.isArray(msg.embedderOrigins) ? msg.embedderOrigins : [],
+        ).then(
           (result) => post({
             type: 'iframe:proxyUrl', requestId: msg.requestId, result,
           } satisfies ExtensionMessage),
@@ -650,7 +756,7 @@ export function attachRouter(
         // what was asked about actually lives in another window.
         const request = peerRequests.get(msg.requestId);
         if (!request) {
-          // Late: the budget already expired and the Host rendered a snapshot
+          // Late: the budget already expired and the Burrow rendered a snapshot
           // without whatever this webview owns. Nothing can re-open a settled
           // request, so mark the directory stale instead — the next collect
           // asks again and repairs it. Without this an idle machine never
@@ -671,8 +777,22 @@ export function attachRouter(
         notifyDirectoryChanged();
         remoteNotifyPeerChange();
         break;
-      case 'remoteHost:command':
-        handleRemoteHostCommand(msg.payload);
+      case 'burrow:command':
+        handleBurrowCommand(msg.payload);
+        break;
+      case 'notepad:load':
+        respondNotepad(msg.requestId, (context) => loadNotepadArchive(context));
+        break;
+      case 'notepad:save':
+        respondNotepad(msg.requestId, (context) => saveNotepadArchive(context, msg.state, msg.baseRevision));
+        break;
+      case 'notepad:reset':
+        respondNotepad(msg.requestId, (context) => resetUnreadableNotepadArchive(context));
+        break;
+      case 'notepad:volatile':
+        // Memory only, and nothing to answer: the mirror exists so a teardown
+        // that finds no webview left can still archive (docs/specs/notepad.md).
+        setVolatileForRouter(notepadRouterId, msg.snapshot);
         break;
       case 'dormouse:themeColors':
         // Webview reports its resolved terminal theme; cache for OSC color replies.
@@ -735,7 +855,7 @@ export function attachRouter(
               claim(pane.id);
             }
             if (pane.alert) {
-              alertProtocolParsers.delete(pane.id);
+              ownerPtyStreams.delete(pane.id);
               alertManager.seed(pane.id, pane.alert);
             }
           }
@@ -745,6 +865,7 @@ export function attachRouter(
           type: 'pty:list',
           ptys: Array.from(reconnectable.entries()).map(([id, info]) => ({
             id, alive: info.alive, exitCode: info.exitCode, shell: info.shell,
+            ...(ptyManager.helperPtys.has(id) ? { helper: ptyManager.helperPtys.get(id) } : {}),
           })),
         };
         post(list);
@@ -763,24 +884,21 @@ export function attachRouter(
         for (const [id] of reconnectable) {
           const alertState = alertManager.getState(id);
           log.info(`[alert-reconnect] ${id}: sending ${alertState.status} (todo=${alertState.todo})`);
-          post({
-            type: 'alert:state',
-            id,
-            status: alertState.status,
-            watchingEnabled: alertState.watchingEnabled,
-            todo: alertState.todo,
-            notification: alertState.notification,
-            attentionDismissedRing: alertState.attentionDismissedRing,
-            awaited: alertState.awaited,
-          } satisfies ExtensionMessage);
+          post({ type: 'alert:state', id, ...alertState } satisfies ExtensionMessage);
         }
         break;
       }
       case 'dormouse:flushSessionSaveDone':
-        resolveFlushRequest(msg.requestId);
+        // The webview has sent its snapshot, but workspaceState.update may still
+        // be writing it. Keep the existing deadline while awaiting those writes
+        // so deactivate's subsequent refresh reads the completed snapshot.
+        void pendingSave.then(() => resolveFlushRequest(msg.requestId));
         break;
       case 'dormouse:saveState':
-        options?.onSaveState?.(msg.state);
+        // Preserve snapshot order even when a host persistence callback is async.
+        pendingSave = pendingSave.then(() => options?.onSaveState?.(msg.state)).catch((error) => {
+          log.error('[session] save failed:', String(error));
+        });
         break;
       case 'dor:controlResponse':
         ptyManager.respondDorControl({
@@ -887,15 +1005,55 @@ export function attachRouter(
       resolveAllFlushRequests();
       disconnectWebview?.();
       disconnectWebview = null;
+      // Every synchronous bookkeeping step stays here; only the kills wait,
+      // because the archive write below asks each live PTY where its process
+      // is and a dead one cannot answer.
+      const toKill = killOnDispose ? [...ownedPtyIds] : [];
       for (const id of ownedPtyIds) {
-        globalOwnedPtyIds.delete(id);
-        if (killOnDispose) {
-          alertProtocolParsers.delete(id);
-          ptyManager.kill(id);
-        }
+        // Closing PTYs remain reserved while CWD/storage work is pending;
+        // another router must not resume a terminal this disposal will kill.
+        if (!killOnDispose) globalOwnedPtyIds.delete(id);
+        if (killOnDispose) ownerPtyStreams.delete(id);
       }
       ownedPtyIds.clear();
       messageDisposable.dispose();
+      // An editor panel closing is a deliberate ending, so this router's mirrored
+      // notes are archived here: the webview is already gone and cannot run its
+      // own close coordinator. A `WebviewView` disposal is *not* an ending — its
+      // PTYs stay alive — so its *notes* are left in place for the next resolve
+      // to hydrate. Its staged archive deletions are not: the Archive view
+      // promised they were irreversible once this window closed, and the webview
+      // is the window (docs/specs/notepad.md → "VS Code lifecycle").
+      //
+      // Best-effort on both paths: VS Code destroys the container whatever we
+      // say, so a failure is logged rather than allowed to reject out of
+      // `dispose`.
+      const notepadContext = options?.context;
+      // Draining is what keeps `deactivate()` from archiving these a second
+      // time under a fresh batch id; an empty mirror writes nothing. Both
+      // drains are synchronous, so nothing this router reports later can slip
+      // into the write that is now in flight.
+      const write: Promise<unknown> = !notepadContext
+        ? Promise.resolve()
+        : killOnDispose
+          ? refreshMirrorCwds(
+            takeVolatileForRouter(notepadRouterId),
+            ptyManager.getCwd,
+            TEARDOWN_CWD_REFRESH_MS,
+          ).then((refreshed) => archiveVolatileMirror(notepadContext, refreshed))
+          : mutateNotepadArchive(notepadContext, takeStagedForRouter(notepadRouterId));
+      void write
+        .catch((err) => {
+          log.error('[notepad] could not commit a disposed webview\'s archive write:', String(err));
+        })
+        // The kills this disposal owes, once the write that needed them alive
+        // has settled. `toKill` is empty on the non-killing path.
+        .finally(() => {
+          for (const id of toKill) {
+            try { ptyManager.kill(id); }
+            finally { globalOwnedPtyIds.delete(id); }
+          }
+        });
     },
   };
 

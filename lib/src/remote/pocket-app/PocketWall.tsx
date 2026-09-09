@@ -7,7 +7,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import type { DirectoryEntry } from 'server-lib-common';
+import type { DirectoryEntry } from 'remote-lib-common';
 import {
   MobileTerminalUi,
   type MobileTerminalKeyboardMode,
@@ -30,7 +30,10 @@ import {
   directoryWallSessions,
 } from './wall-model';
 
-export function PocketWall({ adapter }: { adapter: RemotePtyAdapter }): React.ReactElement {
+export function PocketWall({ adapter, onError }: {
+  adapter: RemotePtyAdapter;
+  onError?: (error: unknown) => void;
+}): React.ReactElement {
   // App restores the theme before this renders; repeat idempotently so isolated
   // PocketWall consumers receive the same theme contract too.
   usePocketTheme();
@@ -60,8 +63,14 @@ export function PocketWall({ adapter }: { adapter: RemotePtyAdapter }): React.Re
     if (!activePaneId) return;
     const term = getTerminalInstance(activePaneId);
     const dims = term ? { cols: term.cols, rows: term.rows } : null;
-    void activatePane(adapter, activePaneId, dims, refitSession);
-  }, [adapter, activePaneId]);
+    let live = true;
+    void activatePane(adapter, activePaneId, dims, refitSession).catch((error: unknown) => {
+      if (!live) return;
+      if (onError) onError(error);
+      else console.warn('[pocket] could not attach terminal', error);
+    });
+    return () => { live = false; };
+  }, [adapter, activePaneId, onError]);
 
   const wallSessions = useMemo(() => directoryWallSessions(attachableEntries), [attachableEntries]);
   const sessionItems = useMemo(

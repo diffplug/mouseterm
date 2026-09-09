@@ -14,6 +14,13 @@
     "homepage": "https://github.com/honojs/middleware"
   },
   {
+    "name": "@noble/ciphers",
+    "version": "2.4.0",
+    "license": "MIT",
+    "author": "Paul Miller (https://paulmillr.com)",
+    "homepage": "https://paulmillr.com/noble/"
+  },
+  {
     "name": "@phosphor-icons/react",
     "version": "2.1.10",
     "license": "MIT",
@@ -36,45 +43,73 @@
   },
   {
     "name": "@tauri-apps/plugin-shell",
-    "version": "2.3.5",
+    "version": "2.3.6",
     "license": "MIT OR Apache-2.0",
     "author": "Tauri Apps Contributors",
     "homepage": "https://github.com/tauri-apps/plugins-workspace"
   },
   {
     "name": "@tauri-apps/plugin-updater",
-    "version": "2.10.1",
+    "version": "2.11.0",
     "license": "MIT OR Apache-2.0",
     "author": "Tauri Apps Contributors",
     "homepage": "https://github.com/tauri-apps/plugins-workspace"
   },
   {
     "name": "@xterm/addon-fit",
-    "version": "0.12.0-beta.299",
+    "version": "0.12.0-beta.301",
     "license": "MIT",
     "author": "The xterm.js authors",
     "homepage": "https://github.com/xtermjs/xterm.js/tree/master/addons/addon-fit"
   },
   {
+    "name": "@xterm/addon-image",
+    "version": "0.10.0-beta.301",
+    "license": "MIT",
+    "author": "The xterm.js authors",
+    "homepage": "https://github.com/xtermjs/xterm.js/tree/master/addons/addon-image"
+  },
+  {
     "name": "@xterm/addon-unicode-graphemes",
-    "version": "0.5.0-beta.299",
+    "version": "0.5.0-beta.301",
     "license": "MIT",
     "author": "The xterm.js authors",
     "homepage": "https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode-graphemes"
   },
   {
     "name": "@xterm/addon-webgl",
-    "version": "0.20.0-beta.298",
+    "version": "0.20.0-beta.300",
     "license": "MIT",
     "author": "The xterm.js authors",
     "homepage": "https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl"
   },
   {
     "name": "@xterm/xterm",
-    "version": "6.1.0-beta.301",
+    "version": "6.1.0-beta.304",
     "license": "MIT",
     "author": "Christopher Jeffrey, SourceLair Private Company, xterm.js authors",
     "homepage": "https://github.com/xtermjs/xterm.js"
+  },
+  {
+    "name": "@zxing/browser",
+    "version": "0.2.1",
+    "license": "MIT",
+    "author": "David Werth, Luiz Barni",
+    "homepage": "https://github.com/zxing-js/browser"
+  },
+  {
+    "name": "@zxing/library",
+    "version": "0.23.0",
+    "license": "Apache-2.0",
+    "author": "Adrian Toșcă, David Werth, Luiz Barni",
+    "homepage": "https://zxing-js.github.io/library/"
+  },
+  {
+    "name": "@zxing/text-encoding",
+    "version": "0.9.0",
+    "license": "(Unlicense OR Apache-2.0)",
+    "author": "Joshua Bell <inexorabletash@gmail.com>",
+    "homepage": "https://github.com/inexorabletash/text-encoding"
   },
   {
     "name": "agent-base",
@@ -141,7 +176,7 @@
   },
   {
     "name": "hono",
-    "version": "4.13.5",
+    "version": "4.13.7",
     "license": "MIT",
     "author": "Yusuke Wada <yusuke@kamawada.com> (https://github.com/yusukebe)",
     "homepage": "https://hono.dev"
@@ -302,10 +337,24 @@
   },
   {
     "name": "tailwind-variants",
-    "version": "3.2.2",
+    "version": "3.3.1",
     "license": "MIT",
     "author": "Junior Garcia <jrgarciadev@gmail.com>",
     "homepage": "https://github.com/heroui-inc/tailwind-variants"
+  },
+  {
+    "name": "ts-custom-error",
+    "version": "3.3.1",
+    "license": "MIT",
+    "author": "Adrien Gibrat <adrien.gibrat@gmail.com>",
+    "homepage": "github:adriengibrat/ts-custom-error"
+  },
+  {
+    "name": "uqr",
+    "version": "0.1.3",
+    "license": "MIT",
+    "author": "Anthony Fu <anthonyfu117@hotmail.com>",
+    "homepage": "https://github.com/unjs/uqr#readme"
   },
   {
     "name": "VS Code built-in themes",

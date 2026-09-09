@@ -1,7 +1,7 @@
 // Bundles the extension host and the PTY host, and is the single place that
-// bakes the remote Host's allowed relay origins into the build.
+// bakes the Burrow's allowed relay origins into the build.
 //
-// The published extension is scoped to the SaaS origin only, so the Host will
+// The published extension is scoped to the SaaS origin only, so the Burrow will
 // not enroll with, or connect to, an arbitrary server. A selfhoster whose relay
 // is on their own domain or tailnet widens it for their own build:
 //
@@ -9,9 +9,11 @@
 //
 // This mirrors the standalone binary's build-time override
 // (`standalone/scripts/build-sidecar-proxy.mjs`, which bakes the same value into
-// the sidecar's Host) so both Hosts widen the same way with the same variable.
+// the sidecar's Burrow) so both Burrows widen the same way with the same variable.
 // `scripts/csp-defaults.mjs` is the one definition of the default for both. See
-// docs/specs/server.md → "Where a Host may reach a relay server".
+// docs/specs/relay.md → "Where a Burrow may reach a Relay".
+
+import { fileURLToPath } from 'node:url';
 
 import * as esbuild from 'esbuild';
 
@@ -34,6 +36,14 @@ const common = {
   // and would have to be shipped per platform — so they stay as runtime
   // `require`s that `ws` already catches and falls back from.
   external: ['vscode', 'node-pty', 'bufferutil', 'utf-8-validate'],
+  alias: {
+    // Shared `lib/` modules the extension host bundles reach the `dor` CLI's
+    // types through the `dor/*` tsconfig path. esbuild picks the tsconfig
+    // nearest each *input file*, so `vscode-ext/tsconfig.json`'s mapping does
+    // not follow an import out into `lib/`, and `dor` has no package exports to
+    // fall back on. Same alias `lib/vite.config.ts` and standalone carry.
+    dor: fileURLToPath(new URL('../../dor/src', import.meta.url)),
+  },
 };
 
 const builds = [

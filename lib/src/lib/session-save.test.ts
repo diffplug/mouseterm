@@ -7,7 +7,6 @@ const terminalRegistryMocks = vi.hoisted(() => ({
   getLivePersistedAlertState: vi.fn(),
   getTerminalPaneState: vi.fn(),
   isUntouched: vi.fn(),
-  resolveTerminalSessionId: vi.fn(),
 }));
 
 vi.mock('./terminal-registry', () => ({
@@ -15,7 +14,6 @@ vi.mock('./terminal-registry', () => ({
   getLivePersistedAlertState: terminalRegistryMocks.getLivePersistedAlertState,
   getTerminalPaneState: terminalRegistryMocks.getTerminalPaneState,
   isUntouched: terminalRegistryMocks.isUntouched,
-  resolveTerminalSessionId: terminalRegistryMocks.resolveTerminalSessionId,
 }));
 
 import { saveSession } from './session-save';
@@ -75,7 +73,6 @@ describe('saveSession', () => {
       todo: false,
       notification: null,
     });
-    terminalRegistryMocks.resolveTerminalSessionId.mockImplementation((id: string) => id);
     terminalRegistryMocks.getLivePersistedAlertState.mockReturnValue(null);
     terminalRegistryMocks.getTerminalPaneState.mockReturnValue({ titleCandidates: {} });
     terminalRegistryMocks.isUntouched.mockReturnValue(false);
@@ -104,13 +101,12 @@ describe('saveSession', () => {
     });
   });
 
-  it('reads PTY data from the swapped terminal session id but persists the pane id', async () => {
+  it('uses the same Session id for the CWD query and persisted pane', async () => {
     const platform = createPlatform(null);
-    terminalRegistryMocks.resolveTerminalSessionId.mockReturnValue('pane-b');
 
     await saveSession(platform, [{ id: 'pane-a', title: 'Pane A' }]);
 
-    expect(platform.getCwd).toHaveBeenCalledWith('pane-b');
+    expect(platform.getCwd).toHaveBeenCalledWith('pane-a');
     expect(platform.saveState).toHaveBeenCalledWith({
       version: 3,
       doors: [],
@@ -305,11 +301,15 @@ describe('saveSession', () => {
 
   it('persists local browser surface TODO state in the browser pane alert field', async () => {
     const platform = createPlatform(null);
+    // A full live ActivityState, so the assertion below shows the projection
+    // dropping the fields `docs/specs/alert.md` -> Public State forbids on disk.
     terminalRegistryMocks.getActivity.mockReturnValue({
       status: 'WATCHING_DISABLED',
       watchingEnabled: false,
       todo: true,
       notification: null,
+      awaited: false,
+      ringSeq: 3,
     });
 
     await saveSession(platform, [
@@ -319,7 +319,6 @@ describe('saveSession', () => {
     const saved = vi.mocked(platform.saveState).mock.calls[0]![0] as PersistedSession;
     expect(saved.panes.find((p) => p.id === 'pane-web')!.alert).toEqual({
       status: 'WATCHING_DISABLED',
-      watchingEnabled: false,
       todo: true,
       notification: null,
     });

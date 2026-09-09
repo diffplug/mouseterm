@@ -5,6 +5,7 @@
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -30,6 +31,8 @@ import { BrowserPanel } from './BrowserPanel';
 import { TerminalPaneHeader } from './TerminalPaneHeader';
 import { SurfacePaneHeader } from './SurfacePaneHeader';
 import { AlertSpeechIndicator } from './AlertSpeechIndicator';
+import { TerminalContext } from './TerminalContext';
+import { TerminalContextContext } from './wall-context';
 
 /** Widened pointer target over each (thin) sash band, in px. */
 const SASH_HIT = 8;
@@ -98,15 +101,23 @@ const TAB_COMPONENTS: Record<string, ComponentType<PaneProps>> = {
   surface: SurfacePaneHeader,
 };
 
-/** For a terminal Surface the pane id is its session id (docs/specs/layout.md). */
-function TerminalLeafOverlay({ id }: PaneProps) {
-  return <AlertSpeechIndicator sessionId={id} />;
+/** For a terminal Surface the pane id is its session id (docs/specs/layout.md).
+ *  The terminal context floats over the whole leaf, so it lives here rather than
+ *  in the body, whose clipping box it must escape. */
+function TerminalLeafOverlay({ id, title }: PaneProps) {
+  const { mounted } = useContext(TerminalContextContext);
+  return (
+    <>
+      <AlertSpeechIndicator sessionId={id} />
+      {mounted?.id === id && <TerminalContext {...mounted} title={title} />}
+    </>
+  );
 }
 
-// Whole-leaf overlays keyed by `leafMeta.component`: pointer-transparent chrome
-// spanning header *and* body, which neither the Body nor the Tab slot can cover.
-// Keyed off the same metadata as those two so leaf content resolves one way, not
-// one way plus a surface-kind branch in the render path.
+// Whole-leaf overlays keyed by `leafMeta.component`: chrome spanning header *and*
+// body, which neither the Body nor the Tab slot can cover. Keyed off the same
+// metadata as those two so leaf content resolves one way, not one way plus a
+// surface-kind branch in the render path.
 const OVERLAY_COMPONENTS: Record<string, ComponentType<PaneProps>> = {
   terminal: TerminalLeafOverlay,
 };

@@ -1,3 +1,4 @@
+import { isRecord } from './is-record';
 import type { SessionStatus } from './alert-manager';
 import { ACTIVITY_NOTIFICATION_SOURCES, type ActivityNotification, type TodoState } from './alert-manager';
 
@@ -20,6 +21,20 @@ export interface PersistedPane {
   untouched: boolean;
   alert?: PersistedAlertState | null;
   surfaceType?: PersistedSurfaceType;
+}
+
+/**
+ * Narrow live Activity down to what may reach disk. An explicit projection, not
+ * a structurally-assignable pass-through: `ActivityState` is a superset, and
+ * `JSON.stringify` writes every extra field it grows
+ * (`docs/specs/alert.md` -> Public State, "Persist only").
+ */
+export function toPersistedAlertState(state: PersistedAlertState): PersistedAlertState {
+  return {
+    status: state.status,
+    todo: state.todo,
+    notification: state.notification ?? null,
+  };
 }
 
 /** Shared browser-pane projection for renderer saves and VS Code host refresh. */
@@ -99,10 +114,6 @@ interface PersistedSessionV3Input {
 }
 
 // --- Validation guards (reject untrusted blobs) ---
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
 
 function isPersistedAlertShape(value: unknown): boolean {
   if (value === null) return true;

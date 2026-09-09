@@ -70,7 +70,7 @@ function AgentBrowserScreenModalStory(args: StoryArgs) {
   const controller = useMockController(args);
   return (
     <div className="relative h-[560px] w-[760px] overflow-hidden rounded bg-app-bg font-mono text-terminal-fg">
-      <div className="p-4 text-sm text-muted">agent-browser surface — click the SYNCED/SCALED chip to open this.</div>
+      <div className="p-4 text-sm text-muted">agent-browser surface — click its display icons to open this.</div>
       <AgentBrowserScreenModal controller={controller} label="surface:3" onClose={() => console.log('[story] close')} />
     </div>
   );
@@ -121,20 +121,6 @@ export const ScaledCustom: Story = {
   args: {
     state: 'SCALED',
     vpW: 1280, vpH: 720, vpDpr: 1,
-    paneW: 980, paneH: 560,
-    displayDpr: 2,
-    syncEngaged: false,
-    hostCapable: true,
-  },
-};
-
-// A phone-emulating viewport (e.g. after `set device "iPhone 16"`). Still
-// pre-selects Custom (devices can't be pre-matched without a dims map), but the
-// Device list is the obvious next pick.
-export const PhoneViewport: Story = {
-  args: {
-    state: 'SCALED',
-    vpW: 393, vpH: 852, vpDpr: 3,
     paneW: 980, paneH: 560,
     displayDpr: 2,
     syncEngaged: false,

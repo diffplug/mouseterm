@@ -36,6 +36,13 @@ describe('lath-wall-engine seed', () => {
     expect(engine.getMeta('p1')).toMatchObject({ component: 'terminal', tabComponent: 'terminal' });
   });
 
+  it('falls back to fresh panes for malformed persisted nodes instead of throwing', () => {
+    const engine = createLathWallEngine();
+    expect(engine.seed({ version: 1, tree: { root: {} }, leafMeta: {} }, ['p1'], () => 'gen'))
+      .toEqual({ paneIds: ['p1'], fresh: true });
+    expect(engine.getMeta('p1')?.component).toBe('terminal');
+  });
+
   it('(b) generates a single pane id when initialPaneIds is empty', () => {
     const engine = createLathWallEngine();
     const { paneIds, fresh } = engine.seed(undefined, undefined, () => 'generated-1');

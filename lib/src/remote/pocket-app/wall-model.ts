@@ -1,13 +1,13 @@
 /** Pure directory-snapshot → mobile-wall projection; see `docs/specs/pocket-app.md`. */
 
-import type { DirectoryEntry } from 'server-lib-common';
+import type { DirectoryEntry } from 'remote-lib-common';
 import type { MobileWallSession } from '../../components/MobileWall';
 import type { MobileTerminalSessionItem } from '../../components/MobileTerminalUi';
 import type { SessionStatus } from '../../lib/terminal-registry';
 
 const DEFAULT_TITLE = 'Terminal';
 
-/** Title for a surface, falling back to a friendly default when the Host sends none. */
+/** Title for a surface, falling back to a friendly default when the Burrow sends none. */
 function paneTitle(entry: DirectoryEntry): string {
   return entry.title || DEFAULT_TITLE;
 }
@@ -16,7 +16,7 @@ export function attachableDirectoryEntries(entries: DirectoryEntry[]): Directory
   return entries.filter((entry) => entry.alive);
 }
 
-/** The `{id,title}` sessions `MobileWall` mounts, in Host order. */
+/** The `{id,title}` sessions `MobileWall` mounts, in Burrow order. */
 export function directoryWallSessions(entries: DirectoryEntry[]): MobileWallSession[] {
   return attachableDirectoryEntries(entries).map((entry) => ({
     id: entry.surfaceId,
@@ -40,6 +40,10 @@ export function directorySessionItems(
     secondary: secondaryLine(entry),
     active: entry.surfaceId === activeSurfaceId,
     status: statusFor(entry),
+    // `DirectoryEntry.ringing` is a boolean union with no per-ring edge, so a
+    // remote bell rings once on mount and then holds (`docs/specs/alert.md` ->
+    // Pane Header). Carrying the count on the wire is what would fix it.
+    ringSeq: 0,
     todo: entry.hasTODO,
   }));
 }

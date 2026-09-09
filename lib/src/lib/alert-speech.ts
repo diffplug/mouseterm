@@ -8,6 +8,7 @@ import {
 } from './alert-speech-state';
 import { getActivity, getActivitySnapshot, subscribeToActivity } from './session-activity-store';
 import { deriveSessionLabel } from './session-label';
+import { redactHighEntropyTokens } from './redact-high-entropy';
 
 // Speech sink and sanitizer; alert-ring-watch owns ring timing/cancellation.
 // Engine callbacks publish transient renderer-local delivery state.
@@ -19,13 +20,17 @@ const SPEECH_LIMIT = 120;
 const MAX_TRACKED_UTTERANCES = 8;
 
 /** Sanitize a display label for speech. WebKit wedges on angle brackets; replace
- * metacharacters with spaces so adjacent words do not join. */
+ * punctuation, symbols, and controls with spaces so adjacent words do not join. */
 export function toSpokenText(label: string): string {
-  const cleaned = label
-    // Control characters are meaningless aloud and arrive with untrusted
-    // terminal titles.
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
-    .replace(/[<>&*]/g, ' ')
+  // Detect whole tokens before punctuation splitting or the speech length cap
+  // can leave a secret's otherwise unrecognizable fragments in the utterance.
+  const cleaned = redactHighEntropyTokens(label)
+    // Elide apostrophes so contractions stay intact: spacing `didn't` would
+    // leave a lone `t` for the engine to announce.
+    .replace(/['’]/gu, '')
+    // Unicode properties preserve letters, numbers, and combining marks from
+    // every script while dropping characters a speech engine may announce.
+    .replace(/[\p{P}\p{S}\p{C}]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   // Capped in code points, matching `boundedPushText`: a cut mid-surrogate
@@ -112,6 +117,10 @@ export function startAlertSpeech(): () => void {
   // state of a newer ring for the same Session. The opaque token makes every
   // utterance generation distinct without exposing engine objects to the store.
   const currentToken = new Map<string, object>();
+  // Guard callbacks from queue admission onward, before the utterance starts.
+  // One identity per ringing Session covers evicted callbacks too; redispatch
+  // replaces it, and resolving the ring removes it.
+  const admittedTokens = new Map<string, object>();
   const utterances = new Set<SpeechSynthesisUtterance>();
   // Utterances the engine has accepted but not begun, at most one per Session —
   // exactly what `interrupt` has to put back. This index is capped together with
@@ -171,12 +180,14 @@ export function startAlertSpeech(): () => void {
     const token = {};
     speak(deriveSessionLabel(sessionId), {
       onQueued: (utterance) => {
+        admittedTokens.set(sessionId, token);
         track(utterance);
         // Refresh insertion order if a newer ring replaces the same Session.
         queued.delete(sessionId);
         queued.set(sessionId, utterance);
       },
       onStart: (utterance) => {
+        if (admittedTokens.get(sessionId) !== token) return;
         // A late callback from an evicted/older generation must not delete a
         // newer queued utterance for the same Session.
         if (queued.get(sessionId) === utterance) queued.delete(sessionId);
@@ -222,8 +233,11 @@ export function startAlertSpeech(): () => void {
     // (`getActivitySnapshot()` memoizes, so this is an early-out, not a saving:
     // Baseboard's own subscriber rebuilds that Map in the same notification.)
     const speech = getAlertSpeechSnapshot();
-    if (speech.size === 0 && queued.size === 0) return;
+    if (speech.size === 0 && queued.size === 0 && admittedTokens.size === 0) return;
     const activity = getActivitySnapshot();
+    for (const sessionId of admittedTokens.keys()) {
+      if (activity.get(sessionId)?.status !== 'ALERT_RINGING') admittedTokens.delete(sessionId);
+    }
     // A queued-only Session has no rendered delivery state, so it is absent from
     // `speech`. Prune its old ring here anyway: if the Session rings again before
     // an unrelated interrupt, that stale entry must not bypass the new ring's
@@ -255,8 +269,9 @@ export function startAlertSpeech(): () => void {
     unsubscribeActivity();
     // Evicted utterances keep their handlers (see `track`), so detaching below
     // does not reach them. Dropping the tokens is what makes any late callback
-    // from one inert: `settle` early-outs on the generation check.
+    // from one inert: both start and settle check their generation identities.
     currentToken.clear();
+    admittedTokens.clear();
     for (const utterance of utterances) detach(utterance);
     utterances.clear();
     queued.clear();

@@ -37,10 +37,11 @@ export interface WallKeyboardCtx {
   enterTerminalMode: (id: string) => void;
   exitTerminalMode: () => void;
   minimizePane: (id: string) => void;
-  killPaneImmediately: (id: string) => void;
+  /** The kill gesture: `requestKill` in `lib/src/components/Wall.tsx` decides
+   *  between reattach, immediate closure, and the confirm overlay. */
+  requestKill: (id: string) => void;
   acceptKill: () => void;
   rejectKill: () => void;
-  setConfirmKill: Dispatch<SetStateAction<ConfirmKill | null>>;
   setRenamingPaneId: Dispatch<SetStateAction<string | null>>;
   fireEvent: (event: WallEvent) => void;
 }

@@ -1,3 +1,4 @@
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../../lib/src/lib/terminal-context-types';
 import type {
   AgentBrowserCommandResult,
   AgentBrowserEditOp,
@@ -10,35 +11,39 @@ import type {
   IframeProxyResult,
   OpenPort,
   PlatformAdapter,
+  PtyDataDetail,
   PtyInfo,
-  RemoteHostLink,
+  BurrowLink,
 } from "dormouse-lib/lib/platform/types";
 import {
   answerAskCommand,
-  createRemoteHostLinkClient,
+  createBurrowLinkClient,
   notifyCommand,
 } from "dormouse-lib/host/remote/link-client";
 import {
-  REMOTE_HOST_ASK_EVENT,
-  REMOTE_HOST_EVENT_EVENT,
-  REMOTE_HOST_RESULT_EVENT,
-  type RemoteHostAsk,
-  type RemoteHostCommand,
-  type RemoteHostResult,
+  BURROW_ASK_EVENT,
+  BURROW_EVENT_EVENT,
+  BURROW_RESULT_EVENT,
+  type BurrowAsk,
+  type BurrowCommand,
+  type BurrowResult,
 } from "dormouse-lib/host/remote/service-protocol";
+import { embedderOrigins } from "dormouse-lib/lib/embedder-origins";
 import { AlertManager } from "dormouse-lib/lib/alert-manager";
 import type { AwaitHandle, AwaitOptions } from "dormouse-lib/lib/alert-manager";
 import type { AlertSettings } from "dormouse-lib/lib/alert-settings";
 import { normalizeExternalUri } from "dormouse-lib/lib/external-links";
+import { createMemoryNotepadArchivePort } from "dormouse-lib/lib/notepad/memory-archive-port";
 import { loadSessionState, saveSessionState } from "dormouse-lib/lib/window-persistence";
 import {
   applyTerminalProtocolEvents,
   collectTerminalSemanticEvents,
-  collectTerminalProtocolResponses,
   TerminalProtocolParser,
+  type TerminalProtocolEvent,
 } from "dormouse-lib/lib/terminal-protocol";
-import { themeColorProvider } from "dormouse-lib/lib/terminal-theme";
-import { applyTerminalSemanticEventsByPtyId } from "dormouse-lib/lib/terminal-state-store";
+import { getTerminalTheme, onTerminalThemeChange, themeColorProvider } from "dormouse-lib/lib/terminal-theme";
+import type { TerminalSemanticEvent } from "dormouse-lib/lib/terminal-state";
+import { applyTerminalSemanticEvents } from "dormouse-lib/lib/terminal-state-store";
 import type { DorControlCancelPayload, DorControlRequestPayload } from "dor/protocol";
 import {
   cancelDorControlRequest,
@@ -56,28 +61,31 @@ function decodeBase64Bytes(base64: string): Uint8Array {
 }
 
 export class BrowserSidecarAdapter implements PlatformAdapter {
-  private dataHandlers = new Set<(detail: { id: string; data: string }) => void>();
+  private dataHandlers = new Set<(detail: PtyDataDetail) => void>();
   private exitHandlers = new Set<(detail: { id: string; exitCode: number }) => void>();
   private listHandlers = new Set<(detail: { ptys: PtyInfo[] }) => void>();
   private replayHandlers = new Set<(detail: { id: string; data: string }) => void>();
   private alertStateHandlers = new Set<(detail: AlertStateDetail) => void>();
-  private protocolParsers = new Map<string, TerminalProtocolParser>();
   private alertManager = new AlertManager();
   private unlistenHost: (() => void) | null = null;
   // Remote-host bridge, identical in shape to TauriAdapter's — the dev harness
-  // forwards the same `remoteHost:*` messages over its own transport.
-  private readonly remoteHostClient = createRemoteHostLinkClient({
-    sendCommand: (command) => this.sendRemoteHostCommand(command),
-    answerAsk: (askId, results) => this.sendRemoteHostCommand(answerAskCommand(askId, results)),
-    notify: () => this.sendRemoteHostCommand(notifyCommand()),
+  // forwards the same `burrow:*` messages over its own transport.
+  private readonly burrowClient = createBurrowLinkClient({
+    sendCommand: (command) => this.sendBurrowCommand(command),
+    answerAsk: (askId, results) => this.sendBurrowCommand(answerAskCommand(askId, results)),
+    notify: () => this.sendBurrowCommand(notifyCommand()),
   });
 
-  readonly remoteHost: RemoteHostLink = this.remoteHostClient.link;
+  readonly burrow: BurrowLink = this.burrowClient.link;
 
   constructor(private readonly host: BrowserSidecarHost) {
     this.alertManager.onStateChange((id, state) => {
       for (const handler of this.alertStateHandlers) handler({ id, ...state });
     });
+
+    // See TauriAdapter: the sidecar parses and has no DOM, so it is told the
+    // resolved terminal colors whenever they change.
+    onTerminalThemeChange(() => this.pushThemeColors());
 
     // Some of these get called through detached references (e.g. the iframe
     // panel does `const createProxy = getPlatform().createIframeProxyUrl`), which
@@ -102,16 +110,15 @@ export class BrowserSidecarAdapter implements PlatformAdapter {
 
   shutdown(): void {
     this.alertManager.dispose();
-    this.protocolParsers.clear();
     this.unlistenHost?.();
     this.unlistenHost = null;
-    this.remoteHostClient.dispose();
+    this.burrowClient.dispose();
     this.host.send("kill_sidecar_now");
     this.host.close();
   }
 
-  private sendRemoteHostCommand(command: RemoteHostCommand): void {
-    this.host.send("remote_host_command", { payload: command });
+  private sendBurrowCommand(command: BurrowCommand): void {
+    this.host.send("burrow_command", { payload: command });
   }
 
   async getAvailableShells(): Promise<{ name: string; path: string; args?: string[] }[]> {
@@ -122,8 +129,14 @@ export class BrowserSidecarAdapter implements PlatformAdapter {
     }
   }
 
-  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void {
-    this.protocolParsers.set(id, new TerminalProtocolParser(themeColorProvider));
+  async terminalContext(request: TerminalContextRequest): Promise<TerminalContextInfo> {
+    const result = await this.host.invoke<TerminalContextInfo>('pty_context', { request });
+    if (result.error) throw new Error(result.error);
+    if (request.op === 'promote') this.alertManager.setHelper(request.id, !!request.restore);
+    return result;
+  }
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[]; helper?: HelperIdentity }): void {
+    if (options?.helper) this.alertManager.setHelper(id, true);
     this.host.send("pty_spawn", { id, options });
   }
 
@@ -136,7 +149,6 @@ export class BrowserSidecarAdapter implements PlatformAdapter {
   }
 
   killPty(id: string): void {
-    this.protocolParsers.delete(id);
     this.host.send("pty_kill", { id });
   }
 
@@ -162,7 +174,10 @@ export class BrowserSidecarAdapter implements PlatformAdapter {
 
   async createIframeProxyUrl(targetUrl: string): Promise<IframeProxyResult> {
     try {
-      return await this.host.invoke("iframe_create_proxy_url", { target: targetUrl });
+      return await this.host.invoke("iframe_create_proxy_url", {
+        target: targetUrl,
+        embedderOrigins: embedderOrigins(),
+      });
     } catch (err) {
       return { ok: false, reason: "unreachable", detail: errMessage(err) };
     }
@@ -222,11 +237,14 @@ export class BrowserSidecarAdapter implements PlatformAdapter {
   // where a drop yields `File` objects and no host paths, so there is nothing to
   // report. Implementing it would claim the capability and never fire.
 
-  onPtyData(handler: (detail: { id: string; data: string }) => void): void { this.dataHandlers.add(handler); }
-  offPtyData(handler: (detail: { id: string; data: string }) => void): void { this.dataHandlers.delete(handler); }
+  onPtyData(handler: (detail: PtyDataDetail) => void): void { this.dataHandlers.add(handler); }
+  offPtyData(handler: (detail: PtyDataDetail) => void): void { this.dataHandlers.delete(handler); }
   onPtyExit(handler: (detail: { id: string; exitCode: number }) => void): void { this.exitHandlers.add(handler); }
   offPtyExit(handler: (detail: { id: string; exitCode: number }) => void): void { this.exitHandlers.delete(handler); }
-  requestInit(): void { this.host.send("pty_request_init"); }
+  requestInit(): void {
+    this.host.send("pty_request_init");
+    this.pushThemeColors();
+  }
   onPtyList(handler: (detail: { ptys: PtyInfo[] }) => void): void { this.listHandlers.add(handler); }
   offPtyList(handler: (detail: { ptys: PtyInfo[] }) => void): void { this.listHandlers.delete(handler); }
   onPtyReplay(handler: (detail: { id: string; data: string }) => void): void { this.replayHandlers.add(handler); }
@@ -238,7 +256,7 @@ export class BrowserSidecarAdapter implements PlatformAdapter {
   alertRemove(id: string): void { this.alertManager.remove(id); }
   alertSetWatchedCommands(names: string[]): void { this.alertManager.setWatchedCommands(names); }
   alertSetCommandWatched(name: string, watched: boolean): void { this.alertManager.setCommandWatched(name, watched); }
-  alertPublishSettings(settings: AlertSettings): void { this.alertManager.setInactivityTimeoutMs(settings.inactivityTimeoutMs); }
+  alertPublishSettings(settings: AlertSettings): void { this.alertManager.applySettings(settings); }
   alertDismiss(id: string): void { this.alertManager.dismissAlert(id); }
   alertAttend(id: string): void { this.alertManager.attend(id); }
   alertResize(id: string): void { this.alertManager.onResize(id); }
@@ -278,6 +296,17 @@ export class BrowserSidecarAdapter implements PlatformAdapter {
     }
   }
 
+  // The notepad archive as memory, not the Tauri file: this harness is a browser
+  // tab with no app-data directory, and a dev run must not write into (or read)
+  // the installed app's archive. Notes last as long as the page
+  // (docs/specs/notepad.md).
+  readonly notepadArchive = createMemoryNotepadArchivePort();
+
+  // Cmd/Ctrl+N opens a browser window before any listener sees it, so the
+  // harness shows no chord and binds none — the same reason the website's demo
+  // adapter sets this. The shipped Tauri build owns its keyboard and does not.
+  readonly browserReservesNotepadChord = true;
+
   // Delete (not just ignore) pre-gate blobs: they carry transcripts and localStorage
   // outlives the harness's per-run temp state dir.
   private clearPersistedState(): void {
@@ -288,35 +317,39 @@ export class BrowserSidecarAdapter implements PlatformAdapter {
 
   private handleHostEvent(event: string, data: unknown): void {
     if (event === "pty:data") {
-      const { id, data: text } = data as { id: string; data: string };
-      const parsed = this.getProtocolParser(id).process(text);
-      applyTerminalProtocolEvents(this.alertManager, id, parsed.events);
-      const semanticEvents = collectTerminalSemanticEvents(parsed.events);
-      this.alertManager.applyTerminalSemanticEvents(id, semanticEvents);
-      applyTerminalSemanticEventsByPtyId(id, semanticEvents);
-      for (const response of collectTerminalProtocolResponses(parsed.events)) this.writePty(id, response);
-      if (parsed.visibleData.length === 0) return;
-      this.alertManager.onData(id);
-      for (const handler of this.dataHandlers) handler({ id, data: parsed.visibleData });
+      // Already parsed by the sidecar, which owns the PTY; its events arrive as
+      // the two messages below (docs/specs/terminal-escapes.md).
+      const payload = data as PtyDataDetail;
+      this.alertManager.onData(payload.id);
+      for (const handler of this.dataHandlers) handler(payload);
+    } else if (event === "terminal:protocolEvents") {
+      const payload = data as { id: string; events: TerminalProtocolEvent[] };
+      applyTerminalProtocolEvents(this.alertManager, payload.id, payload.events);
+    } else if (event === "terminal:semanticEvents") {
+      const { id, events } = data as { id: string; events: TerminalSemanticEvent[] };
+      this.alertManager.applyTerminalSemanticEvents(id, events);
+      applyTerminalSemanticEvents(id, events);
     } else if (event === "pty:exit") {
       const payload = data as { id: string; exitCode: number };
       this.alertManager.onExit(payload.id, payload.exitCode);
-      this.protocolParsers.delete(payload.id);
       for (const handler of this.exitHandlers) handler(payload);
     } else if (event === "pty:list") {
+      for (const pty of (data as { ptys: PtyInfo[] }).ptys) if (pty.helper) this.alertManager.setHelper(pty.id, true);
       for (const handler of this.listHandlers) handler(data as { ptys: PtyInfo[] });
     } else if (event === "pty:replay") {
+      // The one stream the sidecar does not parse; see TauriAdapter, including
+      // why the one-shot parser still needs the theme.
       const { id, data: text } = data as { id: string; data: string };
-      const parsed = this.getProtocolParser(id).process(text);
-      applyTerminalSemanticEventsByPtyId(id, collectTerminalSemanticEvents(parsed.events));
+      const parsed = new TerminalProtocolParser(themeColorProvider).process(text);
+      applyTerminalSemanticEvents(id, collectTerminalSemanticEvents(parsed.events));
       for (const handler of this.replayHandlers) handler({ id, data: parsed.visibleData });
-    } else if (event === REMOTE_HOST_RESULT_EVENT) {
-      this.remoteHostClient.onResult(data as RemoteHostResult);
-    } else if (event === REMOTE_HOST_ASK_EVENT) {
-      const ask = data as RemoteHostAsk;
-      this.remoteHostClient.onAsk(ask.rhId, ask.op, ask.params);
-    } else if (event === REMOTE_HOST_EVENT_EVENT) {
-      this.remoteHostClient.onEvent(data);
+    } else if (event === BURROW_RESULT_EVENT) {
+      this.burrowClient.onResult(data as BurrowResult);
+    } else if (event === BURROW_ASK_EVENT) {
+      const ask = data as BurrowAsk;
+      this.burrowClient.onAsk(ask.burrowRequestId, ask.op, ask.params);
+    } else if (event === BURROW_EVENT_EVENT) {
+      this.burrowClient.onEvent(data);
     } else if (event === "dor:controlRequest") {
       const payload = data as DorControlRequestPayload;
       dispatchDorControlRequest(payload, (response) => {
@@ -329,13 +362,16 @@ export class BrowserSidecarAdapter implements PlatformAdapter {
     }
   }
 
-  private getProtocolParser(id: string): TerminalProtocolParser {
-    let parser = this.protocolParsers.get(id);
-    if (!parser) {
-      parser = new TerminalProtocolParser(themeColorProvider);
-      this.protocolParsers.set(id, parser);
-    }
-    return parser;
+  /** See TauriAdapter.pushThemeColors: the sidecar's parser answers OSC 10/11/12. */
+  private pushThemeColors(): void {
+    const theme = getTerminalTheme();
+    this.host.send("pty_theme_colors", {
+      colors: {
+        foreground: theme.foreground,
+        background: theme.background,
+        cursor: theme.cursor,
+      },
+    });
   }
 
   private installConsoleForwarder(): void {

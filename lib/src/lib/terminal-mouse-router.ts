@@ -11,7 +11,7 @@ import {
   stateRequiresNativeMouseSuppression,
   updateDrag,
 } from './mouse-selection';
-import { detectTokenAt } from './smart-token';
+import { detectTokenInBufferLine } from './smart-token';
 import { extractSelectionText } from './selection-text';
 import type { TerminalOverlayDims } from './terminal-store';
 
@@ -67,6 +67,10 @@ export function attachTerminalMouseRouter({
     return { row: absRow, col, startedInScrollback };
   };
 
+  // xterm's linkifier listens on its screen, not our outer wrapper. Capture
+  // there so even a plain click's retargeted mouseup reaches the link handler.
+  // Take capture on pointerdown: the first move may already be outside the iframe.
+  const mouseCaptureElement = element.querySelector<HTMLElement>('.xterm-screen') ?? element;
   const DRAG_THRESHOLD_PX_SQ = 16;
   // Touch has no Alt key, so a double-tap-then-drag is how a block selection is
   // started on touch. A second touch within this window and distance of the
@@ -82,7 +86,6 @@ export function attachTerminalMouseRouter({
     button: number;
     clientX: number;
     clientY: number;
-    pointerId: number | null;
     touchLike: boolean;
   } | null = null;
   let activePointerId: number | null = null;
@@ -112,9 +115,14 @@ export function attachTerminalMouseRouter({
 
   const beginPendingDrag = (
     ev: MouseEvent | PointerEvent,
-    opts: { pointerId: number | null; touchLike: boolean; block?: boolean },
+    opts: { touchLike: boolean; block?: boolean },
   ) => {
     const { state, cell, terminalOwns } = terminalOwnsEvent(ev);
+    // Touch suppresses compatibility mousedown, so popup's mouse listener
+    // cannot clear a previous selection for us.
+    setSelection(id, null);
+    setHintToken(id, null);
+    setSelectionBaseline(null);
     if (!terminalOwns) return false;
     const suppressNativeMouse = state.mouseReporting !== 'none';
     if (suppressNativeMouse || opts.touchLike) {
@@ -131,7 +139,6 @@ export function attachTerminalMouseRouter({
       button: ev.button,
       clientX: ev.clientX,
       clientY: ev.clientY,
-      pointerId: opts.pointerId,
       touchLike: opts.touchLike,
     };
     return true;
@@ -170,8 +177,7 @@ export function attachTerminalMouseRouter({
     if (!consumed) consumePointerEvent(ev, suppressNativeMouse || isNonMousePointerEvent(ev));
 
     const line = terminal.buffer.active.getLine(cell.row);
-    const text = line?.translateToString(false, 0, terminal.cols);
-    const token = text ? detectTokenAt(text, cell.col) : null;
+    const token = line ? detectTokenInBufferLine(line, cell.col) : null;
     setHintToken(id, token ? {
       kind: token.kind,
       row: cell.row,
@@ -212,26 +218,18 @@ export function attachTerminalMouseRouter({
       consumePointerEvent(ev, true);
       return;
     }
-    beginPendingDrag(ev, { pointerId: null, touchLike: false });
+    beginPendingDrag(ev, { touchLike: false });
   };
 
   const onPointerDown = (ev: PointerEvent) => {
     if (ev.pointerType === 'mouse') {
-      // Capture the mouse pointer for left-button presses on terminal-owned
-      // content so a selection drag released *outside* our iframe still reports
-      // back. Chromium delivers the captured pointerup across the frame boundary
-      // even when the button comes up over the host page, letting onWindowPointerUp
-      // finalize the drag immediately rather than waiting for the cursor to wander
-      // back in (the window-mousemove heal). Engines that don't honor cross-frame
-      // capture get no such pointerup and fall back to that heal.
       if (ev.button !== 0) return;
-      const { terminalOwns } = terminalOwnsEvent(ev);
-      if (!terminalOwns) return;
+      if (!terminalOwnsEvent(ev).terminalOwns) return;
       try {
-        element.setPointerCapture(ev.pointerId);
+        mouseCaptureElement.setPointerCapture(ev.pointerId);
         mouseDragPointerId = ev.pointerId;
       } catch {
-        // Best-effort continuity aid; the heal still covers us if capture is rejected.
+        // The window-mousemove heal still covers an outside release.
         mouseDragPointerId = null;
       }
       return;
@@ -245,7 +243,7 @@ export function attachTerminalMouseRouter({
     const doubleTap = lastTouchTap !== null
       && Date.now() - lastTouchTap.time <= DOUBLE_TAP_MS
       && dx * dx + dy * dy <= DOUBLE_TAP_DIST_PX_SQ;
-    const handled = beginPendingDrag(ev, { pointerId: ev.pointerId, touchLike: true, block: doubleTap });
+    const handled = beginPendingDrag(ev, { touchLike: true, block: doubleTap });
     if (!handled) return;
     activePointerId = ev.pointerId;
     suppressSyntheticMouseUntil = Date.now() + 800;
@@ -302,7 +300,7 @@ export function attachTerminalMouseRouter({
       mouseDragPointerId = null;
       // Capture auto-releases on pointerup, but be explicit.
       try {
-        element.releasePointerCapture(ev.pointerId);
+        mouseCaptureElement.releasePointerCapture(ev.pointerId);
       } catch {
         // already released
       }
@@ -351,7 +349,7 @@ export function attachTerminalMouseRouter({
 
   const onAltChange = (ev: KeyboardEvent) => {
     if (!isDragging(id)) return;
-    setDragAlt(id, ev.altKey);
+    setDragAlt(id, ev.altKey || dragBlock);
   };
 
   element.addEventListener('mousedown', onMouseDown, true);

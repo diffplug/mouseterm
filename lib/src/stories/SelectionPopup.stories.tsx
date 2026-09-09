@@ -100,19 +100,22 @@ const meta: Meta<typeof SelectionPopupStory> = {
 export default meta;
 type Story = StoryObj<typeof SelectionPopupStory>;
 
-// Desktop: copy buttons carry their keyboard shortcuts and, for a downward drag,
-// sit below the selection.
+const SELECTION: Omit<Selection, 'startedInScrollback'> = {
+  startRow: 2,
+  startCol: 5,
+  endRow: 6,
+  endCol: 24,
+  shape: 'linewise',
+  dragging: false,
+};
+
+// Desktop: all three buttons carry their keyboard shortcuts and, for a downward
+// drag, sit below the selection. The fake adapter has an in-memory notepad
+// archive, so Add to notepad is present here as it is in every real desktop host.
 export const Desktop: Story = {
   args: {
     id: 'selection-popup-desktop',
-    selection: {
-      startRow: 2,
-      startCol: 5,
-      endRow: 6,
-      endCol: 24,
-      shape: 'linewise',
-      dragging: false,
-    },
+    selection: SELECTION,
   },
 };
 
@@ -122,13 +125,6 @@ export const Mobile: Story = {
   args: {
     id: 'selection-popup-mobile',
     touch: true,
-    selection: {
-      startRow: 2,
-      startCol: 5,
-      endRow: 6,
-      endCol: 24,
-      shape: 'linewise',
-      dragging: false,
-    },
+    selection: SELECTION,
   },
 };

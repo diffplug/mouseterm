@@ -11,11 +11,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type {
-  RemoteHostCommand,
-  RemoteHostResult,
+  BurrowCommand,
+  BurrowResult,
 } from '../../lib/src/host/remote/service-protocol';
 import type { PeerLinkClient, PeerLinkDeps } from '../src/peer-link';
-import { createProcessedPtyStreams } from '../src/processed-pty-streams';
+import {
+  createProcessedPtyStreams,
+  type ProcessedPtyChunk,
+} from '../src/processed-pty-streams';
 
 export async function tempStorageDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'dormouse-ext-'));
@@ -24,7 +27,7 @@ export async function tempStorageDir(): Promise<string> {
 /**
  * The one path every window of an installation contends for, mirroring
  * `socketPath()` and `peerDirPath()`. Duplicated on purpose: a derivation that
- * drifted would silently give each window its own lease and its own Host, and
+ * drifted would silently give each window its own lease and its own Burrow, and
  * the per-user directory is the layer that keeps another OS user from creating
  * the path first.
  */
@@ -93,13 +96,19 @@ export function fakeWindow(
     ownPtyIds?: string[];
   } = {},
 ) {
-  const dataListeners = new Set<(id: string, data: string) => void>();
+  const chunkListeners = new Map<string, Set<(chunk: ProcessedPtyChunk) => void>>();
   const exitListeners = new Set<(id: string, exitCode: number) => void>();
   const ptyStatuses = new Map<string, { alive: boolean; exitCode?: number }>();
   const streams = createProcessedPtyStreams(
-    (listener) => {
-      dataListeners.add(listener);
-      return () => void dataListeners.delete(listener);
+    (ptyId, onChunk) => {
+      let listeners = chunkListeners.get(ptyId);
+      if (!listeners) {
+        listeners = new Set();
+        chunkListeners.set(ptyId, listeners);
+      }
+      const subscribed = listeners;
+      subscribed.add(onChunk);
+      return () => void subscribed.delete(onChunk);
     },
     (listener) => {
       exitListeners.add(listener);
@@ -112,20 +121,21 @@ export function fakeWindow(
     surfaces: options.surfaces ?? {},
     ownPtyIds: new Set(options.ownPtyIds ?? []),
     writes: [] as Array<{ ptyId: string; data: string }>,
-    resizes: [] as Array<{ ptyId: string; cols: number; rows: number }>,
+    resizes: [] as Array<{ ptyId: string; cols: number; rows: number; repaint?: boolean }>,
     invalidations: 0,
     /** Commands this window was asked to run for another one, and who asked. */
-    forwarded: [] as Array<{ payload: RemoteHostCommand; from: PeerLinkClient }>,
+    forwarded: [] as Array<{ payload: BurrowCommand; from: PeerLinkClient }>,
     /** Windows whose sockets closed with commands still outstanding. */
     dropped: [] as PeerLinkClient[],
     /** What came back for commands this window forwarded to its broker. */
-    results: [] as RemoteHostResult[],
+    results: [] as BurrowResult[],
     uiEvents: [] as unknown[],
     /** Windows that finished the handshake with this one as the broker. */
     joined: [] as PeerLinkClient[],
-    emitData(id: string, data: string) {
+    emitData(id: string, data: string, textData?: string) {
       ptyStatuses.set(id, { alive: true });
-      for (const listener of dataListeners) listener(id, data);
+      const chunk: ProcessedPtyChunk = textData === undefined ? { data } : { data, textData };
+      for (const listener of [...(chunkListeners.get(id) ?? [])]) listener(chunk);
     },
     emitExit(id: string, exitCode: number) {
       ptyStatuses.set(id, { alive: false, exitCode });
@@ -147,7 +157,9 @@ export function fakeWindow(
         ownsPty: (ptyId) => this.ownPtyIds.has(ptyId),
         streamPty: streams.streamPty,
         writePty: (ptyId, data) => void this.writes.push({ ptyId, data }),
-        resizePty: (ptyId, cols, rows) => void this.resizes.push({ ptyId, cols, rows }),
+        resizePty: (ptyId, cols, rows, repaint) => void this.resizes.push({
+          ptyId, cols, rows, ...(repaint === undefined ? {} : { repaint }),
+        }),
         handleForwardedCommand: (payload, from) => void this.forwarded.push({ payload, from }),
         dropForwardedCommands: (from) => void this.dropped.push(from),
         deliverCommandResult: (payload) => void this.results.push(payload),
@@ -161,10 +173,14 @@ export function fakeWindow(
 /** A sink standing in for whatever a routed PTY is streamed into. */
 export function fakeSink() {
   return {
-    data: [] as string[],
+    chunks: [] as ProcessedPtyChunk[],
     exits: [] as number[],
-    onData(chunk: string) {
-      this.data.push(chunk);
+    /** The renderer projection alone, for assertions that only care about it. */
+    get data(): string[] {
+      return this.chunks.map((chunk) => chunk.data);
+    },
+    onData(chunk: ProcessedPtyChunk) {
+      this.chunks.push(chunk);
     },
     onExit(code: number) {
       this.exits.push(code);

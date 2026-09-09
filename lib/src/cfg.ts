@@ -8,6 +8,8 @@ export const cfg = {
     dashFraction: 0.6,
     /** Seconds for one full dash-gap cycle. */
     cycleDuration: 0.4,
+    /** Cycles to run when command mode starts or the active selection changes. */
+    cyclesPerSelection: 4,
     /** Stroke width in px. */
     strokeWidth: 2,
     /** When true, animation is frozen at T=0 (for deterministic Chromatic snapshots). */
@@ -40,6 +42,15 @@ export const cfg = {
      *  off also gives a way to A/B the renderer when diagnosing a rendering bug
      *  (`docs/specs/layout.md` → Renderer). */
     webglRenderer: true,
+    /** Load `@xterm/addon-image`, giving every Session SIXEL, iTerm IIP, and
+     *  Kitty graphics. Must be decided before the first PTY byte, not on the
+     *  first image: the addon answers the DA1 / XTSMGRAPHICS / cell-size probes
+     *  a program uses to decide whether to send one at all, so a Session that
+     *  loads it late has already advertised no graphics support
+     *  (`docs/specs/terminal-escapes.md` → Inline graphics). Turning it off
+     *  drops that decode path for untrusted PTY bytes and its per-Session
+     *  handlers. */
+    inlineImages: true,
   },
   layout: {
     /** When false, Lath pane geometry changes (split / restore / kill / drag) apply

@@ -737,6 +737,30 @@ describe('LathHost — pane / Door drag', () => {
     expect(overlayEl()).toBeNull(); // preview cleared on drop
   });
 
+  it('commits the latest pointer position when release precedes the queued frame', () => {
+    const store = seeded(rowOf('a', 'b'), [['a', leafMeta()], ['b', leafMeta()]]);
+    const { onProposeMove } = mountDrag(store);
+    act(() => {
+      down(header('a'), 100, 15);
+      moveTo(601, 300);
+      up();
+    });
+    expect(onProposeMove).toHaveBeenCalledWith('a', { kind: 'swap', leaf: 'b' });
+  });
+
+  it('cancels an external drop moved off-wall before its pending frame', async () => {
+    const store = seeded(leafTree('a'), [['a', leafMeta()]]);
+    const { onExternalDrop } = mountDrag(store, { externalDrag: { id: 'door', startX: 100, startY: 700 } });
+    act(() => moveTo(5, 300));
+    await flushFrame();
+    expect(overlayEl()).not.toBeNull();
+    act(() => {
+      moveTo(100, 700);
+      up();
+    });
+    expect(onExternalDrop).toHaveBeenCalledWith(null);
+  });
+
   it('cycles the drop depth outward with the wheel', async () => {
     const t = colRowTree();
     const store = seeded(t, [['a', leafMeta({ title: 'A' })], ['b', leafMeta({ title: 'B' })], ['c', leafMeta({ title: 'C' })]]);

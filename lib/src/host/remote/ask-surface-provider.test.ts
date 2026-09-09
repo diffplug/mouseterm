@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import type { DirectoryEntry } from '../../remote/host/host-surface-provider';
+import type { DirectoryEntry } from '../../remote/burrow/burrow-surface-provider';
 import { createAskSurfaceProvider } from './ask-surface-provider';
 
 const entry = (surfaceId: string, title: string): DirectoryEntry => ({
@@ -17,7 +17,7 @@ const entry = (surfaceId: string, title: string): DirectoryEntry => ({
 const inertPty = {
   writePty: () => {},
   resizePty: () => {},
-  streamPty: () => () => {},
+  streamPty: () => ({ stop: () => {}, ready: Promise.resolve() }),
 };
 
 describe('createAskSurfaceProvider directory', () => {
@@ -36,5 +36,19 @@ describe('createAskSurfaceProvider directory', () => {
 
     const entries = await provider.collectDirectory();
     expect(entries.map((e) => e.title)).toEqual(['local copy', 'only one']);
+  });
+});
+
+describe('createAskSurfaceProvider resize', () => {
+  it('rejects when the resolved owner disappears instead of acknowledging the cached size', async () => {
+    const { provider } = createAskSurfaceProvider(
+      async (_op, params) => (params as { op: string }).op === 'attach'
+        ? [{ ptyId: 'pty-1', cols: 80, rows: 24 }]
+        : [],
+      inertPty,
+    );
+    const handle = await provider.resolveSurface('pane-1', { cols: 80, rows: 24 });
+    await expect(handle!.resize(120, 40)).rejects.toThrow('surface owner unavailable');
+    expect({ cols: handle!.cols, rows: handle!.rows }).toEqual({ cols: 80, rows: 24 });
   });
 });

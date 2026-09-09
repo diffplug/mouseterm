@@ -1,9 +1,12 @@
 import { Terminal, type IBufferRange } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { ImageAddon, type IImageAddonOptions } from '@xterm/addon-image';
 import { UnicodeGraphemesAddon } from '@xterm/addon-unicode-graphemes';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { shellCommandKind, type ShellCommandKind } from 'dor/commands/shell-quote';
 import { getPlatform, IS_MAC, IS_WINDOWS, PLATFORM_STRING } from './platform';
+import type { PtyDataDetail } from './platform/types';
+import type { HelperIdentity } from './terminal-context-types';
 import { DIM, RESET } from './ansi';
 import { cfg } from '../cfg';
 import { requestExternalLinkConfirmation } from './external-link-confirmation';
@@ -15,6 +18,7 @@ import {
   removeMouseSelectionState,
   setSelection as setMouseSelection,
 } from './mouse-selection';
+import { dropSourcesForTerminal } from './notepad/notepad-store';
 import { extractSelectionText } from './selection-text';
 import { normalizeResumeCommand } from './resume-patterns';
 import {
@@ -24,7 +28,7 @@ import {
   type TerminalEntry,
   type TerminalOverlayDims,
 } from './terminal-store';
-import { consumePrimedActivity, notifyActivityListeners } from './session-activity-store';
+import { clearTerminalActivity, getActivity, notifyActivityListeners } from './session-activity-store';
 import { attachTerminalMouseRouter } from './terminal-mouse-router';
 import {
   inputContainsEnter,
@@ -37,12 +41,12 @@ import {
 import { getTerminalTheme, paintTerminalHost, startThemeObserver } from './terminal-theme';
 import {
   ensureTerminalPaneState,
-  fillTerminalProcessCwdByPtyId,
-  finishLaunchedCommandByPtyId,
+  fillTerminalProcessCwd,
+  applyTerminalSemanticEvents,
   getTerminalPaneState,
   isPaneOscDriven,
-  recordTerminalOutputByPtyId,
-  recordTerminalUserInputByPtyId,
+  recordTerminalOutput,
+  recordTerminalUserInput,
   removeTerminalPaneState,
   resetTerminalPaneState,
   seedLaunchedCommand,
@@ -54,6 +58,31 @@ import {
 import { readLogicalLineFromBuffer, type BufferLike } from './terminal-buffer-read';
 import { UNNAMED_PANEL_TITLE } from './terminal-state';
 import { vscodeWorkbenchCommandForKeydown } from './vscode-keybindings';
+
+// Only `pixelLimit` and `storageLimit` differ from the pinned addon's
+// `DEFAULT_OPTIONS` (2^24 pixels, 128 MB); every other line below restates a
+// default, so that a bump which lowers one cannot silently shrink the bound
+// without failing review here. Per-Session limits are explicit because Sessions
+// survive unmount/minimize and a product Window can retain many at once: 2^23
+// pixels still admits a 3840x2160 image without granting every orphaned Session
+// the addon's ceiling. `storageLimit` must stay at or above `pixelLimit` * 4
+// bytes (the addon derives its cache capacity as `storageLimit / 4 * 1e6`
+// pixels), or admitting one full-size image evicts every other image first and
+// still lands over budget.
+const IMAGE_ADDON_OPTIONS = {
+  enableSizeReports: true,
+  pixelLimit: 8_388_608,
+  storageLimit: 34,
+  showPlaceholder: true,
+  sixelSupport: true,
+  sixelScrolling: true,
+  sixelPaletteLimit: 4_096,
+  sixelSizeLimit: 33_554_432,
+  iipSupport: true,
+  iipSizeLimit: 33_554_432,
+  kittySupport: true,
+  kittySizeLimit: 33_554_432,
+} satisfies IImageAddonOptions;
 
 function makePromptLineReader(terminal: Terminal): PromptLineReader {
   return {
@@ -78,7 +107,7 @@ function makePromptLineReader(terminal: Terminal): PromptLineReader {
 }
 
 function seedProcessCwdAfterSpawn(id: string): void {
-  void getPlatform().getCwd(id).then((cwd) => fillTerminalProcessCwdByPtyId(id, cwd));
+  void getPlatform().getCwd(id).then((cwd) => fillTerminalProcessCwd(id, cwd));
 }
 
 // Reconstructs the visible text from an OSC 8 hyperlink's buffer range. xterm
@@ -205,6 +234,7 @@ function createXtermHost(): { terminal: Terminal; fit: FitAddon; element: HTMLDi
   terminal.loadAddon(new UnicodeGraphemesAddon());
   const fit = new FitAddon();
   terminal.loadAddon(fit);
+  if (cfg.terminal.inlineImages) terminal.loadAddon(new ImageAddon(IMAGE_ADDON_OPTIONS));
 
   const element = document.createElement('div');
   element.style.width = '100%';
@@ -218,9 +248,11 @@ function createXtermHost(): { terminal: Terminal; fit: FitAddon; element: HTMLDi
 /** PTY data/exit listeners. Returns the unsubscribe pair. */
 function wirePtyEvents(id: string, terminal: Terminal): () => void {
   const platform = getPlatform();
-  const handleData = (detail: { id: string; data: string }) => {
+  const handleData = (detail: PtyDataDetail) => {
     if (detail.id === id) {
-      recordTerminalOutputByPtyId(id, detail.data);
+      // The parser already told us which bytes are text; `textData` is omitted
+      // when it would equal `data`.
+      recordTerminalOutput(id, detail.textData ?? detail.data);
       terminal.write(detail.data);
     }
   };
@@ -233,7 +265,7 @@ function wirePtyEvents(id: string, terminal: Terminal): () => void {
     if (entry) entry.exited = true;
     // The process is gone, so any command we seeded for this pane is no longer
     // live; clear it so `dor ensure` stops matching a dead surface.
-    finishLaunchedCommandByPtyId(id, detail.exitCode);
+    applyTerminalSemanticEvents(id, [{ type: 'commandFinish', exitCode: detail.exitCode }]);
   };
   platform.onPtyData(handleData);
   platform.onPtyExit(handleExit);
@@ -269,9 +301,8 @@ function wireXtermHandlers(
     const isSyntheticTerminalReport = inputIsSyntheticTerminalReport(input);
 
     if (!isSyntheticTerminalReport) {
-      recordTerminalUserInputByPtyId(id, input, makePromptLineReader(terminal));
-      const entry = registry.get(id);
-      const hadTodo = entry?.todo === true;
+      recordTerminalUserInput(id, input, makePromptLineReader(terminal));
+      const hadTodo = getActivity(id).todo;
       getPlatform().alertAttend(id);
       if (hadTodo && inputContainsEnter(input)) {
         getPlatform().alertClearTodo(id);
@@ -311,9 +342,14 @@ function wireXtermHandlers(
   };
 }
 
-function setupTerminalEntry(id: string, options: { shell?: string; untouched?: boolean } = {}): TerminalEntry {
+function setupTerminalEntry(id: string, options: { shell?: string; untouched?: boolean; helper?: HelperIdentity } = {}): TerminalEntry {
   const { terminal, fit, element } = createXtermHost();
   const selectionBaselineRef = { current: null as string | null };
+  // Every module that finalizes a selection arms the render handler through
+  // this one setter: the mouse router at drag end, a note's pin on reveal.
+  const setSelectionBaseline = (baseline: string | null) => {
+    selectionBaselineRef.current = baseline;
+  };
 
   const disposePty = wirePtyEvents(id, terminal);
   const disposeXterm = wireXtermHandlers(id, terminal, selectionBaselineRef);
@@ -326,9 +362,7 @@ function setupTerminalEntry(id: string, options: { shell?: string; untouched?: b
     terminal,
     element,
     getOverlayDims: getTerminalOverlayDims,
-    setSelectionBaseline: (baseline) => {
-      selectionBaselineRef.current = baseline;
-    },
+    setSelectionBaseline,
   });
 
   const cleanup = () => {
@@ -340,30 +374,16 @@ function setupTerminalEntry(id: string, options: { shell?: string; untouched?: b
   };
 
   const entry: TerminalEntry = {
-    ptyId: id,
+    helper: options.helper,
     shellKind: shellCommandKind(options.shell, PLATFORM_STRING),
     terminal,
     fit,
     element,
     cleanup,
-    alertStatus: 'WATCHING_DISABLED',
-    watchingEnabled: false,
-    todo: false,
-    notification: null,
-    attentionDismissedRing: false,
-    awaited: false,
+    setSelectionBaseline,
     isReplaying: false,
     untouched: options.untouched ?? false,
   };
-
-  const primed = consumePrimedActivity(id);
-  if (primed) {
-    if (primed.status !== undefined) entry.alertStatus = primed.status;
-    if (primed.watchingEnabled !== undefined) entry.watchingEnabled = primed.watchingEnabled;
-    if (primed.todo !== undefined) entry.todo = primed.todo;
-    if (primed.notification !== undefined) entry.notification = primed.notification;
-    if (primed.awaited !== undefined) entry.awaited = primed.awaited;
-  }
 
   registry.set(id, entry);
   ensureTerminalPaneState(id);
@@ -440,6 +460,7 @@ export function getOrCreateTerminal(id: string): TerminalEntry {
   const shellOpts = pendingShellOpts.get(id);
   pendingShellOpts.delete(id);
   const entry = setupTerminalEntry(id, {
+    helper: shellOpts?.helper,
     shell: shellOpts?.shell,
     untouched: shellOpts?.untouched ?? true,
   });
@@ -455,6 +476,7 @@ export function getOrCreateTerminal(id: string): TerminalEntry {
     shell: shellOpts?.shell,
     args: shellOpts?.args,
     cwd: shellOpts?.cwd,
+    helper: shellOpts?.helper,
   });
   if (shellOpts?.command) {
     seedLaunchedCommand(id, shellOpts.command, shellOpts.cwd);
@@ -468,12 +490,13 @@ export function getOrCreateTerminal(id: string): TerminalEntry {
 export function resumeTerminal(
   id: string,
   replayData: string | null,
-  exitInfo?: { alive: boolean; exitCode?: number; shell?: string; title?: string | null; untouched?: boolean },
+  exitInfo?: { alive: boolean; exitCode?: number; shell?: string; title?: string | null; untouched?: boolean; helper?: HelperIdentity },
 ): TerminalEntry {
   const existing = registry.get(id);
   if (existing) return existing;
 
   const entry = setupTerminalEntry(id, {
+    helper: exitInfo?.helper,
     shell: exitInfo?.shell,
     untouched: exitInfo?.untouched ?? false,
   });
@@ -563,10 +586,34 @@ export function mountElement(id: string, container: HTMLElement): void {
   requestAnimationFrame(() => entry.fit.fit());
 }
 
-export function unmountElement(id: string): void {
+/** Where a hidden helper's xterm element waits between reveals: still in the
+ *  document, so its renderer and scrollback survive
+ *  (docs/specs/terminal-context.md → Helper lifecycle). */
+let helperParking: HTMLElement | null = null;
+
+/** Park a helper Session's element out of sight without terminating anything;
+ *  the next `mountElement` reveals the same element. */
+export function parkElement(id: string): void {
   const entry = registry.get(id);
   if (!entry) return;
-  entry.element.remove();
+  // Revalidated, not just cached: a host that replaces the body (a docs iframe,
+  // a test teardown) would otherwise park every helper in a detached subtree.
+  if (!helperParking?.isConnected) {
+    helperParking = document.createElement('div');
+    helperParking.hidden = true;
+    document.body.appendChild(helperParking);
+  }
+  helperParking.appendChild(entry.element);
+}
+
+/** Detach a Session's element from its pane. With `container`, only when it is
+ *  still mounted there: cleanup from an older mount cannot detach a newer one.
+ *  A helper's element is parked rather than removed. */
+export function unmountElement(id: string, container?: HTMLElement): void {
+  const entry = registry.get(id);
+  if (!entry || (container && entry.element.parentElement !== container)) return;
+  if (entry.helper) parkElement(id);
+  else entry.element.remove();
 }
 
 export function disposeAllSessions(): void {
@@ -578,15 +625,18 @@ export function disposeAllSessions(): void {
 export function disposeSession(id: string): void {
   const entry = registry.get(id);
   if (!entry) return;
-  getPlatform().alertRemove(entry.ptyId);
+  getPlatform().alertRemove(id);
+  // Before the xterm instance goes: its markers are what notepad pins hold, and
+  // a disposed marker cannot be dropped cleanly afterwards. The notes stay.
+  dropSourcesForTerminal(id);
   entry.cleanup();
-  getPlatform().killPty(entry.ptyId);
+  getPlatform().killPty(id);
   entry.element.remove();
   entry.terminal.dispose();
   registry.delete(id);
   removeTerminalPaneState(id);
   removeMouseSelectionState(id);
-  notifyActivityListeners();
+  clearTerminalActivity(id);
 }
 
 export function refitSession(id: string): void {
@@ -640,8 +690,10 @@ export function isUntouched(id: string): boolean {
 
 export function markSessionTouched(id: string): void {
   const entry = registry.get(id);
-  if (!entry || !entry.untouched) return;
+  if (!entry) return;
+  entry.inputVersion = (entry.inputVersion ?? 0) + 1;
   entry.untouched = false;
+  if (entry.helper) entry.helperBusy = undefined;
 }
 
 /**
@@ -681,6 +733,6 @@ export function focusSession(id: string, focused: boolean): void {
     entry.terminal.focus();
   } else {
     entry.terminal.blur();
-    getPlatform().alertClearAttention(entry.ptyId);
+    getPlatform().alertClearAttention(id);
   }
 }

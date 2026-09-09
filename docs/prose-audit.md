@@ -19,6 +19,7 @@ The command is dependency-free and advisory. Its thresholds intentionally favor 
 
 1. Read each spec and the rationale sections matching the headings being touched.
 2. Inspect every resolved reference. Resolve any reported file-like reference manually; ambiguity often means the pointer itself can be clearer.
+   A `Files` / `Code Map` section should offer useful entrypoints to follow through imports, while section-local `Source of truth:` pointers locate particular rules. Keep both when they serve those distinct jobs; check map paths and role descriptions against code without requiring exhaustive coverage or a map in every spec.
 3. Give each hit one disposition:
 
    - `KEEP` — a non-obvious invariant or local constraint is already at its useful home.
@@ -29,7 +30,7 @@ The command is dependency-free and advisory. Its thresholds intentionally favor 
    - `CANONICAL` — let generated help, a type, constant, registry, or test own an exact shape.
 
 4. Apply only high-confidence edits. Preserve invariants, edge cases, message direction, cross-package ownership, and the `## Future` fold.
-5. Run `node scripts/spec-lint.mjs`, relevant focused tests, and `git diff --check`. Lower changed word budgets to retain a small ratchet margin.
+5. Run `node scripts/spec-lint.mjs`, relevant focused tests, and `git diff --check`. Re-baseline a changed spec with `node scripts/spec-lint.mjs --ratchet <spec>`.
 6. Commit a coherent cluster so reviewers can distinguish mechanical compression from behavior changes.
 
 ## Cadence

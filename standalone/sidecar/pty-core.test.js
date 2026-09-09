@@ -329,7 +329,68 @@ test('resolveSpawnConfig skips -l for csh', () => {
   assert.deepEqual(config.shellArgs, []);
 });
 
-test('create buffers scrollback for getScrollback requests', () => {
+// The real shared owner, with only node-pty replaced: all local and remote
+// resizes reach this manager, so these races must be decided here.
+function repaintHarness(t) {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const resizes = [];
+  const exits = [];
+  let serial = 0;
+  const mgr = create(() => {}, {
+    spawn() {
+      const generation = ++serial;
+      return {
+        pid: generation,
+        onData() {},
+        onExit(handler) { exits.push(handler); },
+        resize(cols, rows) { resizes.push({ generation, cols, rows }); },
+        kill() {},
+      };
+    },
+  });
+  mgr.spawn('pane-1');
+  return { mgr, resizes, exits };
+}
+
+for (const rows of [1, 24]) {
+  test(`PTY owner restores a ${rows}-row repaint without a live Viewer`, (t) => {
+    const { mgr, resizes } = repaintHarness(t);
+    mgr.resize('pane-1', 80, rows, true);
+    assert.deepEqual(resizes, [{ generation: 1, cols: 80, rows: rows > 1 ? rows - 1 : 2 }]);
+    // A Viewer can detach/dispose; restoring the owner's temporary size still
+    // completes. No Viewer callback or subscription owns this timer.
+    t.mock.timers.tick(60);
+    assert.deepEqual(resizes.at(-1), { generation: 1, cols: 80, rows });
+  });
+}
+
+for (const repaint of [false, true]) {
+  test(`a later ${repaint ? 'Viewer repaint' : 'local resize'} supersedes PTY restoration`, (t) => {
+    const { mgr, resizes } = repaintHarness(t);
+    mgr.resize('pane-1', 80, 24, true);
+    t.mock.timers.tick(30);
+    mgr.resize('pane-1', 120, 40, repaint);
+    const written = resizes.length;
+    t.mock.timers.tick(30);
+    assert.equal(resizes.length, written, 'the first Viewer must never restore its old size');
+    t.mock.timers.tick(30);
+    assert.deepEqual(resizes.at(-1), { generation: 1, cols: 120, rows: 40 });
+  });
+}
+
+for (const retire of ['exit', 'kill', 'killAll', 'replace']) {
+  test(`PTY repaint restoration stops on ${retire}`, (t) => {
+    const { mgr, resizes, exits } = repaintHarness(t);
+    mgr.resize('pane-1', 80, 24, true);
+    if (retire === 'exit') exits[0]({ exitCode: 0 });
+    else if (retire === 'replace') mgr.spawn('pane-1');
+    else mgr[retire]('pane-1');
+    t.mock.timers.tick(60);
+    assert.deepEqual(resizes, [{ generation: 1, cols: 80, rows: 23 }]);
+  });
+}
+
+test('create forwards PTY data and observes natural exit', () => {
   const events = [];
   const listeners = {};
   const fakePty = {
@@ -356,43 +417,11 @@ test('create buffers scrollback for getScrollback requests', () => {
   listeners.data?.(' world');
   listeners.exit?.({ exitCode: 0, signal: undefined });
   assert.equal(mgr.hasPty('pane-1'), false);
-  mgr.getScrollback('pane-1', 'req-1');
-
-  assert.deepEqual(events.at(-1), {
-    event: 'scrollback',
-    data: { id: 'pane-1', data: 'hello world', requestId: 'req-1' },
-  });
-});
-
-test('kill leaves no scrollback for a PTY that flushes after it dies', () => {
-  const events = [];
-  const listeners = {};
-  const fakePty = {
-    pid: 123,
-    onData(handler) { listeners.data = handler; },
-    onExit(handler) { listeners.exit = handler; },
-    resize() {},
-    write() {},
-    kill() {},
-  };
-
-  const mgr = create((event, data) => events.push({ event, data }), {
-    spawn() { return fakePty; },
-  });
-
-  mgr.spawn('pane-1');
-  listeners.data?.('hello');
-  mgr.kill('pane-1');
-  // `kill` does not dispose the onData subscription, and a just-killed PTY can
-  // still deliver a final flush (ConPTY especially). That flush must not
-  // recreate the buffer `kill` deleted: nothing would ever delete it again.
-  listeners.data?.('trailing bytes');
-
-  mgr.getScrollback('pane-1', 'req-kill');
-  assert.deepEqual(events.at(-1), {
-    event: 'scrollback',
-    data: { id: 'pane-1', data: null, requestId: 'req-kill' },
-  });
+  assert.deepEqual(events, [
+    { event: 'data', data: { id: 'pane-1', data: 'hello' } },
+    { event: 'data', data: { id: 'pane-1', data: ' world' } },
+    { event: 'exit', data: { id: 'pane-1', exitCode: 0, signal: undefined } },
+  ]);
 });
 
 test('list reports the resolved launch shell for live reconnects', () => {
@@ -412,7 +441,7 @@ test('list reports the resolved launch shell for live reconnects', () => {
   mgr.spawn('pane-pwsh', { shell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' });
   mgr.list();
 
-  assert.deepEqual(events.at(-1), {
+  assert.deepEqual(events.findLast(item => item.event === 'list'), {
     event: 'list',
     data: {
       ptys: [{
@@ -424,7 +453,7 @@ test('list reports the resolved launch shell for live reconnects', () => {
   });
 });
 
-test('interrupt writes one ^C to every live PTY and leaves scrollback readable', async () => {
+test('interrupt writes one ^C to every live PTY and forwards recovery output', async () => {
   const events = [];
   const writes = [];
   const killSignals = [];
@@ -457,12 +486,11 @@ test('interrupt writes one ^C to every live PTY and leaves scrollback readable',
   assert.deepEqual(killSignals, []);
   assert.deepEqual(events.at(-1), { event: 'interruptDone', data: { requestId: 'req-7' } });
 
-  // What the agent printed on its way out is what capture reads.
+  // Forward the agent's recovery hint to the host that captures it.
   listeners.data?.('claude --resume abc123\n');
-  mgr.getScrollback('pane-1', 'req-8');
   assert.deepEqual(events.at(-1), {
-    event: 'scrollback',
-    data: { id: 'pane-1', data: 'claude --resume abc123\n', requestId: 'req-8' },
+    event: 'data',
+    data: { id: 'pane-1', data: 'claude --resume abc123\n' },
   });
 });
 
@@ -481,7 +509,7 @@ test('interrupt with no live PTYs still reports done', async () => {
   assert.deepEqual(events.at(-1), { event: 'interruptDone', data: { requestId: 'req-empty' } });
 });
 
-test('gracefulKillAll SIGTERMs live PTYs, echoes requestId, preserves scrollback', async () => {
+test('gracefulKillAll SIGTERMs live PTYs, echoes requestId, forwards final output', async () => {
   const events = [];
   const killSignals = [];
   const listeners = {};
@@ -502,8 +530,8 @@ test('gracefulKillAll SIGTERMs live PTYs, echoes requestId, preserves scrollback
   }, { spawn() { return fakePty; } });
 
   mgr.spawn('pane-1');
-  listeners.data?.('final output');
   mgr.gracefulKillAll(1, 'req-42');
+  listeners.data?.('final output');
   await done;
 
   // SIGTERM was delivered, and the done event carries the caller's requestId.
@@ -513,19 +541,18 @@ test('gracefulKillAll SIGTERMs live PTYs, echoes requestId, preserves scrollback
     data: { requestId: 'req-42' },
   });
 
-  // Scrollback survives (unlike kill/killAll) — final output stays readable.
-  mgr.getScrollback('pane-1', 'req-9');
-  assert.deepEqual(events.at(-1), {
-    event: 'scrollback',
-    data: { id: 'pane-1', data: 'final output', requestId: 'req-9' },
+  assert.deepEqual(events.at(-2), {
+    event: 'data',
+    data: { id: 'pane-1', data: 'final output' },
   });
 });
 
-test('gracefulKillAll resolves early once every PTY has exited', async () => {
+test('gracefulKillAll resolves early after exits and a final output grace tick', async () => {
   const listeners = {};
+  const events = [];
   const fakePty = {
     pid: 7,
-    onData() {},
+    onData(handler) { listeners.data = handler; },
     onExit(handler) { listeners.exit = handler; },
     resize() {},
     write() {},
@@ -534,7 +561,8 @@ test('gracefulKillAll resolves early once every PTY has exited', async () => {
 
   let resolveDone;
   const done = new Promise((resolve) => { resolveDone = resolve; });
-  const mgr = create((event) => {
+  const mgr = create((event, data) => {
+    events.push({ event, data });
     if (event === 'gracefulKillDone') resolveDone();
   }, { spawn() { return fakePty; } });
 
@@ -542,7 +570,13 @@ test('gracefulKillAll resolves early once every PTY has exited', async () => {
   const started = Date.now();
   mgr.gracefulKillAll(60_000, 'req-1');
   listeners.exit({ exitCode: 0, signal: 15 }); // empties the live-PTY map
+  // ConPTY can flush after exit. Deliver on a later tick to exercise the grace.
+  setTimeout(() => listeners.data('final output'), 10);
   await done;
+  assert.deepEqual(events.slice(-2), [
+    { event: 'data', data: { id: 'pane-1', data: 'final output' } },
+    { event: 'gracefulKillDone', data: { requestId: 'req-1' } },
+  ]);
   // Resolved on the exit-driven early path, nowhere near the 60s bound.
   assert.ok(Date.now() - started < 5_000);
 });

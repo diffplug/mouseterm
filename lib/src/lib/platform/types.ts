@@ -1,3 +1,4 @@
+import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../terminal-context-types';
 import type { AlertState, AwaitHandle, AwaitOptions } from '../alert-manager';
 import type { AlertSettings } from '../alert-settings';
 import type { VSCodeWorkbenchCommand } from '../vscode-keybindings';
@@ -5,8 +6,10 @@ import type { ShellEntry } from '../shell-defaults';
 // Defined in its own dependency-free file so the Node proxy in lib/src/host can
 // share it without pulling this browser-typed module into a Node tsconfig.
 import type { IframeProxyResult } from './iframe-proxy-types';
+import type { NotepadArchivePort } from '../notepad/types';
 
 export interface PtyInfo {
+  helper?: HelperIdentity;
   id: string;
   alive: boolean;
   exitCode?: number;
@@ -118,21 +121,21 @@ export interface AgentBrowserPopResult {
 }
 
 /**
- * The webview end of a Node-resident remote Host
+ * The webview end of a Node-resident Burrow
  * (`lib/src/host/remote/service-protocol.ts`).
  *
- * The Host runs in the process that owns the PTYs — the Tauri sidecar, the VS
+ * The Burrow runs in the process that owns the PTYs — the Tauri sidecar, the VS
  * Code extension host — so the webview is its UI plus its surface responder: it
  * forwards console commands, answers what its own panes are called and how big
  * they are, and mirrors the pairing queue. Nothing a webview answers can widen
  * access (docs/specs/remote-security-model.md).
  *
  * `cmd` and `op` are deliberately opaque here. *What* the service can be asked
- * belongs to the remote Host, not to the platform, so the operation map and its
- * real types live in `lib/src/remote/host/peer-surfaces.ts`; this layer and the
+ * belongs to the Burrow, not to the platform, so the operation map and its
+ * real types live in `lib/src/remote/burrow/peer-surfaces.ts`; this layer and the
  * transports under it only carry the bytes.
  */
-export interface RemoteHostLink {
+export interface BurrowLink {
   /** Run a service command and resolve its result, or reject with its error. */
   command(cmd: string, params?: unknown): Promise<unknown>;
 
@@ -154,24 +157,42 @@ export interface RemoteHostLink {
   on(name: string, listener: (data: unknown) => void): () => void;
 }
 
+/**
+ * One chunk of PTY output after protocol parsing. `data` is what xterm.js
+ * renders; `textData` is the same chunk with string-control payloads removed,
+ * for consumers reading it as text. **Omitted when identical to `data`**, which
+ * is the common case, so the two never cost twice the bytes over a transport
+ * (`docs/specs/transport.md`). The same pair crosses every host seam and the
+ * remote wire — `ProcessedPtyChunk` in
+ * `lib/src/remote/burrow/burrow-surface-provider.ts`, `TerminalDataEvent` in
+ * `remote-lib-common/src/remote/wire.ts` — under the same omitted/present rule.
+ */
+export interface PtyDataDetail {
+  id: string;
+  data: string;
+  textData?: string;
+}
+
 export interface PlatformAdapter {
   // Lifecycle
   init(): Promise<void>;
   shutdown(): void;
 
   /**
-   * Reach the remote Host service behind this host. Present exactly when a
-   * process behind the webview owns the PTYs and can run the Host (standalone's
-   * sidecar, VS Code's extension host). Adapters that omit it have no Host
+   * Reach the Burrow service behind this host. Present exactly when a
+   * process behind the webview owns the PTYs and can run the Burrow (standalone's
+   * sidecar, VS Code's extension host). Adapters that omit it have no Burrow
    * anywhere — the website — so the remote modules stay inert.
    */
-  remoteHost?: RemoteHostLink;
+  burrow?: BurrowLink;
 
   // Shell detection
   getAvailableShells(): Promise<ShellEntry[]>;
 
+  terminalContext?(request: TerminalContextRequest): Promise<TerminalContextInfo>;
+
   // PTY operations
-  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[] }): void;
+  spawnPty(id: string, options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[]; helper?: HelperIdentity }): void;
   writePty(id: string, data: string): void;
   resizePty(id: string, cols: number, rows: number): void;
   killPty(id: string): void;
@@ -299,8 +320,8 @@ export interface PlatformAdapter {
   agentBrowserBringToFront?(session: string, binaryPath?: string): Promise<void>;
 
   // PTY event listeners
-  onPtyData(handler: (detail: { id: string; data: string }) => void): void;
-  offPtyData(handler: (detail: { id: string; data: string }) => void): void;
+  onPtyData(handler: (detail: PtyDataDetail) => void): void;
+  offPtyData(handler: (detail: PtyDataDetail) => void): void;
   onPtyExit(handler: (detail: { id: string; exitCode: number }) => void): void;
   offPtyExit(handler: (detail: { id: string; exitCode: number }) => void): void;
 
@@ -357,4 +378,21 @@ export interface PlatformAdapter {
   // State persistence
   saveState(state: unknown): void;
   getState(): unknown;
+
+  /**
+   * The Surface notepad's archive store (docs/specs/notepad.md). Present on
+   * every host that has a notepad — standalone (owner-only JSON under app
+   * data), VS Code (`globalState`), the website demo (memory). Absent means no
+   * notepad at all: Pocket omits it and the header icon, popup action, and
+   * Settings entry all stay hidden.
+   */
+  notepadArchive?: NotepadArchivePort;
+
+  /**
+   * Whether the browser hosting this webview reserves the notepad chord
+   * (Cmd/Ctrl+N opens a new window, unpreventable), so Dormouse shows no
+   * shortcut and binds none. Absent reads as `false`; the website's demo
+   * adapter sets it `true`.
+   */
+  browserReservesNotepadChord?: boolean;
 }

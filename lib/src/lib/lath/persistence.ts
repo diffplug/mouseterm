@@ -5,7 +5,8 @@
 // (`session-restore.ts`). The engine (`lath-wall-engine.ts`) owns
 // `serializeLayout`/`seed`, which call through here.
 
-import { type LathTree, leaves } from './model';
+import { type LathTree, leaves, validate } from './model';
+import { isRecord } from '../is-record';
 
 /** Per-leaf presentation metadata, keyed by leaf id — the Pane props contract's
  *  "read side", owned live by the wall store's `leafMeta` map and serialized
@@ -46,12 +47,13 @@ export function lathLayoutFromStore(snapshot: {
   return { version: 1, tree: snapshot.tree, leafMeta: meta };
 }
 
-/** Whether a restored blob is a well-formed Lath persisted layout (the tree's own
- *  validity is checked separately at seed time). */
+/** Validate the whole layout at the read boundary, before typed tree traversal. */
 export function isLathPersistedLayout(blob: unknown): blob is LathPersistedLayout {
-  if (!blob || typeof blob !== 'object') return false;
-  const b = blob as { version?: unknown; tree?: unknown; leafMeta?: unknown };
-  if (b.version !== 1) return false;
-  if (!b.tree || typeof b.tree !== 'object' || !('root' in (b.tree as object))) return false;
-  return !!b.leafMeta && typeof b.leafMeta === 'object';
+  if (!isRecord(blob) || blob.version !== 1 || validate(blob.tree).length > 0 || !isRecord(blob.leafMeta)) return false;
+  const ids = new Set(leaves(blob.tree as LathTree));
+  const entries = Object.entries(blob.leafMeta);
+  if (entries.length !== ids.size) return false;
+  return entries.every(([id, meta]) => ids.has(id) && isRecord(meta)
+    && typeof meta.component === 'string' && typeof meta.tabComponent === 'string'
+    && typeof meta.title === 'string' && (meta.params === undefined || isRecord(meta.params)));
 }
