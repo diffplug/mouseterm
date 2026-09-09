@@ -25,7 +25,7 @@ CWD:
 
 | Sequence | Source | Notes |
 |---|---|---|
-| `OSC 7 ; file://host/path ST` | `osc7` | Parsed as a `file:` URI; path decoded, host preserved. |
+| `OSC 7 ; file://host/path ST` | `osc7` | Parsed as a `file:` URI; path decoded, host derived from the parser. |
 | `OSC 9 ; 9 ; <cwd> ST` | `osc9_9` | Windows Terminal / ConEmu. Drive-letter and UNC paths are Windows paths; every other path is `unknown`, never `posix` (rationale). |
 | `OSC 633 ; P ; Cwd=<cwd> ST` | `osc633` | VS Code-style. |
 | `OSC 1337 ; CurrentDir=<cwd> ST` | `osc1337` | iTerm2 compatibility. |
