@@ -23,6 +23,11 @@ const { createAgentBrowserHost } = require('./agent-browser-host.cjs');
 // the PTYs it serves. See docs/specs/remote-api.md.
 const { createSidecarBurrow } = require('./burrow.cjs');
 
+// Built from lib/src/host/alert-journal.ts (shared with the VS Code host) by
+// scripts/build-sidecar-proxy.mjs. See docs/specs/alert.md → Local alert diagnostics.
+const { createAlertJournal } = require('./alert-journal.cjs');
+const alertJournal = createAlertJournal(process.env.DORMOUSE_STATE_DIR || '');
+
 const agentBrowser = createAgentBrowserHost({
   writeClipboardText: (text) => clipboard.writeClipboardText(text),
   log: (m) => console.error(m),
@@ -139,6 +144,7 @@ function handleLine(line) {
       case 'pty:themeColors': burrow.setThemeColors(data); break;
       case 'sidecar:shutdown': shutdown(); break;
       case 'dor:controlResponse': dorControl?.respond(data); break;
+      case 'alert:diagnostic': alertJournal.append(data); break;
       case 'burrow:command': burrow.handleCommand(data); break;
       case 'iframe:createProxyUrl':
         // Log to stderr — stdout is the JSON-lines protocol channel.
@@ -220,6 +226,7 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  alertJournal.recordLifecycle('host.stopping');
   // Close any headed pop-out windows so quitting never orphans a real Chrome
   // window (spec → "Pop-Out" lifecycle). Bounded so a hung agent-browser
   // can't wedge the exit; mirrors the VS Code host's deactivate().
@@ -232,6 +239,8 @@ async function shutdown() {
   dorControl?.close();
   burrow.dispose();
   mgr.killAll();
+  alertJournal.recordLifecycle('host.stopped');
+  await Promise.race([alertJournal.close(), new Promise((resolve) => setTimeout(resolve, 250))]);
   process.exit(0);
 }
 

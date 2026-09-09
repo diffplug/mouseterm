@@ -166,6 +166,10 @@ invocation per Surface, no buffer, unlinked as it is read
 with `wx`, its socket directory re-checked on every contention round. **Neither
 control does anything on Windows** (rationale).
 
+**Must keep alert journals in host app storage, separate from the standalone debug log.** `<app_data_dir>/alert-logs/` (standalone) and `context.globalStorageUri/alert-logs/` (VS Code) contain post-redaction spoken text and diagnostic metadata. Redaction is a heuristic; spoken text can still contain sensitive words. The writer creates/tightens its directory to `0700` and exclusively creates files at `0600` on Unix; Windows uses inherited host-storage ACLs, including standalone's `burrow_state_dir` restriction. No upload or Settings Sync is involved. Content and retention: `docs/specs/alert.md` → Local alert diagnostics.
+
+Source of truth: `createAlertJournal` in `lib/src/host/alert-journal.ts`, pinned by `lib/src/host/alert-journal.test.ts`.
+
 **The standalone log is unprotected and names the control socket.**
 `$DORMOUSE_LOG_FILE`, else `%LOCALAPPDATA%\Dormouse Terminal\dormouse.log`, else
 `<tmpdir>/dormouse.log`, created and appended with no mode and no ACL, so it

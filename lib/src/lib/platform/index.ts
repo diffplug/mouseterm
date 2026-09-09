@@ -1,3 +1,4 @@
+import { configureAlertDiagnostics, observeAlertFocus } from '../alert-diagnostics';
 import type { PlatformAdapter } from './types';
 import { VSCodeAdapter } from './vscode-adapter';
 import { FakePtyAdapter } from './fake-adapter';
@@ -40,10 +41,14 @@ export const IS_MAC: boolean = /Mac|iPhone|iPad/i.test(PLATFORM_STRING);
 export const IS_WINDOWS: boolean = /Win/i.test(PLATFORM_STRING);
 
 let adapter: PlatformAdapter | null = null;
+let stopFocusDiagnostics: (() => void) | undefined;
 
 /** Set an externally-created platform adapter (e.g. TauriAdapter from standalone). */
 export function setPlatform(a: PlatformAdapter): void {
+  stopFocusDiagnostics?.();
   adapter = a;
+  configureAlertDiagnostics('renderer', a.recordAlertDiagnostic?.bind(a));
+  stopFocusDiagnostics = a.recordAlertDiagnostic ? observeAlertFocus() : undefined;
 }
 
 export function getPlatform(): PlatformAdapter {
@@ -63,13 +68,14 @@ export function initPlatform(): PlatformAdapter;
 export function initPlatform(override?: 'fake'): PlatformAdapter {
   if (adapter) return adapter as PlatformAdapter;
   if (override === 'fake') {
-    adapter = new FakePtyAdapter();
-    return adapter;
+    const fake = new FakePtyAdapter();
+    setPlatform(fake);
+    return fake;
   }
   if (typeof acquireVsCodeApi === 'function') {
-    adapter = new VSCodeAdapter();
+    setPlatform(new VSCodeAdapter());
   } else {
-    adapter = new FakePtyAdapter();
+    setPlatform(new FakePtyAdapter());
   }
-  return adapter;
+  return adapter!;
 }

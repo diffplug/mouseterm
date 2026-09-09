@@ -1,3 +1,4 @@
+import type { AlertDiagnostic } from 'dormouse-lib/lib/alert-diagnostics';
 import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../../lib/src/lib/terminal-context-types';
 import { invoke as rawInvoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -83,6 +84,10 @@ const errMessage = (err: unknown): string =>
  *   Shell processes
  */
 export class TauriAdapter implements PlatformAdapter {
+  recordAlertDiagnostic(record: AlertDiagnostic): void {
+    invoke('alert_diagnostic', { record });
+  }
+
   private dataHandlers = new Set<(detail: PtyDataDetail) => void>();
   private exitHandlers = new Set<(detail: { id: string; exitCode: number }) => void>();
   private listHandlers = new Set<(detail: { ptys: PtyInfo[] }) => void>();

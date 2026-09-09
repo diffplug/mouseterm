@@ -436,6 +436,14 @@ fn burrow_command(state: tauri::State<'_, SidecarState>, payload: JsonValue) {
     send_to_sidecar(&state, msg.to_string());
 }
 
+// Local alert diagnostics: one record forwarded to the sidecar journal.
+#[tauri::command]
+fn alert_diagnostic(state: tauri::State<'_, SidecarState>, record: JsonValue) {
+    send_to_sidecar(&state, serde_json::json!({
+        "event": "alert:diagnostic", "data": record,
+    }).to_string());
+}
+
 #[tauri::command]
 fn dor_control_response(state: tauri::State<'_, SidecarState>, response: DorControlResponse) {
     let msg = serde_json::json!({
@@ -1897,6 +1905,7 @@ pub fn run() {
             pty_request_init,
             dor_control_response,
             burrow_command,
+            alert_diagnostic,
             kill_sidecar_now,
             quit_ack,
             quit_progress,

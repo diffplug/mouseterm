@@ -14,6 +14,7 @@ import type { VolatileNotepadSnapshot } from '../../lib/src/lib/notepad/types';
 
 // Messages from webview → extension host
 export type WebviewMessage =
+  | { type: 'alert:diagnostic'; record: unknown }
   | { type: 'pty:context'; request: TerminalContextRequest; requestId: string }
   | { type: 'pty:spawn'; id: string; options?: { cols?: number; rows?: number; cwd?: string; shell?: string; args?: string[]; helper?: HelperIdentity } }
   | { type: 'pty:input'; id: string; data: string }

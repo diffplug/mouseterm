@@ -1,3 +1,4 @@
+import { alertDiagnostic, alertDiagnosticsEnabled } from './alert-diagnostics';
 import type { AlertState, SessionStatus } from './alert-manager';
 import type { AlertStateDetail } from './platform/types';
 import { applyAlertSettingsFromHost, publishAlertSettings } from './alert-settings';
@@ -82,6 +83,13 @@ export function getLivePersistedAlertState(id: string): PersistedAlertState | nu
 
 /** Install a host snapshot, including one received before xterm initialization. */
 export function setTerminalActivity(id: string, state: Partial<AlertState>): void {
+  if (alertDiagnosticsEnabled()) {
+    const previous = terminalActivity.get(id)?.state;
+    alertDiagnostic('renderer.snapshot', {
+      sessionId: id, previousStatus: previous?.status ?? null, previousRingSeq: previous?.ringSeq ?? null,
+      status: state.status ?? null, ringSeq: state.ringSeq ?? null,
+    });
+  }
   const { attentionDismissedRing = false, ...activity } = state;
   terminalActivity.set(id, {
     state: { ...DEFAULT_ACTIVITY_STATE, ...activity },
@@ -92,6 +100,7 @@ export function setTerminalActivity(id: string, state: Partial<AlertState>): voi
 
 /** Called after registry removal, or without an id to reset the terminal cache. */
 export function clearTerminalActivity(id?: string): void {
+  alertDiagnostic('renderer.clear', { sessionId: id ?? null });
   if (id === undefined) {
     if (terminalActivity.size === 0) return;
     terminalActivity.clear();

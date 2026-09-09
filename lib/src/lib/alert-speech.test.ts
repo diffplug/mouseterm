@@ -1,10 +1,12 @@
+import { alertDiagnosticsConfig } from './alert-diagnostics-config';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./platform', () => ({
   getPlatform: () => ({ alertPublishSettings: vi.fn() }),
 }));
 
-import { startAlertSpeech, toSpokenText } from './alert-speech';
+import { configureAlertDiagnostics, type AlertDiagnostic } from './alert-diagnostics';
+import { startAlertSpeech, speakTestUtterance, toSpokenText } from './alert-speech';
 import { getAlertSpeechState } from './alert-speech-state';
 import { applyAlertSettingsFromHost, DEFAULT_ALERT_SETTINGS } from './alert-settings';
 import { clearTerminalActivity, setTerminalActivity } from './session-activity-store';
@@ -15,6 +17,7 @@ import type { TerminalTitleSource } from './terminal-state';
 const SPEAK_DELAY_MS = 10_000;
 
 /** Utterances passed to the stubbed Web Speech API, in order. */
+let records: AlertDiagnostic[];
 let spoken: string[];
 let utterances: StubUtterance[];
 let cancelCount: number;
@@ -81,8 +84,11 @@ function ringTwoWithFirstSpeaking(): void {
 }
 
 beforeEach(() => {
+  alertDiagnosticsConfig.enabled = true;
   vi.useFakeTimers();
   stubSpeechSynthesis();
+  records = [];
+  configureAlertDiagnostics('test', (record) => records.push(record));
   clearTerminalActivity();
   applyAlertSettingsFromHost({ ...DEFAULT_ALERT_SETTINGS, speakEnabled: true, speakDelayMs: SPEAK_DELAY_MS });
 });
@@ -93,6 +99,8 @@ afterEach(() => {
   for (const id of ['osc0-title', 'osc2-title', 'osc9-title']) removeTerminalPaneState(id);
   clearTerminalActivity();
   applyAlertSettingsFromHost(DEFAULT_ALERT_SETTINGS);
+  configureAlertDiagnostics('off');
+  alertDiagnosticsConfig.enabled = false;
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -482,5 +490,70 @@ describe('spoken alarms', () => {
 
     expect(cancelCount).toBe(1);
     expect(spoken).toHaveLength(20 + 7);
+  });
+});
+
+
+describe('speech diagnostics', () => {
+  it('records exactly the sanitized payload and counts at the synthesis boundary', () => {
+    resetTerminalPaneState('osc0-title', {
+      activity: { kind: 'running' },
+      currentCommand: { id: 'cmd', rawCommandLine: 'sleep 60', displayCommand: 'sleep 60', cwdAtStart: null, startedAt: 10, source: 'osc133_boundaries' },
+      titleCandidates: { osc0: { title: 'Done 0123456789abcdef0123456789abcdef', source: 'osc0', updatedAt: 20 } },
+    });
+    start();
+    ring('osc0-title');
+    vi.advanceTimersByTime(SPEAK_DELAY_MS);
+    const request = records.find((r) => r.event === 'speech.request')!;
+    expect(request.fields.text).toBe('Done REDACTED');
+    expect(request.fields.text).toBe(spoken[0]);
+    expect(request.fields.characters).toBe(Array.from(spoken[0]).length);
+    expect(JSON.stringify(records)).not.toContain('0123456789abcdef');
+  });
+
+  it('distinguishes an old engine queue entry starting after dismissal from a new ring', () => {
+    start();
+    ring('pty-1');
+    vi.advanceTimersByTime(SPEAK_DELAY_MS);
+    setStatus('pty-1', 'NOTHING_TO_SHOW');
+    vi.advanceTimersByTime(3_600_000);
+    utterances[0].onstart?.();
+    const requests = records.filter((r) => r.event === 'speech.request');
+    const started = records.find((r) => r.event === 'speech.start')!;
+    expect(requests).toHaveLength(1);
+    expect(started.fields).toMatchObject({
+      attempt: requests[0].fields.attempt, sinceRequestMs: 3_600_000, liveStatus: 'NOTHING_TO_SHOW',
+    });
+  });
+
+  it('gives queue retries distinct attempts and a separate reason', () => {
+    ringTwoWithFirstSpeaking();
+    setStatus('pty-1', 'NOTHING_TO_SHOW');
+    const requests = records.filter((r) => r.event === 'speech.request');
+    expect(requests.map((r) => r.fields.reason)).toEqual(['ring', 'ring', 'requeue']);
+    expect(new Set(requests.map((r) => r.fields.attempt)).size).toBe(3);
+    expect(records.find((r) => r.event === 'speech.cancel')?.fields.reason).toBe('resolved-speaking-ring');
+  });
+
+  it('records a suspended ring timer deadline separately from the speech queue', () => {
+    start();
+    const timers = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      ring('pty-1');
+      const callback = timers.mock.calls.at(-1)![0] as () => void;
+      const scheduledAt = Date.now();
+      vi.setSystemTime(scheduledAt + 3_600_000);
+      callback();
+      const fired = records.find((r) => r.event === 'watch.timer')!;
+      expect(fired.fields).toMatchObject({ dueAt: scheduledAt + SPEAK_DELAY_MS, lateByMs: 3_600_000 - SPEAK_DELAY_MS });
+      expect(records.find((r) => r.event === 'speech.request')?.fields.sinceRequestMs).toBe(0);
+    } finally { timers.mockRestore(); }
+  });
+
+  it('counts test requests even when the backend is unavailable', () => {
+    vi.stubGlobal('speechSynthesis', undefined);
+    expect(speakTestUtterance()).toBe(false);
+    expect(records.find((r) => r.event === 'speech.request')?.fields).toMatchObject({ reason: 'test', characters: 19 });
+    expect(records.some((r) => r.event === 'speech.unavailable')).toBe(true);
   });
 });

@@ -80,6 +80,14 @@
 
 Guarding only completion leaves a stale `start` free to replace the active utterance's token. Queue-admission identity also covers old rings, collateral redispatch, and evicted callbacks after teardown; it retains one token per ringing Session without retaining each engine utterance.
 
+## Local alert diagnostics
+
+A source switch keeps this temporary investigation out of persisted alarm settings. Gating both the emitter and journal covers renderer IPC and the sidecar’s direct lifecycle path; either gate alone would leave part of the feature active.
+
+A spoken alert after focus returns can be a newly latched ring, a replayed host snapshot, a throttled renderer timer, or an engine queue entry that starts late. Logging only speech text cannot distinguish these. The VS Code manager survives in the extension host while its renderer is hidden; standalone's manager lives in the renderer. Recording both layers, their separate source lifetimes, and the last accepted output connects a dismissal to the later decision without storing terminal content. Monotonic clocks are comparable only within one source; wall-clock deadlines expose delayed timers but can also move when the system clock changes.
+
+Post-sanitization counts measure the text a future speech provider would receive. Redispatch is separate because the future remote queue and browser fallback need not retry identically. Local request volume is a planning sample, not a billing ledger. Best-effort bounded writing keeps observability off the alert's critical path.
+
 ## Push notifications
 
 **Why both halves live under `remote/burrow/`.** The sink rides the lazily-imported `RemotePairingModalHost` chunk; the shared ring machine and the device store stay in the common bundle instead, since speech and the settings dialog need them everywhere.

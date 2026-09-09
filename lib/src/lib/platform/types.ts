@@ -1,3 +1,4 @@
+import type { AlertDiagnostic } from '../alert-diagnostics';
 import type { HelperIdentity, TerminalContextRequest, TerminalContextInfo } from '../terminal-context-types';
 import type { AlertState, AwaitHandle, AwaitOptions } from '../alert-manager';
 import type { AlertSettings } from '../alert-settings';
@@ -174,6 +175,8 @@ export interface PtyDataDetail {
 }
 
 export interface PlatformAdapter {
+  /** Desktop-only local diagnostic journal; absent on Pocket and the demo. */
+  recordAlertDiagnostic?(record: AlertDiagnostic): void;
   // Lifecycle
   init(): Promise<void>;
   shutdown(): void;
