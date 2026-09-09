@@ -273,8 +273,9 @@ export function cwdFromOsc7(rawUriInput: string, now = Date.now()): CwdState | n
   if (parsed.protocol !== 'file:') return null;
 
   const decodedPath = boundedCwdValue(normalizeFileUriPath(safeDecodeURIComponent(parsed.pathname)));
-  // Re-bounded after the host's percent-decode, the same way `decodedPath` is:
-  // `extractFileUriHost` decodes, which can put control characters back.
+  // Bounded the same way `decodedPath` is. The host is retained, rendered, and
+  // part of `cwdIdentity`, so it is sanitized where it is built rather than on
+  // the URL parser rejecting every control character a host could decode to.
   const host = boundedCwdValue(extractFileUriHost(rawUri) || parsed.hostname) || undefined;
   return {
     uri: rawUri,
@@ -704,7 +705,9 @@ function normalizeFileUriPath(pathname: string): string {
 }
 
 function extractFileUriHost(uri: string): string | undefined {
-  const match = uri.match(/^file:\/\/([^/]*)(?:\/|$)/i);
+  // Anchored at the delimiters `new URL` honours: an unanchored `[^/]*` swallows
+  // a `?`/`#` tail into the host, which then reads as remote and skews grouping.
+  const match = uri.match(/^file:\/\/([^/?#]*)(?:[/?#]|$)/i);
   if (!match || !match[1]) return undefined;
   return safeDecodeURIComponent(match[1]);
 }

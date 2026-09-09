@@ -81,12 +81,13 @@ describe('terminal CWD normalization', () => {
     expect(cwdFromOsc9_9('/repo/a\x07b\x9c', 100)?.path).toBe('/repo/ab');
     expect(cwdFromOsc633('/repo/a\x00b', 100)?.path).toBe('/repo/ab');
     expect(cwdFromOsc7('file:///repo/a%07b', 100)?.path).toBe('/repo/ab');
-    // The host is percent-decoded too, so it is stripped after that decode and
-    // not only as part of the raw URI: the `?`/`#` tail sits outside what the
-    // URL parser treats as the host, so controls survive the parse.
-    expect(cwdFromOsc7('file://ok.example?a%1Bb%5D0;PWNED%07', 100)?.host).toBe(
-      'ok.example?ab]0;PWNED',
-    );
+    // The host slice stops at the `?`/`#` delimiters the URL parser honours, so
+    // a query or fragment tail never reaches `host` — the audit's payload lands
+    // outside it, and a `?` tail cannot make a local CWD read as remote.
+    expect(cwdFromOsc7('file://ok.example?a%1Bb%5D0;PWNED%07', 100)?.host).toBe('ok.example');
+    expect(cwdFromOsc7('file://localhost?x/repo/app', 100)?.host).toBe('localhost');
+    expect(cwdFromOsc7('file://localhost?x/repo/app', 100)?.isRemote).toBe(false);
+    expect(cwdFromOsc7('file://prod-box#frag/repo', 100)?.host).toBe('prod-box');
 
     const long = `/${'a'.repeat(MAX_CWD_LENGTH * 3)}`;
     expect(cwdFromOsc9_9(long, 100)?.path.length).toBe(MAX_CWD_LENGTH);
