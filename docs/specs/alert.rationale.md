@@ -120,6 +120,6 @@ Measured against the live ElevenLabs API in 2026-09, on a normal (non-Enterprise
 
 **The delay is unmeasured.** A 0/250/750/2000/5000 ms ladder was written but never confirmed against the live API, so no first-attempt delay is stated in the spec yet; the ladder is a starting point for the measurement, not a result.
 
-**Why verification reads two endpoints.** The missing-item shapes disagree — DELETE gives 404, `GET /v1/history/{id}` gives 400 with `detail.status: invalid_id` — and in one run the audio outlived the record, so checking the record alone would have reported a deletion that had not reached the audio.
+**Why verification reads two endpoints, and why one of their shapes is left open.** The missing-item shapes disagree — DELETE gives 404, `GET /v1/history/{id}` gives 400 with `detail.status: invalid_id` — and in one run the audio outlived the record, so checking the record alone would have reported a deletion that had not reached the audio. What `GET /v1/history/{id}/audio` returns *after* a delete lands was never observed: the only audio reading taken was the 200 above, before any successful delete. Neither measured shape can be assumed to carry over to it, so the verifier measures that endpoint rather than guessing 404 and silently passing or failing on the guess.
 
 **Why the copy constraint outlives the mechanism.** ElevenLabs states debugging and moderation logs may retain related data and backups may persist up to 30 days. A verified delete removes the history item; it does not make "never stored" true.

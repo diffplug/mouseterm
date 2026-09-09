@@ -400,7 +400,7 @@ Robustness: Sessions ring independently; minimize, reattach, rerender, resize, a
 
 ## Future
 
-**Scope: managed-voice** — the optional hosted ElevenLabs voice previewed in [website-docs.md](./website-docs.md) -> `/hosted` preview. Alert text is user data, so the scope is ordered around minimizing what the provider ever holds; deletion is cleanup, not prevention. Staged: key provisioning, render-time handle persistence, delayed delete with backoff and failure alerting, and the delay measurement the last of those waits on.
+**Scope: managed-voice** — the optional hosted ElevenLabs voice previewed in [website-docs.md](./website-docs.md) -> `/hosted` preview. Alert text is user data, so the scope is ordered around minimizing what the provider ever holds; deletion is cleanup, not prevention. Staged: key provisioning, render-time handle persistence, the first-attempt delay measurement, and delayed delete with backoff and failure alerting.
 
 ### Managed voice
 
@@ -408,6 +408,6 @@ Robustness: Sessions ring independently; minimize, reattach, rerender, resize, a
 - **Must persist the `history-item-id` response header durably at render time, before returning audio to the user.** It is the only handle on the stored copy, so a crash between render and delete orphans audio nothing can later remove.
 - **Must delete on a delay, never inline**, because the audio is fetchable before its history record is addressable for deletion (rationale). **Never infer deletion from `404 history_item_not_found`** — it means "not there yet". The not-found case retries with backoff, and the first attempt must clear the window, which is unmeasured: measure it against the live API rather than assuming a ladder (rationale).
 - **Must alert on terminal delete failure**, which is otherwise silent and leaves live audio on the provider.
-- **Must verify the history item *and* its audio, each against its own missing-item shape**: `DELETE` reports 404, `GET /v1/history/{id}` reports 400 with `detail.status: invalid_id`, and the audio has outlived the record (rationale).
+- **Must verify the history item *and* its audio, each against its own missing-item shape**, because the audio has outlived the record (rationale). `GET /v1/history/{id}` reports 400 with `detail.status: invalid_id`, not the 404 `DELETE` reports; the audio endpoint's deleted shape is unmeasured — **never assume it matches either** (rationale).
 - **Must provision `speech_history_write` and `speech_history_read` on the key.** A TTS-only key gets `401 missing_permissions` and cleanup silently no-ops.
 - **Must say "deleted from history" in user-facing copy, never "never stored."** The provider states debugging and moderation logs may retain related data and backups may persist up to 30 days, so even a verified delete is weaker than zero retention.
