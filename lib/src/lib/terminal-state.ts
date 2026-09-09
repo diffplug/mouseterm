@@ -273,7 +273,9 @@ export function cwdFromOsc7(rawUriInput: string, now = Date.now()): CwdState | n
   if (parsed.protocol !== 'file:') return null;
 
   const decodedPath = boundedCwdValue(normalizeFileUriPath(safeDecodeURIComponent(parsed.pathname)));
-  const host = extractFileUriHost(rawUri) || parsed.hostname || undefined;
+  // Re-bounded after the host's percent-decode, the same way `decodedPath` is:
+  // `extractFileUriHost` decodes, which can put control characters back.
+  const host = boundedCwdValue(extractFileUriHost(rawUri) || parsed.hostname) || undefined;
   return {
     uri: rawUri,
     path: decodedPath,
