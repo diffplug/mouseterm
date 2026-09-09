@@ -252,6 +252,8 @@ The alarm settings are a second app-global store beside the WATCHING rule set, e
 
 The speech row's managed-voice link follows
 [website-docs.md](./website-docs.md) -> `/hosted` preview.
+Reserved: managed-voice copy — that row's and `/hosted`'s — never claims
+non-storage (**Scope: managed-voice**).
 
 Rules:
 
@@ -395,3 +397,17 @@ Notification text is untrusted terminal output.
 - Wherever notification text appears in visible UI or accessible labels, it is plain text, and layout must tolerate long text, CJK, RTL, combining marks, and emoji without pushing fixed controls out of bounds. Sanitized terminal-supplied `OSC 0` / `OSC 2` / `OSC 9` text also participates in normal Pane-label derivation, and that label may reach the opt-in speech and push channels — **each after its own second pass**, because a label safe to *render* is not automatically safe to hand a speech engine or an OS notification, and those two fail in different ways. See `toSpokenText` under Spoken alarms and `toPushText` under Push notifications.
 
 Robustness: Sessions ring independently; minimize, reattach, rerender, resize, and theme changes preserve alert state without creating rings (WATCHING Track, glossary I3); an exited Session may keep ringing until attended, dismissed, or destroyed; ringing must not rely on color alone and must respect `prefers-reduced-motion`.
+
+## Future
+
+**Scope: managed-voice** — the optional hosted ElevenLabs voice previewed in [website-docs.md](./website-docs.md) -> `/hosted` preview. Alert text is user data, so the scope is ordered around minimizing what the provider ever holds; deletion is cleanup, not prevention. Staged: key provisioning, render-time handle persistence, delayed delete with backoff and failure alerting, and the delay measurement the last of those waits on.
+
+### Managed voice
+
+- **Never read HTTP 200 as evidence of non-retention.** Zero-retention mode is gated to eligible Enterprise accounts; elsewhere `enable_logging=false` is accepted, silently does not apply, and the request writes a history entry like any other (rationale).
+- **Must persist the `history-item-id` response header durably at render time, before returning audio to the user.** It is the only handle on the stored copy, so a crash between render and delete orphans audio nothing can later remove.
+- **Must delete on a delay, never inline**, because the audio is fetchable before its history record is addressable for deletion (rationale). **Never infer deletion from `404 history_item_not_found`** — it means "not there yet". The not-found case retries with backoff, and the first attempt must clear the window, which is unmeasured: measure it against the live API rather than assuming a ladder (rationale).
+- **Must alert on terminal delete failure**, which is otherwise silent and leaves live audio on the provider.
+- **Must verify the history item *and* its audio, each against its own missing-item shape**: `DELETE` reports 404, `GET /v1/history/{id}` reports 400 with `detail.status: invalid_id`, and the audio has outlived the record (rationale).
+- **Must provision `speech_history_write` and `speech_history_read` on the key.** A TTS-only key gets `401 missing_permissions` and cleanup silently no-ops.
+- **Must say "deleted from history" in user-facing copy, never "never stored."** The provider states debugging and moderation logs may retain related data and backups may persist up to 30 days, so even a verified delete is weaker than zero retention.

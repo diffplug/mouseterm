@@ -109,3 +109,17 @@ Guarding only completion leaves a stale `start` free to replace the active utter
 ## Text And Security
 
 **Why the cold-restore path is not re-sanitized.** Reaching it requires a corrupted or hand-edited session store, and the text is rendered as plain text everywhere, so the residual exposure is layout — a very long or control-bearing string in a preview — rather than markup.
+
+## Managed voice
+
+Measured against the live ElevenLabs API in 2026-09, on a normal (non-Enterprise) key ([#603](https://github.com/diffplug/dormouse/issues/603)).
+
+**What `enable_logging=false` actually did.** A zero-retention-mode request returned HTTP 200 *and* a `history-item-id` header — it wrote a history entry exactly like the logging-on request, with no eligibility error anywhere in the response. ZRM is gated to eligible Enterprise accounts, and an ineligible key gets the parameter accepted and silently dropped, so a 200 carries no retention information at all.
+
+**Why the delete is delayed rather than inline.** At +3 ms after the audio response completed, `DELETE /v1/history/{id}` returned 404 `history_item_not_found` while `GET /v1/history/{id}/audio` returned 200 with the audio present. The stored audio is live and fetchable before its history record is addressable, so an inline delete both fails and looks like success to a caller reading that 404 as "nothing stored".
+
+**The delay is unmeasured.** A 0/250/750/2000/5000 ms ladder was written but never confirmed against the live API, so no first-attempt delay is stated in the spec yet; the ladder is a starting point for the measurement, not a result.
+
+**Why verification reads two endpoints.** The missing-item shapes disagree — DELETE gives 404, `GET /v1/history/{id}` gives 400 with `detail.status: invalid_id` — and in one run the audio outlived the record, so checking the record alone would have reported a deletion that had not reached the audio.
+
+**Why the copy constraint outlives the mechanism.** ElevenLabs states debugging and moderation logs may retain related data and backups may persist up to 30 days. A verified delete removes the history item; it does not make "never stored" true.
