@@ -16,6 +16,12 @@ pnpm build       # build lib, vscode extension, Pocket, and website
 **Open every PR as a draft.** Chromatic bills per snapshot and skips drafts, so
 marking a PR ready for review is what spends them.
 
+## Worktrees
+
+- **Must stack with `wt switch --create <branch> --base @`**, never `git switch -c` in an existing worktree; other sessions need its branch and path intact. Set the GitHub PR base separately.
+- **Never relocate or remove active worktrees.** If a path is occupied, use `wt --config-set 'worktree-path="{{ repo_path }}/../{{ repo }}.{{ branch | sanitize }}.REAL"' switch <branch>`.
+- **Must set agent commands' working directory explicitly** after switching. Run `pnpm install` in fresh worktrees.
+
 ## Architecture
 
 - **`lib/`** — Shared React + TailwindCSS frontend library: components, tests, Storybook.
