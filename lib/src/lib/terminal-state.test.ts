@@ -88,6 +88,17 @@ describe('terminal CWD normalization', () => {
     expect(cwdFromOsc7('file://localhost?x/repo/app', 100)?.host).toBe('localhost');
     expect(cwdFromOsc7('file://localhost?x/repo/app', 100)?.isRemote).toBe(false);
     expect(cwdFromOsc7('file://prod-box#frag/repo', 100)?.host).toBe('prod-box');
+    // Where the slice and the parser disagree by more than case, the parser's
+    // mapped host wins: an ignorable code point inside `localhost` is removed
+    // there, so it cannot survive as an invisible host that reads as remote.
+    expect(cwdFromOsc7('file://loc%E2%80%8Balhost/repo/app', 100)?.host).toBeUndefined();
+    expect(cwdFromOsc7('file://loc%E2%80%8Balhost/repo/app', 100)?.isRemote).toBe(false);
+    expect(cwdFromOsc7('file://%C2%ADlocalhost/x', 100)?.isRemote).toBe(false);
+    expect(cwdFromOsc7('file://%F0%9F%92%A9/x', 100)?.host).toBe('xn--ls8h');
+    // The two the slice exists to preserve, which the parser erases: case, and
+    // the `localhost` spelling the file scheme flattens to the empty string.
+    expect(cwdFromOsc7('file://Prod-Box/repo', 100)?.host).toBe('Prod-Box');
+    expect(cwdFromOsc7('file://localhost/repo', 100)?.host).toBe('localhost');
 
     const long = `/${'a'.repeat(MAX_CWD_LENGTH * 3)}`;
     expect(cwdFromOsc9_9(long, 100)?.path.length).toBe(MAX_CWD_LENGTH);

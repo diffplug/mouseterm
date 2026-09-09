@@ -34,6 +34,8 @@ CWD:
 
 **Every CWD is bounded at `MAX_CWD_LENGTH` and stripped of control characters before storage**, whatever the source ([terminal-escapes.md](terminal-escapes.md), rationale).
 
+**The OSC 7 host is the URL parser's mapped hostname except in case and the literal `localhost` spelling** — the two the raw slice alone preserves; a slice diverging further is unnormalized input, and taking it would let an ignorable code point inside `localhost` read as remote. Pinned by `bounds every CWD source and strips control characters` in `lib/src/lib/terminal-state.test.ts`. Source of truth: `fileUriHost` in `lib/src/lib/terminal-state.ts`.
+
 Non-OSC CWD sources:
 
 - `process` — the adapter polled the PTY's process for its working directory.
