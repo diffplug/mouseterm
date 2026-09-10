@@ -304,10 +304,11 @@ async function startVite() {
 
 async function openAgentBrowser() {
   const binary = insideDormouse ? 'dor' : 'agent-browser';
-  const identity = process.env.DORMOUSE_BROWSER_DEV_AB_SESSION
-    ? ['--session', browserSession]
-    : ['--key', worktreeKey];
-  const args = insideDormouse ? ['ab', ...identity] : ['--session', browserSession];
+  const identity = insideDormouse && !process.env.DORMOUSE_BROWSER_DEV_AB_SESSION
+    ? ['--key', worktreeKey]
+    : ['--session', browserSession];
+  const args = insideDormouse ? ['ab', ...identity] : identity;
+  const command = `${binary} ${args.join(' ')}`;
   if (process.env.DORMOUSE_BROWSER_DEV_HEADED === '1') args.push('--headed');
   args.push('open', viteOrigin);
   browser = spawn(binary, args, { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -320,9 +321,7 @@ async function openAgentBrowser() {
       : reject(new Error(`${binary} exited code=${code} signal=${signal}`)));
   });
   log(`agent-browser session: ${browserSession}`);
-  log(insideDormouse
-    ? `try: dor ab ${identity.join(' ')} snapshot -i`
-    : `try: agent-browser --session ${browserSession} snapshot -i`);
+  log(`try: ${command} snapshot -i`);
 }
 
 async function shutdown(code = 0) {
@@ -332,18 +331,21 @@ async function shutdown(code = 0) {
   sseClients.clear();
   hostServer?.close();
   hostServer?.closeAllConnections();
-  if (browser?.pid && browser.exitCode === null && browser.signalCode === null) browser.kill('SIGTERM');
-  const sidecarClosed = sidecar?.pid && sidecar.exitCode === null && sidecar.signalCode === null
-    ? new Promise((resolve) => {
-      sidecar.once('exit', resolve);
-      sidecar.kill('SIGTERM');
-    }) : Promise.resolve();
+  const children = new Set([browser, sidecar].filter(child =>
+    child?.pid && child.exitCode === null && child.signalCode === null));
+  const childrenClosed = [...children].map(child => new Promise(resolve => {
+    child.once('exit', () => {
+      children.delete(child);
+      resolve();
+    });
+    child.kill('SIGTERM');
+  }));
   // Bound cleanup even when a child or open request stops responding.
   const timeout = setTimeout(() => {
-    if (sidecar?.pid && sidecar.exitCode === null && sidecar.signalCode === null) sidecar.kill('SIGKILL');
+    for (const child of children) child.kill('SIGKILL');
     process.exit(code);
   }, 3000);
-  await Promise.all([vite?.close(), sidecarClosed]);
+  await Promise.all([vite?.close(), ...childrenClosed]);
   clearTimeout(timeout);
   process.exit(code);
 }

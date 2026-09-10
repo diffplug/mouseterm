@@ -35,7 +35,16 @@ async function fixture(t) {
     });
   `);
   const cli = path.join(bin, 'cli.cjs');
-  await writeFile(cli, `console.log('BROWSER_ARGS ' + JSON.stringify(process.argv.slice(2))); process.exit(Number(process.env.TEST_BROWSER_EXIT || 0));`);
+  await writeFile(cli, `
+    console.log('BROWSER_ARGS ' + JSON.stringify(process.argv.slice(2)));
+    if (process.env.TEST_BROWSER_HANG) {
+      process.on('SIGTERM', () => {});
+      setInterval(() => {}, 1000);
+      console.log('BROWSER_PID ' + process.pid);
+    } else {
+      process.exit(Number(process.env.TEST_BROWSER_EXIT || 0));
+    }
+  `);
   for (const name of ['agent-browser', 'dor']) {
     if (process.platform === 'win32') {
       await writeFile(path.join(bin, `${name}.cmd`), `@"${process.execPath}" "${cli}" %*\r\n`);
@@ -183,4 +192,25 @@ test('browser startup failure closes the harness listeners and sidecar', { timeo
   await assertClosed(run);
   const pid = Number((await run.wait(/sidecar pid=(\d+)/))[1]);
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+});
+
+test('shutdown kills an owned browser launcher that ignores SIGTERM', {
+  timeout: 30000, skip: process.platform === 'win32',
+}, async t => {
+  const a = await fixture(t);
+  const run = a.start({ TEST_BROWSER_HANG: '1' });
+  const pid = Number((await run.wait(/BROWSER_PID (\d+)/))[1]);
+  t.after(() => {
+    try { process.kill(pid, 'SIGKILL'); } catch (err) {
+      if (err.code !== 'ESRCH') throw err;
+    }
+  });
+  assert.equal((await run.stop()).code, 0);
+  // SIGKILL delivery and orphan reaping can finish just after the harness exits.
+  await assert.rejects(async () => {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      process.kill(pid, 0);
+      await delay(25);
+    }
+  }, { code: 'ESRCH' });
 });
